@@ -8,5 +8,10 @@ const supabaseAnonKey= import.meta.env.VITE_SUPABASE_ANON_KEY;
 // Create and export the Supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+//User Admin
 // neonprint29@system.com
 // neonprint29!29
+
+// User Atencion Cliente
+// atencioncliente@gmail.com
+// atencioncliente!29

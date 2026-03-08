@@ -1,103 +1,240 @@
  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Poppins:wght@300;400;500;600&display=swap');
-          *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-          html, body, #root { height:100%; min-height:100vh; }
 
-          @keyframes np-spin    { to { transform: rotate(360deg); } }
-          @keyframes np-fadeUp  { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
-          @keyframes np-pulse   { 0%,100%{opacity:.4;transform:scaleX(.7)} 50%{opacity:1;transform:scaleX(1)} }
-          @keyframes np-glow-tr { 0%,100%{opacity:.7} 50%{opacity:1} }
-          @keyframes np-dots    { 0%,80%,100%{opacity:0} 40%{opacity:1} }
+ *,
+ *::before,
+ *::after {
+     box-sizing: border-box;
+     margin: 0;
+     padding: 0;
+ }
 
-          .np-loading-root {
-            min-height: 100vh; width: 100%;
-            background: #080e1d;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            font-family: 'Poppins', sans-serif;
-            position: relative; overflow: hidden;
-          }
+ html,
+ body,
+ #root {
+     height: 100%;
+     min-height: 100vh;
+ }
 
-          /* dot-grid background */
-          .np-loading-root::before {
-            content:''; position:absolute; inset:0;
-            background-image: radial-gradient(rgba(255,255,255,.045) 1px, transparent 1px);
-            background-size:28px 28px; pointer-events:none;
-          }
+ @keyframes np-spin {
+     to {
+         transform: rotate(360deg);
+     }
+ }
 
-          /* glow cyan top-right */
-          .np-glow-tr {
-            position:absolute; top:-200px; right:-180px;
-            width:520px; height:520px; border-radius:50%;
-            background:radial-gradient(circle, rgba(0,212,255,.14) 0%, transparent 65%);
-            pointer-events:none; animation:np-glow-tr 5s ease-in-out infinite;
-          }
-          /* glow magenta bottom-left */
-          .np-glow-bl {
-            position:absolute; bottom:-160px; left:-130px;
-            width:440px; height:440px; border-radius:50%;
-            background:radial-gradient(circle, rgba(255,31,110,.09) 0%, transparent 65%);
-            pointer-events:none;
-          }
-          /* stripe tricolor top */
-          .np-stripe {
-            position:absolute; top:0; left:0; right:0; height:3px;
-            background:linear-gradient(90deg, #00d4ff 0%, #ff1f6e 50%, #ffe600 100%);
-          }
-          /* letras fantasma */
-          .np-bg-text {
-            position:absolute; bottom:-50px; right:-10px;
-            font-size:clamp(130px,22vw,260px); font-weight:800;
-            color:rgba(255,255,255,.015); letter-spacing:-10px; line-height:1;
-            user-select:none; pointer-events:none; font-family:'Syne', sans-serif;
-          }
+ @keyframes np-fadeUp {
+     from {
+         opacity: 0;
+         transform: translateY(14px)
+     }
 
-          /* card central */
-          .np-card {
-            position:relative; z-index:2;
-            display:flex; flex-direction:column; align-items:center; gap:28px;
-            animation: np-fadeUp .5s ease both;
-          }
+     to {
+         opacity: 1;
+         transform: translateY(0)
+     }
+ }
 
-          /* brand row */
-          .np-brand {
-            display:flex; flex-direction:column; align-items:center; gap:12px;
-          }
-          .np-brand-name {
-            color:#fff;
-            font-family:'Syne', sans-serif; font-size:22px; font-weight:800;
-            letter-spacing:-.3px; line-height:1;
-          }
-          .np-brand-name span.cyan { color:#00d4ff; }
-          .np-brand-sub {
-            color:rgba(255,255,255,.25); font-size:10px; font-weight:400;
-            letter-spacing:2px; text-transform:uppercase; text-align:center;
-          }
+ @keyframes np-pulse {
 
-          /* label */
-          .np-label {
-            display:flex; flex-direction:column; align-items:center; gap:10px;
-          }
-          .np-label-text {
-            color:rgba(255,255,255,.55); font-size:13px; font-weight:300;
-            letter-spacing:.3px; display:flex; align-items:center; gap:2px;
-          }
-          .np-dot {
-            width:4px; height:4px; border-radius:50%;
-            background:#00d4ff; display:inline-block;
-            animation: np-dots 1.4s ease-in-out infinite;
-          }
-          .np-dot:nth-child(2) { animation-delay:.2s; }
-          .np-dot:nth-child(3) { animation-delay:.4s; }
+     0%,
+     100% {
+         opacity: .4;
+         transform: scaleX(.7)
+     }
 
-          /* barra progreso animada */
-          .np-bar-wrap {
-            width:200px; height:2px; background:rgba(255,255,255,.07);
-            border-radius:2px; overflow:hidden;
-          }
-          .np-bar-fill {
-            height:100%; width:40%;
-            background:linear-gradient(90deg,#00d4ff,#ff1f6e);
-            border-radius:2px;
-            animation: np-pulse 1.4s ease-in-out infinite;
-            transform-origin:left center;
-          }
+     50% {
+         opacity: 1;
+         transform: scaleX(1)
+     }
+ }
+
+ @keyframes np-glow-tr {
+
+     0%,
+     100% {
+         opacity: .7
+     }
+
+     50% {
+         opacity: 1
+     }
+ }
+
+ @keyframes np-dots {
+
+     0%,
+     80%,
+     100% {
+         opacity: 0
+     }
+
+     40% {
+         opacity: 1
+     }
+ }
+
+ .np-loading-root {
+     min-height: 100vh;
+     width: 100%;
+     background: #080e1d;
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     justify-content: center;
+     font-family: 'Poppins', sans-serif;
+     position: relative;
+     overflow: hidden;
+ }
+
+ /* dot-grid background */
+ .np-loading-root::before {
+     content: '';
+     position: absolute;
+     inset: 0;
+     background-image: radial-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px);
+     background-size: 28px 28px;
+     pointer-events: none;
+ }
+
+ /* glow cyan top-right */
+ .np-glow-tr {
+     position: absolute;
+     top: -200px;
+     right: -180px;
+     width: 520px;
+     height: 520px;
+     border-radius: 50%;
+     background: radial-gradient(circle, rgba(0, 212, 255, .14) 0%, transparent 65%);
+     pointer-events: none;
+     animation: np-glow-tr 5s ease-in-out infinite;
+ }
+
+ /* glow magenta bottom-left */
+ .np-glow-bl {
+     position: absolute;
+     bottom: -160px;
+     left: -130px;
+     width: 440px;
+     height: 440px;
+     border-radius: 50%;
+     background: radial-gradient(circle, rgba(255, 31, 110, .09) 0%, transparent 65%);
+     pointer-events: none;
+ }
+
+ /* stripe tricolor top */
+ .np-stripe {
+     position: absolute;
+     top: 0;
+     left: 0;
+     right: 0;
+     height: 3px;
+     background: linear-gradient(90deg, #00d4ff 0%, #ff1f6e 50%, #ffe600 100%);
+ }
+
+ /* letras fantasma */
+ .np-bg-text {
+     position: absolute;
+     bottom: -50px;
+     right: -10px;
+     font-size: clamp(130px, 22vw, 260px);
+     font-weight: 800;
+     color: rgba(255, 255, 255, .015);
+     letter-spacing: -10px;
+     line-height: 1;
+     user-select: none;
+     pointer-events: none;
+     font-family: 'Syne', sans-serif;
+ }
+
+ /* card central */
+ .np-card {
+     position: relative;
+     z-index: 2;
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     gap: 28px;
+     animation: np-fadeUp .5s ease both;
+ }
+
+ /* brand row */
+ .np-brand {
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     gap: 12px;
+ }
+
+ .np-brand-name {
+     color: #fff;
+     font-family: 'Syne', sans-serif;
+     font-size: 22px;
+     font-weight: 800;
+     letter-spacing: -.3px;
+     line-height: 1;
+ }
+
+ .np-brand-name span.cyan {
+     color: #00d4ff;
+ }
+
+ .np-brand-sub {
+     color: rgba(255, 255, 255, .25);
+     font-size: 10px;
+     font-weight: 400;
+     letter-spacing: 2px;
+     text-transform: uppercase;
+     text-align: center;
+ }
+
+ /* label */
+ .np-label {
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     gap: 10px;
+ }
+
+ .np-label-text {
+     color: rgba(255, 255, 255, .55);
+     font-size: 13px;
+     font-weight: 300;
+     letter-spacing: .3px;
+     display: flex;
+     align-items: center;
+     gap: 2px;
+ }
+
+ .np-dot {
+     width: 4px;
+     height: 4px;
+     border-radius: 50%;
+     background: #00d4ff;
+     display: inline-block;
+     animation: np-dots 1.4s ease-in-out infinite;
+ }
+
+ .np-dot:nth-child(2) {
+     animation-delay: .2s;
+ }
+
+ .np-dot:nth-child(3) {
+     animation-delay: .4s;
+ }
+
+ /* barra progreso animada */
+ .np-bar-wrap {
+     width: 200px;
+     height: 2px;
+     background: rgba(255, 255, 255, .07);
+     border-radius: 2px;
+     overflow: hidden;
+ }
+
+ .np-bar-fill {
+     height: 100%;
+     width: 40%;
+     background: linear-gradient(90deg, #00d4ff, #ff1f6e);
+     border-radius: 2px;
+     animation: np-pulse 1.4s ease-in-out infinite;
+     transform-origin: left center;
+ }
