@@ -4,7 +4,7 @@ import Lobby from './pages/lobby'
 import Dashboard from './pages/dashboard'
 import ProtectedRoute from './ProtectedRoute'
 import PageDesigner from './pages/page-designer'
-import PageClient from './pages/pages-client'
+import PageSeller from './pages/pages-seller'
 import './App.css'
 
 function App() {
@@ -12,9 +12,9 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Lobby />} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/designer" element={<ProtectedRoute><PageDesigner /></ProtectedRoute>} />
-        <Route path="/client" element={<ProtectedRoute><PageClient /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<ProtectedRoute allowed={["admin"]}><Dashboard /></ProtectedRoute>} />
+        <Route path="/designer" element={<ProtectedRoute allowed={["designer"]}><PageDesigner /></ProtectedRoute>} />
+        <Route path="/page-seller" element={<ProtectedRoute allowed={["seller"]}><PageSeller /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )

@@ -3,7 +3,7 @@ import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 
 
-function PageDesigner() {
+function PageSeller() {
   // Navigate functtion to redirect user after logout
   const navigate = useNavigate();
 
@@ -19,11 +19,11 @@ function PageDesigner() {
 
   return (
     <div>
-      <h1>Page Designer</h1>
-      <p>This is the page designer page.</p>
+      <h1>Bienvenido Vendedor</h1>
+      <p> Quiere Registrar una orden</p>
       <button className="cursor-pointer" onClick={handleLogout} >Cerrar Sesion</button>
     </div>
   );
 }
 
-export default PageDesigner;
+export default PageSeller;

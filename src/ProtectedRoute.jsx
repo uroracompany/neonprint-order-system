@@ -6,7 +6,7 @@ import { supabase } from "../supabaseClient";
 // Import Components and Assets
 import "./css-components/ProtectedRoute.css";
 
-/* ── NeonPrint28 Logo (misma marca del login) ── */
+/* ── NeonPrint28 Logo ── */
 const NeonLogo = ({ size = 56 }) => (
   <div style={{
     width: size, height: size, borderRadius: "50%", flexShrink: 0,
@@ -20,99 +20,114 @@ const NeonLogo = ({ size = 56 }) => (
       display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center",
     }}>
-      <span style={{ color:"#fff", fontSize: size * 0.195, fontWeight:800, lineHeight:1, letterSpacing:"-.5px", fontFamily:"'Poppins',sans-serif" }}>neon</span>
-      <span style={{ color:"#00d4ff", fontSize: size * 0.115, fontWeight:500, lineHeight:1.1, letterSpacing:"2px", fontFamily:"'Poppins',sans-serif" }}>Print</span>
+      <span style={{ color:"#fff", fontSize: size * 0.195, fontWeight:800 }}>neon</span>
+      <span style={{ color:"#00d4ff", fontSize: size * 0.115, letterSpacing:"2px" }}>Print</span>
     </div>
   </div>
 );
 
-/* ── Spinner tricolor ── */
+/* ── Spinner ── */
 const TriSpinner = ({ size = 44 }) => (
-  <div style={{ position:"relative", width: size, height: size }}>
-    {/* pista fondo */}
+  <div style={{ position:"relative", width:size, height:size }}>
     <div style={{
       position:"absolute", inset:0, borderRadius:"50%",
-      border: `3px solid rgba(255,255,255,.07)`,
+      border:`3px solid rgba(255,255,255,.07)`
     }}/>
-    {/* arco animado con gradiente tricolor */}
     <div style={{
       position:"absolute", inset:0, borderRadius:"50%",
-      border: "3px solid transparent",
+      border:"3px solid transparent",
       borderTopColor:"#00d4ff",
       borderRightColor:"#ff1f6e",
-      animation:"np-spin .9s linear infinite",
-    }}/>
-    {/* punto brillante */}
-    <div style={{
-      position:"absolute", top:0, left:"50%",
-      transform:"translateX(-50%)",
-      width:7, height:7, borderRadius:"50%",
-      background:"#00d4ff",
-      boxShadow:"0 0 10px #00d4ff, 0 0 20px rgba(0,212,255,.5)",
-      animation:"np-spin .9s linear infinite",
-      transformOrigin:"50% calc(50% + " + (size/2 - 3.5) + "px)",
+      animation:"np-spin .9s linear infinite"
     }}/>
   </div>
 );
 
-export default function ProtectedRoute({ children }) {
+export default function ProtectedRoute({ children, allowed = [] }) {
+
   const [session, setSession] = useState(undefined);
+  const [unauthorized, setUnauthorized] = useState(false);
 
-  // Check login  with supabase auth
   useEffect(() => {
-    const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session);
-    };
-    checkSession();
-  }, []);
 
-  // Loading status
+    const checkAccess = async () => {
+
+      // Obtener usuario actual
+      const { data } = await supabase.auth.getUser();
+
+      if (!data.user) {
+        setSession(null);
+        return;
+      }
+
+      setSession(data.user);
+
+      // Obtener rol
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .single();
+
+      const role = profile?.role;
+
+      // Verificar permisos
+      if (allowed.length && !allowed.includes(role)) {
+        setUnauthorized(true);
+      }
+
+    };
+
+    checkAccess();
+
+  }, [allowed]);
+
+  // cerrar sesión si no tiene permiso
+  useEffect(() => {
+
+    const logout = async () => {
+      if (unauthorized) {
+        await supabase.auth.signOut();
+      }
+    };
+
+    logout();
+
+  }, [unauthorized]);
+
+  // Loader mientras verifica
   if (session === undefined) {
     return (
-      <>
-        <div className="np-loading-root">
-          <div className="np-stripe" />
-          <div className="np-glow-tr" />
-          <div className="np-glow-bl" />
-          <div className="np-bg-text">NP</div>
+      <div className="np-loading-root">
+        <div className="np-card">
 
-          <div className="np-card">
-            {/* Logo */}
-            <div className="np-brand">
-              <NeonLogo size={64} />
-              <div>
-                <div className="np-brand-name">
-                  neon<span className="cyan">Print</span>
-                  <span style={{color:"rgba(255,255,255,.3)",fontWeight:300}}>28</span>
-                </div>
-                <div className="np-brand-sub">Sistema de Gestión · RD</div>
+          <div className="np-brand">
+            <NeonLogo size={64}/>
+            <div>
+              <div className="np-brand-name">
+                neon<span className="cyan">Print</span>
+                <span style={{color:"rgba(255,255,255,.3)"}}>28</span>
               </div>
-            </div>
-
-            {/* Spinner */}
-            <TriSpinner size={48} />
-
-            {/* Label + dots */}
-            <div className="np-label">
-              <div className="np-label-text">
-                Verificando sesión
-                <span className="np-dot" />
-                <span className="np-dot" />
-                <span className="np-dot" />
-              </div>
-              {/* barra */}
-              <div className="np-bar-wrap">
-                <div className="np-bar-fill" />
-              </div>
+              <div className="np-brand-sub">Sistema de Gestión · RD</div>
             </div>
           </div>
+
+          <TriSpinner size={48}/>
+
+          <div className="np-label">
+            Verificando sesión...
+          </div>
+
         </div>
-      </>
+      </div>
     );
   }
 
-  // If no session, redirect to login
+  // No logeado
   if (!session) return <Navigate to="/" />;
+
+  // Rol incorrecto
+  if (unauthorized) return <Navigate to="/" />;
+
   return children;
 }

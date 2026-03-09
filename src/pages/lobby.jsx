@@ -90,6 +90,15 @@ export default function Lobby() {
       if (error) {
         throw error; //send to catch block
       }
+
+      // Finding user role (assuming you have a 'profiles' table linked to auth users)
+      const {data: profiles} = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id",data.user.id)
+      .single();
+
+
       // If login successful, you can redirect or show success message
       console.log("Login Exitoso:", data);
 
@@ -99,9 +108,19 @@ export default function Lobby() {
       });
      
       // Redirect to dashboard after successful login
-      setTimeout(() => {
-        navigate("/dashboard");
-      }, 2000);
+      setTimeout(() =>{
+        if(profiles.role === "admin"){
+          navigate("/dashboard");
+        };
+        if(profiles.role === "seller"){
+          navigate("/page-seller");
+        }
+      });
+
+      
+      // setTimeout(() => {
+      //   navigate("/dashboard");
+      // }, 2000);
 
     } catch (err) {
 
