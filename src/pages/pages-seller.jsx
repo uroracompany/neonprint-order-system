@@ -24,70 +24,56 @@
 //       <button className="cursor-pointer" onClick={handleLogout} >Cerrar Sesion</button>
 //     </div>
 //   );
-// }
+// }import { useState, useEffect, useRef } from "react";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 
-// ─── PALETTE ──────────────────────────────────────────────────────────────────
-const C = {
-  bg:         "#F8F9FB",
-  surface:    "#FFFFFF",
-  surfaceAlt: "#F1F4F8",
-  border:     "#E4E9F0",
-  borderHov:  "#CBD5E1",
-  text:       "#0F172A",
-  textSub:    "#64748B",
-  textMuted:  "#94A3B8",
-  blue:       "#0EA5E9",
-  blueDark:   "#0284C7",
-  blueLight:  "#E0F2FE",
-  pink:       "#F43F5E",
-  pinkLight:  "#FFF1F3",
-  green:      "#22C55E",
-  orange:     "#F97316",
-  amber:      "#F59E0B",
-};
+import "../css-components/page-seller.css";
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
 const Icon = {
-  Dashboard: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>),
-  Orders: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>),
-  Plus: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>),
-  Search: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>),
-  Logout: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>),
-  Eye: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>),
-  Close: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>),
-  ChevronDown: () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>),
-  Bell: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>),
-  TrendUp: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>),
-  Package: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>),
-  Truck: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>),
-  Refresh: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>),
-  ArrowRight: () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>),
-  Image: () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>),
-  Menu: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>),
+  Dashboard:    () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>),
+  Orders:       () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>),
+  Plus:         () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>),
+  Search:       () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>),
+  Logout:       () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>),
+  Eye:          () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>),
+  Close:        () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>),
+  ChevronDown:  () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>),
+  Bell:         () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>),
+  TrendUp:      () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>),
+  Package:      () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>),
+  Truck:        () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>),
+  Refresh:      () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>),
+  ArrowRight:   () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>),
+  Upload:       () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>),
+  Trash:        () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>),
+  Menu:         () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>),
   ExternalLink: () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>),
+  Phone:        () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.1 6.1l1.06-1.06a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>),
+  Calendar:     () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>),
+  Receipt:      () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16l3-2 2 2 2-2 2 2 2-2 3 2V4a2 2 0 0 0-2-2z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/></svg>),
+  Brush:        () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 0 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1 1 6.23 1 7 0 .48-.93.49-2.01 0-3.04a3.03 3.03 0 0 0-2-2z"/></svg>),
+  X:            () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>),
 };
 
-// ─── STATUS CONFIG ─────────────────────────────────────────────────────────────
+// ─── STATUS & PAYMENT CONFIG ──────────────────────────────────────────────────
 const STATUS_CONFIG = {
-  "pendiente de cotizacion": { label: "Pend. Cotizacion", color: "#B45309", bg: "#FEF3C7", dot: "#F59E0B" },
+  "pendiente de cotizacion": { label: "Pend. Cotizacion", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
   "en cotizacion":           { label: "En Cotizacion",   color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
-  "en diseno":               { label: "En Diseno",       color: "#6D28D9", bg: "#EDE9FE", dot: "#8B5CF6" },
-  "en produccion":           { label: "En Produccion",   color: "#C2410C", bg: "#FFF7ED", dot: "#F97316" },
+  "en diseno":               { label: "En Diseno",       color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
+  "en produccion":           { label: "En Produccion",   color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
   "en entrega":              { label: "En Entrega",      color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
-  "completada":              { label: "Completada",      color: "#15803D", bg: "#DCFCE7", dot: "#22C55E" },
-  "cancelada":               { label: "Cancelada",       color: "#B91C1C", bg: "#FEF2F2", dot: "#EF4444" },
+  "completada":              { label: "Completada",      color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
+  "cancelada":               { label: "Cancelada",       color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
 };
-
 const PAYMENT_CONFIG = {
-  "pagado":    { label: "Pagado",    color: "#15803D", bg: "#DCFCE7" },
-  "pendiente": { label: "Pendiente", color: "#B45309", bg: "#FEF3C7" },
+  "pagado":    { label: "Pagado",    color: "#14532D", bg: "#DCFCE7" },
+  "pendiente": { label: "Pendiente", color: "#92620A", bg: "#FEF3C7" },
   "parcial":   { label: "Parcial",   color: "#0369A1", bg: "#E0F2FE" },
 };
-
 const FLOW_STEPS = [
   { key: "pendiente de cotizacion", label: "Cotizacion" },
   { key: "en diseno",               label: "Diseno" },
@@ -95,558 +81,783 @@ const FLOW_STEPS = [
   { key: "en entrega",              label: "Entrega" },
   { key: "completada",              label: "Completada" },
 ];
-
-const MATERIALS = ["Vinilo", "Banner", "Lona", "Papel Fotografico", "Carton", "Adhesivo", "PVC", "Acrilico", "Tela", "Otro"];
-const SIZES = ['A4','A3','A2','A1','Carta','8.5x11"','11x17"','16x20"','18x24"','24x36"','Personalizado'];
-
-const MOCK_ORDERS = [
-  { id: "ORD-001", client_name: "Supermercado Nacional", description: "Banner principal evento apertura", material: "Lona", size: "8x3 ft", quantity: 2, price: 4500, status: "en produccion", payment_status: "pagado", created_at: "2025-01-15T09:30:00", order_type: "banner" },
-  { id: "ORD-002", client_name: "Clinica San Rafael", description: "Vinilos adhesivos para vidrieras", material: "Vinilo", size: "1x1 m", quantity: 10, price: 3200, status: "en diseno", payment_status: "pendiente", created_at: "2025-01-15T11:00:00", order_type: "vinilo" },
-  { id: "ORD-003", client_name: "Tienda Moda Urbana", description: "Catalogo temporada verano A4", material: "Papel Fotografico", size: "A4", quantity: 500, price: 8900, status: "pendiente de cotizacion", payment_status: "pendiente", created_at: "2025-01-15T13:45:00", order_type: "impresion" },
-  { id: "ORD-004", client_name: "Hotel Caribe Inn", description: "Senalizacion interna habitaciones", material: "Acrilico", size: "20x15 cm", quantity: 30, price: 12000, status: "completada", payment_status: "pagado", created_at: "2025-01-14T10:20:00", order_type: "senalizacion" },
-  { id: "ORD-005", client_name: "Farmacia Salud Total", description: "Rollup para feria de salud", material: "Banner", size: "80x200 cm", quantity: 3, price: 5500, status: "en entrega", payment_status: "parcial", created_at: "2025-01-14T15:30:00", order_type: "rollup" },
-  { id: "ORD-006", client_name: "Universidad INTEC", description: "Flyers convocatoria graduacion", material: "Papel Fotografico", size: "A5", quantity: 1000, price: 6200, status: "en cotizacion", payment_status: "pendiente", created_at: "2025-01-13T08:00:00", order_type: "flyer" },
+const CARD_ACCENTS = [
+  { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
+  { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
+  { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
+  { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
 ];
 
-// ─── STATUS BADGE ─────────────────────────────────────────────────────────────
-const StatusBadge = ({ status, type = "status" }) => {
+// ─── CONSTANTES DE FORMULARIO ─────────────────────────────────────────────────
+const MATERIALS = [
+  "Vinilo","Banner","Lona","Papel Fotografico","Carton",
+  "Adhesivo","PVC","Acrilico","Tela","Foam","Otro"
+];
+
+const MOCK_ORDERS = [
+  { id:"ORD-001", client_name:"Supermercado Nacional", description:"Banner principal evento apertura",  material:"Lona",             price:4500,  status:"en produccion",           payment_status:"pagado",    created_at:"2025-01-15T09:30:00", order_type:"orden normal" },
+  { id:"ORD-002", client_name:"Clinica San Rafael",    description:"Vinilos adhesivos para vidrieras", material:"Vinilo",           price:3200,  status:"en diseno",               payment_status:"pendiente", created_at:"2025-01-15T11:00:00", order_type:"orden normal" },
+  { id:"ORD-003", client_name:"Tienda Moda Urbana",    description:"Catalogo temporada verano A4",     material:"Papel Fotografico",price:8900,  status:"pendiente de cotizacion", payment_status:"pendiente", created_at:"2025-01-15T13:45:00", order_type:"orden 911" },
+  { id:"ORD-004", client_name:"Hotel Caribe Inn",      description:"Senalizacion interna",             material:"Acrilico",         price:12000, status:"completada",              payment_status:"pagado",    created_at:"2025-01-14T10:20:00", order_type:"orden normal" },
+  { id:"ORD-005", client_name:"Farmacia Salud Total",  description:"Rollup para feria de salud",       material:"Banner",           price:5500,  status:"en entrega",              payment_status:"parcial",   created_at:"2025-01-14T15:30:00", order_type:"orden normal" },
+  { id:"ORD-006", client_name:"Universidad INTEC",     description:"Flyers convocatoria graduacion",   material:"Papel Fotografico",price:6200,  status:"en cotizacion",           payment_status:"pendiente", created_at:"2025-01-13T08:00:00", order_type:"orden 911" },
+];
+
+// ─── COMPONENTES REUTILIZABLES ────────────────────────────────────────────────
+function StatusBadge({ status, type = "status" }) {
   const cfg = type === "status" ? STATUS_CONFIG[status] : PAYMENT_CONFIG[status];
-  if (!cfg) return <span style={{ color: C.textMuted, fontSize: 12 }}>{status || "---"}</span>;
+  if (!cfg) return <span style={{ color:"#8899B5", fontSize:12 }}>{status||"---"}</span>;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 20, background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 600, letterSpacing: "0.02em", whiteSpace: "nowrap", fontFamily: "Poppins, sans-serif" }}>
-      {type === "status" && <span style={{ width: 5, height: 5, borderRadius: "50%", background: cfg.dot, flexShrink: 0 }} />}
+    <span className="ps-badge" style={{ background:cfg.bg, color:cfg.color, border:`1px solid ${cfg.color}20` }}>
+      {type==="status" && <span className="ps-badge-dot" style={{ background:cfg.dot }}/>}
       {cfg.label}
     </span>
   );
-};
+}
 
-// ─── METRIC CARD ─────────────────────────────────────────────────────────────
-const MetricCard = ({ icon, label, value, sub, accent, accentLight, trend }) => (
-  <div
-    style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "22px 24px", position: "relative", overflow: "hidden", transition: "box-shadow 0.2s, transform 0.2s", cursor: "default", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
-    onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 6px 24px rgba(0,0,0,0.08)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-    onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.04)"; e.currentTarget.style.transform = "translateY(0)"; }}
-  >
-    <div style={{ position: "absolute", top: -20, right: -20, width: 80, height: 80, borderRadius: "50%", background: accentLight, opacity: 0.7, pointerEvents: "none" }} />
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-      <div style={{ background: accentLight, borderRadius: 10, padding: 10, color: accent, display: "flex" }}>{icon}</div>
-      {trend !== undefined && (
-        <span style={{ fontSize: 11, color: "#15803D", fontWeight: 600, display: "flex", alignItems: "center", gap: 3, background: "#DCFCE7", padding: "3px 8px", borderRadius: 20 }}>
-          <Icon.TrendUp /> +{trend}%
-        </span>
-      )}
+function MetricCard({ icon, label, value, sub, accentIdx=0, trend }) {
+  const acc = CARD_ACCENTS[accentIdx];
+  return (
+    <div className="ps-card"
+      onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
+      onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
+      <div className="ps-card-glow" style={{ background:acc.glow }}/>
+      {trend !== undefined && <span className="ps-trend-badge"><Icon.TrendUp/> +{trend}%</span>}
+      <div className="ps-card-icon" style={{ background:acc.bg, color:acc.color }}>{icon}</div>
+      <div className="ps-card-value">{value}</div>
+      <div className="ps-card-label">{label}</div>
+      {sub && <div className="ps-card-sub" style={{ color:acc.color }}>{sub}</div>}
     </div>
-    <div style={{ fontSize: 26, fontWeight: 700, color: C.text, lineHeight: 1 }}>{value}</div>
-    <div style={{ fontSize: 13, color: C.textSub, marginTop: 5, fontWeight: 500 }}>{label}</div>
-    {sub && <div style={{ fontSize: 11, color: accent, marginTop: 4, fontWeight: 500 }}>{sub}</div>}
-  </div>
-);
+  );
+}
 
-// ─── MODAL ────────────────────────────────────────────────────────────────────
-const Modal = ({ open, onClose, title, children, wide }) => {
+function Modal({ open, onClose, title, children, wide }) {
   if (!open) return null;
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.4)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 20, width: "100%", maxWidth: wide ? 860 : 560, maxHeight: "90vh", overflowY: "auto", fontFamily: "Poppins, sans-serif", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", animation: "slideUp 0.25s ease" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "22px 28px", borderBottom: `1px solid ${C.border}` }}>
-          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: C.text }}>{title}</h2>
-          <button onClick={onClose}
-            style={{ background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: 7, cursor: "pointer", color: C.textSub, display: "flex", transition: "all 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.background = C.border; e.currentTarget.style.color = C.text; }}
-            onMouseLeave={e => { e.currentTarget.style.background = C.surfaceAlt; e.currentTarget.style.color = C.textSub; }}>
-            <Icon.Close />
-          </button>
+    <div className="ps-modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className={`ps-modal ${wide?"wide":"narrow"}`}>
+        <div className="ps-modal-stripe"/>
+        <div className="ps-modal-header">
+          <span className="ps-modal-title">{title}</span>
+          <button className="ps-modal-close" onClick={onClose}><Icon.Close/></button>
         </div>
-        <div style={{ padding: "24px 28px 28px" }}>{children}</div>
+        <div className="ps-modal-body">{children}</div>
       </div>
     </div>
   );
-};
+}
 
-const FormInput = ({ label, required, children }) => (
-  <div style={{ marginBottom: 18 }}>
-    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.textSub, marginBottom: 6, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-      {label}{required && <span style={{ color: C.pink, marginLeft: 3 }}>*</span>}
-    </label>
-    {children}
-  </div>
-);
-
-const iStyle = {
-  width: "100%", background: C.surface, border: `1.5px solid ${C.border}`,
-  borderRadius: 10, padding: "10px 13px", color: C.text,
-  fontSize: 14, fontFamily: "Poppins, sans-serif", outline: "none",
-  transition: "border-color 0.2s, box-shadow 0.2s", boxSizing: "border-box",
-};
-
-const focusIn  = e => { e.target.style.borderColor = C.blue; e.target.style.boxShadow = `0 0 0 3px ${C.blueLight}`; };
-const focusOut = e => { e.target.style.borderColor = C.border; e.target.style.boxShadow = "none"; };
-
-// ─── FLOW TRACKER ─────────────────────────────────────────────────────────────
-const FlowTracker = ({ status }) => {
-  const idx = FLOW_STEPS.findIndex(s => s.key === status);
+function Field({ label, required, optional, hint, children }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", marginBottom: 28, padding: "18px 20px", background: C.surfaceAlt, borderRadius: 12, border: `1px solid ${C.border}` }}>
-      {FLOW_STEPS.map((step, i) => {
-        const done = i < idx, active = i === idx;
+    <div className="ps-field">
+      <label className="ps-label">
+        {label}
+        {required && <span className="ps-label-req">*</span>}
+        {optional && <span className="ps-label-opt">(opcional)</span>}
+      </label>
+      {hint && <p className="ps-field-hint">{hint}</p>}
+      {children}
+    </div>
+  );
+}
+
+function FlowTracker({ status }) {
+  const idx = FLOW_STEPS.findIndex(s=>s.key===status);
+  return (
+    <div className="ps-flow">
+      {FLOW_STEPS.map((step,i) => {
+        const done=i<idx, active=i===idx;
         return (
-          <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < FLOW_STEPS.length - 1 ? 1 : "none" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-              <div style={{ width: 30, height: 30, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: active ? C.blue : done ? "#DCFCE7" : C.surface, border: `2px solid ${active ? C.blue : done ? C.green : C.border}`, fontSize: 11, fontWeight: 700, color: active ? "#fff" : done ? C.green : C.textMuted, transition: "all 0.3s" }}>
-                {done ? "v" : i + 1}
-              </div>
-              <span style={{ fontSize: 10, fontWeight: active ? 600 : 400, color: active ? C.blue : done ? C.green : C.textMuted, whiteSpace: "nowrap" }}>{step.label}</span>
+          <div key={step.key} style={{ display:"flex", alignItems:"center", flex:i<FLOW_STEPS.length-1?1:"none" }}>
+            <div className="ps-flow-step">
+              <div className={`ps-flow-circle ${done?"done":active?"active":""}`}>{done?"✓":i+1}</div>
+              <span className={`ps-flow-label ${done?"done":active?"active":""}`}>{step.label}</span>
             </div>
-            {i < FLOW_STEPS.length - 1 && <div style={{ flex: 1, height: 2, background: done ? "#BBF7D0" : C.border, margin: "0 4px", marginBottom: 18, transition: "background 0.3s" }} />}
+            {i<FLOW_STEPS.length-1&&<div className={`ps-flow-line ${done?"done":""}`}/>}
           </div>
         );
       })}
     </div>
   );
-};
+}
+
+// ─── MULTI MATERIAL SELECTOR ──────────────────────────────────────────────────
+function MultiMaterialSelector({ selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const toggle = (mat) => {
+    onChange(selected.includes(mat) ? selected.filter(m=>m!==mat) : [...selected, mat]);
+  };
+  const remove = (mat) => onChange(selected.filter(m=>m!==mat));
+
+  return (
+    <div className="ps-multimat" ref={ref}>
+      {/* Chips + trigger */}
+      <div className={`ps-multimat-box ${open?"focused":""}`} onClick={() => setOpen(p=>!p)}>
+        {selected.length === 0
+          ? <span className="ps-multimat-placeholder">Seleccionar materiales...</span>
+          : selected.map(m => (
+            <span key={m} className="ps-chip">
+              {m}
+              <button className="ps-chip-remove" onClick={e=>{e.stopPropagation();remove(m);}}><Icon.X/></button>
+            </span>
+          ))
+        }
+        <span className="ps-multimat-arrow"><Icon.ChevronDown/></span>
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div className="ps-multimat-dropdown">
+          {MATERIALS.map(mat => (
+            <div key={mat} className={`ps-multimat-option ${selected.includes(mat)?"selected":""}`} onClick={()=>toggle(mat)}>
+              <span className="ps-multimat-check">{selected.includes(mat)?"✓":""}</span>
+              {mat}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── UPLOAD FIELD ─────────────────────────────────────────────────────────────
+function UploadField({ fileRef, previewUrl, fileName, onFileChange, onRemove, onChangeClick, accept="image/*", maxMB=5 }) {
+  return !previewUrl ? (
+    <div className="ps-upload-zone" onClick={()=>fileRef.current?.click()}>
+      <div className="ps-upload-icon"><Icon.Upload/></div>
+      <p className="ps-upload-title">Haz clic para seleccionar un archivo</p>
+      <p className="ps-upload-sub">{accept==="image/*"?"PNG, JPG, WEBP":"PDF, PNG, JPG"} &mdash; max. {maxMB} MB</p>
+      <input ref={fileRef} type="file" accept={accept} style={{display:"none"}} onChange={onFileChange}/>
+    </div>
+  ) : (
+    <div className="ps-preview-wrap">
+      {accept==="image/*"
+        ? <img src={previewUrl} alt="preview" className="ps-preview-img"/>
+        : (
+          <div className="ps-file-preview-box">
+            <Icon.Receipt/>
+            <span className="ps-file-preview-name">{fileName}</span>
+          </div>
+        )
+      }
+      <div className="ps-preview-overlay">
+        <div>
+          <p className="ps-preview-file-label">Archivo seleccionado</p>
+          <p className="ps-preview-file-name">{fileName}</p>
+        </div>
+        <div className="ps-preview-actions">
+          <button className="ps-preview-change-btn" onClick={onChangeClick}>Cambiar</button>
+          <button className="ps-preview-del-btn" onClick={onRemove}><Icon.Trash/></button>
+        </div>
+      </div>
+      <input ref={fileRef} type="file" accept={accept} style={{display:"none"}} onChange={onFileChange}/>
+    </div>
+  );
+}
 
 // ─── CREATE ORDER MODAL ───────────────────────────────────────────────────────
-const CreateOrderModal = ({ open, onClose, onCreated, userId }) => {
-  const [form, setForm] = useState({ client_name: "", description: "", material: "", size: "", quantity: "", order_type: "", preview_image: "" });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+const EMPTY_FORM = {
+  client_name:   "",
+  client_phone:  "",
+  description:   "",
+  materials:     [],       // array — multi-select
+  order_type:    "",       // "orden normal" | "orden 911"
+  design_type:   "",       // "interno" | "externo"
+  delivery_date: "",       // ISO date string o "" (indefinido)
+  indefinido:    false,    // si true, fecha queda como indefinida
+};
+
+function CreateOrderModal({ open, onClose, onCreated, userId }) {
+  const previewRef    = useRef(null);
+  const facturaRef    = useRef(null);
+  const disenoRef     = useRef(null);
+
+  const [form, setForm]               = useState(EMPTY_FORM);
+  const [previewFile, setPreviewFile] = useState(null);
+  const [previewUrl, setPreviewUrl]   = useState(null);
+  const [facturaFile, setFacturaFile] = useState(null);
+  const [facturaUrl, setFacturaUrl]   = useState(null);
+  const [disenoFile, setDisenoFile]   = useState(null);
+  const [disenoUrl, setDisenoUrl]     = useState(null);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState("");
+
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
-  const handleSubmit = async () => {
-    if (!form.client_name || !form.description || !form.material || !form.quantity) {
-      setError("Por favor completa los campos requeridos."); return;
+  // ── File handler factory ─────────────────────────────────────────────────
+  const makeFileHandler = (setFile, setUrl, type="image") => (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const isImg = file.type.startsWith("image/");
+    const isPdf = file.type === "application/pdf";
+    if (type==="image" && !isImg) { setError("Solo se permiten archivos de imagen."); return; }
+    if (type==="doc" && !isImg && !isPdf) { setError("Solo se permiten imágenes o PDF."); return; }
+    if (file.size > 8*1024*1024) { setError("El archivo no puede superar 8 MB."); return; }
+    setError("");
+    setFile(file);
+    if (isImg) {
+      const reader = new FileReader();
+      reader.onload = ev => setUrl(ev.target.result);
+      reader.readAsDataURL(file);
+    } else {
+      setUrl("pdf"); // indicador de que hay un pdf
     }
+  };
+
+  const makeRemover = (setFile, setUrl, ref) => () => {
+    setFile(null); setUrl(null);
+    if (ref.current) ref.current.value = "";
+  };
+
+  // ── Upload helper ──────────────────────────────────────────────────────
+  const uploadFile = async (file, bucket, prefix) => {
+    if (!file) return null;
+    const ext  = file.name.split(".").pop();
+    const path = `${prefix}/${Date.now()}_${userId}.${ext}`;
+    const { error: upErr } = await supabase.storage.from(bucket).upload(path, file);
+    if (upErr) { console.warn("Upload error:", upErr.message); return null; }
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    return data?.publicUrl || null;
+  };
+
+  // ── Submit ─────────────────────────────────────────────────────────────
+  const handleSubmit = async () => {
+    if (!form.client_name)          { setError("El nombre del cliente es requerido."); return; }
+    if (!form.description)          { setError("La descripcion del trabajo es requerida."); return; }
+    if (form.materials.length === 0){ setError("Selecciona al menos un material."); return; }
+    if (!form.order_type)           { setError("Selecciona el tipo de orden."); return; }
+    if (!form.design_type)          { setError("Indica si el diseno es interno o externo."); return; }
+
     setLoading(true); setError("");
+
+    const [previewPublicUrl, facturaPublicUrl, disenoPublicUrl] = await Promise.all([
+      uploadFile(previewFile, "order-previews", "previews"),
+      uploadFile(facturaFile, "order-docs",     "facturas"),
+      uploadFile(disenoFile,  "order-designs",  "disenos"),
+    ]);
+
     const payload = {
-      client_name: form.client_name.trim(), description: form.description.trim(),
-      material: form.material, size: form.size, quantity: parseInt(form.quantity),
-      order_type: form.order_type || "general",
-      status: "pendiente de cotizacion", payment_status: "pendiente",
-      seller_id: userId, created_by: userId,
-      preview_image: form.preview_image || null,
+      client_name:    form.client_name.trim(),
+      client_phone:   form.client_phone.trim() || null,
+      description:    form.description.trim(),
+      material:       form.materials.join(", "),
+      order_type:     form.order_type,
+      design_type:    form.design_type,
+      delivery_date:  form.indefinido ? null : (form.delivery_date || null),
+      status:         "pendiente de cotizacion",
+      payment_status: "pendiente",
+      seller_id:      userId,
+      created_by:     userId,
+      preview_image:  previewPublicUrl,
+      factura_image:  facturaPublicUrl,
+      diseno_externo: disenoPublicUrl,
     };
+
     const { error: err } = await supabase.from("orders").insert([payload]);
     setLoading(false);
     if (err) { setError("Error al crear la orden: " + err.message); return; }
-    setForm({ client_name: "", description: "", material: "", size: "", quantity: "", order_type: "", preview_image: "" });
-    onCreated?.(); onClose();
+    handleClose(); onCreated?.();
   };
 
+  const handleClose = () => {
+    setForm(EMPTY_FORM);
+    setPreviewFile(null); setPreviewUrl(null);
+    setFacturaFile(null); setFacturaUrl(null);
+    setDisenoFile(null);  setDisenoUrl(null);
+    setError(""); onClose();
+  };
+
+  const isExterno = form.design_type === "externo";
+
   return (
-    <Modal open={open} onClose={onClose} title="Nueva Orden">
-      {error && <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 13, color: "#B91C1C" }}>{error}</div>}
-      <div style={{ height: 3, background: `linear-gradient(90deg, ${C.blue}, ${C.pink})`, borderRadius: 4, marginBottom: 22 }} />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 18px" }}>
-        <div style={{ gridColumn: "1/-1" }}>
-          <FormInput label="Nombre del Cliente" required>
-            <input style={iStyle} placeholder="Ej: Empresa ABC" value={form.client_name} onChange={e => set("client_name", e.target.value)} onFocus={focusIn} onBlur={focusOut} />
-          </FormInput>
+    <Modal open={open} onClose={handleClose} title="Nueva Orden">
+      {error && <div className="ps-form-error">{error}</div>}
+
+      {/* ─ Sección 1: Datos del cliente ─ */}
+      <div className="ps-form-section-title">
+        <span className="ps-form-section-num">1</span> Datos del cliente
+      </div>
+      <div className="ps-form-grid">
+        <div className="col-full">
+          <Field label="Nombre del cliente" required>
+            <input className="ps-form-input" placeholder="Ej: Empresa ABC"
+              value={form.client_name} onChange={e=>set("client_name",e.target.value)}/>
+          </Field>
         </div>
-        <div style={{ gridColumn: "1/-1" }}>
-          <FormInput label="Descripcion del trabajo" required>
-            <textarea style={{ ...iStyle, minHeight: 80, resize: "vertical" }} placeholder="Describe el trabajo requerido..." value={form.description} onChange={e => set("description", e.target.value)} onFocus={focusIn} onBlur={focusOut} />
-          </FormInput>
-        </div>
-        <FormInput label="Material" required>
-          <div style={{ position: "relative" }}>
-            <select style={{ ...iStyle, appearance: "none", paddingRight: 34, cursor: "pointer" }} value={form.material} onChange={e => set("material", e.target.value)} onFocus={focusIn} onBlur={focusOut}>
-              <option value="">Seleccionar...</option>
-              {MATERIALS.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <span style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", color: C.textMuted, pointerEvents: "none" }}><Icon.ChevronDown /></span>
-          </div>
-        </FormInput>
-        <FormInput label="Tamano / Dimensiones">
-          <div style={{ position: "relative" }}>
-            <select style={{ ...iStyle, appearance: "none", paddingRight: 34, cursor: "pointer" }} value={form.size} onChange={e => set("size", e.target.value)} onFocus={focusIn} onBlur={focusOut}>
-              <option value="">Seleccionar...</option>
-              {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <span style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", color: C.textMuted, pointerEvents: "none" }}><Icon.ChevronDown /></span>
-          </div>
-        </FormInput>
-        <FormInput label="Cantidad" required>
-          <input style={iStyle} type="number" min="1" placeholder="1" value={form.quantity} onChange={e => set("quantity", e.target.value)} onFocus={focusIn} onBlur={focusOut} />
-        </FormInput>
-        <FormInput label="Tipo de orden">
-          <input style={iStyle} placeholder="Ej: banner, flyer, rollup..." value={form.order_type} onChange={e => set("order_type", e.target.value)} onFocus={focusIn} onBlur={focusOut} />
-        </FormInput>
-        <div style={{ gridColumn: "1/-1" }}>
-          <FormInput label="Preview / Referencia visual">
-            <div style={{ border: `1.5px dashed ${C.border}`, borderRadius: 12, padding: 16, background: C.surfaceAlt, transition: "border-color 0.2s" }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = C.blue}
-              onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
-              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-                <div style={{ background: C.blueLight, borderRadius: 8, padding: 8, color: C.blue, display: "flex" }}><Icon.Image /></div>
-                <div>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: C.text }}>Imagen de referencia</p>
-                  <p style={{ margin: 0, fontSize: 11, color: C.textMuted }}>Pega la URL de la imagen aqui</p>
-                </div>
-              </div>
-              <input style={{ ...iStyle, fontSize: 12 }} placeholder="https://..." value={form.preview_image} onChange={e => set("preview_image", e.target.value)} onFocus={focusIn} onBlur={focusOut} />
+        <div className="col-full">
+          <Field label="Telefono / Contacto" optional hint="WhatsApp o numero de contacto del cliente">
+            <div className="ps-input-icon-wrap">
+              <span className="ps-input-icon"><Icon.Phone/></span>
+              <input className="ps-form-input with-icon" placeholder="Ej: 809-555-1234"
+                value={form.client_phone} onChange={e=>set("client_phone",e.target.value)}/>
             </div>
-          </FormInput>
+          </Field>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
-        <button onClick={onClose} style={{ flex: 1, background: C.surfaceAlt, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "11px", color: C.textSub, fontFamily: "Poppins, sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
-        <button onClick={handleSubmit} disabled={loading} style={{ flex: 2, background: loading ? C.surfaceAlt : C.blue, border: "none", borderRadius: 10, padding: "11px", color: loading ? C.textMuted : "#fff", fontFamily: "Poppins, sans-serif", fontWeight: 700, fontSize: 13, cursor: loading ? "not-allowed" : "pointer", boxShadow: loading ? "none" : "0 4px 14px rgba(14,165,233,0.3)" }}>
-          {loading ? "Creando orden..." : "Crear Orden"}
+
+      {/* ─ Sección 2: Detalles del trabajo ─ */}
+      <div className="ps-form-section-title">
+        <span className="ps-form-section-num">2</span> Detalles del trabajo
+      </div>
+      <div className="ps-form-grid">
+        <div className="col-full">
+          <Field label="Descripcion del trabajo" required>
+            <textarea className="ps-form-input textarea" placeholder="Describe el trabajo solicitado por el cliente..."
+              value={form.description} onChange={e=>set("description",e.target.value)}/>
+          </Field>
+        </div>
+
+        {/* Multi-material */}
+        <div className="col-full">
+          <Field label="Materiales" required hint="Puedes seleccionar más de un material">
+            <MultiMaterialSelector selected={form.materials} onChange={v=>set("materials",v)}/>
+          </Field>
+        </div>
+
+        {/* Tipo de orden — solo 2 opciones */}
+        <div className="col-full">
+          <Field label="Tipo de orden" required>
+            <div className="ps-order-type-group">
+              {[
+                { val:"orden normal", label:"Orden Normal", desc:"Flujo estándar de produccion" },
+                { val:"orden 911",    label:"Orden 911",    desc:"Urgente — prioridad maxima",  urgent:true },
+              ].map(opt => (
+                <label key={opt.val} className={`ps-order-type-card ${form.order_type===opt.val?"selected":""} ${opt.urgent?"urgent":""}`}>
+                  <input type="radio" name="order_type" value={opt.val}
+                    checked={form.order_type===opt.val}
+                    onChange={()=>set("order_type",opt.val)}
+                    style={{display:"none"}}/>
+                  <div className="ps-order-type-label">{opt.label}</div>
+                  <div className="ps-order-type-desc">{opt.desc}</div>
+                </label>
+              ))}
+            </div>
+          </Field>
+        </div>
+
+        {/* Tipo de diseño — afecta visibilidad de campo externo */}
+        <div className="col-full">
+          <Field label="Tipo de diseno" required>
+            <div className="ps-order-type-group">
+              {[
+                { val:"interno", label:"Diseno Interno",  desc:"El diseno lo realiza NeonPrint" },
+                { val:"externo", label:"Diseno Externo",  desc:"El cliente entrega su diseno" },
+              ].map(opt => (
+                <label key={opt.val} className={`ps-order-type-card ${form.design_type===opt.val?"selected":""}`}>
+                  <input type="radio" name="design_type" value={opt.val}
+                    checked={form.design_type===opt.val}
+                    onChange={()=>set("design_type",opt.val)}
+                    style={{display:"none"}}/>
+                  <div className="ps-order-type-label">{opt.label}</div>
+                  <div className="ps-order-type-desc">{opt.desc}</div>
+                </label>
+              ))}
+            </div>
+          </Field>
+        </div>
+
+        {/* Fecha de entrega */}
+        <div className="col-full">
+          <Field label="Fecha de entrega" optional>
+            <div className="ps-date-row">
+              <div className="ps-input-icon-wrap" style={{ flex:1 }}>
+                <span className="ps-input-icon"><Icon.Calendar/></span>
+                <input
+                  className="ps-form-input with-icon"
+                  type="date"
+                  value={form.delivery_date}
+                  disabled={form.indefinido}
+                  onChange={e=>set("delivery_date",e.target.value)}
+                  style={{ opacity: form.indefinido ? 0.4 : 1 }}
+                />
+              </div>
+              <label className="ps-indefinido-check">
+                <input type="checkbox" checked={form.indefinido} onChange={e=>set("indefinido",e.target.checked)}/>
+                <span>Indefinido</span>
+              </label>
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      {/* ─ Sección 3: Archivos ─ */}
+      <div className="ps-form-section-title">
+        <span className="ps-form-section-num">3</span> Archivos adjuntos
+      </div>
+      <div className="ps-form-grid">
+
+        {/* Imagen de referencia (opcional) */}
+        <div className="col-full">
+          <Field label="Imagen de referencia / Preview" optional hint="Referencia visual del trabajo esperado">
+            <UploadField
+              fileRef={previewRef}
+              previewUrl={previewUrl}
+              fileName={previewFile?.name}
+              onFileChange={makeFileHandler(setPreviewFile, setPreviewUrl, "image")}
+              onRemove={makeRemover(setPreviewFile, setPreviewUrl, previewRef)}
+              onChangeClick={()=>previewRef.current?.click()}
+              accept="image/*"
+            />
+          </Field>
+        </div>
+
+
+        {/* Diseño externo — SOLO si design_type === "externo" */}
+        {isExterno && (
+          <div className="col-full">
+            <Field
+              label="Archivo de diseno del cliente"
+              optional
+              hint="El cliente entrego su diseno — subelo aqui para que el departamento de produccion lo reciba"
+            >
+              <div className="ps-upload-doc-tag design">
+                <Icon.Brush/> Diseno entregado por el cliente
+              </div>
+              <UploadField
+                fileRef={disenoRef}
+                previewUrl={disenoUrl}
+                fileName={disenoFile?.name}
+                onFileChange={makeFileHandler(setDisenoFile, setDisenoUrl, "doc")}
+                onRemove={makeRemover(setDisenoFile, setDisenoUrl, disenoRef)}
+                onChangeClick={()=>disenoRef.current?.click()}
+                accept="image/*,.pdf"
+              />
+            </Field>
+          </div>
+        )}
+      </div>
+
+      <div className="ps-form-actions">
+        <button className="ps-btn-cancel" onClick={handleClose}>Cancelar</button>
+        <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
+          {loading ? "Creando orden..." : "Crear Orden →"}
         </button>
       </div>
     </Modal>
   );
-};
+}
 
 // ─── ORDER DETAIL MODAL ───────────────────────────────────────────────────────
-const OrderDetailModal = ({ open, onClose, order }) => {
+function OrderDetailModal({ open, onClose, order }) {
   if (!order) return null;
-  const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
+  const created = new Date(order.created_at).toLocaleString("es-DO",{dateStyle:"medium",timeStyle:"short"});
   return (
-    <Modal open={open} onClose={onClose} title={`Orden - ${order.id}`} wide>
-      <FlowTracker status={order.status} />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
+    <Modal open={open} onClose={onClose} title={`Orden · ${order.id}`} wide>
+      <FlowTracker status={order.status}/>
+      <div className="ps-detail-grid">
         <div>
-          <p style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12, marginTop: 0 }}>Cliente & Trabajo</p>
-          <div style={{ background: C.surfaceAlt, borderRadius: 12, padding: 18, border: `1px solid ${C.border}`, marginBottom: 16 }}>
-            <p style={{ margin: "0 0 5px", fontSize: 17, fontWeight: 700, color: C.text }}>{order.client_name}</p>
-            <p style={{ margin: 0, fontSize: 13, color: C.textSub, lineHeight: 1.6 }}>{order.description}</p>
+          <p className="ps-detail-section-title">Cliente &amp; Trabajo</p>
+          <div className="ps-detail-box">
+            <p className="ps-detail-client-name">{order.client_name}</p>
+            {order.client_phone && (
+              <p style={{fontSize:12,color:"#4A5E80",marginBottom:6,display:"flex",alignItems:"center",gap:5}}>
+                <Icon.Phone/>{order.client_phone}
+              </p>
+            )}
+            <p className="ps-detail-client-desc">{order.description}</p>
           </div>
-          {[["Material", order.material], ["Tamano", order.size], ["Cantidad", order.quantity], ["Tipo", order.order_type]].map(([k, v]) => (
-            <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ fontSize: 13, color: C.textSub }}>{k}</span>
-              <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{v || "---"}</span>
+          {[
+            ["Material",       order.material],
+            ["Tipo de orden",  order.order_type],
+            ["Tipo de diseno", order.design_type],
+            ["Fecha entrega",  order.delivery_date || "Indefinida"],
+          ].map(([k,v])=>(
+            <div key={k} className="ps-detail-row">
+              <span className="ps-detail-row-label">{k}</span>
+              <span className="ps-detail-row-val">{v||"---"}</span>
             </div>
           ))}
         </div>
         <div>
-          <p style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12, marginTop: 0 }}>Estado & Pago</p>
-          <div style={{ background: C.surfaceAlt, borderRadius: 12, padding: 18, border: `1px solid ${C.border}`, marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <span style={{ fontSize: 13, color: C.textSub }}>Estado actual</span>
-              <StatusBadge status={order.status} />
+          <p className="ps-detail-section-title">Estado &amp; Pago</p>
+          <div className="ps-detail-box">
+            <div className="ps-detail-row" style={{borderBottom:"1px solid var(--border)"}}>
+              <span className="ps-detail-row-label">Estado actual</span>
+              <StatusBadge status={order.status}/>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <span style={{ fontSize: 13, color: C.textSub }}>Pago</span>
-              <StatusBadge status={order.payment_status} type="payment" />
+            <div className="ps-detail-row" style={{borderBottom:"1px solid var(--border)"}}>
+              <span className="ps-detail-row-label">Pago</span>
+              <StatusBadge status={order.payment_status} type="payment"/>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: C.textSub }}>Precio</span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: order.price ? C.blue : C.textMuted }}>
-                {order.price ? "RD$" + order.price.toLocaleString("es-DO") : "Sin cotizar"}
+            <div className="ps-detail-row" style={{border:"none",paddingBottom:0}}>
+              <span className="ps-detail-row-label">Precio</span>
+              <span className={`ps-detail-price ${!order.price?"none":""}`}>
+                {order.price?"RD$"+order.price.toLocaleString("es-DO"):"Sin cotizar"}
               </span>
             </div>
           </div>
-          <p style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Metadatos</p>
-          {[["Creada", created], ["ID", order.id]].map(([k, v]) => (
-            <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ fontSize: 13, color: C.textSub }}>{k}</span>
-              <span style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>{v}</span>
+          <p className="ps-detail-section-title" style={{marginTop:4}}>Metadatos</p>
+          {[["Creada",created],["ID orden",order.id]].map(([k,v])=>(
+            <div key={k} className="ps-detail-row">
+              <span className="ps-detail-row-label">{k}</span>
+              <span className="ps-detail-row-val" style={{fontSize:12}}>{v}</span>
             </div>
           ))}
-          {order.preview_image && (
-            <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16, padding: "10px 14px", background: C.blueLight, borderRadius: 10, border: "1px solid #BAE6FD", color: C.blueDark, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
-              <Icon.Image /> Ver imagen de referencia
-            </a>
+          {order.preview_image&&(
+            <div style={{marginTop:14}}>
+              <p className="ps-detail-section-title">Imagen de Referencia</p>
+              <a href={order.preview_image} target="_blank" rel="noreferrer">
+                <img src={order.preview_image} alt="preview" className="ps-detail-preview-img"/>
+              </a>
+            </div>
           )}
         </div>
       </div>
     </Modal>
   );
-};
+}
 
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
-function PageSeller() {
+export default function PageSeller() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab]     = useState("dashboard");
-  const [orders, setOrders]           = useState(MOCK_ORDERS);
-  const [loading, setLoading]         = useState(false);
-  const [search, setSearch]           = useState("");
-  const [filterStatus, setFilterStatus]   = useState("all");
+  const [activeTab,     setActiveTab]     = useState("dashboard");
+  const [orders,        setOrders]        = useState(MOCK_ORDERS);
+  const [loading,       setLoading]       = useState(false);
+  const [search,        setSearch]        = useState("");
+  const [filterStatus,  setFilterStatus]  = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
-  const [showCreate, setShowCreate]   = useState(false);
+  const [showCreate,    setShowCreate]    = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [user, setUser]               = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [user,          setUser]          = useState(null);
+  const [sidebarOpen,   setSidebarOpen]   = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) setUser(data.user);
+  useEffect(()=>{
+    (async()=>{
+      const {data}=await supabase.auth.getUser();
+      if(data?.user) setUser(data.user);
       fetchOrders();
     })();
-  }, []);
+  },[]);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async()=>{
     setLoading(true);
-    const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
-    if (!error && data?.length) setOrders(data);
+    const {data,error}=await supabase.from("orders").select("*").order("created_at",{ascending:false});
+    if(!error&&data?.length) setOrders(data);
     setLoading(false);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/");
-  };
+  const handleLogout=async()=>{ await supabase.auth.signOut(); navigate("/"); };
 
-  const today      = new Date().toDateString();
-  const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === today).length;
-  const inQuote     = orders.filter(o => ["pendiente de cotizacion", "en cotizacion"].includes(o.status)).length;
-  const inProd      = orders.filter(o => o.status === "en produccion").length;
-  const completed   = orders.filter(o => o.status === "completada").length;
+  const today        = new Date().toDateString();
+  const todayOrders  = orders.filter(o=>new Date(o.created_at).toDateString()===today).length;
+  const inQuote      = orders.filter(o=>["pendiente de cotizacion","en cotizacion"].includes(o.status)).length;
+  const inProd       = orders.filter(o=>o.status==="en produccion").length;
+  const completed    = orders.filter(o=>o.status==="completada").length;
 
-  const filtered = orders.filter(o => {
-    const q = search.toLowerCase();
-    return (
-      (!q || o.client_name?.toLowerCase().includes(q) || o.description?.toLowerCase().includes(q) || o.id?.toLowerCase().includes(q)) &&
-      (filterStatus  === "all" || o.status         === filterStatus) &&
-      (filterPayment === "all" || o.payment_status === filterPayment)
+  const filtered = orders.filter(o=>{
+    const q=search.toLowerCase();
+    return(
+      (!q||o.client_name?.toLowerCase().includes(q)||o.description?.toLowerCase().includes(q)||o.id?.toLowerCase().includes(q))&&
+      (filterStatus==="all"||o.status===filterStatus)&&
+      (filterPayment==="all"||o.payment_status===filterPayment)
     );
   });
 
-  const nav = [
-    { id: "dashboard", label: "Dashboard", icon: <Icon.Dashboard /> },
-    { id: "orders",    label: "Ordenes",   icon: <Icon.Orders />, badge: orders.length },
+  const nav=[
+    {id:"dashboard",label:"Dashboard",icon:<Icon.Dashboard/>},
+    {id:"orders",   label:"Ordenes",  icon:<Icon.Orders/>,badge:orders.length},
+  ];
+  const metrics=[
+    {icon:<Icon.Orders/>,  label:"Ordenes hoy",   value:todayOrders, sub:"Creadas por ti",        accentIdx:0, trend:12},
+    {icon:<Icon.Package/>, label:"En cotizacion",  value:inQuote,     sub:"Esperando precio",      accentIdx:1},
+    {icon:<Icon.Package/>, label:"En produccion",  value:inProd,      sub:"Siendo impresas",       accentIdx:2},
+    {icon:<Icon.Truck/>,   label:"Completadas",    value:completed,   sub:"Entregadas al cliente", accentIdx:3, trend:8},
   ];
 
   return (
-    <div style={{ display: "flex", height: "100vh", background: C.bg, fontFamily: "Poppins, sans-serif", color: C.text, overflow: "hidden" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: #F8F9FB; }
-        ::-webkit-scrollbar-thumb { background: #E4E9F0; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #CBD5E1; }
-        @keyframes slideUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
-        @keyframes fadeIn  { from { opacity:0; } to { opacity:1; } }
-        .row-np:hover td { background: #F1F4F8 !important; }
-        .nav-item-np { background: transparent; }
-        .nav-item-np:hover { background: #F1F4F8 !important; }
-        .btn-icon:hover { background: #F1F4F8 !important; color: #0F172A !important; border-color: #CBD5E1 !important; }
-        .detail-btn:hover { background: #0EA5E9 !important; color: #fff !important; border-color: #0EA5E9 !important; }
-        .new-order-sidebar:hover { background: #0EA5E9 !important; color: #fff !important; }
-      `}</style>
+    <div className="ps-root">
 
-      {/* SIDEBAR */}
-      <aside style={{ width: sidebarOpen ? 224 : 60, minWidth: sidebarOpen ? 224 : 60, background: "#FFFFFF", borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", transition: "width 0.25s ease, min-width 0.25s ease", overflow: "hidden", boxShadow: "2px 0 8px rgba(0,0,0,0.04)" }}>
-        {/* Logo */}
-        <div style={{ padding: "20px 14px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: `linear-gradient(135deg, ${C.blue}, ${C.pink})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#fff" }}>N</div>
-          {sidebarOpen && (
-            <div style={{ overflow: "hidden" }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: C.text, whiteSpace: "nowrap" }}>Neon<span style={{ color: C.blue }}>Print</span></div>
-              <div style={{ fontSize: 9, color: C.textMuted, whiteSpace: "nowrap", letterSpacing: "0.07em", textTransform: "uppercase" }}>Sistema de Ordenes</div>
+      {/* ── SIDEBAR ── */}
+      <aside className={`ps-sidebar ${sidebarOpen?"open":"closed"}`}>
+        <div className="ps-sidebar-logo">
+          <div className="ps-sidebar-logo-icon">N</div>
+          {sidebarOpen&&(
+            <div className="ps-sidebar-logo-text">
+              <div className="ps-sidebar-logo-title">Neon<span>Print</span></div>
+              <div className="ps-sidebar-logo-sub">Sistema de Ordenes</div>
             </div>
           )}
         </div>
-        {/* Role pill */}
-        {sidebarOpen && (
-          <div style={{ padding: "12px 14px 4px" }}>
-            <div style={{ background: C.blueLight, borderRadius: 7, padding: "5px 10px", fontSize: 10, color: C.blueDark, fontWeight: 700, textAlign: "center", letterSpacing: "0.05em" }}>VENDEDOR</div>
-          </div>
-        )}
-        {/* Nav */}
-        <nav style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 2 }}>
-          {nav.map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className="nav-item-np" style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 9, border: "none", cursor: "pointer", width: "100%", background: activeTab === item.id ? C.blueLight : "transparent", color: activeTab === item.id ? C.blue : C.textSub, fontFamily: "Poppins, sans-serif", fontWeight: activeTab === item.id ? 600 : 500, fontSize: 13, transition: "all 0.15s", borderLeft: `3px solid ${activeTab === item.id ? C.blue : "transparent"}`, whiteSpace: "nowrap", overflow: "hidden" }}>
-              <span style={{ flexShrink: 0 }}>{item.icon}</span>
-              {sidebarOpen && <span>{item.label}</span>}
-              {sidebarOpen && item.badge !== undefined && (
-                <span style={{ marginLeft: "auto", background: activeTab === item.id ? "#BAE6FD" : C.surfaceAlt, borderRadius: 20, padding: "1px 8px", fontSize: 11, color: activeTab === item.id ? C.blue : C.textMuted, fontWeight: 600 }}>{item.badge}</span>
+        {sidebarOpen&&<div className="ps-sidebar-role"><div className="ps-sidebar-role-badge">● VENDEDOR</div></div>}
+        <nav className="ps-sidebar-nav">
+          {nav.map(item=>(
+            <button key={item.id} onClick={()=>setActiveTab(item.id)}
+              className={`ps-nav-btn ${activeTab===item.id?"active":""}`}>
+              <span style={{flexShrink:0}}>{item.icon}</span>
+              {sidebarOpen&&<span>{item.label}</span>}
+              {sidebarOpen&&item.badge!==undefined&&(
+                <span className={`ps-nav-badge ${activeTab===item.id?"active-badge":""}`}>{item.badge}</span>
               )}
             </button>
           ))}
-          <div style={{ height: 1, background: C.border, margin: "8px 4px" }} />
-          <button onClick={() => setShowCreate(true)} className="new-order-sidebar" style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 9, border: `1.5px solid ${C.blue}`, cursor: "pointer", width: "100%", background: C.blueLight, color: C.blue, fontFamily: "Poppins, sans-serif", fontWeight: 600, fontSize: 13, transition: "all 0.15s", whiteSpace: "nowrap", overflow: "hidden" }}>
-            <span style={{ flexShrink: 0 }}><Icon.Plus /></span>
-            {sidebarOpen && "Nueva Orden"}
+          <div className="ps-nav-divider"/>
+          <button className="ps-new-order-btn" onClick={()=>setShowCreate(true)}>
+            <span style={{flexShrink:0}}><Icon.Plus/></span>
+            {sidebarOpen&&"Nueva Orden"}
           </button>
         </nav>
-        {/* User + logout */}
-        <div style={{ padding: "10px 8px 14px", borderTop: `1px solid ${C.border}` }}>
-          {sidebarOpen && (
-            <div style={{ padding: "9px 10px", marginBottom: 4, borderRadius: 9, background: C.surfaceAlt, border: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.email?.split("@")[0] || "Vendedor"}</div>
-              <div style={{ fontSize: 11, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.email || "---"}</div>
+        <div className="ps-sidebar-footer">
+          {sidebarOpen&&(
+            <div className="ps-user-card">
+              <div className="ps-user-name">{user?.email?.split("@")[0]||"Vendedor"}</div>
+              <div className="ps-user-email">{user?.email||"---"}</div>
             </div>
           )}
-          <button onClick={handleLogout} className="nav-item-np" style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 9, border: "none", cursor: "pointer", width: "100%", background: "transparent", color: C.pink, fontFamily: "Poppins, sans-serif", fontWeight: 500, fontSize: 13, transition: "all 0.15s", whiteSpace: "nowrap", overflow: "hidden" }}>
-            <span style={{ flexShrink: 0 }}><Icon.Logout /></span>
-            {sidebarOpen && "Cerrar sesion"}
+          <button className="ps-logout-btn" onClick={handleLogout}>
+            <span style={{flexShrink:0}}><Icon.Logout/></span>
+            {sidebarOpen&&"Cerrar sesion"}
           </button>
         </div>
       </aside>
 
-      {/* MAIN */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Topbar */}
-        <header style={{ background: "#FFFFFF", borderBottom: `1px solid ${C.border}`, padding: "0 26px", height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <button onClick={() => setSidebarOpen(p => !p)} className="btn-icon" style={{ background: "transparent", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "7px 8px", cursor: "pointer", color: C.textSub, display: "flex", alignItems: "center", transition: "all 0.15s" }}>
-              <Icon.Menu />
-            </button>
+      {/* ── MAIN ── */}
+      <div className="ps-main-wrap">
+        <header className="ps-topbar">
+          <div className="ps-topbar-left">
+            <button className="ps-icon-btn" onClick={()=>setSidebarOpen(p=>!p)}><Icon.Menu/></button>
             <div>
-              <h1 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: C.text }}>{activeTab === "dashboard" ? "Dashboard" : "Gestion de Ordenes"}</h1>
-              <p style={{ margin: 0, fontSize: 11, color: C.textMuted }}>{new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+              <div className="ps-page-title">{activeTab==="dashboard"?"Dashboard":"Gestion de Ordenes"}</div>
+              <div className="ps-page-date">{new Date().toLocaleDateString("es-DO",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</div>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={fetchOrders} className="btn-icon" style={{ background: "transparent", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "7px 8px", cursor: "pointer", color: C.textSub, display: "flex", alignItems: "center", transition: "all 0.15s" }}>
-              <Icon.Refresh />
-            </button>
-            <button className="btn-icon" style={{ background: "transparent", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "7px 8px", cursor: "pointer", color: C.textSub, display: "flex", alignItems: "center", position: "relative", transition: "all 0.15s" }}>
-              <Icon.Bell />
-              <span style={{ position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: "50%", background: C.pink }} />
-            </button>
-            <div style={{ width: 1, height: 24, background: C.border }} />
-            <button onClick={() => setShowCreate(true)} style={{ display: "flex", alignItems: "center", gap: 7, background: C.blue, border: "none", borderRadius: 9, padding: "8px 16px", color: "#fff", fontFamily: "Poppins, sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer", transition: "all 0.15s", boxShadow: "0 2px 8px rgba(14,165,233,0.3)" }}
-              onMouseEnter={e => { e.currentTarget.style.background = C.blueDark; }}
-              onMouseLeave={e => { e.currentTarget.style.background = C.blue; }}>
-              <Icon.Plus /> Nueva Orden
+          <div className="ps-topbar-right">
+            <button className="ps-icon-btn" onClick={fetchOrders}><Icon.Refresh/></button>
+            <button className="ps-icon-btn"><Icon.Bell/><span className="ps-notif-dot"/></button>
+            <div className="ps-topbar-divider"/>
+            <button className="ps-topbar-new-btn" onClick={()=>setShowCreate(true)}>
+              <div className="ps-topbar-new-inner"><Icon.Plus/> Nueva Orden</div>
+              <div className="ps-topbar-new-stripe"/>
             </button>
           </div>
         </header>
 
-        {/* Content */}
-        <main style={{ flex: 1, overflow: "auto", padding: 26, animation: "fadeIn 0.3s ease" }}>
-
+        <main className="ps-main">
           {/* DASHBOARD */}
-          {activeTab === "dashboard" && (
-            <div>
-              <div style={{ marginBottom: 26 }}>
-                <h2 style={{ margin: "0 0 3px", fontSize: 21, fontWeight: 800, color: C.text }}>
-                  Buen dia, <span style={{ color: C.blue }}>{user?.email?.split("@")[0] || "Vendedor"}</span>
-                </h2>
-                <p style={{ margin: 0, fontSize: 13, color: C.textSub }}>Resumen de tu actividad de hoy.</p>
+          {activeTab==="dashboard"&&(
+            <>
+              <div className="ps-greeting">
+                <h2>Buen dia, <span>{user?.email?.split("@")[0]||"Vendedor"}</span> 👋</h2>
+                <p>Aqui tienes el resumen de tu actividad de hoy.</p>
               </div>
-
-              {/* 4 metric cards — no revenue */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14, marginBottom: 28 }}>
-                <MetricCard icon={<Icon.Orders />} label="Ordenes hoy"   value={todayOrders} sub="Creadas por ti"        accent={C.blue}   accentLight={C.blueLight} trend={12} />
-                <MetricCard icon={<Icon.Package />} label="En cotizacion" value={inQuote}    sub="Esperando precio"      accent="#F59E0B"  accentLight="#FEF3C7" />
-                <MetricCard icon={<Icon.Package />} label="En produccion" value={inProd}     sub="Siendo impresas"       accent={C.orange} accentLight="#FFF7ED" />
-                <MetricCard icon={<Icon.Truck />}   label="Completadas"   value={completed}  sub="Entregadas al cliente" accent={C.green}  accentLight="#DCFCE7" trend={8} />
+              <div className="ps-metrics">
+                {metrics.map((m,i)=><MetricCard key={i} {...m}/>)}
               </div>
-
-              {/* Recent orders */}
-              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
-                <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="ps-panel">
+                <div className="ps-panel-stripe"/>
+                <div className="ps-panel-header">
                   <div>
-                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>Ordenes recientes</h3>
-                    <p style={{ margin: 0, fontSize: 11, color: C.textMuted }}>Las ultimas ordenes creadas</p>
+                    <div className="ps-panel-title">Ordenes recientes</div>
+                    <div className="ps-panel-sub">Las ultimas ordenes ingresadas al sistema</div>
                   </div>
-                  <button onClick={() => setActiveTab("orders")} style={{ background: "none", border: "none", color: C.blue, fontFamily: "Poppins, sans-serif", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 7, transition: "background 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.background = C.blueLight}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    Ver todas <Icon.ArrowRight />
+                  <button className="ps-link-btn" onClick={()=>setActiveTab("orders")}>
+                    Ver todas <Icon.ArrowRight/>
                   </button>
                 </div>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: C.surfaceAlt }}>
-                      {["Cliente", "Descripcion", "Material", "Estado", ""].map(h => (
-                        <th key={h} style={{ padding: "10px 18px", textAlign: "left", fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                <div className="ps-table-wrap">
+                  <table className="ps-table">
+                    <thead><tr>{["Cliente","Descripcion","Material","Estado",""].map(h=><th key={h}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {orders.slice(0,5).map(o=>(
+                        <tr key={o.id} className="row-hover" onClick={()=>setSelectedOrder(o)}>
+                          <td className="td-pad td-name">{o.client_name}</td>
+                          <td className="td-pad td-desc">{o.description}</td>
+                          <td className="td-pad td-mat">{o.material}</td>
+                          <td className="td-pad"><StatusBadge status={o.status}/></td>
+                          <td className="td-pad">
+                            <button className="ps-detail-btn" onClick={e=>{e.stopPropagation();setSelectedOrder(o);}}>
+                              <Icon.ExternalLink/> Ver detalles
+                            </button>
+                          </td>
+                        </tr>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.slice(0, 5).map(o => (
-                      <tr key={o.id} className="row-np" style={{ cursor: "pointer", transition: "background 0.1s" }} onClick={() => setSelectedOrder(o)}>
-                        <td style={{ padding: "12px 18px", color: C.text, fontWeight: 600, borderBottom: `1px solid ${C.border}` }}>{o.client_name}</td>
-                        <td style={{ padding: "12px 18px", color: C.textSub, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderBottom: `1px solid ${C.border}` }}>{o.description}</td>
-                        <td style={{ padding: "12px 18px", color: C.textSub, borderBottom: `1px solid ${C.border}` }}>{o.material}</td>
-                        <td style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border}` }}><StatusBadge status={o.status} /></td>
-                        <td style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border}` }}>
-                          <button onClick={e => { e.stopPropagation(); setSelectedOrder(o); }} className="detail-btn" style={{ display: "inline-flex", alignItems: "center", gap: 5, background: C.blueLight, border: "1px solid #BAE6FD", borderRadius: 7, padding: "5px 10px", cursor: "pointer", color: C.blue, fontSize: 11, fontWeight: 600, fontFamily: "Poppins, sans-serif", whiteSpace: "nowrap", transition: "all 0.15s" }}>
-                            <Icon.ExternalLink /> Ver detalles
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            </>
           )}
 
           {/* ORDERS TAB */}
-          {activeTab === "orders" && (
-            <div>
-              <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
-                <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
-                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.textMuted }}><Icon.Search /></span>
-                  <input style={{ ...iStyle, paddingLeft: 36 }} placeholder="Buscar por cliente, descripcion o ID..." value={search} onChange={e => setSearch(e.target.value)} onFocus={focusIn} onBlur={focusOut} />
+          {activeTab==="orders"&&(
+            <>
+              <div className="ps-filters">
+                <div className="ps-search-wrap">
+                  <span className="ps-search-icon"><Icon.Search/></span>
+                  <input className="ps-input with-icon" placeholder="Buscar por cliente, descripcion o ID..."
+                    value={search} onChange={e=>setSearch(e.target.value)}/>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <div style={{ position: "relative" }}>
-                    <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ ...iStyle, appearance: "none", paddingRight: 32, minWidth: 160, cursor: "pointer" }} onFocus={focusIn} onBlur={focusOut}>
+                <div style={{display:"flex",gap:8}}>
+                  <div className="ps-select-wrap">
+                    <select className="ps-input" style={{minWidth:160,paddingRight:32,cursor:"pointer",appearance:"none"}}
+                      value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
                       <option value="all">Todos los estados</option>
-                      {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      {Object.entries(STATUS_CONFIG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
                     </select>
-                    <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: C.textMuted, pointerEvents: "none" }}><Icon.ChevronDown /></span>
+                    <span className="ps-select-arrow"><Icon.ChevronDown/></span>
                   </div>
-                  <div style={{ position: "relative" }}>
-                    <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} style={{ ...iStyle, appearance: "none", paddingRight: 32, minWidth: 130, cursor: "pointer" }} onFocus={focusIn} onBlur={focusOut}>
+                  <div className="ps-select-wrap">
+                    <select className="ps-input" style={{minWidth:130,paddingRight:32,cursor:"pointer",appearance:"none"}}
+                      value={filterPayment} onChange={e=>setFilterPayment(e.target.value)}>
                       <option value="all">Pago: Todos</option>
-                      {Object.entries(PAYMENT_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      {Object.entries(PAYMENT_CONFIG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
                     </select>
-                    <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: C.textMuted, pointerEvents: "none" }}><Icon.ChevronDown /></span>
+                    <span className="ps-select-arrow"><Icon.ChevronDown/></span>
                   </div>
                 </div>
-                <span style={{ fontSize: 12, color: C.textMuted, padding: "0 4px" }}>{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</span>
+                <span className="ps-filters-count">{filtered.length} resultado{filtered.length!==1?"s":""}</span>
               </div>
-
-              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
-                {loading ? (
-                  <div style={{ padding: 48, textAlign: "center", color: C.textMuted, fontSize: 13 }}>Cargando ordenes...</div>
-                ) : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                      <thead>
-                        <tr style={{ background: C.surfaceAlt }}>
-                          {["ID", "Cliente", "Descripcion", "Material", "Cant.", "Estado", "Pago", "Fecha", ""].map(h => (
-                            <th key={h} style={{ padding: "11px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
+              <div className="ps-panel">
+                <div className="ps-panel-stripe"/>
+                {loading ? <div className="ps-loading">Cargando ordenes...</div> : (
+                  <div className="ps-table-wrap">
+                    <table className="ps-table">
+                      <thead><tr>{["ID","Cliente","Descripcion","Material","Estado","Pago","Tipo","Fecha",""].map(h=><th key={h}>{h}</th>)}</tr></thead>
                       <tbody>
-                        {filtered.length === 0 ? (
-                          <tr><td colSpan={9} style={{ padding: 48, textAlign: "center", color: C.textMuted, fontSize: 13 }}>No se encontraron ordenes con los filtros aplicados.</td></tr>
-                        ) : filtered.map(o => (
-                          <tr key={o.id} className="row-np" style={{ transition: "background 0.1s" }}>
-                            <td style={{ padding: "12px 16px", color: C.textMuted, fontFamily: "monospace", fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{o.id?.slice(0, 8) || "---"}</td>
-                            <td style={{ padding: "12px 16px", color: C.text, fontWeight: 600, whiteSpace: "nowrap", borderBottom: `1px solid ${C.border}` }}>{o.client_name}</td>
-                            <td style={{ padding: "12px 16px", color: C.textSub, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderBottom: `1px solid ${C.border}` }}>{o.description}</td>
-                            <td style={{ padding: "12px 16px", color: C.textSub, borderBottom: `1px solid ${C.border}` }}>{o.material}</td>
-                            <td style={{ padding: "12px 16px", color: C.textSub, textAlign: "center", borderBottom: `1px solid ${C.border}` }}>{o.quantity}</td>
-                            <td style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}><StatusBadge status={o.status} /></td>
-                            <td style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}><StatusBadge status={o.payment_status} type="payment" /></td>
-                            <td style={{ padding: "12px 16px", color: C.textMuted, fontSize: 12, whiteSpace: "nowrap", borderBottom: `1px solid ${C.border}` }}>
-                              {new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}
-                            </td>
-                            <td style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
-                              <button onClick={() => setSelectedOrder(o)} className="detail-btn" style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.blueLight, border: "1px solid #BAE6FD", borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: C.blue, fontSize: 12, fontWeight: 600, fontFamily: "Poppins, sans-serif", whiteSpace: "nowrap", transition: "all 0.15s" }}>
-                                <Icon.Eye /> Ver detalles de la orden
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {filtered.length===0
+                          ? <tr><td colSpan={9} className="ps-table-empty">No se encontraron ordenes con los filtros aplicados.</td></tr>
+                          : filtered.map(o=>(
+                            <tr key={o.id} className="row-hover">
+                              <td className="td-pad td-id">{o.id?.slice(0,8)||"---"}</td>
+                              <td className="td-pad td-name">{o.client_name}</td>
+                              <td className="td-pad td-desc">{o.description}</td>
+                              <td className="td-pad td-mat">{o.material}</td>
+                              <td className="td-pad"><StatusBadge status={o.status}/></td>
+                              <td className="td-pad"><StatusBadge status={o.payment_status} type="payment"/></td>
+                              <td className="td-pad">
+                                {o.order_type==="orden 911"
+                                  ? <span className="ps-badge" style={{background:"#FEF2F2",color:"#991B1B",border:"1px solid #EF444420"}}>911</span>
+                                  : <span className="ps-badge" style={{background:"#E8EDF8",color:"#0f1e40",border:"1px solid #0f1e4020"}}>Normal</span>
+                                }
+                              </td>
+                              <td className="td-pad td-date">{new Date(o.created_at).toLocaleDateString("es-DO",{day:"2-digit",month:"short"})}</td>
+                              <td className="td-pad">
+                                <button className="ps-detail-btn" onClick={()=>setSelectedOrder(o)}>
+                                  <Icon.Eye/> Ver detalles de la orden
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        }
                       </tbody>
                     </table>
                   </div>
                 )}
               </div>
-            </div>
+            </>
           )}
         </main>
       </div>
 
-      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={fetchOrders} userId={user?.id} />
-      <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} />
+      <CreateOrderModal open={showCreate} onClose={()=>setShowCreate(false)} onCreated={fetchOrders} userId={user?.id}/>
+      <OrderDetailModal open={!!selectedOrder} onClose={()=>setSelectedOrder(null)} order={selectedOrder}/>
     </div>
   );
 }
-
-export default PageSeller;
