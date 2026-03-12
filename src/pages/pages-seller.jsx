@@ -33,6 +33,7 @@ const Icon = {
   Receipt: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16l3-2 2 2 2-2 2 2 2-2 3 2V4a2 2 0 0 0-2-2z" /><line x1="9" y1="9" x2="15" y2="9" /><line x1="9" y1="13" x2="15" y2="13" /></svg>),
   Brush: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 0 1 4.03 4.03l-8.06 8.08" /><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1 1 6.23 1 7 0 .48-.93.49-2.01 0-3.04a3.03 3.03 0 0 0-2-2z" /></svg>),
   X: () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>),
+  Edit: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
 };
 
 // ─── STATUS & PAYMENT CONFIG ──────────────────────────────────────────────────
@@ -51,6 +52,7 @@ const PAYMENT_CONFIG = {
   "Pending_Payment": { label: "Pago Pendiente", value: "Pending_Payment", color: "#92620A", bg: "#FEF3C7" },
   "parcial": { label: "Parcial", color: "#0369A1", bg: "#E0F2FE" },
 };
+
 const FLOW_STEPS = [
   { key: "pendiente de cotizacion", label: "Cotizacion" },
   { key: "en diseno", label: "Diseno" },
@@ -58,6 +60,7 @@ const FLOW_STEPS = [
   { key: "en entrega", label: "Entrega" },
   { key: "completada", label: "Completada" },
 ];
+
 const CARD_ACCENTS = [
   { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
   { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
@@ -87,6 +90,10 @@ const NeonLogo = ({ size = 54 }) => (
 // Eliminado MOCK_ORDERS: ya no se usan datos falsos
 
 // ─── COMPONENTES REUTILIZABLES ────────────────────────────────────────────────
+function ErrorBoundary({ children }) {
+  return children;
+}
+
 function StatusBadge({ status, type = "status" }) {
   const cfg = type === "status" ? STATUS_CONFIG[status] : PAYMENT_CONFIG[status];
   if (!cfg) return <span style={{ color: "#8899B5", fontSize: 12 }}>{status || "---"}</span>;
@@ -98,6 +105,7 @@ function StatusBadge({ status, type = "status" }) {
   );
 }
 
+// METRIC CARD COMPONENT
 function MetricCard({ icon, label, value, sub, accentIdx = 0, trend }) {
   const acc = CARD_ACCENTS[accentIdx];
   return (
@@ -259,58 +267,13 @@ const EMPTY_FORM = {
 };
 
 function CreateOrderModal({ open, onClose, onCreated, userId }) {
-  const previewRef = useRef(null);
-  const facturaRef = useRef(null);
-  const disenoRef = useRef(null);
   const formTopRef = useRef(null);
 
   const [form, setForm] = useState(EMPTY_FORM);
-  const [previewFile, setPreviewFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const [facturaFile, setFacturaFile] = useState(null);
-  const [facturaUrl, setFacturaUrl] = useState(null);
-  const [disenoFile, setDisenoFile] = useState(null);
-  const [disenoUrl, setDisenoUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-
-  // ── File handler factory ─────────────────────────────────────────────────
-  const makeFileHandler = (setFile, setUrl, type = "image") => (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const isImg = file.type.startsWith("image/");
-    const isPdf = file.type === "application/pdf";
-    if (type === "image" && !isImg) { setError("Solo se permiten archivos de imagen."); return; }
-    if (type === "doc" && !isImg && !isPdf) { setError("Solo se permiten imágenes o PDF."); return; }
-    if (file.size > 8 * 1024 * 1024) { setError("El archivo no puede superar 8 MB."); return; }
-    setError("");
-    setFile(file);
-    if (isImg) {
-      const reader = new FileReader();
-      reader.onload = ev => setUrl(ev.target.result);
-      reader.readAsDataURL(file);
-    } else {
-      setUrl("pdf"); // indicador de que hay un pdf
-    }
-  };
-
-  const makeRemover = (setFile, setUrl, ref) => () => {
-    setFile(null); setUrl(null);
-    if (ref.current) ref.current.value = "";
-  };
-
-  // ── Upload helper ──────────────────────────────────────────────────────
-  const uploadFile = async (file, bucket, prefix) => {
-    if (!file) return null;
-    const ext = file.name.split(".").pop();
-    const path = `${prefix}/${crypto.randomUUID()}.${ext}`;
-    const { error: upErr } = await supabase.storage.from(bucket).upload(path, file);
-    if (upErr) {throw new Error("Error subiendo archivo: " + upErr.message);}
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-    return data?.publicUrl || null;
-  };
 
   // ── Submit ─────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -321,11 +284,6 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
     if (!form.design_type) { setError("Indica si el diseno es interno o externo."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
 
     setLoading(true); setError("");
-
-    const [previewPublicUrl, disenoPublicUrl] = await Promise.all([
-      uploadFile(previewFile, "order-previews", "previews"),
-      uploadFile(disenoFile, "order-docs", "disenos"),
-    ]);
 
     const payload = {
       client_name: form.client_name.trim(),
@@ -339,8 +297,6 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
       payment_status: PAYMENT_CONFIG["Pending_Payment"].value, // estado inicial
       seller_id: userId,
       created_by: userId,
-      preview_image: previewPublicUrl,
-      order_file_url: disenoPublicUrl,
     };
 
     const { error: err } = await supabase.from("orders").insert([payload]);
@@ -351,13 +307,8 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
 
   const handleClose = () => {
     setForm(EMPTY_FORM);
-    setPreviewFile(null); setPreviewUrl(null);
-    setFacturaFile(null); setFacturaUrl(null);
-    setDisenoFile(null); setDisenoUrl(null);
     setError(""); onClose();
   };
-
-  const isExterno = form.design_type === "EXTERNAL_DESING";
 
   return (
     <Modal open={open} onClose={handleClose} title="Nueva Orden">
@@ -471,57 +422,191 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
         </div>
       </div>
 
-      {/* ─ Sección 3: Archivos ─ */}
-      <div className="ps-form-section-title">
-        <span className="ps-form-section-num">3</span> Archivos adjuntos
-      </div>
-      <div className="ps-form-grid">
 
-        {/* Imagen de referencia (opcional) */}
-        <div className="col-full">
-          <Field label="Imagen de referencia / Preview" optional hint="Referencia visual del trabajo esperado">
-            <UploadField
-              fileRef={previewRef}
-              previewUrl={previewUrl}
-              fileName={previewFile?.name}
-              onFileChange={makeFileHandler(setPreviewFile, setPreviewUrl, "image")}
-              onRemove={makeRemover(setPreviewFile, setPreviewUrl, previewRef)}
-              onChangeClick={() => previewRef.current?.click()}
-              accept="image/*"
-            />
-          </Field>
-        </div>
-
-
-        {/* Diseño externo — SOLO si design_type === "externo" */}
-        {isExterno && (
-          <div className="col-full">
-            <Field
-              label="Archivo de diseno del cliente"
-              optional
-              hint="El cliente entrego su diseno — subelo aqui para que el departamento de produccion lo reciba"
-            >
-              <div className="ps-upload-doc-tag design">
-                <Icon.Brush /> Diseno entregado por el cliente
-              </div>
-              <UploadField
-                fileRef={disenoRef}
-                previewUrl={disenoUrl}
-                fileName={disenoFile?.name}
-                onFileChange={makeFileHandler(setDisenoFile, setDisenoUrl, "doc")}
-                onRemove={makeRemover(setDisenoFile, setDisenoUrl, disenoRef)}
-                onChangeClick={() => disenoRef.current?.click()}
-                accept="image/*,.pdf"
-              />
-            </Field>
-          </div>
-        )}
-      </div>
 
       <div className="ps-form-actions">
         <button className="ps-btn-cancel" onClick={handleClose}>Cancelar</button>
         <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
           {loading ? "Creando orden..." : "Crear Orden →"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── EDIT ORDER MODAL ─────────────────────────────────────────────────────────
+function EditOrderModal({ open, onClose, order, onUpdated }) {
+  const formTopRef = useRef(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // Pre-fill form when order changes
+  useEffect(() => {
+    if (order) {
+      const materials = order.material ? order.material.split(", ").filter(m => m.trim()) : [];
+      const deliveryDate = order.delivery_date ? order.delivery_date.split("T")[0] : "";
+      setForm({
+        client_name: order.client_name || "",
+        client_phone: order.client_contact || "",
+        description: order.description || "",
+        materials: materials,
+        order_type: order.order_type || "",
+        design_type: order.order_design_type || "",
+        delivery_date: deliveryDate,
+        indefinido: !order.delivery_date,
+      });
+    }
+  }, [order]);
+
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const handleSubmit = async () => {
+    if (!form.client_name) { setError("El nombre del cliente es requerido."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
+    if (!form.description) { setError("La descripcion del trabajo es requerida."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
+    if (form.materials.length === 0) { setError("Selecciona al menos un material."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
+    if (!form.order_type) { setError("Selecciona el tipo de orden."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
+    if (!form.design_type) { setError("Indica si el diseno es interno o externo."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
+
+    setLoading(true); setError("");
+
+    const payload = {
+      client_name: form.client_name.trim(),
+      client_contact: form.client_phone.trim() || null,
+      description: form.description.trim(),
+      material: form.materials.join(", "),
+      order_type: form.order_type,
+      order_design_type: form.design_type,
+      delivery_date: form.indefinido ? null : (form.delivery_date || null),
+    };
+
+    const { error: err } = await supabase.from("orders").update(payload).eq("id", order.id);
+    setLoading(false);
+    if (err) { setError("Error al actualizar la orden: " + err.message); return; }
+    handleClose(); onUpdated?.();
+  };
+
+  const handleClose = () => {
+    setForm(EMPTY_FORM);
+    setError(""); onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Editar Orden">
+      <div ref={formTopRef} />
+      {error && <div className="ps-form-error">{error}</div>}
+
+      {/* ─ Sección 1: Datos del cliente ─ */}
+      <div className="ps-form-section-title">
+        <span className="ps-form-section-num">1</span> Datos del cliente
+      </div>
+      <div className="ps-form-grid">
+        <div className="col-full">
+          <Field label="Nombre del cliente" required>
+            <input className="ps-form-input" placeholder="Ej: Empresa ABC"
+              value={form.client_name} onChange={e => set("client_name", e.target.value)} />
+          </Field>
+        </div>
+        <div className="col-full">
+          <Field label="Telefono / Contacto" optional hint="WhatsApp o numero de contacto del cliente">
+            <div className="ps-input-icon-wrap">
+              <span className="ps-input-icon"><Icon.Phone /></span>
+              <input className="ps-form-input with-icon" placeholder="Ej: 809-555-1234"
+                value={form.client_phone} onChange={e => set("client_phone", e.target.value)} />
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      {/* ─ Sección 2: Detalles del trabajo ─ */}
+      <div className="ps-form-section-title">
+        <span className="ps-form-section-num">2</span> Detalles del trabajo
+      </div>
+      <div className="ps-form-grid">
+        <div className="col-full">
+          <Field label="Descripcion del trabajo" required>
+            <textarea className="ps-form-input textarea" placeholder="Describe el trabajo solicitado por el cliente..."
+              value={form.description} onChange={e => set("description", e.target.value)} />
+          </Field>
+        </div>
+
+        {/* Multi-material */}
+        <div className="col-full">
+          <Field label="Materiales" required hint="Puedes seleccionar más de un material">
+            <MultiMaterialSelector selected={form.materials} onChange={v => set("materials", v)} />
+          </Field>
+        </div>
+
+        {/* Tipo de orden */}
+        <div className="col-full">
+          <Field label="Tipo de orden" required>
+            <div className="ps-order-type-group">
+              {[
+                { val: "orden normal", label: "Orden Normal", desc: "Flujo estándar de produccion" },
+                { val: "orden 911", label: "Orden 911", desc: "Urgente — prioridad maxima", urgent: true },
+              ].map(opt => (
+                <label key={opt.val} className={`ps-order-type-card ${form.order_type === opt.val ? "selected" : ""} ${opt.urgent ? "urgent" : ""}`}>
+                  <input type="radio" name="order_type" value={opt.val}
+                    checked={form.order_type === opt.val}
+                    onChange={() => set("order_type", opt.val)}
+                    style={{ display: "none" }} />
+                  <div className="ps-order-type-label">{opt.label}</div>
+                  <div className="ps-order-type-desc">{opt.desc}</div>
+                </label>
+              ))}
+            </div>
+          </Field>
+        </div>
+
+        {/* Tipo de diseño */}
+        <div className="col-full">
+          <Field label="Tipo de diseno" required>
+            <div className="ps-order-type-group">
+              {[
+                { val: "INTERNAL_DESING", label: "Diseño Interno", desc: "El diseno lo realiza NeonPrint" },
+                { val: "EXTERNAL_DESING", label: "Diseño Externo", desc: "El cliente entrega su diseno" },
+              ].map(opt => (
+                <label key={opt.val} className={`ps-order-type-card ${form.design_type === opt.val ? "selected" : ""}`}>
+                  <input type="radio" name="design_type" value={opt.val}
+                    checked={form.design_type === opt.val}
+                    onChange={() => set("design_type", opt.val)}
+                    style={{ display: "none" }} />
+                  <div className="ps-order-type-label">{opt.label}</div>
+                  <div className="ps-order-type-desc">{opt.desc}</div>
+                </label>
+              ))}
+            </div>
+          </Field>
+        </div>
+
+        {/* Fecha de entrega */}
+        <div className="col-full">
+          <Field label="Fecha de entrega" optional>
+            <div className="ps-date-row">
+              <div className="ps-input-icon-wrap" style={{ flex: 1 }}>
+                <span className="ps-input-icon"><Icon.Calendar /></span>
+                <input
+                  className="ps-form-input with-icon"
+                  type="date"
+                  value={form.delivery_date}
+                  disabled={form.indefinido}
+                  onChange={e => set("delivery_date", e.target.value)}
+                  style={{ opacity: form.indefinido ? 0.4 : 1 }}
+                />
+              </div>
+              <label className="ps-indefinido-check">
+                <input type="checkbox" checked={form.indefinido} onChange={e => set("indefinido", e.target.checked)} />
+                <span>Indefinido</span>
+              </label>
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      <div className="ps-form-actions">
+        <button className="ps-btn-cancel" onClick={handleClose}>Cancelar</button>
+        <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
+          {loading ? "Actualizando orden..." : "Actualizar Orden →"}
         </button>
       </div>
     </Modal>
@@ -587,14 +672,90 @@ function OrderDetailModal({ open, onClose, order }) {
               <span className="ps-detail-row-val" style={{ fontSize: 12 }}>{v}</span>
             </div>
           ))}
-          {order.preview_image && (
+
+          {(order.preview_image || order.order_file_url) && (
             <div style={{ marginTop: 14 }}>
-              <p className="ps-detail-section-title">Imagen de Orden de trabajo</p>
-              <a href={order.preview_image} target="_blank" rel="noreferrer">
-                <img src={order.preview_image} alt="preview" className="ps-detail-preview-img" />
-              </a>
+              <p className="ps-detail-section-title">Archivos adjuntos</p>
+
+              {order.preview_image && (
+                <div style={{ marginBottom: 10 }}>
+                  <p style={{ fontSize: 11, color: "#8899B5", marginBottom: 5, display: "flex", alignItems: "center", gap: 5 }}>
+                    <Icon.Eye /> Imagen de referencia
+                  </p>
+                  <a href={order.preview_image} target="_blank" rel="noreferrer">
+                    <img src={order.preview_image} alt="preview" className="ps-detail-preview-img" />
+                  </a>
+                </div>
+              )}
+
+              {order.order_file_url && (
+                <div style={{ marginTop: order.preview_image ? 10 : 0 }}>
+                  <p style={{ fontSize: 11, color: "#8899B5", marginBottom: 5, display: "flex", alignItems: "center", gap: 5 }}>
+                    <Icon.Brush /> Diseño del cliente
+                  </p>
+                  {order.order_file_url.toLowerCase().endsWith(".pdf") ? (
+                <a
+                  href={order.order_file_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "10px 14px", borderRadius: 8,
+                    background: "#F8FAFF", border: "1px solid #DDE6F5",
+                    color: "#0f1e40", fontSize: 13, textDecoration: "none",
+                    fontWeight: 500
+                  }}
+                >
+                  <Icon.Receipt />
+                  Ver archivo PDF
+                  <span style={{ marginLeft: "auto" }}><Icon.ExternalLink /></span>
+                </a>
+              ) : (
+                <a href={order.order_file_url} target="_blank" rel="noreferrer">
+                  <img src={order.order_file_url} alt="diseno" className="ps-detail-preview-img" />
+                </a>
+              )}
             </div>
           )}
+        </div>
+)}
+      </div>
+    </div>
+    </Modal >
+  );
+}
+
+// ─── CANCEL ORDER CONFIRMATION MODAL ───────────────────────────────────────────
+function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Cancelar Orden">
+      <div style={{ minWidth: 350, paddingTop: 8 }}>
+        <p style={{ fontSize: 14, color: "#4A5E80", marginBottom: 16, lineHeight: 1.5 }}>
+          ¿Estás seguro de que deseas cancelar esta orden?{order && (
+            <span style={{ display: "block", marginTop: 8, fontWeight: 500, color: "#0f1e40" }}>
+              Orden #{order.id?.slice(0, 8)} - {order.client_name}
+            </span>
+          )}
+        </p>
+        <p style={{ fontSize: 13, color: "#8899B5", marginBottom: 20, lineHeight: 1.5 }}>
+          El estado de la orden cambiará a "Cancelada" y esta acción no podra ser revertida fácilmente.
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button 
+            className="ps-btn-cancel" 
+            onClick={onClose}
+            disabled={loading}
+          >
+            Mantener orden
+          </button>
+          <button 
+            className="ps-btn-submit" 
+            onClick={onConfirm}
+            disabled={loading}
+            style={{ background: "#EF4444", border: "1px solid #DC2626" }}
+          >
+            {loading ? "Cancelando..." : "Si, cancelar orden"}
+          </button>
         </div>
       </div>
     </Modal>
@@ -612,8 +773,11 @@ export default function PageSeller() {
   const [filterPayment, setFilterPayment] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [cancelingOrder, setCancelingOrder] = useState(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -636,9 +800,31 @@ export default function PageSeller() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
 
+  // ── Cancel Order Handler ───────────────────────────────────────────────────────
+  const handleCancelOrder = (order) => {
+    setCancelingOrder(order);
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!cancelingOrder) return;
+    
+    setCancelLoading(true);
+    const { error } = await supabase.from("orders").update({ status: "cancelada" }).eq("id", cancelingOrder.id);
+    setCancelLoading(false);
+    
+    if (error) {
+      alert("Error al cancelar la orden: " + error.message);
+      return;
+    }
+    
+    setCancelingOrder(null);
+    fetchOrders();
+  };
+
+  // ── Metrics Values ─────────────────────────────────────────────────────────────
   const today = new Date().toDateString();
   const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === today).length;
-  const inQuote = orders.filter(o => ["pendiente de cotizacion", "en cotizacion"].includes(o.status)).length;
+  const inQuote = orders.filter(o => ["Quote_Pending", "en cotizacion"].includes(o.status)).length;
   const inProd = orders.filter(o => o.status === "en produccion").length;
   const completed = orders.filter(o => o.status === "completada").length;
 
@@ -837,10 +1023,23 @@ export default function PageSeller() {
                                 }
                               </td>
                               <td className="td-pad td-date">{new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
-                              <td className="td-pad">
-                                <button className="ps-detail-btn" onClick={() => setSelectedOrder(o)}>
-                                  <Icon.Eye /> Ver detalles de la orden
+                              <td className="td-pad" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <button className="ps-detail-btn" onClick={() => setEditingOrder(o)} title="Editar orden">
+                                  <Icon.Edit /> Editar
                                 </button>
+                                <button className="ps-detail-btn" onClick={() => setSelectedOrder(o)} title="Ver detalles">
+                                  <Icon.Eye /> Ver
+                                </button>
+                                {o.status !== "cancelada" && (
+                                  <button 
+                                    className="ps-detail-btn" 
+                                    onClick={() => handleCancelOrder(o)} 
+                                    title="Cancelar orden"
+                                    style={{ background: "#FEE2E2", color: "#991B1B", border: "1px solid #FECACA" }}
+                                  >
+                                    <Icon.X /> Cancelar
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))
@@ -856,7 +1055,9 @@ export default function PageSeller() {
       </div>
 
       <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={fetchOrders} userId={user?.id} />
+      <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={fetchOrders} />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} />
+      <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
     </div>
   );
 }
