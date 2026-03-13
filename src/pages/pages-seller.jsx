@@ -37,6 +37,16 @@ const Icon = {
   Edit: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
   Archived: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" /></svg>),
   Check: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>),
+  ChevronLeft: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>),
+  ChevronRight: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>),
+  Clipboard: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" /></svg>),
+  Paintbrush: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.37 2.63a3.75 3.75 0 0 0-5.3 0l-.4.4a3.75 3.75 0 0 0 0 5.3l4.26 4.26a3.75 3.75 0 0 0 5.3 0l.4-.4a3.75 3.75 0 0 0 0-5.3l-4.26-4.26Z" /><path d="M9.41 2.63a3.75 3.75 0 0 1 5.3 0l.4.4a3.75 3.75 0 0 1 0 5.3l-4.26 4.26a3.75 3.75 0 0 1-5.3 0l-.4-.4a3.75 3.75 0 0 1 0-5.3l4.26-4.26Z" /></svg>),
+  FileText: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>),
+  Paperclip: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>),
+  Settings: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>),
+  Key: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m-3.5 3.5L12 12" /></svg>),
+  Clock: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>),
+  Package: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16.5 9.4-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>),
 };
 
 // ─── STATUS & PAYMENT CONFIG ──────────────────────────────────────────────────
@@ -695,24 +705,24 @@ function OrderDetailModal({ open, onClose, order }) {
               fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
               textTransform: "uppercase", letterSpacing: "0.07em",
               marginBottom: 14, margin: "0 0 14px 0"
-            }}>📋 Especificaciones</p>
+            }}>Especificaciones</p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {[
-                { label: "Material", value: order.material, icon: "🎨" },
-                { label: "Tipo de orden", value: order.order_type, icon: "📦" },
+                { label: "Material", value: order.material, icon: <Icon.Paintbrush /> },
+                { label: "Tipo de orden", value: order.order_type, icon: <Icon.Package /> },
                 { label: "Diseño", 
                   value: order.order_design_type === "INTERNAL_DESING" ? "Diseño interno" :
                          order.order_design_type === "EXTERNAL_DESING" ? "Diseño externo" : "---", 
-                  icon: "🖌️" },
-                { label: "Fecha entrega", value: order.delivery_date || "Indefinida", icon: "📅" },
+                  icon: <Icon.Edit /> },
+                { label: "Fecha entrega", value: order.delivery_date || "Indefinida", icon: <Icon.Calendar /> },
               ].map((item, i) => (
                 <div key={i} style={{
                   display: "grid", gridTemplateColumns: "28px 1fr auto",
                   gap: 10, alignItems: "center", paddingBottom: 11,
                   borderBottom: i < 3 ? "1px solid var(--border)" : "none"
                 }}>
-                  <div style={{ fontSize: 16 }}>{item.icon}</div>
+                  <div style={{ color: "var(--text-muted)" }}>{item.icon}</div>
                   <div>
                     <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 3px 0", fontWeight: 600 }}>
                       {item.label}
@@ -798,18 +808,18 @@ function OrderDetailModal({ open, onClose, order }) {
               fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
               textTransform: "uppercase", letterSpacing: "0.07em",
               marginBottom: 12
-            }}>⚙️ Información Sistema</p>
+            }}>Información del Sistema</p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
-                { label: "ID Orden", value: order.id?.slice(0, 8), icon: "🔐" },
-                { label: "Creada", value: created, icon: "🕐" },
+                { label: "ID Orden", value: order.id?.slice(0, 8), icon: <Icon.Key /> },
+                { label: "Creada", value: created, icon: <Icon.Clock /> },
               ].map((item, i) => (
                 <div key={i} style={{
                   display: "grid", gridTemplateColumns: "20px 1fr auto",
                   gap: 8, alignItems: "center"
                 }}>
-                  <span style={{ fontSize: 13 }}>{item.icon}</span>
+                  <span style={{ color: "var(--text-muted)" }}>{item.icon}</span>
                   <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
                     {item.label}
                   </p>
@@ -836,7 +846,7 @@ function OrderDetailModal({ open, onClose, order }) {
             fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
             textTransform: "uppercase", letterSpacing: "0.07em",
             marginBottom: 16
-          }}>📎 Archivos Adjuntos</p>
+          }}>Archivos Adjuntos</p>
 
           <div style={{ display: "grid", gridTemplateColumns: order.preview_image && order.order_file_url ? "1fr 1fr" : "1fr", gap: 16 }}>
             {order.preview_image && (
@@ -1132,7 +1142,7 @@ export default function PageSeller() {
     }
     
     setCancelingOrder(null);
-    fetchOrders();
+    fetchOrders(user?.id);
   };
 
 
@@ -1155,7 +1165,7 @@ export default function PageSeller() {
     }
 
     setArchivedingOrder(null);
-    fetchOrders();
+    fetchOrders(user?.id);
   };
 
   // ── Metrics Values ─────────────────────────────────────────────────────────────
@@ -1290,14 +1300,16 @@ export default function PageSeller() {
       <div className="ps-main-wrap">
         <header className="ps-topbar">
           <div className="ps-topbar-left">
-            <button className="ps-icon-btn" onClick={() => setSidebarOpen(p => !p)}><Icon.Menu /></button>
+            <button className="ps-icon-btn" onClick={() => setSidebarOpen(p => !p)}>
+              {sidebarOpen ? <Icon.ChevronLeft /> : <Icon.ChevronRight />}
+            </button>
             <div>
               <div className="ps-page-title">{activeTab === "dashboard" ? "Dashboard" : "Gestion de Ordenes"}</div>
               <div className="ps-page-date">{new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
             </div>
           </div>
           <div className="ps-topbar-right">
-            <button className="ps-icon-btn" onClick={fetchOrders}><Icon.Refresh /></button>
+            <button className="ps-icon-btn" onClick={() => fetchOrders(user?.id)}><Icon.Refresh /></button>
             <button className="ps-icon-btn"><Icon.Bell /><span className="ps-notif-dot" /></button>
             <div className="ps-topbar-divider" />
             <button className="ps-topbar-new-btn" onClick={() => setShowCreate(true)}>
@@ -1516,8 +1528,8 @@ export default function PageSeller() {
         </main>
       </div>
 
-      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={fetchOrders} userId={user?.id} />
-      <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={fetchOrders} />
+      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} />
+      <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} />
       <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
       <ArchivedOrderModal open={!!archivedingOrder} onClose={() => setArchivedingOrder(null)} order={archivedingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />

@@ -93,7 +93,7 @@
   flex-shrink: 0;
 }
 .ps-sidebar.open  { width: 230px; min-width: 230px; }
-.ps-sidebar.closed{ width: 62px;  min-width: 62px; }
+.ps-sidebar.closed{ width: 85px;  min-width: 85px; }
 
 /* Logo */
 .ps-sidebar-logo {
