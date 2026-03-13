@@ -1,4 +1,5 @@
 // SELLER'S HOME PAGE - ORDER DASHBOARD
+
 // IMPORT REACT  &  SUPABASE
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient";
@@ -34,17 +35,20 @@ const Icon = {
   Brush: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 0 1 4.03 4.03l-8.06 8.08" /><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1 1 6.23 1 7 0 .48-.93.49-2.01 0-3.04a3.03 3.03 0 0 0-2-2z" /></svg>),
   X: () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>),
   Edit: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
+  Archived: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" /></svg>),
+  Check: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>),
 };
 
 // ─── STATUS & PAYMENT CONFIG ──────────────────────────────────────────────────
 const STATUS_CONFIG = {
-  "Quote_Pending": { label: "Contización Pend.", value: "Quote_Pending", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
-  "en cotizacion": { label: "En Cotizacion", value: "en cotizacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
-  "en diseno": { label: "En Diseno", value: "en diseno", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
-  "en produccion": { label: "En Produccion", value: "en produccion", color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
+  "Quote_Pending": { label: "Cotización Pend.", value: "Quote_Pending", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
+  "en cotizacion": { label: "En Cotización", value: "en cotizacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
+  "en diseno": { label: "En Diseño", value: "en diseno", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
+  "en produccion": { label: "En Producción", value: "en produccion", color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
   "en entrega": { label: "En Entrega", value: "en entrega", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
   "completada": { label: "Completada", value: "completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
   "cancelada": { label: "Cancelada", value: "cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
+  "archivada": { label: "Archivada", value: "archivada", color: "#7C3AED", bg: "#EDE9FE", dot: "#8B5CF6" },
 };
 
 const PAYMENT_CONFIG = {
@@ -87,7 +91,7 @@ const NeonLogo = ({ size = 54 }) => (
   </div>
 );
 
-// Eliminado MOCK_ORDERS: ya no se usan datos falsos
+
 
 // ─── COMPONENTES REUTILIZABLES ────────────────────────────────────────────────
 function ErrorBoundary({ children }) {
@@ -617,115 +621,309 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
 function OrderDetailModal({ open, onClose, order }) {
   if (!order) return null;
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
+  const statusConfig = STATUS_CONFIG[order.status];
+  const paymentConfig = PAYMENT_CONFIG[order.payment_status];
+
   return (
-    <Modal open={open} onClose={onClose} title={`Orden · ${order.id?.slice(0, 8)}`} wide>
+    <Modal open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} wide>
+      {/* Flow Tracker */}
       <FlowTracker status={order.status} />
-      <div className="ps-detail-grid">
+
+      {/* Grid Principal */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: 22 }}>
+        
+        {/* COLUMNA IZQUIERDA — Cliente & Trabajo */}
         <div>
-          <p className="ps-detail-section-title">Cliente &amp; Trabajo</p>
-          <div className="ps-detail-box">
-            <p className="ps-detail-client-name">{order.client_name}</p>
-            {order.client_contact && (
-              <p style={{ fontSize: 12, color: "#4A5E80", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
-                <Icon.Phone />{order.client_contact}
+          {/* Card: Información del Cliente */}
+          <div style={{
+            background: "var(--surface-alt)",
+            border: "1.5px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            padding: 20,
+            marginBottom: 18,
+            position: "relative",
+            overflow: "hidden"
+          }}>
+            <div style={{
+              position: "absolute",
+              top: 0, right: 0,
+              width: 100, height: 100,
+              background: "linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, transparent 100%)",
+              borderRadius: "0 0 0 100px",
+              pointerEvents: "none"
+            }} /> 
+            
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
+              <div style={{
+                width: 50, height: 50,
+                borderRadius: "var(--radius-md)",
+                background: "linear-gradient(135deg, #06B6D4, #0f1e40)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#fff", fontSize: 22, fontWeight: 700,
+                flexShrink: 0
+              }}>
+                {order.client_name?.charAt(0)?.toUpperCase()}
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", margin: 0, marginBottom: 5 }}>
+                  {order.client_name}
+                </p>
+                {order.client_contact && (
+                  <p style={{ fontSize: 12, color: "var(--text-sub)", margin: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                    <Icon.Phone />{order.client_contact}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div style={{ paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+              <p style={{ fontSize: 13, color: "var(--text-sub)", lineHeight: 1.6, margin: 0 }}>
+                {order.description}
               </p>
-            )}
-            <p className="ps-detail-client-desc">{order.description}</p>
-          </div>
-          {[
-            ["Material", order.material],
-            ["Tipo de orden", order.order_type],
-            ["Tipo de diseno",
-              order.order_design_type === "INTERNAL_DESING" ? "Diseño interno" :
-                order.order_design_type === "EXTERNAL_DESING" ? "Diseño externo" : "---"
-            ],
-            ["Fecha entrega", order.delivery_date || "Indefinida"],
-          ].map(([k, v]) => (
-            <div key={k} className="ps-detail-row">
-              <span className="ps-detail-row-label">{k}</span>
-              <span className="ps-detail-row-val">{v || "---"}</span>
-            </div>
-          ))}
-        </div>
-        <div>
-          <p className="ps-detail-section-title">Estado &amp; Pago</p>
-          <div className="ps-detail-box">
-            <div className="ps-detail-row" style={{ borderBottom: "1px solid var(--border)" }}>
-              <span className="ps-detail-row-label">Estado actual</span>
-              <StatusBadge status={order.status} />
-            </div>
-            <div className="ps-detail-row" style={{ borderBottom: "1px solid var(--border)" }}>
-              <span className="ps-detail-row-label">Pago</span>
-              <StatusBadge status={order.payment_status} type="payment" />
-            </div>
-            <div className="ps-detail-row" style={{ border: "none", paddingBottom: 0 }}>
-              <span className="ps-detail-row-label">Precio</span>
-              <span className={`ps-detail-price ${!order.price ? "none" : ""}`}>
-                {order.price ? "RD$" + order.price.toLocaleString("es-DO") : "Sin cotizar"}
-              </span>
             </div>
           </div>
-          <p className="ps-detail-section-title" style={{ marginTop: 4 }}>Metadatos</p>
-          {[["Creada", created], ["ID orden", order.id?.slice(0, 8)]].map(([k, v]) => (
-            <div key={k} className="ps-detail-row">
-              <span className="ps-detail-row-label">{k}</span>
-              <span className="ps-detail-row-val" style={{ fontSize: 12 }}>{v}</span>
-            </div>
-          ))}
 
-          {(order.preview_image || order.order_file_url) && (
-            <div style={{ marginTop: 14 }}>
-              <p className="ps-detail-section-title">Archivos adjuntos</p>
+          {/* Card: Especificaciones del Trabajo */}
+          <div style={{
+            background: "var(--surface)",
+            border: "1.5px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            padding: 20,
+            marginBottom: 18
+          }}>
+            <p style={{
+              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+              textTransform: "uppercase", letterSpacing: "0.07em",
+              marginBottom: 14, margin: "0 0 14px 0"
+            }}>📋 Especificaciones</p>
 
-              {order.preview_image && (
-                <div style={{ marginBottom: 10 }}>
-                  <p style={{ fontSize: 11, color: "#8899B5", marginBottom: 5, display: "flex", alignItems: "center", gap: 5 }}>
-                    <Icon.Eye /> Imagen de referencia
-                  </p>
-                  <a href={order.preview_image} target="_blank" rel="noreferrer">
-                    <img src={order.preview_image} alt="preview" className="ps-detail-preview-img" />
-                  </a>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {[
+                { label: "Material", value: order.material, icon: "🎨" },
+                { label: "Tipo de orden", value: order.order_type, icon: "📦" },
+                { label: "Diseño", 
+                  value: order.order_design_type === "INTERNAL_DESING" ? "Diseño interno" :
+                         order.order_design_type === "EXTERNAL_DESING" ? "Diseño externo" : "---", 
+                  icon: "🖌️" },
+                { label: "Fecha entrega", value: order.delivery_date || "Indefinida", icon: "📅" },
+              ].map((item, i) => (
+                <div key={i} style={{
+                  display: "grid", gridTemplateColumns: "28px 1fr auto",
+                  gap: 10, alignItems: "center", paddingBottom: 11,
+                  borderBottom: i < 3 ? "1px solid var(--border)" : "none"
+                }}>
+                  <div style={{ fontSize: 16 }}>{item.icon}</div>
+                  <div>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 3px 0", fontWeight: 600 }}>
+                      {item.label}
+                    </p>
+                    <p style={{ fontSize: 13, color: "var(--text)", margin: 0, fontWeight: 600 }}>
+                      {item.value}
+                    </p>
+                  </div>
                 </div>
-              )}
-
-              {order.order_file_url && (
-                <div style={{ marginTop: order.preview_image ? 10 : 0 }}>
-                  <p style={{ fontSize: 11, color: "#8899B5", marginBottom: 5, display: "flex", alignItems: "center", gap: 5 }}>
-                    <Icon.Brush /> Diseño del cliente
-                  </p>
-                  {order.order_file_url.toLowerCase().endsWith(".pdf") ? (
-                <a
-                  href={order.order_file_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    padding: "10px 14px", borderRadius: 8,
-                    background: "#F8FAFF", border: "1px solid #DDE6F5",
-                    color: "#0f1e40", fontSize: 13, textDecoration: "none",
-                    fontWeight: 500
-                  }}
-                >
-                  <Icon.Receipt />
-                  Ver archivo PDF
-                  <span style={{ marginLeft: "auto" }}><Icon.ExternalLink /></span>
-                </a>
-              ) : (
-                <a href={order.order_file_url} target="_blank" rel="noreferrer">
-                  <img src={order.order_file_url} alt="diseno" className="ps-detail-preview-img" />
-                </a>
-              )}
+              ))}
             </div>
-          )}
+          </div>
         </div>
-)}
+
+        {/* COLUMNA DERECHA — Estado & Pago */}
+        <div>
+          {/* Card: Estado Actual */}
+          <div style={{
+            background: "var(--surface)",
+            border: "1.5px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            padding: 20,
+            marginBottom: 18,
+            position: "relative",
+            overflow: "hidden"
+          }}>
+            <div style={{
+              position: "absolute", top: 0, right: -30,
+              width: 100, height: 100,
+              background: statusConfig?.bg || "rgba(0,0,0,0.02)",
+              borderRadius: "50%",
+              pointerEvents: "none"
+            }} />
+
+            <p style={{
+              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+              textTransform: "uppercase", letterSpacing: "0.07em",
+              marginBottom: 14
+            }}>📊 Estado & Pago</p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 7px 0", fontWeight: 600 }}>
+                  ESTADO ACTUAL
+                </p>
+                <StatusBadge status={order.status} />
+              </div>
+
+              <div>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 7px 0", fontWeight: 600 }}>
+                  ESTADO DE PAGO
+                </p>
+                <StatusBadge status={order.payment_status} type="payment" />
+              </div>
+
+              <div style={{
+                background: "var(--primary-light)",
+                border: `1.5px solid ${statusConfig?.color || "var(--primary)"}20`,
+                borderRadius: "var(--radius-md)",
+                padding: 14,
+              }}>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 5px 0", fontWeight: 600 }}>
+                  PRECIO
+                </p>
+                <p style={{
+                  fontSize: 22, fontWeight: 800, color: "var(--primary)", margin: 0
+                }}>
+                  {order.price ? "RD$" + order.price.toLocaleString("es-DO") : "Sin cotizar"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Card: Información Sistema */}
+          <div style={{
+            background: "var(--surface-alt)",
+            border: "1.5px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            padding: 16,
+            marginBottom: 18
+          }}>
+            <p style={{
+              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+              textTransform: "uppercase", letterSpacing: "0.07em",
+              marginBottom: 12
+            }}>⚙️ Información Sistema</p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { label: "ID Orden", value: order.id?.slice(0, 8), icon: "🔐" },
+                { label: "Creada", value: created, icon: "🕐" },
+              ].map((item, i) => (
+                <div key={i} style={{
+                  display: "grid", gridTemplateColumns: "20px 1fr auto",
+                  gap: 8, alignItems: "center"
+                }}>
+                  <span style={{ fontSize: 13 }}>{item.icon}</span>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                    {item.label}
+                  </p>
+                  <p style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, margin: 0, textAlign: "right" }}>
+                    {item.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-    </Modal >
+
+      {/* Archivos Adjuntos — Full Width */}
+      {(order.preview_image || order.order_file_url) && (
+        <div style={{
+          marginTop: 24,
+          background: "var(--surface)",
+          border: "1.5px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          padding: 20
+        }}>
+          <p style={{
+            fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+            textTransform: "uppercase", letterSpacing: "0.07em",
+            marginBottom: 16
+          }}>📎 Archivos Adjuntos</p>
+
+          <div style={{ display: "grid", gridTemplateColumns: order.preview_image && order.order_file_url ? "1fr 1fr" : "1fr", gap: 16 }}>
+            {order.preview_image && (
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon.Eye /> Imagen de referencia
+                </p>
+                <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                  <img 
+                    src={order.preview_image} 
+                    alt="preview" 
+                    style={{
+                      width: "100%", 
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--border)",
+                      cursor: "pointer",
+                      transition: "transform 0.2s, box-shadow 0.2s",
+                    }}
+                    onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                    onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                  />
+                </a>
+              </div>
+            )}
+
+            {order.order_file_url && (
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon.Brush /> Diseño del cliente
+                </p>
+                {order.order_file_url.toLowerCase().endsWith(".pdf") ? (
+                  <a
+                    href={order.order_file_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: "flex", flexDirection: "column",
+                      alignItems: "center", justifyContent: "center",
+                      gap: 10, padding: "24px 16px",
+                      borderRadius: "var(--radius-md)",
+                      background: "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)",
+                      border: "1.5px dashed var(--primary)",
+                      color: "var(--primary)", fontSize: 13,
+                      textDecoration: "none",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.2s"
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = "linear-gradient(135deg, var(--primary) 0%, rgba(6,182,212,0.8) 100%)";
+                      e.currentTarget.style.color = "#fff";
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)";
+                      e.currentTarget.style.color = "var(--primary)";
+                    }}
+                  >
+                    <Icon.Receipt style={{ fontSize: 24 }} />
+                    Ver archivo PDF
+                  </a>
+                ) : (
+                  <a href={order.order_file_url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                    <img 
+                      src={order.order_file_url} 
+                      alt="diseno" 
+                      style={{
+                        width: "100%",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--border)",
+                        cursor: "pointer",
+                        transition: "transform 0.2s, box-shadow 0.2s",
+                      }}
+                      onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                    />
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 
-// ─── CANCEL ORDER CONFIRMATION MODAL ───────────────────────────────────────────
+// ─── CANCELAR ORDEN VENTANA DE COMFIRMACION ───────────────────────────────────────────
 function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
   return (
     <Modal open={open} onClose={onClose} title="Cancelar Orden">
@@ -762,6 +960,84 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
   );
 }
 
+// ─── ARCHIVAR ORDEN VENTANA DE CONFIRMACION ───────────────────────────────────────────
+function ArchivedOrderModal({ open, onClose, onConfirm, order, loading }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Archivar Orden">
+      <div style={{ minWidth: 380, paddingTop: 8 }}>
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "center",
+          marginBottom: 20 
+        }}>
+          <div style={{
+            width: 64, height: 64,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 4px 12px rgba(245, 158, 11, 0.25)"
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="21 8 21 21 3 21 3 8" />
+              <rect x="1" y="3" width="22" height="5" />
+              <line x1="10" y1="12" x2="14" y2="12" />
+            </svg>
+          </div>
+        </div>
+        
+        <p style={{ fontSize: 15, color: "#374151", marginBottom: 12, lineHeight: 1.5, textAlign: "center", fontWeight: 500 }}>
+          ¿Estás seguro de que deseas archivar esta orden?
+        </p>
+        
+        {order && (
+          <div style={{ 
+            background: "#F9FAFB", 
+            border: "1px solid #E5E7EB", 
+            borderRadius: 8, 
+            padding: 12, 
+            marginBottom: 16,
+            textAlign: "center"
+          }}>
+            <span style={{ fontSize: 13, color: "#6B7280" }}>Orden </span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#0f1e40" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
+            <span style={{ fontSize: 13, color: "#6B7280" }}> - </span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#0f1e40" }}>{order.client_name}</span>
+          </div>
+        )}
+        
+        <p style={{ fontSize: 13, color: "#6B7280", marginBottom: 24, lineHeight: 1.5, textAlign: "center" }}>
+          La orden se ocultará de la vista principal pero permanecerá archivada en el sistema.
+        </p>
+        
+        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+          <button 
+            className="ps-btn-cancel" 
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancelar
+          </button>
+          <button 
+            className="ps-btn-submit" 
+            onClick={onConfirm}
+            disabled={loading}
+            style={{ 
+              background: "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)", 
+              border: "1px solid #B45309",
+              boxShadow: "0 2px 8px rgba(245, 158, 11, 0.3)"
+            }}
+          >
+            {loading ? "Archivando..." : "Si, archivar orden"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function PageSeller() {
   const navigate = useNavigate();
@@ -771,6 +1047,7 @@ export default function PageSeller() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
+  const [filterDate, setFilterDate] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -778,18 +1055,55 @@ export default function PageSeller() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [cancelingOrder, setCancelingOrder] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [archivedingOrder , setArchivedingOrder] = useState(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
 
+  // Obtener usuario y ordenes al cargar la pagina
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
-      if (data?.user) setUser(data.user);
-      fetchOrders();
+      if (data?.user) {
+        setUser(data.user);
+        fetchOrders(data.user.id);
+      }
     })();
+
+    // Listener para detectar cuando la sesión expire
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+        if (session?.user) {
+          setUser(session.user);
+          fetchOrders(session.user.id);
+        }
+      } else if (event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        // Sesión expirada o cerrada - redirigir al login
+        navigate("/");
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const fetchOrders = async () => {
+  // Funcion para obtener las ordenes desde Supabase
+  const fetchOrders = async (sellerId) => {
+    // Si no hay sellerId, no hacer la consulta
+    if (!sellerId) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
+    const idToUse = sellerId || user?.id;
+    console.log("User ID:", idToUse);
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("seller_id", idToUse)
+      .order("created_at", { ascending: false });
+    console.log("Orders data:", data);
+    console.log("Error:", error);
     if (!error && Array.isArray(data)) {
       setOrders(data);
     } else {
@@ -800,7 +1114,7 @@ export default function PageSeller() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
 
-  // ── Cancel Order Handler ───────────────────────────────────────────────────────
+  // ── Funcion para cancelar orden ───────────────────────────────────────────────────────
   const handleCancelOrder = (order) => {
     setCancelingOrder(order);
   };
@@ -821,6 +1135,29 @@ export default function PageSeller() {
     fetchOrders();
   };
 
+
+  // ── Funcion para archivar orden ───────────────────────────────────────────────────────
+  const handleArchiveOrder = (order) => {
+    setArchivedingOrder(order);
+  }
+ 
+  // Funcion por si el usuario confirma el archivado
+  const handleConfirmArchiveOrder = async () => {
+    if (!archivedingOrder) return;
+
+    setArchiveLoading(true);
+    const { error } = await supabase.from("orders").update({ is_archived: true }).eq("id", archivedingOrder.id);
+    setArchiveLoading(false);
+
+    if (error) {
+      alert("Error al archivar la orden: " + error.message);
+      return;
+    }
+
+    setArchivedingOrder(null);
+    fetchOrders();
+  };
+
   // ── Metrics Values ─────────────────────────────────────────────────────────────
   const today = new Date().toDateString();
   const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === today).length;
@@ -830,16 +1167,71 @@ export default function PageSeller() {
 
   const filtered = orders.filter(o => {
     const q = search.toLowerCase();
+    const orderDate = new Date(o.created_at);
+    const now = new Date();
+    
+    let dateMatch = true;
+    if (filterDate !== "all") {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      const days3 = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000);
+      const days7 = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+      const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      const min30Ago = new Date(now.getTime() - 30 * 60 * 1000);
+      const min10Ago = new Date(now.getTime() - 10 * 60 * 1000);
+      
+      switch (filterDate) {
+        case "today":
+          dateMatch = orderDate >= today;
+          break;
+        case "yesterday":
+          dateMatch = orderDate >= yesterday && orderDate < today;
+          break;
+        case "3days":
+          dateMatch = orderDate >= days3;
+          break;
+        case "7days":
+          dateMatch = orderDate >= days7;
+          break;
+        case "thismonth":
+          dateMatch = orderDate >= monthStart;
+          break;
+        case "thisyear":
+          dateMatch = orderDate >= yearStart;
+          break;
+        case "1hour":
+          dateMatch = orderDate >= hourAgo;
+          break;
+        case "30min":
+          dateMatch = orderDate >= min30Ago;
+          break;
+        case "10min":
+          dateMatch = orderDate >= min10Ago;
+          break;
+        default:
+          dateMatch = true;
+      }
+    }
+    
+    // Si hay filtro de fecha activo, mostrar todas las órdenes (incluidas archivadas)
+    const isDateFilterActive = filterDate !== "all";
+    
     return (
       (!q || o.client_name?.toLowerCase().includes(q) || o.description?.toLowerCase().includes(q) || o.id?.toLowerCase().includes(q)) &&
-      (filterStatus === "all" || o.status === filterStatus) &&
-      (filterPayment === "all" || o.payment_status === filterPayment)
+      (isDateFilterActive ? true :
+        (filterStatus === "all" ? !o.is_archived : 
+          (filterStatus === "archivada" ? o.is_archived === true : 
+            o.status === filterStatus))) &&
+      (filterPayment === "all" || o.payment_status === filterPayment) &&
+      dateMatch
     );
   });
 
   const nav = [
     { id: "dashboard", label: "Dashboard", icon: <Icon.Dashboard /> },
-    { id: "orders", label: "Ordenes", icon: <Icon.Orders />, badge: orders.length },
+    { id: "orders", label: "Ordenes", icon: <Icon.Orders />, badge: orders.filter(o => !o.is_archived).length },
   ];
   const metrics = [
     { icon: <Icon.Orders />, label: "Ordenes hoy", value: todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
@@ -931,7 +1323,7 @@ export default function PageSeller() {
                 <div className="ps-panel-header">
                   <div>
                     <div className="ps-panel-title">Ordenes recientes</div>
-                    <div className="ps-panel-sub">Las ultimas ordenes ingresadas al sistema</div>
+                    <div className="ps-panel-sub">Las ultimas 5 ordenes ingresadas al sistema</div>
                   </div>
                   <button className="ps-link-btn" onClick={() => setActiveTab("orders")}>
                     Ver todas <Icon.ArrowRight />
@@ -941,9 +1333,13 @@ export default function PageSeller() {
                   <table className="ps-table">
                     <thead><tr>{["Cliente", "Descripcion", "Material", "Estado", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
                     <tbody>
-                      {orders.length === 0 ? (
+                      {loading ? (
                         <tr>
-                          <td colSpan={5} className="ps-table-empty">No hay proyectos agregados</td>
+                          <td colSpan={5} className="ps-table-empty">Cargando órdenes...</td>
+                        </tr>
+                      ) : orders.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="ps-table-empty">No hay órdenes disponibles</td>
                         </tr>
                       ) : (
                         orders.slice(0, 5).map(o => (
@@ -953,9 +1349,35 @@ export default function PageSeller() {
                             <td className="td-pad td-mat">{o.material}</td>
                             <td className="td-pad"><StatusBadge status={o.status} /></td>
                             <td className="td-pad">
-                              <button className="ps-detail-btn" onClick={e => { e.stopPropagation(); setSelectedOrder(o); }}>
-                                <Icon.ExternalLink /> Ver detalles
-                              </button>
+                              <div className="table-actions">
+                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); setSelectedOrder(o); }} title="Ver detalles">
+                                  <Icon.Eye />
+                                </button>
+                                {!o.is_archived && (
+                                  <button className="table-action-btn edit" onClick={e => { e.stopPropagation(); setEditingOrder(o); }} title="Editar orden">
+                                    <Icon.Edit />
+                                  </button>
+                                )}
+                                {o.status === "cancelada" && (
+                                  o.is_archived ? (
+                                    <button 
+                                      className="table-action-btn archive"
+                                      title="Orden archivada"
+                                      disabled
+                                    >
+                                      <Icon.Check />
+                                    </button>
+                                  ) : (
+                                    <button 
+                                      className="table-action-btn archive"
+                                      onClick={e => { e.stopPropagation(); handleArchiveOrder(o); }}
+                                      title="Archivar orden"
+                                    >
+                                      <Icon.Archived />
+                                    </button>
+                                  )
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -978,7 +1400,7 @@ export default function PageSeller() {
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <div className="ps-select-wrap">
-                    <select className="ps-input" style={{ minWidth: 160, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+                    <select className="ps-input" style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
                       value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                       <option value="all">Todos los estados</option>
                       {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -993,21 +1415,40 @@ export default function PageSeller() {
                     </select>
                     <span className="ps-select-arrow"><Icon.ChevronDown /></span>
                   </div>
+                  <div className="ps-select-wrap">
+                    <select className="ps-input" style={{ minWidth: 140, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+                      value={filterDate} onChange={e => setFilterDate(e.target.value)}>
+                      <option value="all">Fecha: Todas</option>
+                      <option value="10min">Hace 10 minutos</option>
+                      <option value="30min">Hace 30 minutos</option>
+                      <option value="1hour">Hace 1 hora</option>
+                      <option value="today">Hoy</option>
+                      <option value="yesterday">Ayer</option>
+                      <option value="3days">Hace 3 días</option>
+                      <option value="7days">Hace 7 días</option>
+                      <option value="thismonth">Este mes</option>
+                      <option value="thisyear">Este año</option>
+                    </select>
+                    <span className="ps-select-arrow"><Icon.ChevronDown /></span>
+                  </div>
                 </div>
                 <span className="ps-filters-count">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</span>
               </div>
               <div className="ps-panel">
                 <div className="ps-panel-stripe" />
-                {loading ? <div className="ps-loading">Cargando ordenes...</div> : (
-                  <div className="ps-table-wrap">
-                    <table className="ps-table">
-                      <thead><tr>{["ID", "Cliente", "Descripcion", "Material", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
-                      <tbody>
-                        {filtered.length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="ps-table-empty">No hay proyectos agregados</td>
-                          </tr>
-                        ) : (
+                <div className="ps-table-wrap">
+                  <table className="ps-table">
+                    <thead><tr>{["ID", "Cliente", "Descripcion", "Material", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {loading ? (
+                        <tr>
+                          <td colSpan={9} className="ps-table-empty">Cargando órdenes...</td>
+                        </tr>
+                      ) : filtered.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="ps-table-empty">No hay órdenes disponibles</td>
+                        </tr>
+                      ) : (
                           filtered.map(o => (
                             <tr key={o.id} className="row-hover">
                               <td className="td-pad td-id">{o.id?.slice(0, 8) || "---"}</td>
@@ -1023,23 +1464,45 @@ export default function PageSeller() {
                                 }
                               </td>
                               <td className="td-pad td-date">{new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
-                              <td className="td-pad" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <button className="ps-detail-btn" onClick={() => setEditingOrder(o)} title="Editar orden">
-                                  <Icon.Edit /> Editar
-                                </button>
-                                <button className="ps-detail-btn" onClick={() => setSelectedOrder(o)} title="Ver detalles">
-                                  <Icon.Eye /> Ver
-                                </button>
-                                {o.status !== "cancelada" && (
-                                  <button 
-                                    className="ps-detail-btn" 
-                                    onClick={() => handleCancelOrder(o)} 
-                                    title="Cancelar orden"
-                                    style={{ background: "#FEE2E2", color: "#991B1B", border: "1px solid #FECACA" }}
-                                  >
-                                    <Icon.X /> Cancelar
+                              <td className="td-pad td-actions">
+                                <div className="table-actions">
+                                  <button className="table-action-btn view" onClick={() => setSelectedOrder(o)} title="Ver detalles">
+                                    <Icon.Eye />
                                   </button>
-                                )}
+                                  {!o.is_archived && (
+                                    <button className="table-action-btn edit" onClick={() => setEditingOrder(o)} title="Editar orden">
+                                      <Icon.Edit />
+                                    </button>
+                                  )}
+                                  {o.status !== "cancelada" && !o.is_archived && (
+                                    <button 
+                                      className="table-action-btn cancel" 
+                                      onClick={() => handleCancelOrder(o)} 
+                                      title="Cancelar orden"
+                                    >
+                                      <Icon.Trash />
+                                    </button>
+                                  )}
+                                  {o.status === "cancelada" && (
+                                    o.is_archived ? (
+                                      <button 
+                                        className="table-action-btn archive"
+                                        title="Orden archivada"
+                                        disabled
+                                      >
+                                        <Icon.Check />
+                                      </button>
+                                    ) : (
+                                      <button 
+                                        className="table-action-btn archive"
+                                        onClick={() => handleArchiveOrder(o)}
+                                        title="Archivar orden"
+                                      >
+                                        <Icon.Archived />
+                                      </button>
+                                    )
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))
@@ -1047,7 +1510,6 @@ export default function PageSeller() {
                       </tbody>
                     </table>
                   </div>
-                )}
               </div>
             </>
           )}
@@ -1058,6 +1520,7 @@ export default function PageSeller() {
       <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={fetchOrders} />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} />
       <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
+      <ArchivedOrderModal open={!!archivedingOrder} onClose={() => setArchivedingOrder(null)} order={archivedingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />
     </div>
   );
 }
