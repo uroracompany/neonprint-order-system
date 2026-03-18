@@ -1683,39 +1683,29 @@
   color: #FBBF24;
 }
 
-.pd-notification-title {
-  color: #8B5CF6;
-}
-
-.pd-notification.cancelled .pd-notification-title {
-  color: #F87171;
-}
-
-.pd-notification.completed .pd-notification-title {
-  color: #34D399;
-}
-
-.pd-notification.updated .pd-notification-title {
-  color: #FBBF24;
-}
-
 .pd-notification-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .pd-notification-title {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
   color: #8B5CF6;
   text-transform: uppercase;
   letter-spacing: 0.8px;
 }
 
+.pd-notification-subtitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+}
+
 .pd-notification-text {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: #ffffff;
 }
