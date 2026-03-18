@@ -89,7 +89,6 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(null);
-  const [filesToDelete, setFilesToDelete] = useState([]);
   
   if (!order) return null;
   
@@ -113,11 +112,6 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
     setSaveSuccess(false);
   };
   
-  const removePendingPreview = () => {
-    setPendingPreview(null);
-    setSaveSuccess(false);
-  };
-  
   const handleSave = async () => {
     setSaving(true);
     setSaveSuccess(false);
@@ -136,12 +130,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
             .from("order-docs")
             .upload(`orders/${order.id}/files/${fileName}`, file, { upsert: true });
           
-          if (error) {
-            console.error("Error uploading file:", error);
-            continue;
-          }
-          
-          if (data) {
+          if (!error && data) {
             const { data: { publicUrl } } = supabase.storage
               .from("order-docs")
               .getPublicUrl(`orders/${order.id}/files/${fileName}`);
@@ -164,8 +153,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
             } catch { existingUrls = []; }
           }
           
-          const allUrls = [...existingUrls, ...fileUrls];
-          updateData.order_file_url = JSON.stringify(allUrls);
+          updateData.order_file_url = JSON.stringify([...existingUrls, ...fileUrls]);
         }
       }
       
@@ -236,11 +224,11 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   
   return (
     <div className="pd-modal-overlay" onClick={e => e.target === e.currentTarget && handleClose()}>
-      <div className="pd-modal pd-modal-enhanced">
+      <div className="pd-modal">
         <div className="pd-modal-header">
           <div className="pd-modal-title">
             <h3>Orden #{order.id?.slice(0, 8).toUpperCase()}</h3>
-            <span className="pd-modal-subtitle">Detalles de la orden</span>
+            <span className="pd-modal-subtitle">Detalles de la orden de trabajo</span>
           </div>
           <button className="pd-modal-close" onClick={handleClose}>
             <Icon.Close />
@@ -249,101 +237,101 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
         
         <div className="pd-modal-body">
           {saveSuccess && (
-            <div className="pd-save-success">
+            <div className="pd-alert pd-alert-success">
               <Icon.Check />
               Archivos guardados correctamente
             </div>
           )}
           
           {saveError && (
-            <div className="pd-save-error">
+            <div className="pd-alert pd-alert-error">
               <Icon.X />
               {saveError}
             </div>
           )}
           
-          <div className="pd-detail-section">
-            <div className="pd-section-header">
+          <div className="pd-modal-card">
+            <div className="pd-modal-card-title">
               <Icon.User />
               <h4>Información del Cliente</h4>
             </div>
-            <div className="pd-detail-grid">
-              <div className="pd-detail-item">
-                <span className="pd-detail-label">Cliente</span>
-                <span className="pd-detail-value">{order.client_name || "No especificado"}</span>
+            <div className="pd-modal-grid">
+              <div className="pd-modal-item">
+                <span className="pd-modal-label">Cliente</span>
+                <span className="pd-modal-value">{order.client_name || "No especificado"}</span>
               </div>
-              <div className="pd-detail-item">
-                <span className="pd-detail-label">Vendedor</span>
-                <span className="pd-detail-value pd-value-highlight">{order.seller_name || "No especificado"}</span>
+              <div className="pd-modal-item">
+                <span className="pd-modal-label">Vendedor</span>
+                <span className="pd-modal-value highlight">{order.seller_name || "No especificado"}</span>
               </div>
-              <div className="pd-detail-item">
-                <span className="pd-detail-label">Teléfono</span>
+              <div className="pd-modal-item">
+                <span className="pd-modal-label">Teléfono</span>
                 {order.client_contact ? (
                   <a 
                     href={`https://wa.me/${order.client_contact.replace(/\D/g, '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="pd-whatsapp-link"
+                    className="pd-whatsapp-btn"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                     {order.client_contact}
                   </a>
-                ) : <span className="pd-detail-value">No especificado</span>}
+                ) : <span className="pd-modal-value">No especificado</span>}
               </div>
-              <div className="pd-detail-item">
-                <span className="pd-detail-label">Tipo</span>
-                <span className="pd-detail-value">
+              <div className="pd-modal-item">
+                <span className="pd-modal-label">Tipo de Orden</span>
+                <span className="pd-modal-value">
                   {order.order_type === "orden 911" ? (
-                    <span className="pd-badge-911">911 - Urgente</span>
+                    <span className="pd-badge-911">⚡ 911 - Urgente</span>
                   ) : (
                     <span className="pd-badge-normal">Normal</span>
                   )}
                 </span>
               </div>
-              <div className="pd-detail-item">
-                <span className="pd-detail-label">Fecha</span>
-                <span className="pd-detail-value">{created}</span>
+              <div className="pd-modal-item">
+                <span className="pd-modal-label">Fecha de Creación</span>
+                <span className="pd-modal-value">{created}</span>
               </div>
             </div>
           </div>
           
-          <div className="pd-detail-section">
-            <div className="pd-section-header">
-              <Icon.File />
+          <div className="pd-modal-card">
+            <div className="pd-modal-card-title">
+              <Icon.Package />
               <h4>Detalles del Trabajo</h4>
             </div>
-            <div className="pd-detail-full">
-              <span className="pd-detail-label">Descripción</span>
-              <p className="pd-description">{order.description || "Sin descripción"}</p>
-            </div>
-            <div className="pd-detail-grid">
-              <div className="pd-detail-item">
-                <span className="pd-detail-label">Material</span>
-                <span className="pd-detail-value pd-material">{order.material || "No especificado"}</span>
+            <div className="pd-modal-grid">
+              <div className="pd-modal-item full">
+                <span className="pd-modal-label">Descripción</span>
+                <p className="pd-modal-description">{order.description || "Sin descripción"}</p>
+              </div>
+              <div className="pd-modal-item">
+                <span className="pd-modal-label">Material</span>
+                <span className="pd-modal-value highlight">{order.material || "No especificado"}</span>
               </div>
               {order.width && order.height && (
-                <div className="pd-detail-item">
-                  <span className="pd-detail-label">Dimensiones</span>
-                  <span className="pd-detail-value">{order.width} x {order.height} cm</span>
+                <div className="pd-modal-item">
+                  <span className="pd-modal-label">Dimensiones</span>
+                  <span className="pd-modal-value">{order.width} x {order.height} cm</span>
                 </div>
               )}
               {order.quantity && (
-                <div className="pd-detail-item">
-                  <span className="pd-detail-label">Cantidad</span>
-                  <span className="pd-detail-value">{order.quantity} unidades</span>
+                <div className="pd-modal-item">
+                  <span className="pd-modal-label">Cantidad</span>
+                  <span className="pd-modal-value">{order.quantity} unidades</span>
                 </div>
               )}
             </div>
           </div>
           
-          <div className="pd-detail-section">
-            <div className="pd-section-header">
+          <div className="pd-modal-card">
+            <div className="pd-modal-card-title">
               <Icon.File />
               <h4>Archivos del Diseño</h4>
               {hasChanges && <span className="pd-pending-badge">Cambios pendientes</span>}
             </div>
             
-            <div className="pd-upload-zone">
+            <div className="pd-upload-area">
               <input
                 type="file"
                 id="designer-file-upload"
@@ -353,64 +341,76 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
               />
               <label htmlFor="designer-file-upload" className="pd-upload-btn">
                 <Icon.Upload />
-                <span>Subir archivos</span>
+                <span>Subir Archivos</span>
               </label>
               <span className="pd-upload-hint">Archivos seleccionados se guardarán al hacer clic en "Guardar cambios"</span>
             </div>
             
             {pendingFiles.length > 0 && (
-              <div className="pd-files-list pd-files-pending">
-                <span className="pd-files-list-title">Archivos pendientes:</span>
+              <div className="pd-files-container">
+                <span className="pd-files-label">Archivos pendientes ({pendingFiles.length})</span>
                 {pendingFiles.map((file, i) => (
-                  <div key={i} className="pd-file-item pd-file-pending">
-                    <Icon.File />
-                    <span className="pd-file-name">{file.name}</span>
-                    <button className="pd-file-remove" onClick={() => removePendingFile(i)}>
-                      <Icon.X />
-                    </button>
+                  <div key={i} className="pd-file-card pending">
+                    <div className="pd-file-icon">
+                      <Icon.File />
+                    </div>
+                    <div className="pd-file-info">
+                      <span className="pd-file-name">{file.name}</span>
+                    </div>
+                    <div className="pd-file-actions">
+                      <button className="pd-file-action remove" onClick={() => removePendingFile(i)}>
+                        <Icon.X />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
             
             {uniqueFiles.length > 0 && (
-              <div className="pd-files-list">
-                <span className="pd-files-list-title">Archivos guardados:</span>
+              <div className="pd-files-container" style={{ marginTop: pendingFiles.length > 0 ? '12px' : '0' }}>
+                <span className="pd-files-label">Archivos guardados ({uniqueFiles.length})</span>
                 {uniqueFiles.map((file, i) => (
-                  <div key={i} className="pd-file-item">
-                    <Icon.File />
-                    <span className="pd-file-name">{file.name}</span>
-                    <a href={file.url} target="_blank" rel="noopener noreferrer" className="pd-file-action">
-                      <Icon.Download />
-                    </a>
+                  <div key={i} className="pd-file-card">
+                    <div className="pd-file-icon">
+                      <Icon.File />
+                    </div>
+                    <div className="pd-file-info">
+                      <span className="pd-file-name">{file.name}</span>
+                    </div>
+                    <div className="pd-file-actions">
+                      <a href={file.url} target="_blank" rel="noopener noreferrer" className="pd-file-action">
+                        <Icon.Download />
+                      </a>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
           
-          <div className="pd-detail-section">
-            <div className="pd-section-header">
+          <div className="pd-modal-card">
+            <div className="pd-modal-card-title">
               <Icon.Image />
               <h4>Vista Previa</h4>
             </div>
             
-            <div className="pd-preview-zone">
+            <div className="pd-preview-container">
               {displayPreview ? (
-                <div className="pd-preview-image-wrapper">
+                <>
                   <img src={displayPreview} alt="Preview" className="pd-preview-image" />
-                  <div className="pd-preview-actions">
-                    <a href={displayPreview} target="_blank" rel="noopener noreferrer" className="pd-preview-action" title="Ver completo">
+                  {pendingPreview && <span className="pd-preview-badge">Nuevo</span>}
+                  <div className="pd-preview-overlay">
+                    <a href={displayPreview} target="_blank" rel="noopener noreferrer" className="pd-file-action" style={{ background: 'white', color: '#0f172a' }}>
                       <Icon.Eye />
                     </a>
-                    <button className="pd-preview-action pd-preview-remove" onClick={removePendingPreview} title="Eliminar">
+                    <button className="pd-file-action remove" style={{ background: 'white' }} onClick={() => { setPendingPreview(null); setSaveSuccess(false); }}>
                       <Icon.Trash />
                     </button>
                   </div>
-                  {pendingPreview && <span className="pd-preview-badge">Nuevo</span>}
-                </div>
+                </>
               ) : (
-                <div className="pd-preview-empty">
+                <label htmlFor="designer-preview-upload" className="pd-preview-empty">
                   <input
                     type="file"
                     id="designer-preview-upload"
@@ -418,22 +418,20 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                     onChange={handlePreviewSelect}
                     style={{ display: "none" }}
                   />
-                  <label htmlFor="designer-preview-upload" className="pd-preview-upload-btn">
-                    <Icon.Image />
-                    <span>Subir imagen de preview</span>
-                  </label>
-                </div>
+                  <Icon.Image />
+                  <span>Subir imagen de preview</span>
+                </label>
               )}
             </div>
           </div>
           
-          <div className="pd-status-section">
+          <div className="pd-status-bar">
             <div className="pd-status-item">
-              <span className="pd-status-label">Estado:</span>
+              <span className="pd-status-label">Estado</span>
               <StatusBadge status={order.status} />
             </div>
             <div className="pd-status-item">
-              <span className="pd-status-label">Pago:</span>
+              <span className="pd-status-label">Pago</span>
               <PaymentBadge status={order.payment_status} />
             </div>
           </div>
