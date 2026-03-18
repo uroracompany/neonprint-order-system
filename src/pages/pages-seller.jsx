@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 
 // IMPORT CSS & ASSETS
 import "../css-components/page-seller.css";
-import Logo from "../assets/images/logo-neonprint.jpg" //  SYSTEM LOGO
+import Sidebar from "../components/Sidebar";
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
 const Icon = {
@@ -46,14 +46,15 @@ const Icon = {
   Settings: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>),
   Key: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m-3.5 3.5L12 12" /></svg>),
   Clock: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>),
+  User: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>),
   Package: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16.5 9.4-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>),
 };
 
 // ─── STATUS & PAYMENT CONFIG ──────────────────────────────────────────────────
 const STATUS_CONFIG = {
-  "Quote_Pending": { label: "Cotización Pend.", value: "Quote_Pending", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
-  "en cotizacion": { label: "En Cotización", value: "en cotizacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
-  "en diseno": { label: "En Diseño", value: "en diseno", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
+  "Pending": { label: "Pendiente", value: "Pending", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
+  "In_Design": { label: "En Diseño", value: "In_Design", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
+  "cotizacion": { label: "Cotización", value: "cotizacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
   "en produccion": { label: "En Producción", value: "en produccion", color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
   "en entrega": { label: "En Entrega", value: "en entrega", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
   "completada": { label: "Completada", value: "completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
@@ -67,17 +68,42 @@ const PAYMENT_CONFIG = {
   "parcial": { label: "Parcial", color: "#0369A1", bg: "#E0F2FE" },
 };
 
+// Helper function to parse order_file_url (handles both single string and JSON array)
+const parseFileUrls = (fileUrl) => {
+  if (!fileUrl) return [];
+  try {
+    const parsed = JSON.parse(fileUrl);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [fileUrl];
+  }
+};
+
 const FLOW_STEPS = [
-  { key: "pendiente de cotizacion", label: "Cotizacion" },
-  { key: "en diseno", label: "Diseno" },
-  { key: "en produccion", label: "Produccion" },
-  { key: "en entrega", label: "Entrega" },
-  { key: "completada", label: "Completada" },
+  { key: "Pending", label: "Pendiente" },
+  { key: "In_Design", label: "Diseño" },
+  { key: "cotizacion", label: "Cotización" },
+  { key: "Produccion", label: "Producción" },
+  { key: "en produccion", label: "Entrega" },
+  { key: "en entrega", label: "Completada" },
 ];
+
+// Mapeo para mostrar la etiqueta correcta del paso actual
+const FLOW_STEP_LABELS = {
+  "Pending": "Pendiente",
+  "In_Design": "Diseño", 
+  "cotizacion": "Cotización",
+  "Produccion": "Producción",
+  "en produccion": "Entrega",
+  "en entrega": "Completada",
+  "completada": "Completada",
+  "cancelada": "Cancelada",
+};
 
 const CARD_ACCENTS = [
   { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
   { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
+  { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
   { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
 ];
@@ -87,20 +113,6 @@ const MATERIALS = [
   "Vinilo", "Banner", "Lona", "Papel Fotografico", "Carton",
   "Adhesivo", "PVC", "Acrilico", "Tela", "Foam", "Otro"
 ];
-
-
-// ─── LOGO ─────────────────────────────────────────────────────────
-const NeonLogo = ({ size = 54 }) => (
-  <div style={{
-    width: size, height: size, borderRadius: "50%", flexShrink: 0,
-    background: "conic-gradient(#00d4ff 0deg 118deg, #ff1f6e 118deg 238deg, #ffe600 238deg 360deg)",
-    boxShadow: "0 0 0 2.5px rgba(255,255,255,.06), 0 8px 28px rgba(0,0,0,.55)",
-    display: "flex", alignItems: "center", justifyContent: "center",
-  }}>
-    <img src={Logo} className="rounded-full" alt="Logo neonPrint" />
-  </div>
-);
-
 
 
 // ─── COMPONENTES REUTILIZABLES ────────────────────────────────────────────────
@@ -119,7 +131,7 @@ function StatusBadge({ status, type = "status" }) {
   );
 }
 
-// METRIC CARD COMPONENT
+// CARTA DE METRICA PARA DASHBOARD
 function MetricCard({ icon, label, value, sub, accentIdx = 0, trend }) {
   const acc = CARD_ACCENTS[accentIdx];
   return (
@@ -136,10 +148,13 @@ function MetricCard({ icon, label, value, sub, accentIdx = 0, trend }) {
   );
 }
 
+//OVERLAY DE LOS MODALES, RECIBE PROPS DE CONTROL Y CONTENIDO
 function Modal({ open, onClose, title, children, wide }) {
   if (!open) return null;
   return (
-    <div className="ps-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+    // onClick={e => e.target === e.currentTarget && onClose()}
+    // Overlay del modal de crear video 
+    <div className="ps-modal-overlay">
       <div className={`ps-modal ${wide ? "wide" : "narrow"}`}>
         <div className="ps-modal-stripe" />
         <div className="ps-modal-header">
@@ -152,6 +167,7 @@ function Modal({ open, onClose, title, children, wide }) {
   );
 }
 
+// CAMPO DE FORMULARIO QUE RECIBE VALORES
 function Field({ label, required, optional, hint, children }) {
   return (
     <div className="ps-field">
@@ -166,19 +182,25 @@ function Field({ label, required, optional, hint, children }) {
   );
 }
 
+// BARRA DE POGRESO SE SEGUIMIENTO DE  LA ORDEN
 function FlowTracker({ status }) {
   const idx = FLOW_STEPS.findIndex(s => s.key === status);
+  const currentLabel = FLOW_STEP_LABELS[status] || status;
+  
   return (
     <div className="ps-flow">
       {FLOW_STEPS.map((step, i) => {
-        const done = i < idx, active = i === idx;
+        const isCompleted = idx >= 0 && i < idx;
+        const isActive = i === idx;
         return (
           <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < FLOW_STEPS.length - 1 ? 1 : "none" }}>
             <div className="ps-flow-step">
-              <div className={`ps-flow-circle ${done ? "done" : active ? "active" : ""}`}>{done ? "✓" : i + 1}</div>
-              <span className={`ps-flow-label ${done ? "done" : active ? "active" : ""}`}>{step.label}</span>
+              <div className={`ps-flow-circle ${isCompleted ? "done" : isActive ? "active" : ""}`}>
+                {isCompleted ? "✓" : i + 1}
+              </div>
+              <span className={`ps-flow-label ${isCompleted ? "done" : isActive ? "active" : ""}`}>{step.label}</span>
             </div>
-            {i < FLOW_STEPS.length - 1 && <div className={`ps-flow-line ${done ? "done" : ""}`} />}
+            {i < FLOW_STEPS.length - 1 && <div className={`ps-flow-line ${isCompleted ? "done" : ""}`} />}
           </div>
         );
       })}
@@ -186,7 +208,7 @@ function FlowTracker({ status }) {
   );
 }
 
-// ─── MULTI MATERIAL SELECTOR ──────────────────────────────────────────────────
+// ─── Selector de diferentes materiales ──────────────────────────────────────────────────
 function MultiMaterialSelector({ selected, onChange }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -307,7 +329,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
       order_type: form.order_type,
       order_design_type: form.design_type,
       delivery_date: form.indefinido ? null : (form.delivery_date || null),
-      status: STATUS_CONFIG["Quote_Pending"].value, // estado inicial
+      status: STATUS_CONFIG["Pending"].value, // estado inicial
       payment_status: PAYMENT_CONFIG["Pending_Payment"].value, // estado inicial
       seller_id: userId,
       created_by: userId,
@@ -628,11 +650,31 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
 }
 
 // ─── ORDER DETAIL MODAL ───────────────────────────────────────────────────────
-function OrderDetailModal({ open, onClose, order }) {
+function OrderDetailModal({ open, onClose, order, user, onSendToDesigner }) {
   if (!order) return null;
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const statusConfig = STATUS_CONFIG[order.status];
   const paymentConfig = PAYMENT_CONFIG[order.payment_status];
+  
+  const [designerName, setDesignerName] = useState("");
+  
+  useEffect(() => {
+    if (order?.designer_id) {
+      // Consultar el nombre del diseñador desde profiles
+      supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", order.designer_id)
+        .single()
+        .then(({ data }) => {
+          if (data?.name) {
+            setDesignerName(data.name);
+          } else {
+            setDesignerName("Diseñador");
+          }
+        });
+    }
+  }, [order?.designer_id]);
 
   return (
     <Modal open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} wide>
@@ -794,6 +836,36 @@ function OrderDetailModal({ open, onClose, order }) {
                 </p>
               </div>
             </div>
+
+            {/* Botón Enviar a Diseño */}
+            {order.status !== "In_Design" && order.status !== "en produccion" && order.status !== "en entrega" && order.status !== "completada" && order.status !== "cancelada" && (
+              <div style={{ marginTop: 16 }}>
+                <button
+                  onClick={() => onSendToDesigner(order)}
+                  style={{
+                    width: "100%",
+                    padding: "14px 20px",
+                    background: "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)",
+                    border: "none",
+                    borderRadius: "var(--radius-md)",
+                    color: "#fff",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    fontFamily: "'Poppins', sans-serif",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    boxShadow: "0 4px 12px rgba(139, 92, 246, 0.3)",
+                    transition: "all 0.2s"
+                  }}
+                >
+                  <Icon.Edit style={{ width: 18, height: 18 }} />
+                  Enviar a Diseño
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Card: Información Sistema */}
@@ -814,6 +886,8 @@ function OrderDetailModal({ open, onClose, order }) {
               {[
                 { label: "ID Orden", value: order.id?.slice(0, 8), icon: <Icon.Key /> },
                 { label: "Creada", value: created, icon: <Icon.Clock /> },
+                { label: "Responsable", value: user?.displayName || "---", icon: <Icon.User /> },
+                ...(order.designer_id ? [{ label: "Diseñador", value: designerName || "Asignado", icon: <Icon.Edit style={{ color: "#8B5CF6" }} /> }] : []),
               ].map((item, i) => (
                 <div key={i} style={{
                   display: "grid", gridTemplateColumns: "20px 1fr auto",
@@ -877,58 +951,256 @@ function OrderDetailModal({ open, onClose, order }) {
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                   <Icon.Brush /> Diseño del cliente
                 </p>
-                {order.order_file_url.toLowerCase().endsWith(".pdf") ? (
-                  <a
-                    href={order.order_file_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      display: "flex", flexDirection: "column",
-                      alignItems: "center", justifyContent: "center",
-                      gap: 10, padding: "24px 16px",
-                      borderRadius: "var(--radius-md)",
-                      background: "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)",
-                      border: "1.5px dashed var(--primary)",
-                      color: "var(--primary)", fontSize: 13,
-                      textDecoration: "none",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      transition: "all 0.2s"
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = "linear-gradient(135deg, var(--primary) 0%, rgba(6,182,212,0.8) 100%)";
-                      e.currentTarget.style.color = "#fff";
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)";
-                      e.currentTarget.style.color = "var(--primary)";
-                    }}
-                  >
-                    <Icon.Receipt style={{ fontSize: 24 }} />
-                    Ver archivo PDF
-                  </a>
-                ) : (
-                  <a href={order.order_file_url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                    <img 
-                      src={order.order_file_url} 
-                      alt="diseno" 
-                      style={{
-                        width: "100%",
-                        borderRadius: "var(--radius-md)",
-                        border: "1px solid var(--border)",
-                        cursor: "pointer",
-                        transition: "transform 0.2s, box-shadow 0.2s",
-                      }}
-                      onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
-                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
-                    />
-                  </a>
-                )}
+                {(() => {
+                  const fileUrls = parseFileUrls(order.order_file_url);
+                  if (fileUrls.length === 1) {
+                    const url = fileUrls[0];
+                    return url.toLowerCase().endsWith(".pdf") ? (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: "flex", flexDirection: "column",
+                          alignItems: "center", justifyContent: "center",
+                          gap: 10, padding: "24px 16px",
+                          borderRadius: "var(--radius-md)",
+                          background: "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)",
+                          border: "1.5px dashed var(--primary)",
+                          color: "var(--primary)", fontSize: 13,
+                          textDecoration: "none",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          transition: "all 0.2s"
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = "linear-gradient(135deg, var(--primary) 0%, rgba(6,182,212,0.8) 100%)";
+                          e.currentTarget.style.color = "#fff";
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)";
+                          e.currentTarget.style.color = "var(--primary)";
+                        }}
+                      >
+                        <Icon.Receipt style={{ fontSize: 24 }} />
+                        Ver archivo PDF
+                      </a>
+                    ) : (
+                      <a href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                        <img 
+                          src={url} 
+                          alt="diseno" 
+                          style={{
+                            width: "100%",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--border)",
+                            cursor: "pointer",
+                            transition: "transform 0.2s, box-shadow 0.2s",
+                          }}
+                          onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                        />
+                      </a>
+                    );
+                  } else {
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {fileUrls.map((url, index) => (
+                          <a
+                            key={index}
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              display: "flex", alignItems: "center", gap: 8,
+                              padding: "12px 16px",
+                              borderRadius: "var(--radius-md)",
+                              background: "var(--surface-alt)",
+                              border: "1px solid var(--border)",
+                              color: "var(--primary)",
+                              textDecoration: "none",
+                              fontSize: 13,
+                              fontWeight: 500,
+                              transition: "all 0.2s"
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.background = "var(--primary)";
+                              e.currentTarget.style.color = "#fff";
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.background = "var(--surface-alt)";
+                              e.currentTarget.style.color = "var(--primary)";
+                            }}
+                          >
+                            <Icon.FileText />
+                            Ver archivo {index + 1}
+                          </a>
+                        ))}
+                      </div>
+                    );
+                  }
+                })()}
               </div>
             )}
           </div>
+          </div>
+        )}
+    </Modal>
+  );
+}
+
+// ─── ENVIAR A DISEÑO MODAL ───────────────────────────────────────────
+function SendToDesignerModal({ open, onClose, onConfirm, order, loading }) {
+  const [designers, setDesigners] = useState([]);
+  const [selectedDesigner, setSelectedDesigner] = useState("");
+  const [loadingDesigners, setLoadingDesigners] = useState(true);
+
+  useEffect(() => {
+    if (open) {
+      setLoadingDesigners(true);
+      setSelectedDesigner("");
+      // Consultar diseñadores desde profiles (que tiene el nombre sincronizado desde auth)
+      supabase
+        .from("profiles")
+        .select("id, name, role")
+        .then(({ data, error }) => {
+          setLoadingDesigners(false);
+          console.log("Todos los perfiles:", data, error);
+          if (!error && data) {
+            // Filtrar manualmente por rol que contenga "design"
+            const designers = data
+              .filter(p => p.role && p.role.toLowerCase().includes("design"))
+              .map(p => ({
+                ...p,
+                // Usar el nombre del perfil como display_name
+                displayName: p.name || "Diseñador"
+              }));
+            console.log("Diseñadores filtrados:", designers);
+            setDesigners(designers);
+          } else {
+            setDesigners([]);
+          }
+        });
+    }
+  }, [open]);
+
+  const handleConfirm = () => {
+    if (selectedDesigner) {
+      onConfirm(selectedDesigner);
+    }
+  };
+
+  const getDesignerName = (designer) => {
+    return designer.displayName || designer.name || "Diseñador";
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Enviar a Diseño">
+      <div style={{ minWidth: 380, paddingTop: 8 }}>
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "center",
+          marginBottom: 20 
+        }}>
+          <div style={{
+            width: 64, height: 64,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #EDE9FE 0%, #C4B5FD 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 4px 12px rgba(139, 92, 246, 0.25)"
+          }}>
+            <Icon.Edit style={{ color: "#7C3AED", width: 28, height: 28 }} />
+          </div>
         </div>
-      )}
+        
+        <p style={{ fontSize: 15, color: "#374151", marginBottom: 12, lineHeight: 1.5, textAlign: "center", fontWeight: 500 }}>
+          Selecciona el diseñador responsable
+        </p>
+        
+        {order && (
+          <div style={{ 
+            background: "#F9FAFB", 
+            border: "1px solid #E5E7EB", 
+            borderRadius: 8, 
+            padding: 12, 
+            marginBottom: 16,
+            textAlign: "center"
+          }}>
+            <span style={{ fontSize: 13, color: "#6B7280" }}>Orden </span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#0f1e40" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
+            <span style={{ fontSize: 13, color: "#6B7280" }}> - </span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#0f1e40" }}>{order.client_name}</span>
+          </div>
+        )}
+        
+        {loadingDesigners ? (
+          <div style={{ textAlign: "center", padding: "20px 0", color: "#6B7280" }}>
+            Cargando diseñadores...
+          </div>
+        ) : designers.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "20px 0", color: "#EF4444" }}>
+            No hay diseñadores disponibles
+          </div>
+        ) : (
+          <div style={{ marginBottom: 24 }}>
+            <select 
+              value={selectedDesigner} 
+              onChange={(e) => {
+                setSelectedDesigner(e.target.value);
+              }}
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: "1.5px solid #E5E7EB",
+                fontSize: 14,
+                fontFamily: "'Poppins', sans-serif",
+                background: "#fff",
+                color: "#374151",
+                cursor: "pointer",
+                outline: "none"
+              }}
+            >
+              <option value="">Seleccionar diseñador...</option>
+              {designers.map(d => (
+                <option key={d.id} value={d.id}>
+                  {getDesignerName(d)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        
+        {loading && (
+          <div style={{ textAlign: "center", padding: "12px 0", color: "#8B5CF6", fontSize: 14 }}>
+            Enviando orden...
+          </div>
+        )}
+        
+        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+          <button 
+            className="ps-btn-cancel" 
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancelar
+          </button>
+          <button 
+            className="ps-btn-submit" 
+            onClick={handleConfirm}
+            disabled={loading || !selectedDesigner}
+            style={{ 
+              background: "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", 
+              border: "1px solid #6D28D9",
+              boxShadow: "0 2px 8px rgba(139, 92, 246, 0.3)",
+              opacity: (!selectedDesigner || loading) ? 0.6 : 1
+            }}
+          >
+            {loading ? "Enviando..." : "Asignar Orden"}
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 }
@@ -1058,6 +1330,7 @@ export default function PageSeller() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
+  const [viewMode, setViewMode] = useState("table");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -1067,29 +1340,58 @@ export default function PageSeller() {
   const [cancelLoading, setCancelLoading] = useState(false);
   const [archivedingOrder , setArchivedingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [sendingToDesigner, setSendingToDesigner] = useState(null);
+  const [designers, setDesigners] = useState([]);
+  const [sendingLoading, setSendingLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 1500);
+  };
 
   // Obtener usuario y ordenes al cargar la pagina
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) {
-        setUser(data.user);
-        fetchOrders(data.user.id);
-      }
-    })();
+    let isFirstLoad = true;
 
     // Listener para detectar cuando la sesión expire
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
-        if (session?.user) {
-          setUser(session.user);
+      // Solo procesar cuando es SIGNED_IN (no TOKEN_REFRESHED)
+      if (event === 'SIGNED_IN' && session?.user) {
+        // Extraer nombre desde user_metadata
+        const displayName = 
+          session.user.user_metadata?.display_name ||
+          session.user.user_metadata?.full_name || 
+          session.user.user_metadata?.name || 
+          session.user.user_metadata?.first_name || 
+          session.user.email?.split("@")[0];
+        
+        // Solo actualizar si es la primera carga o si el nombre es diferente
+        if (isFirstLoad || displayName) {
+          setUser({ ...session.user, displayName });
           fetchOrders(session.user.id);
+          isFirstLoad = false;
         }
-      } else if (event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
-        // Sesión expirada o cerrada - redirigir al login
+      } else if (event === 'SIGNED_OUT') {
         navigate("/");
       }
     });
+
+    // Carga inicial
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user) {
+        const displayName = 
+          data.user.user_metadata?.display_name ||
+          data.user.user_metadata?.full_name || 
+          data.user.user_metadata?.name || 
+          data.user.user_metadata?.first_name || 
+          data.user.email?.split("@")[0];
+        
+        setUser({ ...data.user, displayName });
+        fetchOrders(data.user.id);
+      }
+    })();
 
     return () => {
       subscription.unsubscribe();
@@ -1137,12 +1439,72 @@ export default function PageSeller() {
     setCancelLoading(false);
     
     if (error) {
-      alert("Error al cancelar la orden: " + error.message);
+      showToast("Error al cancelar la orden", "error");
       return;
     }
     
     setCancelingOrder(null);
     fetchOrders(user?.id);
+  };
+
+  // ── Ver detalles de orden ─────────────────────────────────────────────────
+  const handleViewOrder = async (order) => {
+    const { data } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", order.id)
+      .single();
+    
+    if (data) {
+      setSelectedOrder(data);
+    } else {
+      setSelectedOrder(order);
+    }
+  };
+
+  // ── Enviar a Diseño ───────────────────────────────────────────────────────
+  const handleSendToDesigner = (order) => {
+    setSendingToDesigner(order);
+  };
+
+  const handleConfirmSendToDesigner = async (designerId) => {
+    if (!sendingToDesigner) return;
+
+    setSendingLoading(true);
+
+    // Actualizar la orden con el diseñador y cambiar estado a en diseno
+    const { error } = await supabase
+      .from("orders")
+      .update({ 
+        status: "In_Design",
+        designer_id: designerId
+      })
+      .eq("id", sendingToDesigner.id);
+
+    setSendingLoading(false);
+
+    if (error) {
+      showToast("Error al enviar a diseño", "error");
+      return;
+    }
+
+    // Fetch updated orders and then update selectedOrder with new data
+    const fetchAndUpdate = async () => {
+      const { data } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("id", sendingToDesigner.id)
+        .single();
+      
+      if (data) {
+        setSelectedOrder(data);
+      }
+    };
+
+    setSendingToDesigner(null);
+    await fetchOrders(user?.id);
+    await fetchAndUpdate();
+    showToast("Orden enviada a diseño exitosamente!");
   };
 
 
@@ -1160,7 +1522,7 @@ export default function PageSeller() {
     setArchiveLoading(false);
 
     if (error) {
-      alert("Error al archivar la orden: " + error.message);
+      showToast("Error al archivar la orden", "error");
       return;
     }
 
@@ -1171,10 +1533,13 @@ export default function PageSeller() {
   // ── Metrics Values ─────────────────────────────────────────────────────────────
   const today = new Date().toDateString();
   const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === today).length;
-  const inQuote = orders.filter(o => ["Quote_Pending", "en cotizacion"].includes(o.status)).length;
+  const inQuote = orders.filter(o => ["Pending", "Pendiente"].includes(o.status)).length;
+  const inDesign = orders.filter(o => o.status === "In_Design").length;
+  const inCotizacion = orders.filter(o => o.status === "cotizacion").length;
   const inProd = orders.filter(o => o.status === "en produccion").length;
   const completed = orders.filter(o => o.status === "completada").length;
 
+  // Funcionalidad para filtrar las ordenes
   const filtered = orders.filter(o => {
     const q = search.toLowerCase();
     const orderDate = new Date(o.created_at);
@@ -1243,58 +1608,32 @@ export default function PageSeller() {
     { id: "dashboard", label: "Dashboard", icon: <Icon.Dashboard /> },
     { id: "orders", label: "Ordenes", icon: <Icon.Orders />, badge: orders.filter(o => !o.is_archived).length },
   ];
+
+  // Valores para las cartas metricas
   const metrics = [
     { icon: <Icon.Orders />, label: "Ordenes hoy", value: todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
-    { icon: <Icon.Package />, label: "En cotizacion", value: inQuote, sub: "Esperando precio", accentIdx: 1 },
-    { icon: <Icon.Package />, label: "En produccion", value: inProd, sub: "Siendo impresas", accentIdx: 2 },
-    { icon: <Icon.Truck />, label: "Completadas", value: completed, sub: "Entregadas al cliente", accentIdx: 3, trend: 8 },
+    { icon: <Icon.Package />, label: "Pendientes", value: inQuote, sub: "Ordenes Pendientes", accentIdx: 1 },
+    { icon: <Icon.Edit />, label: "En diseño", value: inDesign, sub: "En proceso de diseño", accentIdx: 2 },
+    { icon: <Icon.Package />, label: "En cotización", value: inCotizacion, sub: "Esperando aprobación", accentIdx: 1 },
+    { icon: <Icon.Package />, label: "En produccion", value: inProd, sub: "Siendo impresas", accentIdx: 3 },
+    { icon: <Icon.Truck />, label: "Completadas", value: completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
   ];
 
   return (
     <div className="ps-root">
 
       {/* ── SIDEBAR ── */}
-      <aside className={`ps-sidebar ${sidebarOpen ? "open" : "closed"}`}>
-        <div className="ps-sidebar-logo">
-          <NeonLogo size={52} />
-          {sidebarOpen && (
-            <div className="ps-sidebar-logo-text">
-              <div className="ps-sidebar-logo-title">Neon<span>Print</span></div>
-              <div className="text-[9px] text-[#ff1f6dba] tracking-[0.07em] uppercase">Sistema de Ordenes</div>
-            </div>
-          )}
-        </div>
-        {sidebarOpen && <div className="ps-sidebar-role"><div className="ps-sidebar-role-badge">● VENDEDOR</div></div>}
-        <nav className="ps-sidebar-nav">
-          {nav.map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)}
-              className={`ps-nav-btn ${activeTab === item.id ? "active" : ""}`}>
-              <span style={{ flexShrink: 0 }}>{item.icon}</span>
-              {sidebarOpen && <span>{item.label}</span>}
-              {sidebarOpen && item.badge !== undefined && (
-                <span className={`ps-nav-badge ${activeTab === item.id ? "active-badge" : ""}`}>{item.badge}</span>
-              )}
-            </button>
-          ))}
-          <div className="ps-nav-divider" />
-          <button className="ps-new-order-btn" onClick={() => setShowCreate(true)}>
-            <span style={{ flexShrink: 0 }}><Icon.Plus /></span>
-            {sidebarOpen && "Nueva Orden"}
-          </button>
-        </nav>
-        <div className="ps-sidebar-footer">
-          {sidebarOpen && (
-            <div className="ps-user-card">
-              <div className="ps-user-name">{user?.email?.split("@")[0] || "Vendedor"}</div>
-              <div className="ps-user-email">{user?.email || "---"}</div>
-            </div>
-          )}
-          <button className="ps-logout-btn" onClick={handleLogout}>
-            <span style={{ flexShrink: 0 }}><Icon.Logout /></span>
-            {sidebarOpen && "Cerrar sesion"}
-          </button>
-        </div>
-      </aside>
+      <Sidebar 
+        isOpen={sidebarOpen}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        role="Vendedor"
+        userName={user?.email?.split('@')[0] || "Vendedor"}
+        menuItems={nav.map(item => ({ ...item, icon: item.icon }))}
+        onLogout={handleLogout}
+        onCreateNew={() => setShowCreate(true)}
+        showCreateButton={true}
+      />
 
       {/* ── MAIN ── */}
       <div className="ps-main-wrap">
@@ -1324,7 +1663,7 @@ export default function PageSeller() {
           {activeTab === "dashboard" && (
             <>
               <div className="ps-greeting">
-                <h2>Buen dia, <span>{user?.email?.split("@")[0] || "Vendedor"}</span> 👋</h2>
+                <h2>Buen dia, <span>{user?.displayName || "Vendedor"}</span> 👋</h2>
                 <p>Aqui tienes el resumen de tu actividad de hoy.</p>
               </div>
               <div className="ps-metrics">
@@ -1443,24 +1782,41 @@ export default function PageSeller() {
                     </select>
                     <span className="ps-select-arrow"><Icon.ChevronDown /></span>
                   </div>
+                  <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
+                    <button 
+                      onClick={() => setViewMode("table")}
+                      className={`ps-view-toggle ${viewMode === "table" ? "active" : ""}`}
+                      title="Vista de tabla"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    </button>
+                    <button 
+                      onClick={() => setViewMode("cards")}
+                      className={`ps-view-toggle ${viewMode === "cards" ? "active" : ""}`}
+                      title="Vista de tarjetas"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    </button>
+                  </div>
                 </div>
                 <span className="ps-filters-count">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</span>
               </div>
               <div className="ps-panel">
                 <div className="ps-panel-stripe" />
-                <div className="ps-table-wrap">
-                  <table className="ps-table">
-                    <thead><tr>{["ID", "Cliente", "Descripcion", "Material", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
-                    <tbody>
-                      {loading ? (
-                        <tr>
-                          <td colSpan={9} className="ps-table-empty">Cargando órdenes...</td>
-                        </tr>
-                      ) : filtered.length === 0 ? (
-                        <tr>
-                          <td colSpan={9} className="ps-table-empty">No hay órdenes disponibles</td>
-                        </tr>
-                      ) : (
+                {viewMode === "table" ? (
+                  <div className="ps-table-wrap">
+                    <table className="ps-table">
+                      <thead><tr>{["ID", "Cliente", "Descripcion", "Material", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {loading ? (
+                          <tr>
+                            <td colSpan={9} className="ps-table-empty">Cargando órdenes...</td>
+                          </tr>
+                        ) : filtered.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="ps-table-empty">No hay órdenes disponibles</td>
+                          </tr>
+                        ) : (
                           filtered.map(o => (
                             <tr key={o.id} className="row-hover">
                               <td className="td-pad td-id">{o.id?.slice(0, 8) || "---"}</td>
@@ -1478,7 +1834,7 @@ export default function PageSeller() {
                               <td className="td-pad td-date">{new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
                               <td className="td-pad td-actions">
                                 <div className="table-actions">
-                                  <button className="table-action-btn view" onClick={() => setSelectedOrder(o)} title="Ver detalles">
+                                  <button className="table-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
                                     <Icon.Eye />
                                   </button>
                                   {!o.is_archived && (
@@ -1522,6 +1878,62 @@ export default function PageSeller() {
                       </tbody>
                     </table>
                   </div>
+                ) : (
+                  <div className="ps-cards-grid">
+                    {loading ? (
+                      <div className="ps-cards-empty">Cargando órdenes...</div>
+                    ) : filtered.length === 0 ? (
+                      <div className="ps-cards-empty">No hay órdenes disponibles</div>
+                    ) : (
+                      filtered.map(o => (
+                        <div key={o.id} className="ps-order-card" onClick={() => handleViewOrder(o)}>
+                          <div className="ps-order-card-header">
+                            <span className="ps-order-card-id">#{o.id?.slice(0, 8).toUpperCase() || "---"}</span>
+                            <StatusBadge status={o.status} />
+                          </div>
+                          <div className="ps-order-card-client">{o.client_name}</div>
+                          <div className="ps-order-card-desc">{o.description}</div>
+                          <div className="ps-order-card-meta">
+                            <span className="ps-order-card-material">{o.material}</span>
+                            <StatusBadge status={o.payment_status} type="payment" />
+                          </div>
+                          <div className="ps-order-card-footer">
+                            <span className="ps-order-card-date">
+                              {new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}
+                            </span>
+                            <div className="ps-order-card-type">
+                              {o.order_type === "orden 911" ? (
+                                <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B" }}>911</span>
+                              ) : (
+                                <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40" }}>Normal</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="ps-order-card-actions" onClick={e => e.stopPropagation()}>
+                            <button className="card-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
+                              <Icon.Eye />
+                            </button>
+                            {!o.is_archived && (
+                              <button className="card-action-btn edit" onClick={() => setEditingOrder(o)} title="Editar">
+                                <Icon.Edit />
+                              </button>
+                            )}
+                            {o.status !== "cancelada" && !o.is_archived && (
+                              <button className="card-action-btn cancel" onClick={() => handleCancelOrder(o)} title="Cancelar">
+                                <Icon.Trash />
+                              </button>
+                            )}
+                            {o.status === "cancelada" && !o.is_archived && (
+                              <button className="card-action-btn archive" onClick={() => handleArchiveOrder(o)} title="Archivar">
+                                <Icon.Archived />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -1530,9 +1942,30 @@ export default function PageSeller() {
 
       <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} />
       <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} />
-      <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} />
+      <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} />
+      <SendToDesignerModal 
+        open={!!sendingToDesigner} 
+        onClose={() => setSendingToDesigner(null)} 
+        order={sendingToDesigner} 
+        onConfirm={handleConfirmSendToDesigner} 
+        loading={sendingLoading} 
+      />
       <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
       <ArchivedOrderModal open={!!archivedingOrder} onClose={() => setArchivedingOrder(null)} order={archivedingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />
+      
+      {/* Toast Notification */}
+      {toast && (
+        <div className="ps-toast">
+          <div className="ps-toast-icon">
+            {toast.type === "success" ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            )}
+          </div>
+          <span className="ps-toast-message">{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

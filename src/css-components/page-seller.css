@@ -92,8 +92,8 @@
   box-shadow: 2px 0 12px rgba(15,30,64,0.18);
   flex-shrink: 0;
 }
-.ps-sidebar.open  { width: 230px; min-width: 230px; }
-.ps-sidebar.closed{ width: 85px;  min-width: 85px; }
+.ps-sidebar.open  { width: 260px; min-width: 260px; }
+.ps-sidebar.closed{ width: 80px;  min-width: 80px; }
 
 /* Logo */
 .ps-sidebar-logo {
@@ -1127,4 +1127,192 @@ select option { background: var(--surface); color: var(--text); }
 .ps-dropdown::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, #CBD5E1 0%, #94A3B8 100%);
   border-radius: 3px;
+}
+
+/* ── View Toggle ─────────────────────────────────────────────────────── */
+.ps-view-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ps-view-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ps-view-toggle.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* ── Card View ─────────────────────────────────────────────────────── */
+.ps-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 20px;
+}
+
+.ps-cards-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.ps-order-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ps-order-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(15, 30, 64, 0.08);
+  transform: translateY(-2px);
+}
+
+.ps-order-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ps-order-card-id {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+.ps-order-card-client {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ps-order-card-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.ps-order-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ps-order-card-material {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--primary);
+  background: rgba(15, 30, 64, 0.06);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.ps-order-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ps-order-card-date {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ps-order-card-type .ps-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.ps-order-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.card-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.card-action-btn.edit {
+  background: #E8EDF8;
+  color: #0f1e40;
+}
+
+.card-action-btn.edit:hover {
+  background: #0f1e40;
+  color: #fff;
+}
+
+.card-action-btn.view {
+  background: #F0FDF4;
+  color: #166534;
+}
+
+.card-action-btn.view:hover {
+  background: #166534;
+  color: #fff;
+}
+
+.card-action-btn.cancel {
+  background: #FEF2F2;
+  color: #991B1B;
+}
+
+.card-action-btn.cancel:hover {
+  background: #991B1B;
+  color: #fff;
+}
+
+.card-action-btn.archive {
+  background: #ECFDF5;
+  color: #065F46;
+}
+
+.card-action-btn.archive:hover {
+  background: #065F46;
+  color: #fff;
 }

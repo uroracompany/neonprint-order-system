@@ -115,6 +115,9 @@ export default function Lobby() {
         if(profiles.role === "seller"){
           navigate("/page-seller");
         }
+        if(profiles.role === "designer"){
+          navigate("/designer");
+        }
       });
 
       
