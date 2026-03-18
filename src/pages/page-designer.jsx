@@ -488,7 +488,13 @@ export default function PageDesigner() {
   const [orderFiles, setOrderFiles] = useState({});
   const [orderPreviews, setOrderPreviews] = useState({});
   const [notification, setNotification] = useState(null);
-  const notifiedOrdersRef = useRef({});
+  
+  const ordersRef = useRef([]);
+  const viewedOrdersRef = useRef({});
+  const notifiedRef = useRef({});
+  const userRef = useRef(null);
+
+  viewedOrdersRef.current = viewedOrders;
 
   const playNotificationSound = () => {
     try {
@@ -498,8 +504,8 @@ export default function PageDesigner() {
     } catch (e) {}
   };
 
-  const showNotification = ({ type, title, client, order }) => {
-    setNotification({ type, title, client, order });
+  const showNotification = ({ type, title, subtitle, client }) => {
+    setNotification({ type, title, subtitle, client });
     playNotificationSound();
     setTimeout(() => setNotification(null), 4500);
   };
@@ -512,82 +518,85 @@ export default function PageDesigner() {
         return;
       }
       setUser(user);
+      userRef.current = user;
     };
     getUser();
   }, [navigate]);
 
   useEffect(() => {
-    let isMounted = true;
-    
     const fetchOrders = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !isMounted) return;
-      
-      setUser(user);
+      if (!userRef.current) return;
 
       const { data, error } = await supabase
         .from("orders")
         .select("*")
-        .eq("designer_id", user.id)
+        .eq("designer_id", userRef.current.id)
         .order("created_at", { ascending: false });
 
-      if (!error && data && isMounted) {
-        setOrders(prev => {
-          if (JSON.stringify(prev) !== JSON.stringify(data)) {
-            data.forEach(newOrder => {
-              const exists = prev.find(o => o.id === newOrder.id);
+      if (!error && data) {
+        const prevOrders = ordersRef.current;
+        
+        data.forEach(newOrder => {
+          const exists = prevOrders.find(o => o.id === newOrder.id);
+          
+          if (!exists) {
+            if (!notifiedRef.current[`new-${newOrder.id}`]) {
+              notifiedRef.current[`new-${newOrder.id}`] = true;
+              showNotification({ 
+                type: 'new', 
+                title: 'Nueva Orden', 
+                subtitle: 'Se ha asignado una nueva orden',
+                client: newOrder.client_name 
+              });
+            }
+          } else {
+            const hasChanged = exists.status !== newOrder.status || 
+                               exists.description !== newOrder.description ||
+                               exists.material !== newOrder.material ||
+                               exists.quantity !== newOrder.quantity ||
+                               exists.width !== newOrder.width ||
+                               exists.height !== newOrder.height ||
+                               exists.price !== newOrder.price ||
+                               exists.payment_status !== newOrder.payment_status;
+            
+            if (hasChanged) {
+              setEditedOrders(prev => {
+                const updated = { ...prev, [newOrder.id]: Date.now() };
+                localStorage.setItem('editedOrders', JSON.stringify(updated));
+                return updated;
+              });
               
-              if (!exists) {
-                if (!notifiedOrdersRef.current[`new-${newOrder.id}`]) {
-                  notifiedOrdersRef.current[`new-${newOrder.id}`] = true;
-                  showNotification({ 
-                    type: 'new', 
-                    title: 'Nueva Orden', 
-                    subtitle: 'Se ha asignado una nueva orden',
-                    client: newOrder.client_name 
-                  });
-                }
-              } else {
-                const hasChanged = JSON.stringify(exists) !== JSON.stringify(newOrder);
-                
-                if (hasChanged && viewedOrders[newOrder.id]) {
-                  if (newOrder.status === 'cancelada') {
-                    if (!notifiedOrdersRef.current[`cancel-${newOrder.id}`]) {
-                      notifiedOrdersRef.current[`cancel-${newOrder.id}`] = true;
-                      showNotification({ 
-                        type: 'cancelled', 
-                        title: 'Orden Cancelada', 
-                        subtitle: 'La orden ha sido cancelada',
-                        client: newOrder.client_name 
-                      });
-                    }
-                  } else {
-                    if (!notifiedOrdersRef.current[`edit-${newOrder.id}`]) {
-                      notifiedOrdersRef.current[`edit-${newOrder.id}`] = true;
-                      setEditedOrders(prevEdited => {
-                        const updated = { ...prevEdited, [newOrder.id]: Date.now() };
-                        localStorage.setItem('editedOrders', JSON.stringify(updated));
-                        return updated;
-                      });
-                      showNotification({ 
-                        type: 'updated', 
-                        title: 'Orden Actualizada', 
-                        subtitle: 'La orden ha sido modificada',
-                        client: newOrder.client_name 
-                      });
-                    }
+              const wasViewed = viewedOrdersRef.current[newOrder.id];
+              
+              if (wasViewed) {
+                if (newOrder.status === 'cancelada') {
+                  if (!notifiedRef.current[`cancel-${newOrder.id}`]) {
+                    notifiedRef.current[`cancel-${newOrder.id}`] = true;
+                    showNotification({ 
+                      type: 'cancelled', 
+                      title: 'Orden Cancelada', 
+                      subtitle: 'La orden ha sido cancelada',
+                      client: newOrder.client_name 
+                    });
+                  }
+                } else {
+                  if (!notifiedRef.current[`edit-${newOrder.id}`]) {
+                    notifiedRef.current[`edit-${newOrder.id}`] = true;
+                    showNotification({ 
+                      type: 'updated', 
+                      title: 'Orden Actualizada', 
+                      subtitle: 'La orden ha sido modificada',
+                      client: newOrder.client_name 
+                    });
                   }
                 }
               }
-            });
-            
-            return data;
+            }
           }
-          return prev;
         });
-      }
-      
-      if (isMounted) {
+        
+        ordersRef.current = data;
+        setOrders(data);
         setLoading(false);
       }
     };
@@ -596,75 +605,8 @@ export default function PageDesigner() {
     
     const interval = setInterval(fetchOrders, 1500);
 
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, []);
-
-  const filteredOrders = orders.filter(order => {
-    const matchSearch = !search || 
-      order.client_name?.toLowerCase().includes(search.toLowerCase()) ||
-      order.id?.toLowerCase().includes(search.toLowerCase()) ||
-      order.description?.toLowerCase().includes(search.toLowerCase());
-    
-    const matchType = filterType === "all" || 
-      (filterType === "911" && order.order_type === "orden 911") ||
-      (filterType === "normal" && order.order_type !== "orden 911");
-    
-    const matchStatus = filterStatus === "all" || order.status === filterStatus;
-    
-    let matchDate = true;
-    if (filterDate !== "all") {
-      const orderDate = new Date(order.created_at);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      switch (filterDate) {
-        case "today":
-          matchDate = orderDate >= today;
-          break;
-        case "yesterday":
-          const yesterday = new Date(today);
-          yesterday.setDate(yesterday.getDate() - 1);
-          matchDate = orderDate >= yesterday && orderDate < today;
-          break;
-        case "3days":
-          const threeDays = new Date(today);
-          threeDays.setDate(threeDays.getDate() - 3);
-          matchDate = orderDate >= threeDays;
-          break;
-        case "7days":
-          const sevenDays = new Date(today);
-          sevenDays.setDate(sevenDays.getDate() - 7);
-          matchDate = orderDate >= sevenDays;
-          break;
-        case "month":
-          const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-          matchDate = orderDate >= monthStart;
-          break;
-      }
-    }
-    
-    return matchSearch && matchType && matchStatus && matchDate;
-  });
-
-  const metrics = [
-    { label: "Total Órdenes", value: orders.length, color: "#8B5CF6", icon: <Icon.Package /> },
-    { label: "En Diseño", value: orders.filter(o => o.status === "In_Design").length, color: "#F59E0B", icon: <Icon.File /> },
-    { label: "Cotización", value: orders.filter(o => o.status === "cotizacion").length, color: "#0EA5E9", icon: <Icon.Send /> },
-    { label: "Completadas", value: orders.filter(o => o.status === "completada").length, color: "#10B981", icon: <Icon.Check /> },
-  ];
-
-  const handleViewOrder = (order) => {
-    setSelectedOrder(order);
-    const now = Date.now();
-    if (!viewedOrders[order.id]) {
-      const newViewed = { ...viewedOrders, [order.id]: now };
-      setViewedOrders(newViewed);
-      localStorage.setItem('viewedOrders', JSON.stringify(newViewed));
-    }
-  };
 
   const isNewOrder = (order) => {
     if (viewedOrders[order.id]) return false;
@@ -674,12 +616,15 @@ export default function PageDesigner() {
   };
 
   const isEditedOrder = (order) => {
-    const viewedAt = viewedOrders[order.id];
-    if (!viewedAt) return false;
-    const editedAt = editedOrders[order.id];
-    if (!editedAt) return false;
-    return editedAt > viewedAt;
+    return !!editedOrders[order.id];
   };
+
+  const metrics = [
+    { label: "Total Órdenes", value: orders.length, color: "#8B5CF6", icon: <Icon.Package /> },
+    { label: "En Diseño", value: orders.filter(o => o.status === "In_Design").length, color: "#F59E0B", icon: <Icon.File /> },
+    { label: "Cotización", value: orders.filter(o => o.status === "cotizacion").length, color: "#0EA5E9", icon: <Icon.Send /> },
+    { label: "Completadas", value: orders.filter(o => o.status === "completada").length, color: "#10B981", icon: <Icon.Check /> },
+  ];
 
   const fetchOrderFiles = async (orderId) => {
     try {
