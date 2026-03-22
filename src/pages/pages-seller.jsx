@@ -87,18 +87,29 @@ const FLOW_STEPS = [
   { key: "In_Design", label: "Diseño" },
   { key: "cotizacion", label: "Cotización" },
   { key: "Produccion", label: "Producción" },
-  { key: "en produccion", label: "Entrega" },
-  { key: "en entrega", label: "Completada" },
+  { key: "en produccion", label: "Terminación" },
+  { key: "en entrega", label: "Entrega" },
+];
+
+// Flujo para órdenes de Diseño Externo (sin paso de diseño)
+const FLOW_STEPS_EXTERNAL = [
+  { key: "Pending", label: "Pendiente" },
+  { key: "cotizacion", label: "Cotización" },
+  { key: "en produccion", label: "Producción" },
+  { key: "terminacion", label: "Terminación" },
+  { key: "en entrega", label: "Entrega" },
 ];
 
 // Mapeo para mostrar la etiqueta correcta del paso actual
 const FLOW_STEP_LABELS = {
   "Pending": "Pendiente",
   "In_Design": "Diseño", 
+  "in_Quotation": "Cotización",
   "cotizacion": "Cotización",
   "Produccion": "Producción",
-  "en produccion": "Entrega",
-  "en entrega": "Completada",
+  "en produccion": "Terminación",
+  "terminacion": "Terminación",
+  "en entrega": "Entrega",
   "completada": "Completada",
   "cancelada": "Cancelada",
 };
@@ -188,7 +199,6 @@ function Field({ label, required, optional, hint, children }) {
 // BARRA DE POGRESO SE SEGUIMIENTO DE  LA ORDEN
 function FlowTracker({ status }) {
   const idx = FLOW_STEPS.findIndex(s => s.key === status);
-  const currentLabel = FLOW_STEP_LABELS[status] || status;
   
   return (
     <div className="ps-flow">
@@ -204,6 +214,43 @@ function FlowTracker({ status }) {
               <span className={`ps-flow-label ${isCompleted ? "done" : isActive ? "active" : ""}`}>{step.label}</span>
             </div>
             {i < FLOW_STEPS.length - 1 && <div className={`ps-flow-line ${isCompleted ? "done" : ""}`} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// FlowTracker para órdenes de Diseño Externo
+function FlowTrackerExternal({ status }) {
+  // Mapeo de estados a índice del tracker (ambos estados de cotización van al mismo paso)
+  const statusToIndex = {
+    "Pending": 0,
+    "in_Quotation": 1,
+    "cotizacion": 1,
+    "en produccion": 2,
+    "terminacion": 3,
+    "en entrega": 4,
+    "completada": 4,
+    "cancelada": -1,
+  };
+  
+  const idx = statusToIndex[status] ?? -1;
+  
+  return (
+    <div className="ps-flow">
+      {FLOW_STEPS_EXTERNAL.map((step, i) => {
+        const isCompleted = idx >= 0 && i < idx;
+        const isActive = i === idx;
+        return (
+          <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < FLOW_STEPS_EXTERNAL.length - 1 ? 1 : "none" }}>
+            <div className="ps-flow-step">
+              <div className={`ps-flow-circle ${isCompleted ? "done" : isActive ? "active" : ""}`}>
+                {isCompleted ? "✓" : i + 1}
+              </div>
+              <span className={`ps-flow-label ${isCompleted ? "done" : isActive ? "active" : ""}`}>{step.label}</span>
+            </div>
+            {i < FLOW_STEPS_EXTERNAL.length - 1 && <div className={`ps-flow-line ${isCompleted ? "done" : ""}`} />}
           </div>
         );
       })}
@@ -772,8 +819,12 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
 
   return (
     <Modal open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} wide>
-      {/* Flow Tracker */}
-      <FlowTracker status={order.status} />
+      {/* Flow Tracker - Diferente según tipo de orden */}
+      {order.order_design_type === "EXTERNAL_DESING" ? (
+        <FlowTrackerExternal status={order.status} />
+      ) : (
+        <FlowTracker status={order.status} />
+      )}
 
       {/* Grid Principal */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: 22 }}>
@@ -1674,8 +1725,9 @@ export default function PageSeller() {
   const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === today).length;
   const inQuote = orders.filter(o => ["Pending", "Pendiente"].includes(o.status)).length;
   const inDesign = orders.filter(o => o.status === "In_Design").length;
-  const inCotizacion = orders.filter(o => o.status === "cotizacion").length;
+  const inCotizacion = orders.filter(o => ["in_Quotation", "cotizacion"].includes(o.status)).length;
   const inProd = orders.filter(o => o.status === "en produccion").length;
+  const inTerminacion = orders.filter(o => o.status === "terminacion").length;
   const completed = orders.filter(o => o.status === "completada").length;
 
   // Funcionalidad para filtrar las ordenes
@@ -1754,7 +1806,8 @@ export default function PageSeller() {
     { icon: <Icon.Package />, label: "Pendientes", value: inQuote, sub: "Ordenes Pendientes", accentIdx: 1 },
     { icon: <Icon.Edit />, label: "En diseño", value: inDesign, sub: "En proceso de diseño", accentIdx: 2 },
     { icon: <Icon.Package />, label: "En cotización", value: inCotizacion, sub: "Esperando aprobación", accentIdx: 1 },
-    { icon: <Icon.Package />, label: "En produccion", value: inProd, sub: "Siendo impresas", accentIdx: 3 },
+    { icon: <Icon.Package />, label: "En producción", value: inProd, sub: "Siendo impresas", accentIdx: 3 },
+    { icon: <Icon.Package />, label: "Terminación", value: inTerminacion, sub: "En proceso final", accentIdx: 2 },
     { icon: <Icon.Truck />, label: "Completadas", value: completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
   ];
 
