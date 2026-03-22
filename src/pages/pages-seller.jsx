@@ -346,6 +346,7 @@ const EMPTY_FORM = {
   client_phone: "",
   description: "",
   materials: [],       // array — multi-select
+  termination_type: "", // tipo de terminación
   order_type: "",       // "orden normal" | "orden 911"
   design_type: "",       // "INTERNAL_DESING" | "EXTERNAL_DESING"
   delivery_date: "",       // ISO date string o "" (indefinido)
@@ -380,6 +381,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
       client_contact: form.client_phone.trim() || null,
       description: form.description.trim(),
       material: form.materials.join(", "),
+      termination_type: form.termination_type.trim() || null,
       order_type: form.order_type,
       order_design_type: form.design_type,
       delivery_date: form.indefinido ? null : (form.delivery_date || null),
@@ -489,6 +491,14 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
         <div className="col-full">
           <Field label="Materiales" required hint="Puedes seleccionar más de un material">
             <MultiMaterialSelector selected={form.materials} onChange={v => set("materials", v)} />
+          </Field>
+        </div>
+
+        {/* Tipo de terminación */}
+        <div className="col-full">
+          <Field label="Tipo de terminación" optional hint="Describe el tipo de terminación del trabajo">
+            <input className="ps-form-input" placeholder="Ej: Brillante, Mate, Con marco..."
+              value={form.termination_type} onChange={e => set("termination_type", e.target.value)} />
           </Field>
         </div>
 
@@ -897,6 +907,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {[
                 { label: "Material", value: order.material, icon: <Icon.Paintbrush /> },
+                { label: "Tipo de terminación", value: order.termination_type || "---", icon: <Icon.Check /> },
                 { label: "Tipo de orden", value: order.order_type, icon: <Icon.Package /> },
                 { label: "Diseño", 
                   value: order.order_design_type === "INTERNAL_DESING" ? "Diseño interno" :
@@ -907,7 +918,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                 <div key={i} style={{
                   display: "grid", gridTemplateColumns: "28px 1fr auto",
                   gap: 10, alignItems: "center", paddingBottom: 11,
-                  borderBottom: i < 3 ? "1px solid var(--border)" : "none"
+                  borderBottom: i < 4 ? "1px solid var(--border)" : "none"
                 }}>
                   <div style={{ color: "var(--text-muted)" }}>{item.icon}</div>
                   <div>
