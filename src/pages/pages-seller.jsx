@@ -47,15 +47,18 @@ const Icon = {
   Key: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m-3.5 3.5L12 12" /></svg>),
   Clock: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>),
   User: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>),
-  Package: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16.5 9.4-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>),
+  Image: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>),
+  File: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>),
 };
 
 // ─── STATUS & PAYMENT CONFIG ──────────────────────────────────────────────────
 const STATUS_CONFIG = {
   "Pending": { label: "Pendiente", value: "Pending", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
   "In_Design": { label: "En Diseño", value: "In_Design", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
+  "in_Quotation": { label: "En Cotización", value: "in_Quotation", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
   "cotizacion": { label: "Cotización", value: "cotizacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
   "en produccion": { label: "En Producción", value: "en produccion", color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
+  "terminacion": { label: "Terminación", value: "terminacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0284C7" },
   "en entrega": { label: "En Entrega", value: "en entrega", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
   "completada": { label: "Completada", value: "completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
   "cancelada": { label: "Cancelada", value: "cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
@@ -297,13 +300,17 @@ const EMPTY_FORM = {
   description: "",
   materials: [],       // array — multi-select
   order_type: "",       // "orden normal" | "orden 911"
-  design_type: "",       // "interno" | "externo"
+  design_type: "",       // "INTERNAL_DESING" | "EXTERNAL_DESING"
   delivery_date: "",       // ISO date string o "" (indefinido)
   indefinido: false,    // si true, fecha queda como indefinida
+  design_files: [],     // archivos de diseño externo
+  design_preview: null, // imagen preview de diseño externo
 };
 
 function CreateOrderModal({ open, onClose, onCreated, userId }) {
   const formTopRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const previewInputRef = useRef(null);
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
@@ -329,15 +336,61 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
       order_type: form.order_type,
       order_design_type: form.design_type,
       delivery_date: form.indefinido ? null : (form.delivery_date || null),
-      status: STATUS_CONFIG["Pending"].value, // estado inicial
-      payment_status: PAYMENT_CONFIG["Pending_Payment"].value, // estado inicial
+      status: "Pending",
+      payment_status: PAYMENT_CONFIG["Pending_Payment"].value,
       seller_id: userId,
       created_by: userId,
     };
 
-    const { error: err } = await supabase.from("orders").insert([payload]);
+    const { data: newOrder, error: err } = await supabase.from("orders").insert([payload]).select().single();
     setLoading(false);
     if (err) { setError("Error al crear la orden: " + err.message); return; }
+
+    if (form.design_files.length > 0 || form.design_preview) {
+      setLoading(true);
+      const fileUrls = [];
+      
+      for (let i = 0; i < form.design_files.length; i++) {
+        const file = form.design_files[i];
+        const fileName = `${Date.now()}-${i}-${file.name}`;
+        const { data, error } = await supabase.storage
+          .from("order-docs")
+          .upload(`orders/${newOrder.id}/files/${fileName}`, file, { upsert: true });
+        
+        if (!error && data) {
+          const { data: { publicUrl } } = supabase.storage
+            .from("order-docs")
+            .getPublicUrl(`orders/${newOrder.id}/files/${fileName}`);
+          fileUrls.push(publicUrl);
+        }
+      }
+      
+      let previewUrl = null;
+      if (form.design_preview) {
+        const fileName = `preview-${Date.now()}.${form.design_preview.name.split('.').pop()}`;
+        const { data, error } = await supabase.storage
+          .from("order-previews")
+          .upload(`orders/${newOrder.id}/preview/${fileName}`, form.design_preview, { upsert: true });
+        
+        if (!error && data) {
+          const { data: { publicUrl } } = supabase.storage
+            .from("order-previews")
+            .getPublicUrl(`orders/${newOrder.id}/preview/${fileName}`);
+          previewUrl = publicUrl;
+        }
+      }
+      
+      if (fileUrls.length > 0 || previewUrl) {
+        const updateData = {};
+        if (fileUrls.length > 0) updateData.order_file_url = JSON.stringify(fileUrls);
+        if (previewUrl) updateData.preview_image = previewUrl;
+        
+        await supabase.from("orders").update(updateData).eq("id", newOrder.id);
+      }
+      
+      setLoading(false);
+    }
+
     handleClose(); onCreated?.();
   };
 
@@ -348,187 +401,6 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
 
   return (
     <Modal open={open} onClose={handleClose} title="Nueva Orden">
-      <div ref={formTopRef} />
-      {error && <div className="ps-form-error">{error}</div>}
-
-      {/* ─ Sección 1: Datos del cliente ─ */}
-      <div className="ps-form-section-title">
-        <span className="ps-form-section-num">1</span> Datos del cliente
-      </div>
-      <div className="ps-form-grid">
-        <div className="col-full">
-          <Field label="Nombre del cliente" required>
-            <input className="ps-form-input" placeholder="Ej: Empresa ABC"
-              value={form.client_name} onChange={e => set("client_name", e.target.value)} />
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Telefono / Contacto" optional hint="WhatsApp o numero de contacto del cliente">
-            <div className="ps-input-icon-wrap">
-              <span className="ps-input-icon"><Icon.Phone /></span>
-              <input className="ps-form-input with-icon" placeholder="Ej: 809-555-1234"
-                value={form.client_phone} onChange={e => set("client_phone", e.target.value)} />
-            </div>
-          </Field>
-        </div>
-      </div>
-
-      {/* ─ Sección 2: Detalles del trabajo ─ */}
-      <div className="ps-form-section-title">
-        <span className="ps-form-section-num">2</span> Detalles del trabajo
-      </div>
-      <div className="ps-form-grid">
-        <div className="col-full">
-          <Field label="Descripcion del trabajo" required>
-            <textarea className="ps-form-input textarea" placeholder="Describe el trabajo solicitado por el cliente..."
-              value={form.description} onChange={e => set("description", e.target.value)} />
-          </Field>
-        </div>
-
-        {/* Multi-material */}
-        <div className="col-full">
-          <Field label="Materiales" required hint="Puedes seleccionar más de un material">
-            <MultiMaterialSelector selected={form.materials} onChange={v => set("materials", v)} />
-          </Field>
-        </div>
-
-        {/* Tipo de orden — solo 2 opciones */}
-        <div className="col-full">
-          <Field label="Tipo de orden" required>
-            <div className="ps-order-type-group">
-              {[
-                { val: "orden normal", label: "Orden Normal", desc: "Flujo estándar de produccion" },
-                { val: "orden 911", label: "Orden 911", desc: "Urgente — prioridad maxima", urgent: true },
-              ].map(opt => (
-                <label key={opt.val} className={`ps-order-type-card ${form.order_type === opt.val ? "selected" : ""} ${opt.urgent ? "urgent" : ""}`}>
-                  <input type="radio" name="order_type" value={opt.val}
-                    checked={form.order_type === opt.val}
-                    onChange={() => set("order_type", opt.val)}
-                    style={{ display: "none" }} />
-                  <div className="ps-order-type-label">{opt.label}</div>
-                  <div className="ps-order-type-desc">{opt.desc}</div>
-                </label>
-              ))}
-            </div>
-          </Field>
-        </div>
-
-        {/* Tipo de diseño — afecta visibilidad de campo externo */}
-        <div className="col-full">
-          <Field label="Tipo de diseno" required>
-            <div className="ps-order-type-group">
-              {[
-                { val: "INTERNAL_DESING", label: "Diseño Interno", desc: "El diseno lo realiza NeonPrint" },
-                { val: "EXTERNAL_DESING", label: "Diseño Externo", desc: "El cliente entrega su diseno" },
-              ].map(opt => (
-                <label key={opt.val} className={`ps-order-type-card ${form.design_type === opt.val ? "selected" : ""}`}>
-                  <input type="radio" name="design_type" value={opt.val}
-                    checked={form.design_type === opt.val}
-                    onChange={() => set("design_type", opt.val)}
-                    style={{ display: "none" }} />
-                  <div className="ps-order-type-label">{opt.label}</div>
-                  <div className="ps-order-type-desc">{opt.desc}</div>
-                </label>
-              ))}
-            </div>
-          </Field>
-        </div>
-
-        {/* Fecha de entrega */}
-        <div className="col-full">
-          <Field label="Fecha de entrega" optional>
-            <div className="ps-date-row">
-              <div className="ps-input-icon-wrap" style={{ flex: 1 }}>
-                <span className="ps-input-icon"><Icon.Calendar /></span>
-                <input
-                  className="ps-form-input with-icon"
-                  type="date"
-                  value={form.delivery_date}
-                  disabled={form.indefinido}
-                  onChange={e => set("delivery_date", e.target.value)}
-                  style={{ opacity: form.indefinido ? 0.4 : 1 }}
-                />
-              </div>
-              <label className="ps-indefinido-check">
-                <input type="checkbox" checked={form.indefinido} onChange={e => set("indefinido", e.target.checked)} />
-                <span>Indefinido</span>
-              </label>
-            </div>
-          </Field>
-        </div>
-      </div>
-
-
-
-      <div className="ps-form-actions">
-        <button className="ps-btn-cancel" onClick={handleClose}>Cancelar</button>
-        <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Creando orden..." : "Crear Orden →"}
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-// ─── EDIT ORDER MODAL ─────────────────────────────────────────────────────────
-function EditOrderModal({ open, onClose, order, onUpdated }) {
-  const formTopRef = useRef(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  // Pre-fill form when order changes
-  useEffect(() => {
-    if (order) {
-      const materials = order.material ? order.material.split(", ").filter(m => m.trim()) : [];
-      const deliveryDate = order.delivery_date ? order.delivery_date.split("T")[0] : "";
-      setForm({
-        client_name: order.client_name || "",
-        client_phone: order.client_contact || "",
-        description: order.description || "",
-        materials: materials,
-        order_type: order.order_type || "",
-        design_type: order.order_design_type || "",
-        delivery_date: deliveryDate,
-        indefinido: !order.delivery_date,
-      });
-    }
-  }, [order]);
-
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-
-  const handleSubmit = async () => {
-    if (!form.client_name) { setError("El nombre del cliente es requerido."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-    if (!form.description) { setError("La descripcion del trabajo es requerida."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-    if (form.materials.length === 0) { setError("Selecciona al menos un material."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-    if (!form.order_type) { setError("Selecciona el tipo de orden."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-    if (!form.design_type) { setError("Indica si el diseno es interno o externo."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-
-    setLoading(true); setError("");
-
-    const payload = {
-      client_name: form.client_name.trim(),
-      client_contact: form.client_phone.trim() || null,
-      description: form.description.trim(),
-      material: form.materials.join(", "),
-      order_type: form.order_type,
-      order_design_type: form.design_type,
-      delivery_date: form.indefinido ? null : (form.delivery_date || null),
-    };
-
-    const { error: err } = await supabase.from("orders").update(payload).eq("id", order.id);
-    setLoading(false);
-    if (err) { setError("Error al actualizar la orden: " + err.message); return; }
-    handleClose(); onUpdated?.();
-  };
-
-  const handleClose = () => {
-    setForm(EMPTY_FORM);
-    setError(""); onClose();
-  };
-
-  return (
-    <Modal open={open} onClose={handleClose} title="Editar Orden">
       <div ref={formTopRef} />
       {error && <div className="ps-form-error">{error}</div>}
 
@@ -615,6 +487,84 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
           </Field>
         </div>
 
+        {/* Campos para DISEÑO EXTERNO */}
+        {form.design_type === "EXTERNAL_DESING" && (
+          <>
+            <div className="col-full">
+              <Field label="Archivos de diseño" hint="Sube los archivos de diseño del cliente">
+                <div className="ps-upload-zone" onClick={() => fileInputRef.current?.click()}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    onChange={e => {
+                      const files = Array.from(e.target.files);
+                      set("design_files", [...form.design_files, ...files]);
+                      e.target.value = "";
+                    }}
+                    style={{ display: "none" }}
+                  />
+                  <div className="ps-upload-icon"><Icon.Upload /></div>
+                  <div className="ps-upload-btn-wrapper">
+                    <span className="ps-upload-btn-text">Subir archivos</span>
+                  </div>
+                  <span className="ps-upload-hint">Archivos del diseño (PDF, AI, PNG, JPG...)</span>
+                </div>
+                {form.design_files.length > 0 && (
+                  <div className="ps-files-list">
+                    {form.design_files.map((file, i) => (
+                      <div key={i} className="ps-file-item">
+                        <Icon.File />
+                        <span className="ps-file-name">{file.name}</span>
+                        <button className="ps-file-remove" onClick={(e) => { e.stopPropagation(); set("design_files", form.design_files.filter((_, idx) => idx !== i)); }}>
+                          <Icon.X />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Field>
+            </div>
+
+            <div className="col-full">
+              <Field label="Imagen de preview" hint="Vista previa del diseño">
+                {!form.design_preview ? (
+                  <div className="ps-preview-empty" onClick={() => previewInputRef.current?.click()}>
+                    <input
+                      ref={previewInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={e => {
+                        if (e.target.files && e.target.files[0]) {
+                          set("design_preview", e.target.files[0]);
+                        }
+                      }}
+                      style={{ display: "none" }}
+                    />
+                    <div className="ps-preview-upload-content">
+                      <div className="ps-preview-upload-icon"><Icon.Image /></div>
+                      <span className="ps-preview-upload-text">Subir imagen de preview</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="ps-preview-showcase">
+                    <div className="ps-preview-card">
+                      <img src={URL.createObjectURL(form.design_preview)} alt="Preview" className="ps-preview-img-main" />
+                      <div className="ps-preview-card-overlay">
+                        <span className="ps-preview-card-label">Vista previa del diseño</span>
+                        <div className="ps-preview-card-actions">
+                          <button className="ps-preview-change-btn" onClick={() => previewInputRef.current?.click()}>Cambiar</button>
+                          <button className="ps-preview-del-btn" onClick={() => set("design_preview", null)}><Icon.Trash /></button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </Field>
+            </div>
+          </>
+        )}
+
         {/* Fecha de entrega */}
         <div className="col-full">
           <Field label="Fecha de entrega" optional>
@@ -642,7 +592,152 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
       <div className="ps-form-actions">
         <button className="ps-btn-cancel" onClick={handleClose}>Cancelar</button>
         <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Actualizando orden..." : "Actualizar Orden →"}
+          {loading ? "Guardando..." : "Crear Orden →"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── EDIT ORDER MODAL ─────────────────────────────────────────────────────────
+function EditOrderModal({ open, onClose, order, onUpdated }) {
+  const [form, setForm] = useState({
+    client_name: "",
+    client_contact: "",
+    description: "",
+    material: "",
+    status: "",
+    payment_status: "",
+    delivery_date: "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (order) {
+      setForm({
+        client_name: order.client_name || "",
+        client_contact: order.client_contact || "",
+        description: order.description || "",
+        material: order.material || "",
+        status: order.status || "",
+        payment_status: order.payment_status || "",
+        delivery_date: order.delivery_date ? order.delivery_date.split("T")[0] : "",
+      });
+    }
+  }, [order]);
+
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const handleSubmit = async () => {
+    if (!form.client_name) { setError("El nombre del cliente es requerido."); return; }
+    if (!form.description) { setError("La descripción es requerida."); return; }
+
+    setLoading(true);
+    setError("");
+
+    const { error: err } = await supabase
+      .from("orders")
+      .update({
+        client_name: form.client_name.trim(),
+        client_contact: form.client_contact.trim() || null,
+        description: form.description.trim(),
+        material: form.material.trim(),
+        status: form.status,
+        payment_status: form.payment_status,
+        delivery_date: form.delivery_date || null,
+      })
+      .eq("id", order.id);
+
+    setLoading(false);
+
+    if (err) {
+      setError("Error al actualizar: " + err.message);
+      return;
+    }
+
+    onUpdated?.();
+    onClose();
+  };
+
+  const statusOptions = Object.entries(STATUS_CONFIG).map(([key, cfg]) => ({
+    value: key,
+    label: cfg.label,
+  }));
+
+  const paymentOptions = Object.entries(PAYMENT_CONFIG).map(([key, cfg]) => ({
+    value: key,
+    label: cfg.label,
+  }));
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Editar Orden #${order?.id?.slice(0, 8).toUpperCase()}`}>
+      {error && <div className="ps-form-error">{error}</div>}
+
+      <div className="ps-form-section-title">
+        <span className="ps-form-section-num">1</span> Datos del cliente
+      </div>
+      <div className="ps-form-grid">
+        <div className="col-full">
+          <Field label="Nombre del cliente" required>
+            <input className="ps-form-input" value={form.client_name} onChange={e => set("client_name", e.target.value)} />
+          </Field>
+        </div>
+        <div className="col-full">
+          <Field label="Contacto" optional>
+            <input className="ps-form-input" value={form.client_contact} onChange={e => set("client_contact", e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      <div className="ps-form-section-title" style={{ marginTop: 20 }}>
+        <span className="ps-form-section-num">2</span> Detalles de la orden
+      </div>
+      <div className="ps-form-grid">
+        <div className="col-full">
+          <Field label="Descripción" required>
+            <textarea className="ps-form-input textarea" value={form.description} onChange={e => set("description", e.target.value)} />
+          </Field>
+        </div>
+        <div className="col-full">
+          <Field label="Material" optional>
+            <input className="ps-form-input" value={form.material} onChange={e => set("material", e.target.value)} />
+          </Field>
+        </div>
+        <div className="col-full">
+          <Field label="Estado" required>
+            <select className="ps-form-input" value={form.status} onChange={e => set("status", e.target.value)}>
+              <option value="">Seleccionar...</option>
+              {statusOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="col-full">
+          <Field label="Pago" required>
+            <select className="ps-form-input" value={form.payment_status} onChange={e => set("payment_status", e.target.value)}>
+              <option value="">Seleccionar...</option>
+              {paymentOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="col-full">
+          <Field label="Fecha de entrega" optional>
+            <div className="ps-input-icon-wrap">
+              <span className="ps-input-icon"><Icon.Calendar /></span>
+              <input className="ps-form-input with-icon" type="date" value={form.delivery_date} onChange={e => set("delivery_date", e.target.value)} />
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      <div className="ps-form-actions">
+        <button className="ps-btn-cancel" onClick={onClose}>Cancelar</button>
+        <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
+          {loading ? "Guardando..." : "Guardar Cambios →"}
         </button>
       </div>
     </Modal>
@@ -650,7 +745,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
 }
 
 // ─── ORDER DETAIL MODAL ───────────────────────────────────────────────────────
-function OrderDetailModal({ open, onClose, order, user, onSendToDesigner }) {
+function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSendToQuotation }) {
   if (!order) return null;
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const statusConfig = STATUS_CONFIG[order.status];
@@ -660,7 +755,6 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner }) {
   
   useEffect(() => {
     if (order?.designer_id) {
-      // Consultar el nombre del diseñador desde profiles
       supabase
         .from("profiles")
         .select("name")
@@ -837,33 +931,60 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner }) {
               </div>
             </div>
 
-            {/* Botón Enviar a Diseño */}
-            {order.status !== "In_Design" && order.status !== "en produccion" && order.status !== "en entrega" && order.status !== "completada" && order.status !== "cancelada" && (
+            {/* Botón Enviar a Diseño / Cotización */}
+            {order.status !== "In_Design" && order.status !== "en produccion" && order.status !== "en entrega" && order.status !== "completada" && order.status !== "cancelada" && order.status !== "in_Quotation" && order.status !== "cotizacion" && (
               <div style={{ marginTop: 16 }}>
-                <button
-                  onClick={() => onSendToDesigner(order)}
-                  style={{
-                    width: "100%",
-                    padding: "14px 20px",
-                    background: "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)",
-                    border: "none",
-                    borderRadius: "var(--radius-md)",
-                    color: "#fff",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    fontFamily: "'Poppins', sans-serif",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    boxShadow: "0 4px 12px rgba(139, 92, 246, 0.3)",
-                    transition: "all 0.2s"
-                  }}
-                >
-                  <Icon.Edit style={{ width: 18, height: 18 }} />
-                  Enviar a Diseño
-                </button>
+                {order.order_design_type === "EXTERNAL_DESING" ? (
+                  <button
+                    onClick={() => onSendToQuotation(order)}
+                    style={{
+                      width: "100%",
+                      padding: "14px 20px",
+                      background: "linear-gradient(135deg, #0369A1 0%, #0284C7 100%)",
+                      border: "none",
+                      borderRadius: "var(--radius-md)",
+                      color: "#fff",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      fontFamily: "'Poppins', sans-serif",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      boxShadow: "0 4px 12px rgba(2, 132, 199, 0.3)",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <Icon.Edit style={{ width: 18, height: 18 }} />
+                    Enviar a Cotización
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onSendToDesigner(order)}
+                    style={{
+                      width: "100%",
+                      padding: "14px 20px",
+                      background: "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)",
+                      border: "none",
+                      borderRadius: "var(--radius-md)",
+                      color: "#fff",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      fontFamily: "'Poppins', sans-serif",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      boxShadow: "0 4px 12px rgba(139, 92, 246, 0.3)",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <Icon.Edit style={{ width: 18, height: 18 }} />
+                    Enviar a Diseño
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -926,7 +1047,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner }) {
             {order.preview_image && (
               <div>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icon.Eye /> Imagen de referencia
+                  <Icon.Eye /> Orden de Trabajo
                 </p>
                 <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
                   <img 
@@ -1467,6 +1588,24 @@ export default function PageSeller() {
     setSendingToDesigner(order);
   };
 
+  // ── Enviar a Cotización (Diseño Externo) ─────────────────────────────────
+  const handleSendToQuotation = async (order) => {
+    setSendingLoading(true);
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: "in_Quotation" })
+      .eq("id", order.id);
+
+    setSendingLoading(false);
+
+    if (error) {
+      console.error("Error al enviar a cotización:", error);
+    }
+
+    setSelectedOrder(null);
+    fetchOrders(user?.id);
+  };
+
   const handleConfirmSendToDesigner = async (designerId) => {
     if (!sendingToDesigner) return;
 
@@ -1942,7 +2081,7 @@ export default function PageSeller() {
 
       <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} />
       <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} />
-      <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} />
+      <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} onSendToQuotation={handleSendToQuotation} />
       <SendToDesignerModal 
         open={!!sendingToDesigner} 
         onClose={() => setSendingToDesigner(null)} 
