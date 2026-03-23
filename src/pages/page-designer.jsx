@@ -479,42 +479,24 @@ export default function PageDesigner() {
   const [viewMode, setViewMode] = useState("cards");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [viewedOrders, setViewedOrders] = useState(() => {
-    const saved = localStorage.getItem('viewedOrders');
-    return saved ? JSON.parse(saved) : {};
+    try {
+      const saved = localStorage.getItem("pd_viewed_orders");
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
   });
-  const [editedOrders, setEditedOrders] = useState(() => {
-    const saved = localStorage.getItem('editedOrders');
-    return saved ? JSON.parse(saved) : {};
-  });
+  const [editedOrders, setEditedOrders] = useState({});
   const [orderFiles, setOrderFiles] = useState({});
   const [orderPreviews, setOrderPreviews] = useState({});
-  const [notification, setNotification] = useState(null);
-  const [notifiedOrders, setNotifiedOrders] = useState(() => {
-    const saved = localStorage.getItem('notifiedOrders');
-    return saved ? JSON.parse(saved) : {};
-  });
   
   const ordersRef = useRef([]);
   const viewedOrdersRef = useRef({});
-  const notifiedRef = useRef({});
   const userRef = useRef(null);
 
   viewedOrdersRef.current = viewedOrders;
-  notifiedRef.current = notifiedOrders;
 
-  const playNotificationSound = () => {
-    try {
-      const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2teleQoQQpLZ7X9wBQA=');
-      audio.volume = 0.3;
-      audio.play().catch(() => {});
-    } catch (e) {}
-  };
-
-  const showNotification = ({ type, title, subtitle, client }) => {
-    setNotification({ type, title, subtitle, client });
-    playNotificationSound();
-    setTimeout(() => setNotification(null), 4500);
-  };
+  useEffect(() => {
+    localStorage.setItem("pd_viewed_orders", JSON.stringify(viewedOrders));
+  }, [viewedOrders]);
 
   const handleViewOrder = async (order) => {
     const { data } = await supabase
@@ -529,11 +511,10 @@ export default function PageDesigner() {
       setSelectedOrder(order);
     }
     
-    if (!viewedOrders[order.id]) {
-      const updated = { ...viewedOrders, [order.id]: Date.now() };
-      setViewedOrders(updated);
-      localStorage.setItem('viewedOrders', JSON.stringify(updated));
-    }
+    setViewedOrders(prev => {
+      if (prev[order.id]) return prev;
+      return { ...prev, [order.id]: Date.now() };
+    });
   };
 
   useEffect(() => {
@@ -560,72 +541,6 @@ export default function PageDesigner() {
         .order("created_at", { ascending: false });
 
       if (!error && data) {
-        const prevOrders = ordersRef.current;
-        
-        data.forEach(newOrder => {
-          const exists = prevOrders.find(o => o.id === newOrder.id);
-          
-          if (!exists) {
-            if (!notifiedRef.current[`new-${newOrder.id}`]) {
-              const updated = { ...notifiedOrders, [`new-${newOrder.id}`]: Date.now() };
-              setNotifiedOrders(updated);
-              localStorage.setItem('notifiedOrders', JSON.stringify(updated));
-              notifiedRef.current[`new-${newOrder.id}`] = true;
-              showNotification({ 
-                type: 'new', 
-                title: 'Nueva Orden', 
-                subtitle: 'Se ha asignado una nueva orden',
-                client: newOrder.client_name 
-              });
-            }
-          } else {
-            const statusChanged = exists.status !== newOrder.status;
-            const otherFieldsChanged = exists.description !== newOrder.description ||
-                               exists.material !== newOrder.material ||
-                               exists.quantity !== newOrder.quantity ||
-                               exists.width !== newOrder.width ||
-                               exists.height !== newOrder.height ||
-                               exists.price !== newOrder.price ||
-                               exists.payment_status !== newOrder.payment_status;
-            
-            if (newOrder.status === 'cancelada') {
-              if (!notifiedRef.current[`cancel-${newOrder.id}`]) {
-                const updated = { ...notifiedOrders, [`cancel-${newOrder.id}`]: Date.now() };
-                setNotifiedOrders(updated);
-                localStorage.setItem('notifiedOrders', JSON.stringify(updated));
-                notifiedRef.current[`cancel-${newOrder.id}`] = true;
-                showNotification({ 
-                  type: 'cancelled', 
-                  title: 'Orden Cancelada', 
-                  subtitle: 'La orden ha sido cancelada',
-                  client: newOrder.client_name 
-                });
-              }
-            } else if (statusChanged || otherFieldsChanged) {
-              setEditedOrders(prev => {
-                const updated = { ...prev, [newOrder.id]: Date.now() };
-                localStorage.setItem('editedOrders', JSON.stringify(updated));
-                return updated;
-              });
-              
-              const wasViewed = viewedOrdersRef.current[newOrder.id];
-              
-              if (wasViewed && !notifiedRef.current[`edit-${newOrder.id}`]) {
-                const updated = { ...notifiedOrders, [`edit-${newOrder.id}`]: Date.now() };
-                setNotifiedOrders(updated);
-                localStorage.setItem('notifiedOrders', JSON.stringify(updated));
-                notifiedRef.current[`edit-${newOrder.id}`] = true;
-                showNotification({ 
-                  type: 'updated', 
-                  title: 'Orden Actualizada', 
-                  subtitle: 'La orden ha sido modificada',
-                  client: newOrder.client_name 
-                });
-              }
-            }
-          }
-        });
-        
         ordersRef.current = data;
         setOrders(data);
         setLoading(false);
@@ -958,45 +873,6 @@ export default function PageDesigner() {
           }
         }}
       />
-
-      {notification && (
-        <div className={`pd-notification ${notification.type}`}>
-          <div className="pd-notification-progress"></div>
-          <div className="pd-notification-main">
-            <div className="pd-notification-icon">
-              {notification.type === 'new' && (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                </svg>
-              )}
-              {notification.type === 'updated' && (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                </svg>
-              )}
-              {notification.type === 'cancelled' && (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="15" y1="9" x2="9" y2="15"/>
-                  <line x1="9" y1="9" x2="15" y2="15"/>
-                </svg>
-              )}
-            </div>
-            <div className="pd-notification-content">
-              <span className="pd-notification-title">{notification.title}</span>
-              {notification.subtitle && (
-                <span className="pd-notification-subtitle">{notification.subtitle}</span>
-              )}
-              <span className="pd-notification-text">{notification.client}</span>
-            </div>
-            <button className="pd-notification-close" onClick={() => setNotification(null)}>
-              <Icon.X />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
