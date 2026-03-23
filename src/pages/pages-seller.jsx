@@ -658,15 +658,22 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
 
 // ─── EDIT ORDER MODAL ─────────────────────────────────────────────────────────
 function EditOrderModal({ open, onClose, order, onUpdated }) {
+  const fileInputRef = useRef(null);
+  const previewInputRef = useRef(null);
+
   const [form, setForm] = useState({
     client_name: "",
     client_contact: "",
     description: "",
     material: "",
-    status: "",
-    payment_status: "",
+    termination_type: "",
     delivery_date: "",
   });
+  const [existingFiles, setExistingFiles] = useState([]);
+  const [newFiles, setNewFiles] = useState([]);
+  const [existingPreview, setExistingPreview] = useState(null);
+  const [newPreview, setNewPreview] = useState(null);
+  const [removedFileUrls, setRemovedFileUrls] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -677,14 +684,62 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
         client_contact: order.client_contact || "",
         description: order.description || "",
         material: order.material || "",
-        status: order.status || "",
-        payment_status: order.payment_status || "",
+        termination_type: order.termination_type || "",
         delivery_date: order.delivery_date ? order.delivery_date.split("T")[0] : "",
       });
+
+      const parseFiles = (fileUrl) => {
+        if (!fileUrl) return [];
+        try {
+          const parsed = JSON.parse(fileUrl);
+          return Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          return [fileUrl];
+        }
+      };
+
+      setExistingFiles(parseFiles(order.order_file_url));
+      setExistingPreview(order.preview_image || null);
+      setNewFiles([]);
+      setNewPreview(null);
+      setRemovedFileUrls([]);
     }
   }, [order]);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const handleRemoveExistingFile = (url) => {
+    setRemovedFileUrls(prev => [...prev, url]);
+    setExistingFiles(prev => prev.filter(f => f !== url));
+  };
+
+  const handleAddNewFiles = (e) => {
+    const files = Array.from(e.target.files);
+    setNewFiles(prev => [...prev, ...files]);
+    e.target.value = "";
+  };
+
+  const handleRemoveNewFile = (index) => {
+    setNewFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveExistingPreview = () => {
+    if (existingPreview) {
+      setRemovedFileUrls(prev => [...prev, existingPreview]);
+    }
+    setExistingPreview(null);
+  };
+
+  const handleAddNewPreview = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setNewPreview(e.target.files[0]);
+      e.target.value = "";
+    }
+  };
+
+  const handleRemoveNewPreview = () => {
+    setNewPreview(null);
+  };
 
   const handleSubmit = async () => {
     if (!form.client_name) { setError("El nombre del cliente es requerido."); return; }
@@ -700,32 +755,82 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
         client_contact: form.client_contact.trim() || null,
         description: form.description.trim(),
         material: form.material.trim(),
-        status: form.status,
-        payment_status: form.payment_status,
+        termination_type: form.termination_type.trim() || null,
         delivery_date: form.delivery_date || null,
       })
       .eq("id", order.id);
 
-    setLoading(false);
-
     if (err) {
+      setLoading(false);
       setError("Error al actualizar: " + err.message);
       return;
     }
 
+    let fileUrls = [...existingFiles];
+    for (let i = 0; i < newFiles.length; i++) {
+      const file = newFiles[i];
+      const fileName = `${Date.now()}-${i}-${file.name}`;
+      const { data, error } = await supabase.storage
+        .from("order-docs")
+        .upload(`orders/${order.id}/files/${fileName}`, file, { upsert: true });
+
+      if (!error && data) {
+        const { data: { publicUrl } } = supabase.storage
+          .from("order-docs")
+          .getPublicUrl(`orders/${order.id}/files/${fileName}`);
+        fileUrls.push(publicUrl);
+      }
+    }
+
+    if (fileUrls.length > 0 || existingFiles.length === 0) {
+      await supabase
+        .from("orders")
+        .update({ order_file_url: JSON.stringify(fileUrls) })
+        .eq("id", order.id);
+    }
+
+    let previewUrl = existingPreview;
+    if (newPreview) {
+      const fileName = `preview-${Date.now()}.${newPreview.name.split('.').pop()}`;
+      const { data, error } = await supabase.storage
+        .from("order-previews")
+        .upload(`orders/${order.id}/preview/${fileName}`, newPreview, { upsert: true });
+
+      if (!error && data) {
+        const { data: { publicUrl } } = supabase.storage
+          .from("order-previews")
+          .getPublicUrl(`orders/${order.id}/preview/${fileName}`);
+        previewUrl = publicUrl;
+      }
+    } else if (!existingPreview) {
+      previewUrl = null;
+    }
+
+    await supabase
+      .from("orders")
+      .update({ preview_image: previewUrl })
+      .eq("id", order.id);
+
+    setLoading(false);
     onUpdated?.();
     onClose();
   };
 
-  const statusOptions = Object.entries(STATUS_CONFIG).map(([key, cfg]) => ({
-    value: key,
-    label: cfg.label,
-  }));
+  const parseFileName = (url) => {
+    if (!url) return "Archivo";
+    const parts = url.split("/");
+    const fileName = parts[parts.length - 1];
+    const nameParts = fileName.split("-");
+    nameParts.shift();
+    nameParts.shift();
+    nameParts.shift();
+    return nameParts.join("-") || fileName;
+  };
 
-  const paymentOptions = Object.entries(PAYMENT_CONFIG).map(([key, cfg]) => ({
-    value: key,
-    label: cfg.label,
-  }));
+  const isImageFile = (url) => {
+    if (!url) return false;
+    return /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+  };
 
   return (
     <Modal open={open} onClose={onClose} title={`Editar Orden #${order?.id?.slice(0, 8).toUpperCase()}`}>
@@ -762,23 +867,8 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
           </Field>
         </div>
         <div className="col-full">
-          <Field label="Estado" required>
-            <select className="ps-form-input" value={form.status} onChange={e => set("status", e.target.value)}>
-              <option value="">Seleccionar...</option>
-              {statusOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Pago" required>
-            <select className="ps-form-input" value={form.payment_status} onChange={e => set("payment_status", e.target.value)}>
-              <option value="">Seleccionar...</option>
-              {paymentOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+          <Field label="Tipo de terminación" optional>
+            <input className="ps-form-input" value={form.termination_type} onChange={e => set("termination_type", e.target.value)} placeholder="Ej: Brillante, Mate, Con marco..." />
           </Field>
         </div>
         <div className="col-full">
@@ -787,6 +877,99 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
               <span className="ps-input-icon"><Icon.Calendar /></span>
               <input className="ps-form-input with-icon" type="date" value={form.delivery_date} onChange={e => set("delivery_date", e.target.value)} />
             </div>
+          </Field>
+        </div>
+      </div>
+
+      <div className="ps-form-section-title" style={{ marginTop: 20 }}>
+        <span className="ps-form-section-num">3</span> Archivos y Preview
+      </div>
+      <div className="ps-form-grid">
+        <div className="col-full">
+          <Field label="Archivos adjuntos" hint="Archivos de diseño existentes y nuevos">
+            {existingFiles.length > 0 && (
+              <div className="ps-files-list" style={{ marginBottom: 12 }}>
+                {existingFiles.map((url, i) => (
+                  <div key={i} className="ps-file-item">
+                    <Icon.File />
+                    <span className="ps-file-name">{parseFileName(url)}</span>
+                    <button className="ps-file-remove" onClick={() => handleRemoveExistingFile(url)}>
+                      <Icon.X />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {newFiles.length > 0 && (
+              <div className="ps-files-list" style={{ marginBottom: 12 }}>
+                {newFiles.map((file, i) => (
+                  <div key={i} className="ps-file-item" style={{ borderColor: "var(--cyan)", background: "rgba(6, 182, 212, 0.04)" }}>
+                    <Icon.File />
+                    <span className="ps-file-name">{file.name}</span>
+                    <button className="ps-file-remove" onClick={() => handleRemoveNewFile(i)}>
+                      <Icon.X />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="ps-upload-zone" onClick={() => fileInputRef.current?.click()}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                onChange={handleAddNewFiles}
+                style={{ display: "none" }}
+              />
+              <div className="ps-upload-icon"><Icon.Upload /></div>
+              <div className="ps-upload-btn-wrapper">
+                <span className="ps-upload-btn-text">Agregar archivos</span>
+              </div>
+              <span className="ps-upload-hint">PDF, AI, PNG, JPG...</span>
+            </div>
+          </Field>
+        </div>
+
+        <div className="col-full">
+          <Field label="Imagen de preview" hint="Vista previa del diseño">
+            {(existingPreview || newPreview) ? (
+              <div className="ps-preview-showcase">
+                <div className="ps-preview-card">
+                  <img
+                    src={newPreview ? URL.createObjectURL(newPreview) : existingPreview}
+                    alt="Preview"
+                    className="ps-preview-img-main"
+                  />
+                  <div className="ps-preview-card-overlay">
+                    <span className="ps-preview-card-label">
+                      {newPreview ? "Nueva preview" : "Preview actual"}
+                    </span>
+                    <div className="ps-preview-card-actions">
+                      <button className="ps-preview-change-btn" onClick={() => previewInputRef.current?.click()}>
+                        {newPreview ? "Cancelar" : "Cambiar"}
+                      </button>
+                      <button className="ps-preview-del-btn" onClick={newPreview ? handleRemoveNewPreview : handleRemoveExistingPreview}>
+                        <Icon.Trash />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="ps-preview-empty" onClick={() => previewInputRef.current?.click()}>
+                <input
+                  ref={previewInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAddNewPreview}
+                  style={{ display: "none" }}
+                />
+                <div className="ps-preview-upload-content">
+                  <div className="ps-preview-upload-icon"><Icon.Image /></div>
+                  <span className="ps-preview-upload-text">Subir imagen de preview</span>
+                </div>
+              </div>
+            )}
           </Field>
         </div>
       </div>
