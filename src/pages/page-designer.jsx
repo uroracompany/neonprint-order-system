@@ -579,8 +579,8 @@ export default function PageDesigner() {
               });
             }
           } else {
-            const hasChanged = exists.status !== newOrder.status || 
-                               exists.description !== newOrder.description ||
+            const statusChanged = exists.status !== newOrder.status;
+            const otherFieldsChanged = exists.description !== newOrder.description ||
                                exists.material !== newOrder.material ||
                                exists.quantity !== newOrder.quantity ||
                                exists.width !== newOrder.width ||
@@ -588,7 +588,20 @@ export default function PageDesigner() {
                                exists.price !== newOrder.price ||
                                exists.payment_status !== newOrder.payment_status;
             
-            if (hasChanged) {
+            if (newOrder.status === 'cancelada') {
+              if (!notifiedRef.current[`cancel-${newOrder.id}`]) {
+                const updated = { ...notifiedOrders, [`cancel-${newOrder.id}`]: Date.now() };
+                setNotifiedOrders(updated);
+                localStorage.setItem('notifiedOrders', JSON.stringify(updated));
+                notifiedRef.current[`cancel-${newOrder.id}`] = true;
+                showNotification({ 
+                  type: 'cancelled', 
+                  title: 'Orden Cancelada', 
+                  subtitle: 'La orden ha sido cancelada',
+                  client: newOrder.client_name 
+                });
+              }
+            } else if (statusChanged || otherFieldsChanged) {
               setEditedOrders(prev => {
                 const updated = { ...prev, [newOrder.id]: Date.now() };
                 localStorage.setItem('editedOrders', JSON.stringify(updated));
@@ -597,34 +610,17 @@ export default function PageDesigner() {
               
               const wasViewed = viewedOrdersRef.current[newOrder.id];
               
-              if (wasViewed) {
-                if (!notifiedRef.current[`edit-${newOrder.id}`]) {
-                  const updated = { ...notifiedOrders, [`edit-${newOrder.id}`]: Date.now() };
-                  setNotifiedOrders(updated);
-                  localStorage.setItem('notifiedOrders', JSON.stringify(updated));
-                  notifiedRef.current[`edit-${newOrder.id}`] = true;
-                  showNotification({ 
-                    type: 'updated', 
-                    title: 'Orden Actualizada', 
-                    subtitle: 'La orden ha sido modificada',
-                    client: newOrder.client_name 
-                  });
-                }
-              }
-              
-              if (newOrder.status === 'cancelada') {
-                if (!notifiedRef.current[`cancel-${newOrder.id}`]) {
-                  const updated = { ...notifiedOrders, [`cancel-${newOrder.id}`]: Date.now() };
-                  setNotifiedOrders(updated);
-                  localStorage.setItem('notifiedOrders', JSON.stringify(updated));
-                  notifiedRef.current[`cancel-${newOrder.id}`] = true;
-                  showNotification({ 
-                    type: 'cancelled', 
-                    title: 'Orden Cancelada', 
-                    subtitle: 'La orden ha sido cancelada',
-                    client: newOrder.client_name 
-                  });
-                }
+              if (wasViewed && !notifiedRef.current[`edit-${newOrder.id}`]) {
+                const updated = { ...notifiedOrders, [`edit-${newOrder.id}`]: Date.now() };
+                setNotifiedOrders(updated);
+                localStorage.setItem('notifiedOrders', JSON.stringify(updated));
+                notifiedRef.current[`edit-${newOrder.id}`] = true;
+                showNotification({ 
+                  type: 'updated', 
+                  title: 'Orden Actualizada', 
+                  subtitle: 'La orden ha sido modificada',
+                  client: newOrder.client_name 
+                });
               }
             }
           }
@@ -651,6 +647,7 @@ export default function PageDesigner() {
   };
 
   const isEditedOrder = (order) => {
+    if (viewedOrders[order.id]) return false;
     return !!editedOrders[order.id];
   };
 
