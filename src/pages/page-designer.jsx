@@ -489,6 +489,10 @@ export default function PageDesigner() {
   const [orderFiles, setOrderFiles] = useState({});
   const [orderPreviews, setOrderPreviews] = useState({});
   const [notification, setNotification] = useState(null);
+  const [notifiedOrders, setNotifiedOrders] = useState(() => {
+    const saved = localStorage.getItem('notifiedOrders');
+    return saved ? JSON.parse(saved) : {};
+  });
   
   const ordersRef = useRef([]);
   const viewedOrdersRef = useRef({});
@@ -496,6 +500,7 @@ export default function PageDesigner() {
   const userRef = useRef(null);
 
   viewedOrdersRef.current = viewedOrders;
+  notifiedRef.current = notifiedOrders;
 
   const playNotificationSound = () => {
     try {
@@ -522,6 +527,12 @@ export default function PageDesigner() {
       setSelectedOrder(data);
     } else {
       setSelectedOrder(order);
+    }
+    
+    if (!viewedOrders[order.id]) {
+      const updated = { ...viewedOrders, [order.id]: Date.now() };
+      setViewedOrders(updated);
+      localStorage.setItem('viewedOrders', JSON.stringify(updated));
     }
   };
 
@@ -556,6 +567,9 @@ export default function PageDesigner() {
           
           if (!exists) {
             if (!notifiedRef.current[`new-${newOrder.id}`]) {
+              const updated = { ...notifiedOrders, [`new-${newOrder.id}`]: Date.now() };
+              setNotifiedOrders(updated);
+              localStorage.setItem('notifiedOrders', JSON.stringify(updated));
               notifiedRef.current[`new-${newOrder.id}`] = true;
               showNotification({ 
                 type: 'new', 
@@ -586,6 +600,9 @@ export default function PageDesigner() {
               if (wasViewed) {
                 if (newOrder.status === 'cancelada') {
                   if (!notifiedRef.current[`cancel-${newOrder.id}`]) {
+                    const updated = { ...notifiedOrders, [`cancel-${newOrder.id}`]: Date.now() };
+                    setNotifiedOrders(updated);
+                    localStorage.setItem('notifiedOrders', JSON.stringify(updated));
                     notifiedRef.current[`cancel-${newOrder.id}`] = true;
                     showNotification({ 
                       type: 'cancelled', 
@@ -596,6 +613,9 @@ export default function PageDesigner() {
                   }
                 } else {
                   if (!notifiedRef.current[`edit-${newOrder.id}`]) {
+                    const updated = { ...notifiedOrders, [`edit-${newOrder.id}`]: Date.now() };
+                    setNotifiedOrders(updated);
+                    localStorage.setItem('notifiedOrders', JSON.stringify(updated));
                     notifiedRef.current[`edit-${newOrder.id}`] = true;
                     showNotification({ 
                       type: 'updated', 
