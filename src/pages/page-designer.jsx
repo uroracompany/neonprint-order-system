@@ -511,6 +511,20 @@ export default function PageDesigner() {
     setTimeout(() => setNotification(null), 4500);
   };
 
+  const handleViewOrder = async (order) => {
+    const { data } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", order.id)
+      .single();
+    
+    if (data) {
+      setSelectedOrder(data);
+    } else {
+      setSelectedOrder(order);
+    }
+  };
+
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();

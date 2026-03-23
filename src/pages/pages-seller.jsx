@@ -2272,7 +2272,7 @@ export default function PageSeller() {
                       <div className="ps-cards-empty">No hay órdenes disponibles</div>
                     ) : (
                       filtered.map(o => (
-                        <div key={o.id} className="ps-order-card" onClick={() => handleViewOrder(o)}>
+                        <div key={o.id} className="ps-order-card">
                           <div className="ps-order-card-header">
                             <span className="ps-order-card-id">#{o.id?.slice(0, 8).toUpperCase() || "---"}</span>
                             <StatusBadge status={o.status} />
@@ -2295,7 +2295,7 @@ export default function PageSeller() {
                               )}
                             </div>
                           </div>
-                          <div className="ps-order-card-actions" onClick={e => e.stopPropagation()}>
+                          <div className="ps-order-card-actions">
                             <button className="card-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
                               <Icon.Eye />
                             </button>
