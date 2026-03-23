@@ -598,32 +598,32 @@ export default function PageDesigner() {
               const wasViewed = viewedOrdersRef.current[newOrder.id];
               
               if (wasViewed) {
-                if (newOrder.status === 'cancelada') {
-                  if (!notifiedRef.current[`cancel-${newOrder.id}`]) {
-                    const updated = { ...notifiedOrders, [`cancel-${newOrder.id}`]: Date.now() };
-                    setNotifiedOrders(updated);
-                    localStorage.setItem('notifiedOrders', JSON.stringify(updated));
-                    notifiedRef.current[`cancel-${newOrder.id}`] = true;
-                    showNotification({ 
-                      type: 'cancelled', 
-                      title: 'Orden Cancelada', 
-                      subtitle: 'La orden ha sido cancelada',
-                      client: newOrder.client_name 
-                    });
-                  }
-                } else {
-                  if (!notifiedRef.current[`edit-${newOrder.id}`]) {
-                    const updated = { ...notifiedOrders, [`edit-${newOrder.id}`]: Date.now() };
-                    setNotifiedOrders(updated);
-                    localStorage.setItem('notifiedOrders', JSON.stringify(updated));
-                    notifiedRef.current[`edit-${newOrder.id}`] = true;
-                    showNotification({ 
-                      type: 'updated', 
-                      title: 'Orden Actualizada', 
-                      subtitle: 'La orden ha sido modificada',
-                      client: newOrder.client_name 
-                    });
-                  }
+                if (!notifiedRef.current[`edit-${newOrder.id}`]) {
+                  const updated = { ...notifiedOrders, [`edit-${newOrder.id}`]: Date.now() };
+                  setNotifiedOrders(updated);
+                  localStorage.setItem('notifiedOrders', JSON.stringify(updated));
+                  notifiedRef.current[`edit-${newOrder.id}`] = true;
+                  showNotification({ 
+                    type: 'updated', 
+                    title: 'Orden Actualizada', 
+                    subtitle: 'La orden ha sido modificada',
+                    client: newOrder.client_name 
+                  });
+                }
+              }
+              
+              if (newOrder.status === 'cancelada') {
+                if (!notifiedRef.current[`cancel-${newOrder.id}`]) {
+                  const updated = { ...notifiedOrders, [`cancel-${newOrder.id}`]: Date.now() };
+                  setNotifiedOrders(updated);
+                  localStorage.setItem('notifiedOrders', JSON.stringify(updated));
+                  notifiedRef.current[`cancel-${newOrder.id}`] = true;
+                  showNotification({ 
+                    type: 'cancelled', 
+                    title: 'Orden Cancelada', 
+                    subtitle: 'La orden ha sido cancelada',
+                    client: newOrder.client_name 
+                  });
                 }
               }
             }
