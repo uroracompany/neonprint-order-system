@@ -29,6 +29,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // disenador3@gmail.com
 // diseñador3!29
 
+// USER COTIZADO 
+//cotizador1@gmail.com
+// cotizador123
 
 /**Consulta para crear usuario
  * insert into auth.users (

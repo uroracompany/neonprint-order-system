@@ -160,7 +160,7 @@ const hasFiles = (order, orderFiles) => {
   return storageFiles > 0 || dbFiles > 0;
 };
 
-function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview, onRefresh }) {
+function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview, onRefresh, onSendToQuotation, quotationSending }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingPreview, setPendingPreview] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -170,14 +170,24 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   if (!order) return null;
   
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
+  const canEditDesignerAssets = order.status === "In_Design";
+  const isCancelledReadonly = order.is_archived_designer && ["cancelada", "cancelado"].includes(order.status);
+  const readonlyMessage =
+    isCancelledReadonly
+      ? "Esta orden está en modo lectura porque fue cancelada."
+      : order.status === "cotizacion"
+        ? "Esta orden está en modo lectura mientras permanece en cotización."
+        : "Esta orden está en modo lectura según su estado actual.";
   
   const handleFileSelect = (e) => {
+    if (!canEditDesignerAssets) return;
     const files = Array.from(e.target.files);
     setPendingFiles(prev => [...prev, ...files]);
     setSaveSuccess(false);
   };
   
   const handlePreviewSelect = (e) => {
+    if (!canEditDesignerAssets) return;
     if (e.target.files && e.target.files[0]) {
       setPendingPreview(e.target.files[0]);
       setSaveSuccess(false);
@@ -185,11 +195,13 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   };
   
   const removePendingFile = (index) => {
+    if (!canEditDesignerAssets) return;
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
     setSaveSuccess(false);
   };
   
   const handleSave = async () => {
+    if (!canEditDesignerAssets) return;
     setSaving(true);
     setSaveSuccess(false);
     setSaveError(null);
@@ -298,6 +310,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   const allFiles = [...(designerFiles || []), ...dbFiles];
   const uniqueFiles = allFiles.filter((f, i, arr) => arr.findIndex(x => x.url === f.url) === i);
   const displayPreview = pendingPreview ? URL.createObjectURL(pendingPreview) : (designerPreview || order.preview_image);
+  const canSendToQuotation = canEditDesignerAssets && uniqueFiles.length > 0 && !hasChanges;
   
   return (
     <div className="pd-modal-overlay" onClick={e => e.target === e.currentTarget && handleClose()}>
@@ -407,21 +420,35 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
               <h4>Archivos del Diseño</h4>
               {hasChanges && <span className="pd-pending-badge">Cambios pendientes</span>}
             </div>
+
+            {!canEditDesignerAssets && (
+              <div className={`pd-readonly-note ${isCancelledReadonly ? "pd-readonly-note-cancelled" : ""}`}>
+                <Icon.Check />
+                {readonlyMessage}
+              </div>
+            )}
             
-            <div className="pd-upload-area">
-              <input
-                type="file"
-                id="designer-file-upload"
-                multiple
-                onChange={handleFileSelect}
-                style={{ display: "none" }}
-              />
-              <label htmlFor="designer-file-upload" className="pd-upload-btn">
-                <Icon.Upload />
-                <span>Subir Archivos</span>
-              </label>
-              <span className="pd-upload-hint">Archivos seleccionados se guardarán al hacer clic en "Guardar cambios"</span>
-            </div>
+            {canEditDesignerAssets ? (
+              <div className="pd-upload-area">
+                <input
+                  type="file"
+                  id="designer-file-upload"
+                  multiple
+                  onChange={handleFileSelect}
+                  style={{ display: "none" }}
+                />
+                <label htmlFor="designer-file-upload" className="pd-upload-btn">
+                  <Icon.Upload />
+                  <span>Subir Archivos</span>
+                </label>
+                <span className="pd-upload-hint">Archivos seleccionados se guardarán al hacer clic en "Guardar cambios"</span>
+              </div>
+            ) : (
+              <div className="pd-upload-area pd-upload-area-disabled">
+                <Icon.File />
+                <span className="pd-upload-hint">Los archivos ya no se pueden modificar después de enviarse a cotización.</span>
+              </div>
+            )}
             
             {pendingFiles.length > 0 && (
               <div className="pd-files-container">
@@ -481,23 +508,32 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                     <a href={displayPreview} target="_blank" rel="noopener noreferrer" className="pd-file-action" style={{ background: 'white', color: '#0f172a' }}>
                       <Icon.Eye />
                     </a>
-                    <button className="pd-file-action remove" style={{ background: 'white' }} onClick={() => { setPendingPreview(null); setSaveSuccess(false); }}>
-                      <Icon.Trash />
-                    </button>
+                    {canEditDesignerAssets && (
+                      <button className="pd-file-action remove" style={{ background: 'white' }} onClick={() => { setPendingPreview(null); setSaveSuccess(false); }}>
+                        <Icon.Trash />
+                      </button>
+                    )}
                   </div>
                 </>
               ) : (
-                <label htmlFor="designer-preview-upload" className="pd-preview-empty">
-                  <input
-                    type="file"
-                    id="designer-preview-upload"
-                    accept="image/*"
-                    onChange={handlePreviewSelect}
-                    style={{ display: "none" }}
-                  />
-                  <Icon.Image />
-                  <span>Subir imagen de preview</span>
-                </label>
+                canEditDesignerAssets ? (
+                  <label htmlFor="designer-preview-upload" className="pd-preview-empty">
+                    <input
+                      type="file"
+                      id="designer-preview-upload"
+                      accept="image/*"
+                      onChange={handlePreviewSelect}
+                      style={{ display: "none" }}
+                    />
+                    <Icon.Image />
+                    <span>Subir imagen de preview</span>
+                  </label>
+                ) : (
+                  <div className="pd-preview-empty pd-preview-empty-disabled">
+                    <Icon.Image />
+                    <span>La preview permanece disponible solo para consulta.</span>
+                  </div>
+                )
               )}
             </div>
           </div>
@@ -518,10 +554,29 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
           <button className="pd-btn pd-btn-secondary" onClick={handleClose}>
             Cerrar
           </button>
+          {canSendToQuotation && (
+            <button
+              className="pd-btn pd-btn-quotation"
+              onClick={() => onSendToQuotation?.(order)}
+              disabled={quotationSending}
+            >
+              {quotationSending ? (
+                <>
+                  <span className="pd-btn-spinner"></span>
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Icon.Send />
+                  Enviar a cotización
+                </>
+              )}
+            </button>
+          )}
           <button 
             className="pd-btn pd-btn-primary" 
             onClick={handleSave}
-            disabled={!hasChanges || saving}
+            disabled={!canEditDesignerAssets || !hasChanges || saving}
           >
             {saving ? (
               <>
@@ -541,6 +596,162 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   );
 }
 
+function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
+  const [quoteUsers, setQuoteUsers] = useState([]);
+  const [selectedQuoteUser, setSelectedQuoteUser] = useState("");
+  const [loadingQuoteUsers, setLoadingQuoteUsers] = useState(true);
+  const [localError, setLocalError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+
+    setLoadingQuoteUsers(true);
+    setSelectedQuoteUser("");
+    setLocalError("");
+
+    supabase
+      .from("profiles")
+      .select("id, name, role")
+      .then(({ data, error }) => {
+        setLoadingQuoteUsers(false);
+
+        if (error) {
+          setQuoteUsers([]);
+          setLocalError("No se pudieron cargar los usuarios de cotización.");
+          return;
+        }
+
+        const quotes = (data || [])
+          .filter(profile => profile.role && profile.role.toLowerCase().includes("quote"))
+          .map(profile => ({
+            ...profile,
+            displayName: profile.name || "Cotizador",
+          }));
+
+        setQuoteUsers(quotes);
+
+        if (quotes.length === 0) {
+          setLocalError("No hay usuarios con rol Quote disponibles.");
+        }
+      });
+  }, [open]);
+
+  if (!open || !order) return null;
+
+  const handleConfirm = () => {
+    if (!selectedQuoteUser) {
+      setLocalError("Debes seleccionar un usuario de cotización.");
+      return;
+    }
+
+    setLocalError("");
+    onConfirm(selectedQuoteUser);
+  };
+
+  return (
+    <div className="pd-assign-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="pd-assign-modal">
+        <div className="pd-assign-icon">
+          <Icon.Send />
+        </div>
+
+        <h3 className="pd-assign-title">Enviar a cotización</h3>
+        <p className="pd-assign-text">
+          Confirma que agregaste los archivos correctos antes de enviar esta orden al proceso de cotización.
+        </p>
+
+        <div className="pd-assign-order">
+          <span className="pd-assign-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+          <span className="pd-assign-order-name">{order.client_name || order.description || "Orden sin título"}</span>
+        </div>
+
+        {loadingQuoteUsers ? (
+          <div className="pd-assign-loading">Cargando usuarios de cotización...</div>
+        ) : (
+          <select
+            className="pd-assign-select"
+            value={selectedQuoteUser}
+            onChange={(e) => {
+              setSelectedQuoteUser(e.target.value);
+              setLocalError("");
+            }}
+            disabled={loading || quoteUsers.length === 0}
+          >
+            <option value="">Seleccionar usuario Quote...</option>
+            {quoteUsers.map((quoteUser) => (
+              <option key={quoteUser.id} value={quoteUser.id}>
+                {quoteUser.displayName}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {localError && <div className="pd-assign-error">{localError}</div>}
+
+        <div className="pd-assign-actions">
+          <button className="pd-btn pd-btn-secondary" onClick={onClose} disabled={loading}>
+            Cancelar
+          </button>
+          <button
+            className="pd-btn pd-btn-quotation"
+            onClick={handleConfirm}
+            disabled={loading || !selectedQuoteUser}
+          >
+            {loading ? (
+              <>
+                <span className="pd-btn-spinner"></span>
+                Enviando...
+              </>
+            ) : (
+              "Enviar"
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ArchiveDesignerOrderModal({ open, onClose, onConfirm, order, loading }) {
+  if (!open || !order) return null;
+
+  return (
+    <div className="pd-assign-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="pd-assign-modal">
+        <div className="pd-assign-icon pd-assign-icon-archive">
+          <Icon.File />
+        </div>
+
+        <h3 className="pd-assign-title">Archivar orden</h3>
+        <p className="pd-assign-text">
+          ¿Estás seguro de que deseas archivar esta orden?
+        </p>
+
+        <div className="pd-assign-order">
+          <span className="pd-assign-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+          <span className="pd-assign-order-name">{order.client_name || order.description || "Orden sin título"}</span>
+        </div>
+
+        <div className="pd-assign-actions">
+          <button className="pd-btn pd-btn-secondary" onClick={onClose} disabled={loading}>
+            Cancelar
+          </button>
+          <button className="pd-btn pd-btn-archive" onClick={onConfirm} disabled={loading}>
+            {loading ? (
+              <>
+                <span className="pd-btn-spinner"></span>
+                Archivando...
+              </>
+            ) : (
+              "Archivar"
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PageDesigner() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -552,6 +763,7 @@ export default function PageDesigner() {
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
+  const [filterArchive, setFilterArchive] = useState("active");
   const [viewMode, setViewMode] = useState("cards");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [viewedOrders, setViewedOrders] = useState(() => {
@@ -569,6 +781,10 @@ export default function PageDesigner() {
   const [orderFiles, setOrderFiles] = useState({});
   const [orderPreviews, setOrderPreviews] = useState({});
   const [notifications, setNotifications] = useState([]);
+  const [sendingToQuotation, setSendingToQuotation] = useState(null);
+  const [quotationSending, setQuotationSending] = useState(false);
+  const [archivingOrder, setArchivingOrder] = useState(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
   
   const ordersRef = useRef([]);
   const viewedOrdersRef = useRef({});
@@ -594,6 +810,25 @@ export default function PageDesigner() {
       clearTimeout(notificationTimeoutsRef.current[notificationId]);
       delete notificationTimeoutsRef.current[notificationId];
     }
+  };
+
+  const showActionNotification = ({ type = "completed", label, orderTitle, message }) => {
+    const notificationId = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const notification = {
+      id: notificationId,
+      type,
+      label,
+      orderTitle,
+      message,
+      duration: NOTIFICATION_DURATION,
+      expiresAt: Date.now() + NOTIFICATION_DURATION,
+    };
+
+    setNotifications(prev => [notification, ...prev].slice(0, 3));
+
+    notificationTimeoutsRef.current[notificationId] = setTimeout(() => {
+      removeNotification(notificationId);
+    }, NOTIFICATION_DURATION);
   };
 
   const createNotificationForOrder = (order, type = "new") => {
@@ -753,12 +988,66 @@ export default function PageDesigner() {
     return !!editedOrders[order.id];
   };
 
+  const isDesignerArchivable = (order) => {
+    return ["cancelada", "cancelado"].includes(order.status);
+  };
+
   const metrics = [
     { label: "Total Órdenes", value: orders.length, color: "#8B5CF6", icon: <Icon.Package /> },
     { label: "En Diseño", value: orders.filter(o => o.status === "In_Design").length, color: "#F59E0B", icon: <Icon.File /> },
     { label: "Cotización", value: orders.filter(o => o.status === "cotizacion").length, color: "#0EA5E9", icon: <Icon.Send /> },
     { label: "Completadas", value: orders.filter(o => o.status === "completada").length, color: "#10B981", icon: <Icon.Check /> },
   ];
+
+  const filteredOrders = orders.filter((order) => {
+    const query = search.trim().toLowerCase();
+    const searchableValues = [
+      order.client_name,
+      order.description,
+      order.id,
+      order.material,
+    ];
+
+    const matchesSearch = !query || searchableValues.some((value) =>
+      String(value || "").toLowerCase().includes(query)
+    );
+
+    const matchesType = filterType === "all" || (
+      filterType === "911"
+        ? order.order_type === "orden 911"
+        : order.order_type !== "orden 911"
+    );
+
+    const matchesStatus = filterStatus === "all" || order.status === filterStatus;
+
+    const matchesArchive =
+      filterArchive === "all" ||
+      (filterArchive === "active" && !order.is_archived_designer) ||
+      (filterArchive === "archived" && order.is_archived_designer);
+
+    const createdAt = new Date(order.created_at);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    const threeDaysAgo = new Date(now);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const matchesDate =
+      filterDate === "all" ||
+      (filterDate === "today" && createdAt >= startOfToday) ||
+      (filterDate === "yesterday" && createdAt >= startOfYesterday && createdAt < startOfToday) ||
+      (filterDate === "3days" && createdAt >= threeDaysAgo) ||
+      (filterDate === "7days" && createdAt >= sevenDaysAgo) ||
+      (filterDate === "month" && createdAt >= startOfMonth);
+
+    return matchesSearch && matchesType && matchesStatus && matchesDate && matchesArchive;
+  });
+
+  const shouldEnableOrdersScroll = filteredOrders.length > 7;
 
   const fetchOrderFiles = async (orderId) => {
     try {
@@ -812,6 +1101,114 @@ export default function PageDesigner() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/");
+  };
+
+  const handleOpenSendToQuotation = (order) => {
+    setSendingToQuotation(order);
+  };
+
+  const handleOpenArchiveOrder = (order) => {
+    setArchivingOrder(order);
+  };
+
+  const handleConfirmSendToQuotation = async (quoteUserId) => {
+    if (!sendingToQuotation) return;
+
+    setQuotationSending(true);
+
+    const assignmentPayloads = [
+      { status: "cotizacion", quote_id: quoteUserId },
+      { status: "cotizacion", quotation_id: quoteUserId },
+      { status: "cotizacion", quote_user_id: quoteUserId },
+    ];
+
+    let updateError = null;
+
+    for (const payload of assignmentPayloads) {
+      const { error } = await supabase
+        .from("orders")
+        .update(payload)
+        .eq("id", sendingToQuotation.id);
+
+      if (!error) {
+        updateError = null;
+        break;
+      }
+
+      updateError = error;
+    }
+
+    setQuotationSending(false);
+
+    if (updateError) {
+      showActionNotification({
+        type: "cancelled",
+        label: "Error al enviar",
+        orderTitle: sendingToQuotation.client_name || sendingToQuotation.description || `Orden #${sendingToQuotation.id?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo enviar la orden a cotización. Verifica la asignación o el estado.",
+      });
+      return;
+    }
+
+    const updatedOrder = {
+      ...sendingToQuotation,
+      status: "cotizacion",
+    };
+
+    setOrders(prev => prev.map(order => (
+      order.id === sendingToQuotation.id ? { ...order, status: "cotizacion" } : order
+    )));
+    setSelectedOrder(updatedOrder);
+    setSendingToQuotation(null);
+
+    showActionNotification({
+      type: "completed",
+      label: "Enviada a cotización",
+      orderTitle: updatedOrder.client_name || updatedOrder.description || `Orden #${updatedOrder.id?.slice(0, 8).toUpperCase()}`,
+      message: "La orden ha sido enviada a cotización correctamente.",
+    });
+  };
+
+  const handleConfirmArchiveDesignerOrder = async () => {
+    if (!archivingOrder) return;
+
+    setArchiveLoading(true);
+
+    const { error } = await supabase
+      .from("orders")
+      .update({ is_archived_designer: true })
+      .eq("id", archivingOrder.id);
+
+    setArchiveLoading(false);
+
+    if (error) {
+      showActionNotification({
+        type: "cancelled",
+        label: "Error al archivar",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo archivar la orden.",
+      });
+      return;
+    }
+
+    setOrders(prev => prev.map(order => (
+      order.id === archivingOrder.id
+        ? { ...order, is_archived_designer: true }
+        : order
+    )));
+
+    if (selectedOrder?.id === archivingOrder.id) {
+      setSelectedOrder(prev => prev ? { ...prev, is_archived_designer: true } : prev);
+    }
+
+    showActionNotification({
+      type: "completed",
+      label: "Orden archivada",
+      orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+      message: "La orden fue archivada correctamente.",
+    });
+
+    setArchivingOrder(null);
   };
 
   return (
@@ -958,6 +1355,13 @@ export default function PageDesigner() {
                     <option value="month">Este mes</option>
                   </select>
                 </div>
+                <div className="pd-select-wrap">
+                  <select className="pd-input" value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>
+                    <option value="active">Activas</option>
+                    <option value="archived">Archivadas</option>
+                    <option value="all">Todas</option>
+                  </select>
+                </div>
                 <div style={{ display: "flex", gap: 4 }}>
                   <button onClick={() => setViewMode("cards")} className={`pd-view-toggle ${viewMode === "cards" ? "active" : ""}`} title="Vista de tarjetas">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
@@ -974,7 +1378,7 @@ export default function PageDesigner() {
               ) : filteredOrders.length === 0 ? (
                 <div className="pd-empty">No hay órdenes que coincidan con los filtros</div>
               ) : viewMode === "table" ? (
-                <div className="pd-table-wrap">
+                <div className={`pd-table-wrap ${shouldEnableOrdersScroll ? "pd-orders-scroll" : ""}`}>
                   <table className="pd-table">
                     <thead>
                       <tr>
@@ -1003,7 +1407,19 @@ export default function PageDesigner() {
                           <td className="pd-td-status"><PaymentBadge status={order.payment_status} /></td>
                           <td className="pd-td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
                           <td className="pd-td-actions">
-                            <button className="pd-action-btn view" onClick={() => handleViewOrder(order)}>Ver</button>
+                            <div className="pd-row-actions">
+                              <button className="pd-action-btn view" onClick={() => handleViewOrder(order)}>Ver</button>
+                              {isDesignerArchivable(order) && !order.is_archived_designer && (
+                                <button className="pd-action-btn archive" onClick={() => handleOpenArchiveOrder(order)}>
+                                  Archivar orden
+                                </button>
+                              )}
+                              {isDesignerArchivable(order) && order.is_archived_designer && (
+                                <button className="pd-action-btn archived" disabled>
+                                  Archivada
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1011,7 +1427,7 @@ export default function PageDesigner() {
                   </table>
                 </div>
               ) : (
-                <div className="pd-cards-grid">
+                <div className={`pd-cards-grid ${shouldEnableOrdersScroll ? "pd-orders-scroll" : ""}`}>
                   {filteredOrders.map(order => (
                     <div key={order.id} className="pd-order-card">
                       <div className="pd-card-header">
@@ -1036,7 +1452,19 @@ export default function PageDesigner() {
                             {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}
                           </div>
                         </div>
-                        <button className="pd-view-btn" onClick={() => handleViewOrder(order)}>Ver</button>
+                        <div className="pd-card-actions">
+                          <button className="pd-view-btn" onClick={() => handleViewOrder(order)}>Ver</button>
+                          {isDesignerArchivable(order) && !order.is_archived_designer && (
+                            <button className="pd-action-btn archive" onClick={() => handleOpenArchiveOrder(order)}>
+                              Archivar orden
+                            </button>
+                          )}
+                          {isDesignerArchivable(order) && order.is_archived_designer && (
+                            <button className="pd-action-btn archived" disabled>
+                              Archivada
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1065,12 +1493,28 @@ export default function PageDesigner() {
         order={selectedOrder}
         designerFiles={selectedOrder ? orderFiles[selectedOrder.id] : []}
         designerPreview={selectedOrder ? orderPreviews[selectedOrder.id] : null}
+        onSendToQuotation={handleOpenSendToQuotation}
+        quotationSending={quotationSending}
         onRefresh={() => {
           if (selectedOrder) {
             fetchOrderFiles(selectedOrder.id);
             refreshOrderFromDB(selectedOrder.id);
           }
         }}
+      />
+      <SendToQuotationModal
+        open={!!sendingToQuotation}
+        onClose={() => setSendingToQuotation(null)}
+        onConfirm={handleConfirmSendToQuotation}
+        order={sendingToQuotation}
+        loading={quotationSending}
+      />
+      <ArchiveDesignerOrderModal
+        open={!!archivingOrder}
+        onClose={() => setArchivingOrder(null)}
+        onConfirm={handleConfirmArchiveDesignerOrder}
+        order={archivingOrder}
+        loading={archiveLoading}
       />
     </div>
   );

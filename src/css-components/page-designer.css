@@ -453,6 +453,40 @@
   border: 1px solid #e8eaed;
 }
 
+/* Limita la altura de la lista de órdenes y activa scroll interno cuando hay muchos registros. */
+.pd-orders-scroll {
+  max-height: 760px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.pd-orders-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.pd-orders-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pd-orders-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+}
+
+.pd-orders-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.pd-table-wrap.pd-orders-scroll .pd-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
 /* Tabla principal de órdenes cuando se usa la vista tabular. */
 .pd-table {
   width: 100%;
@@ -548,6 +582,35 @@
   background: var(--pd-primary-light);
 }
 
+/* Agrupa las acciones de la fila para soportar varios botones sin romper la tabla. */
+.pd-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Botón para archivar una orden cancelada desde la tabla. */
+.pd-action-btn.archive {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid rgba(194, 65, 12, 0.16);
+}
+
+.pd-action-btn.archive:hover {
+  background: #ffedd5;
+  border-color: rgba(194, 65, 12, 0.26);
+}
+
+/* Estado visual cuando la orden ya fue archivada por el diseñador. */
+.pd-action-btn.archived {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+  cursor: not-allowed;
+  opacity: 0.95;
+}
+
 .pd-badge-normal-table {
   padding: 4px 8px;
   border-radius: 4px;
@@ -563,6 +626,11 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 14px;
+}
+
+.pd-cards-grid.pd-orders-scroll {
+  align-content: start;
+  padding-right: 6px;
 }
 
 /* Tarjeta individual de una orden en la vista cards. */
@@ -756,6 +824,14 @@
   box-shadow: 0 2px 8px rgba(15, 30, 64, 0.2);
 }
 
+/* Agrupa las acciones al pie de cada card de orden. */
+.pd-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* Muestra la fecha de creación con icono de reloj. */
 .pd-card-date {
   display: flex;
@@ -904,50 +980,39 @@
   font-size: 14px;
 }
 
-/* ── MODAL EJECUTIVO ─────────────────────────────────────────────── */
-/* Overlay que oscurece la app y centra el modal. Ojo: este selector puede
-   reaparecer más abajo; la última versión del archivo es la activa. */
+/* ── MODAL EJECUTIVO MINIMALISTA ───────────────────────────────────── */
 .pd-modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(15, 30, 64, 0.12) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.6) 0%, rgba(15, 23, 42, 0.72) 100%);
+  background: rgba(15, 23, 42, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  padding: 20px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
-/* Contenedor principal del modal de detalle. */
 .pd-modal {
-  background:
-    radial-gradient(circle at 100% 0%, rgba(99, 102, 241, 0.06) 0%, transparent 40%),
-    radial-gradient(circle at 0% 100%, rgba(15, 30, 64, 0.04) 0%, transparent 30%),
-    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  border-radius: 24px;
+  background: #ffffff;
+  border-radius: 16px;
   width: 100%;
-  max-width: 760px;
-  max-height: min(90vh, 920px);
+  max-width: 680px;
+  max-height: min(88vh, 860px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(238, 242, 247, 0.9);
   box-shadow: 
-    0 48px 120px rgba(15, 23, 42, 0.22),
-    0 16px 40px rgba(15, 23, 42, 0.12),
-    0 0 0 1px rgba(255, 255, 255, 0.6) inset;
-  animation: modalSlideIn 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+    0 25px 50px -12px rgba(15, 23, 42, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.03);
+  animation: modalSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes modalSlideIn {
   from {
     opacity: 0;
-    transform: translateY(24px) scale(0.96);
+    transform: translateY(16px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -955,160 +1020,118 @@
   }
 }
 
-/* Cabecera del modal: título, subtítulo y cierre. */
 .pd-modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 28px 32px 22px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%);
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #f1f5f9;
 }
 
-/* Agrupa el título y subtítulo del encabezado del modal. */
 .pd-modal-title {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
-/* Título principal del modal con ID de la orden. */
 .pd-modal-title h3 {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
   color: #0f172a;
   margin: 0;
-  letter-spacing: -0.8px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  letter-spacing: -0.3px;
 }
 
-/* Barra decorativa vertical delante del título principal. */
-.pd-modal-title h3::before {
-  content: '';
-  width: 4px;
-  height: 26px;
-  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
-  border-radius: 999px;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
-}
-
-/* Texto secundario que contextualiza el contenido del modal. */
 .pd-modal-subtitle {
   font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
-  padding-left: 16px;
-  line-height: 1.5;
-  letter-spacing: 0.2px;
+  color: #94a3b8;
+  font-weight: 400;
+  padding-left: 0;
+  line-height: 1.4;
 }
 
 .pd-modal-close {
-  width: 40px;
-  height: 40px;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: 12px;
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
-  transition: all 0.2s ease;
+  color: #94a3b8;
+  transition: all 0.15s ease;
 }
 
 .pd-modal-close:hover {
-  background: #ffffff;
-  border-color: #cbd5e1;
-  color: #1e293b;
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  background: #f1f5f9;
+  color: #475569;
 }
 
-/* Área de contenido interno con scroll vertical. */
 .pd-modal-body {
   padding: 0;
   overflow-y: auto;
   flex: 1;
-  background: linear-gradient(180deg, #f7f9fc 0%, #f3f6fa 100%);
+  background: #fafbfc;
 }
 
-/* Cards de información */
-/* Tarjeta interna para separar categorías de información dentro del modal. */
 .pd-modal-card {
   background: #ffffff;
-  margin: 20px 28px;
-  border-radius: 20px;
-  padding: 24px;
-  box-shadow: 
-    0 20px 40px rgba(15, 23, 42, 0.06),
-    0 6px 16px rgba(15, 23, 42, 0.04),
-    0 0 0 1px rgba(226, 232, 240, 0.5) inset;
-  border: 1px solid rgba(226, 232, 240, 0.7);
+  margin: 16px 20px;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: none;
+  border: 1px solid #f1f5f9;
   position: relative;
   overflow: hidden;
-  transition: box-shadow 0.25s ease;
 }
 
 .pd-modal-card:hover {
-  box-shadow: 
-    0 24px 48px rgba(15, 23, 42, 0.08),
-    0 8px 20px rgba(15, 23, 42, 0.05),
-    0 0 0 1px rgba(99, 102, 241, 0.1) inset;
+  box-shadow: none;
 }
 
-/* Capa decorativa superior muy sutil para dar profundidad a la card. */
 .pd-modal-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 72px;
-  background: linear-gradient(180deg, rgba(99, 102, 241, 0.025) 0%, transparent 100%);
-  pointer-events: none;
+  display: none;
 }
 
-/* Encabezado interno de cada tarjeta del modal. */
 .pd-modal-card-title {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
   position: relative;
   z-index: 1;
 }
 
-/* Estilo del icono que identifica cada bloque del modal. */
 .pd-modal-card-title svg {
-  width: 18px;
-  height: 18px;
-  color: #4f46e5;
-  padding: 10px;
+  width: 16px;
+  height: 16px;
+  color: #64748b;
+  padding: 6px;
   box-sizing: content-box;
-  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
-  border: 1px solid rgba(199, 210, 254, 0.5);
-  border-radius: 12px;
-  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.12);
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  box-shadow: none;
 }
 
-/* Título pequeño en mayúsculas para cada sección del modal. */
 .pd-modal-card-title h4 {
   font-size: 11px;
-  font-weight: 700;
-  color: #1e293b;
+  font-weight: 600;
+  color: #475569;
   margin: 0;
   text-transform: uppercase;
-  letter-spacing: 1.1px;
+  letter-spacing: 0.8px;
 }
 
 /* Grid que distribuye los datos del modal en dos columnas. */
 .pd-modal-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
+  gap: 12px;
   position: relative;
   z-index: 1;
 }
@@ -1117,24 +1140,20 @@
 .pd-modal-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
-  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: 14px;
-  min-height: 80px;
-  box-shadow:
-    0 2px 8px rgba(15, 23, 42, 0.02),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  transition: all 0.2s ease;
+  gap: 4px;
+  padding: 12px;
+  background: #f8fafc;
+  border: none;
+  border-radius: 8px;
+  min-height: auto;
+  box-shadow: none;
+  transition: background 0.15s ease;
 }
 
 .pd-modal-item:hover {
-  border-color: rgba(99, 102, 241, 0.3);
-  transform: translateY(-2px);
-  box-shadow: 
-    0 8px 20px rgba(15, 23, 42, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  background: #f1f5f9;
+  transform: none;
+  box-shadow: none;
 }
 
 /* Variante de item que ocupa todo el ancho del grid. */
@@ -1146,36 +1165,35 @@
 /* Etiqueta pequeña y técnica para identificar cada dato. */
 .pd-modal-label {
   font-size: 10px;
-  font-weight: 600;
-  color: #64748b;
+  font-weight: 500;
+  color: #94a3b8;
   text-transform: uppercase;
-  letter-spacing: 0.9px;
+  letter-spacing: 0.5px;
 }
 
 /* Valor visible del dato dentro de un bloque de información. */
 .pd-modal-value {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   color: #1e293b;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 /* Variante de valor resaltado para datos más importantes. */
 .pd-modal-value.highlight {
   color: #0f172a;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* Descripción elegante */
 .pd-modal-description {
   font-size: 14px;
   color: #475569;
-  line-height: 1.75;
-  padding: 18px 20px;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border-radius: 14px;
-  border: 1px solid rgba(226, 232, 240, 0.7);
-  border-left: 3px solid #6366f1;
+  line-height: 1.6;
+  padding: 14px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border-left: 2px solid #e2e8f0;
   margin: 0;
 }
 
@@ -1184,12 +1202,12 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-  color: white;
-  font-size: 11px;
-  font-weight: 700;
-  border-radius: 999px;
+  padding: 3px 8px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -1197,12 +1215,12 @@
 .pd-badge-normal {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
-  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
-  color: #475569;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 999px;
+  padding: 3px 8px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -1211,126 +1229,115 @@
 .pd-whatsapp-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 15px;
-  background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
-  color: white;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f0fdf4;
+  color: #16a34a;
   text-decoration: none;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 13px;
-  border-radius: 12px;
-  transition: all 0.2s ease;
-  box-shadow: 0 10px 24px rgba(37, 211, 102, 0.24);
+  border-radius: 6px;
+  transition: all 0.15s ease;
 }
 
-/* Hover del botón de contacto por WhatsApp. */
 .pd-whatsapp-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 28px rgba(37, 211, 102, 0.28);
+  background: #dcfce7;
 }
 
 /* Upload Zone */
-/* Zona drag/drop o visual de subida de archivos. */
 .pd-upload-area {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 34px;
-  border: 2px dashed #d9e2ee;
-  border-radius: 20px;
-  background: linear-gradient(180deg, #fbfcfe 0%, #f5f8fb 100%);
-  transition: all 0.22s ease;
-  margin-bottom: 18px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  gap: 12px;
+  padding: 24px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 10px;
+  background: #fafbfc;
+  transition: all 0.15s ease;
+  margin-bottom: 14px;
 }
 
-/* Estado hover del área visual de subida. */
 .pd-upload-area:hover {
-  border-color: #c8d3df;
-  background: linear-gradient(180deg, #fafcfe 0%, #eef3f8 100%);
+  border-color: #cbd5e1;
+  background: #f8fafc;
 }
 
 .pd-upload-btn {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #0f1e40 0%, #1a2d52 100%);
+  gap: 8px;
+  padding: 10px 18px;
+  background: #0f172a;
   color: white;
-  border-radius: 14px;
-  font-size: 14px;
-  font-weight: 600;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.22s ease;
-  box-shadow: 0 14px 28px rgba(15, 30, 64, 0.16);
+  transition: all 0.15s ease;
   border: none;
 }
 
 .pd-upload-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 18px 34px rgba(15, 30, 64, 0.2);
+  background: #1e293b;
 }
 
-/* Texto auxiliar que explica cómo funciona la subida de archivos. */
 .pd-upload-hint {
   font-size: 12px;
-  color: #8b95a7;
+  color: #94a3b8;
   text-align: center;
-  line-height: 1.55;
+  line-height: 1.4;
+}
+
+.pd-upload-area-disabled {
+  border-style: solid;
+  border-color: #e5e7eb;
+  background: #f8fafc;
+  pointer-events: none;
 }
 
 /* Files List */
-/* Listado agrupado de archivos pendientes o ya guardados. */
 .pd-files-container {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-/* Etiqueta del grupo de archivos: pendientes o guardados. */
 .pd-files-label {
   font-size: 11px;
-  font-weight: 700;
-  color: #64748b;
+  font-weight: 500;
+  color: #94a3b8;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
-  margin-bottom: 4px;
+  letter-spacing: 0.5px;
 }
 
 .pd-file-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
-  border: 1px solid #e4eaf1;
-  border-radius: 16px;
-  transition: all 0.18s ease;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.03);
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: none;
+  border-radius: 8px;
+  transition: background 0.15s ease;
 }
 
 .pd-file-card:hover {
-  border-color: #d8e1ea;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
-  transform: translateY(-1px);
+  background: #f1f5f9;
 }
 
-/* Variante visual de archivo pendiente de guardar. */
 .pd-file-card.pending {
-  background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
-  border-color: #fde047;
+  background: #fefce8;
 }
 
-/* Caja del icono de archivo dentro de una fila del listado. */
 .pd-file-icon {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #f1f5f9;
-  border-radius: 12px;
+  border-radius: 6px;
   color: #64748b;
 }
 
@@ -1349,7 +1356,7 @@
 /* Nombre visible de archivo con recorte si es largo. */
 .pd-file-name {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: #334155;
   white-space: nowrap;
   overflow: hidden;
@@ -1359,45 +1366,43 @@
 /* Agrupación de botones pequeños por archivo. */
 .pd-file-actions {
   display: flex;
-  gap: 6px;
+  gap: 4px;
 }
 
 .pd-file-action {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f1f5f9;
+  background: transparent;
   border: none;
-  border-radius: 10px;
-  color: #64748b;
+  border-radius: 6px;
+  color: #94a3b8;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: all 0.15s ease;
   text-decoration: none;
 }
 
 .pd-file-action:hover {
-  background: #0f1e40;
-  color: white;
-  transform: translateY(-1px);
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .pd-file-action.remove:hover {
-  background: #ef4444;
+  background: #fef2f2;
+  color: #dc2626;
 }
 
 /* Preview Zone */
-/* Caja visual donde se muestra la preview del diseño. */
 .pd-preview-container {
   position: relative;
-  border-radius: 20px;
+  border-radius: 10px;
   overflow: hidden;
-  background: #eef2f7;
+  background: #f1f5f9;
   aspect-ratio: 16 / 9;
-  max-height: 320px;
-  border: 1px solid #e7edf4;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
+  max-height: 260px;
+  border: 1px solid #e2e8f0;
 }
 
 /* Imagen renderizada dentro del preview principal. */
@@ -1407,141 +1412,129 @@
   object-fit: cover;
 }
 
-/* Estado vacío del preview cuando todavía no existe una imagen. */
+/* Estado vacío del preview */
 .pd-preview-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  padding: 44px;
-  border: 2px dashed #e2e8f0;
-  border-radius: 20px;
-  background: linear-gradient(180deg, #fbfcfe 0%, #f5f7fb 100%);
+  gap: 12px;
+  padding: 32px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 10px;
+  background: #fafbfc;
   cursor: pointer;
-  transition: all 0.22s ease;
+  transition: all 0.15s ease;
 }
 
-/* Hover del estado vacío para sugerir que es interactivo. */
 .pd-preview-empty:hover {
-  border-color: #cfd8e3;
-  background: linear-gradient(180deg, #fafcfe 0%, #eef3f8 100%);
+  border-color: #cbd5e1;
+  background: #f8fafc;
 }
 
-/* Icono grande del estado vacío del preview. */
 .pd-preview-empty svg {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   color: #94a3b8;
 }
 
-/* Texto descriptivo del estado vacío del preview. */
 .pd-preview-empty span {
   font-size: 13px;
   font-weight: 500;
   color: #64748b;
 }
 
-/* Badge que marca cuando la preview actual es nueva o temporal. */
+.pd-preview-empty-disabled {
+  cursor: default;
+  border-style: solid;
+}
+
 .pd-preview-badge {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  padding: 4px 10px;
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-  color: white;
+  top: 10px;
+  left: 10px;
+  padding: 4px 8px;
+  background: #dcfce7;
+  color: #16a34a;
   font-size: 10px;
-  font-weight: 700;
-  border-radius: 999px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  font-weight: 600;
+  border-radius: 4px;
 }
 
 .pd-preview-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.14) 0%, rgba(15, 23, 42, 0.52) 100%);
+  background: rgba(15, 23, 42, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 8px;
   opacity: 0;
-  transition: opacity 0.22s ease;
+  transition: opacity 0.15s ease;
 }
 
-/* Hace visible el overlay al pasar el mouse por la preview. */
 .pd-preview-container:hover .pd-preview-overlay {
   opacity: 1;
 }
 
 /* Status Section */
-/* Resumen final del modal con badges de estado y pago. */
 .pd-status-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 22px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  border-radius: 16px;
-  margin: 2px 28px 20px;
-  box-shadow: 
-    0 16px 32px rgba(15, 23, 42, 0.05),
-    0 4px 12px rgba(15, 23, 42, 0.03);
-  border: 1px solid rgba(226, 232, 240, 0.7);
+  padding: 14px 20px;
+  background: #ffffff;
+  border-top: 1px solid #f1f5f9;
 }
 
-/* Fila individual dentro del resumen de estado y pago. */
 .pd-status-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-/* Etiqueta del resumen de estado/pago. */
 .pd-status-label {
   font-size: 11px;
-  font-weight: 600;
-  color: #64748b;
+  font-weight: 500;
+  color: #94a3b8;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.5px;
 }
 
 /* Badges */
 .pd-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 999px;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
 }
 
 .pd-badge-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
 }
 
 .pd-payment-badge {
   display: inline-flex;
   align-items: center;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
 }
 
 /* Modal Footer */
-/* Pie del modal con botones de acción. */
 .pd-modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  padding: 20px 28px 24px;
-  border-top: 1px solid rgba(226, 232, 240, 0.6);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%);
-  box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.04);
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid #f1f5f9;
+  background: #ffffff;
 }
 
 /* Buttons */
@@ -1549,79 +1542,87 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 12px 22px;
+  gap: 6px;
+  padding: 10px 18px;
   font-size: 13px;
-  font-weight: 600;
-  border-radius: 12px;
+  font-weight: 500;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   border: none;
-  letter-spacing: 0.2px;
 }
 
-/* Botón primario del modal: guardar cambios. */
 .pd-btn-primary {
-  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  background: #0f172a;
   color: white;
-  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.25);
 }
 
-/* Hover del botón primario mientras está habilitado. */
 .pd-btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.35);
+  background: #1e293b;
 }
 
-/* Estado deshabilitado del botón primario. */
 .pd-btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* Botón secundario del modal: cerrar o volver. */
 .pd-btn-secondary {
-  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+  background: #f1f5f9;
   color: #475569;
-  border: 1px solid rgba(203, 213, 225, 0.6);
 }
 
-/* Hover del botón secundario. */
 .pd-btn-secondary:hover {
-  background: #ffffff;
+  background: #e2e8f0;
   color: #1e293b;
-  border-color: #94a3b8;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
-/* Spinner interno que aparece mientras se guardan cambios. */
+.pd-btn-quotation {
+  background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.25);
+}
+
+.pd-btn-quotation:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
+}
+
+/* Botón principal del modal de archivado, alineado al sistema de acciones existentes. */
+.pd-btn-archive {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(217, 119, 6, 0.22);
+}
+
+.pd-btn-archive:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(217, 119, 6, 0.28);
+}
+
 .pd-btn-spinner {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-top-color: white;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
-/* Animación de giro continua del spinner. */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
 /* Success/Error Messages */
-/* Alertas internas del modal para feedback de guardado o error. */
 .pd-alert {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 15px 18px;
-  border-radius: 16px;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
   font-size: 13px;
-  font-weight: 600;
-  margin: 22px 32px 0;
-  animation: slideDown 0.3s ease;
-  box-shadow: 0 12px 24px rgba(15, 30, 64, 0.06);
+  font-weight: 500;
+  margin: 16px 20px 0;
+  animation: slideDown 0.2s ease;
 }
 
 @keyframes slideDown {
@@ -1635,18 +1636,168 @@
   }
 }
 
-/* Feedback positivo tras guardar archivos o cambios. */
 .pd-alert-success {
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  color: #065f46;
-  border: 1px solid #a7f3d0;
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
 }
 
-/* Feedback de error cuando falla una acción del modal. */
 .pd-alert-error {
-  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  background: #fef2f2;
   color: #991b1b;
   border: 1px solid #fecaca;
+}
+
+.pd-readonly-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pd-readonly-note-cancelled {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+}
+
+.pd-readonly-note-cancelled svg {
+  color: #dc2626;
+}
+
+.pd-assign-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(10px);
+}
+
+.pd-assign-modal {
+  width: 100%;
+  max-width: 420px;
+  padding: 28px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 20px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.18);
+}
+
+.pd-assign-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+  color: #0369a1;
+  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.2);
+}
+
+/* Variante visual del icono para acciones de archivado. */
+.pd-assign-icon-archive {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  color: #c2410c;
+  box-shadow: 0 10px 24px rgba(194, 65, 12, 0.16);
+}
+
+.pd-assign-title {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  text-align: center;
+}
+
+.pd-assign-text {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #64748b;
+  text-align: center;
+}
+
+.pd-assign-order {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.pd-assign-order-id {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0369a1;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.pd-assign-order-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.pd-assign-select {
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #dbe1ea;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 14px;
+  font-family: 'Poppins', sans-serif;
+  outline: none;
+}
+
+.pd-assign-select:focus {
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
+}
+
+.pd-assign-loading,
+.pd-assign-error {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pd-assign-loading {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+.pd-assign-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+}
+
+.pd-assign-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 /* Responsive */
@@ -1706,6 +1857,19 @@
   }
   
   .pd-btn {
+    width: 100%;
+  }
+
+  .pd-assign-modal {
+    padding: 22px 18px;
+  }
+
+  .pd-assign-actions {
+    flex-direction: column;
+  }
+
+  .pd-row-actions,
+  .pd-card-actions {
     width: 100%;
   }
 }
