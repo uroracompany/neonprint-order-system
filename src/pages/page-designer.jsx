@@ -619,7 +619,7 @@ export default function PageDesigner() {
 
     notificationConfig.updated = {
       label: "Orden editada",
-      message: "Se actualizÃ³ la informaciÃ³n de una orden asignada a ti.",
+      message: "Se actualizó la información de una orden asignada a ti.",
     };
 
     const notification = {
