@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import "../css-components/page-designer.css";
 import Sidebar from "../components/Sidebar";
 
+// Icones SVG para la interfaz
 const Icon = {
   Dashboard: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>),
   Orders: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>),
@@ -28,6 +29,7 @@ const Icon = {
   Package: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16.5 9.4-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>),
 };
 
+// Configuración de estados y pagos para badges
 const STATUS_CONFIG = {
   "Pending": { label: "Pendiente", value: "Pending", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
   "In_Design": { label: "En Diseño", value: "In_Design", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
@@ -39,12 +41,14 @@ const STATUS_CONFIG = {
   "cancelada": { label: "Cancelada", value: "cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
 };
 
+// Colores y etiquetas para estados de pago
 const PAYMENT_CONFIG = {
   "pagado": { label: "Pagado", color: "#14532D", bg: "#DCFCE7" },
   "Pending_Payment": { label: "Pago Pendiente", color: "#92620A", bg: "#FEF3C7" },
   "parcial": { label: "Parcial", color: "#0369A1", bg: "#E0F2FE" },
 };
 
+// Badge component para mostrar estado de la orden
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG["Pending"];
   return (
@@ -61,6 +65,78 @@ function PaymentBadge({ status }) {
     <span className="pd-payment-badge" style={{ background: cfg.bg, color: cfg.color }}>
       {cfg.label}
     </span>
+  );
+}
+
+const NOTIFICATION_DURATION = 5000;
+const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
+const TRACKED_ORDER_FIELDS = [
+  "client_name",
+  "seller_name",
+  "client_contact",
+  "order_type",
+  "created_at",
+  "description",
+  "material",
+];
+
+const normalizeTrackedValue = (value) => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const hasTrackedOrderChanges = (previousOrder, nextOrder) => {
+  return TRACKED_ORDER_FIELDS.some(field => (
+    normalizeTrackedValue(previousOrder?.[field]) !== normalizeTrackedValue(nextOrder?.[field])
+  ));
+};
+
+function NotificationToast({ notification, onClose }) {
+  const [progress, setProgress] = useState(100);
+
+  useEffect(() => {
+    const updateProgress = () => {
+      const remaining = notification.expiresAt - Date.now();
+      const nextProgress = Math.max(0, (remaining / notification.duration) * 100);
+      setProgress(nextProgress);
+    };
+
+    updateProgress();
+
+    const interval = setInterval(updateProgress, 50);
+    return () => clearInterval(interval);
+  }, [notification.duration, notification.expiresAt]);
+
+  return (
+    <div className={`pd-notification ${notification.type}`} role="status" aria-live="polite">
+      <div className="pd-notification-main">
+        <div className="pd-notification-icon">
+          {notification.type === "cancelled" ? <Icon.X /> : <Icon.Package />}
+        </div>
+
+        <div className="pd-notification-content">
+          <span className="pd-notification-title">{notification.label}</span>
+          <span className="pd-notification-subtitle">{notification.orderTitle}</span>
+          <span className="pd-notification-text">{notification.message}</span>
+        </div>
+
+        <button
+          type="button"
+          className="pd-notification-close"
+          onClick={() => onClose(notification.id)}
+          aria-label="Cerrar notificación"
+        >
+          <Icon.X />
+        </button>
+      </div>
+
+      <div className="pd-notification-progress-track">
+        <div
+          className="pd-notification-progress"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -484,13 +560,22 @@ export default function PageDesigner() {
       return saved ? JSON.parse(saved) : {};
     } catch { return {}; }
   });
-  const [editedOrders, setEditedOrders] = useState({});
+  const [editedOrders, setEditedOrders] = useState(() => {
+    try {
+      const saved = localStorage.getItem(EDITED_ORDERS_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const [orderFiles, setOrderFiles] = useState({});
   const [orderPreviews, setOrderPreviews] = useState({});
+  const [notifications, setNotifications] = useState([]);
   
   const ordersRef = useRef([]);
   const viewedOrdersRef = useRef({});
   const userRef = useRef(null);
+  const knownOrderIdsRef = useRef(new Set());
+  const previousOrdersRef = useRef({});
+  const notificationTimeoutsRef = useRef({});
 
   viewedOrdersRef.current = viewedOrders;
 
@@ -498,7 +583,70 @@ export default function PageDesigner() {
     localStorage.setItem("pd_viewed_orders", JSON.stringify(viewedOrders));
   }, [viewedOrders]);
 
+  useEffect(() => {
+    localStorage.setItem(EDITED_ORDERS_STORAGE_KEY, JSON.stringify(editedOrders));
+  }, [editedOrders]);
+
+  const removeNotification = (notificationId) => {
+    setNotifications(prev => prev.filter(item => item.id !== notificationId));
+
+    if (notificationTimeoutsRef.current[notificationId]) {
+      clearTimeout(notificationTimeoutsRef.current[notificationId]);
+      delete notificationTimeoutsRef.current[notificationId];
+    }
+  };
+
+  const createNotificationForOrder = (order, type = "new") => {
+    const notificationId = `${type}-${order.id}`;
+
+    if (notificationTimeoutsRef.current[notificationId]) return;
+
+    const orderTitle =
+      order.description ||
+      order.client_name ||
+      `Orden #${order.id?.slice(0, 8).toUpperCase()}`;
+
+    const notificationConfig = {
+      new: {
+        label: "Nueva orden asignada",
+        message: "Se ha creado una nueva orden para ti.",
+      },
+      cancelled: {
+        label: "Orden cancelada",
+        message: "Una de tus órdenes asignadas ha sido cancelada.",
+      },
+    };
+
+    notificationConfig.updated = {
+      label: "Orden editada",
+      message: "Se actualizÃ³ la informaciÃ³n de una orden asignada a ti.",
+    };
+
+    const notification = {
+      id: notificationId,
+      type,
+      label: notificationConfig[type]?.label || "Notificación",
+      orderTitle,
+      message: notificationConfig[type]?.message || "Tienes una actualización en una orden.",
+      duration: NOTIFICATION_DURATION,
+      expiresAt: Date.now() + NOTIFICATION_DURATION,
+    };
+
+    setNotifications(prev => [notification, ...prev].slice(0, 3));
+
+    notificationTimeoutsRef.current[notificationId] = setTimeout(() => {
+      removeNotification(notificationId);
+    }, NOTIFICATION_DURATION);
+  };
+
   const handleViewOrder = async (order) => {
+    setEditedOrders(prev => {
+      if (!prev[order.id]) return prev;
+      const next = { ...prev };
+      delete next[order.id];
+      return next;
+    });
+
     const { data } = await supabase
       .from("orders")
       .select("*")
@@ -541,6 +689,40 @@ export default function PageDesigner() {
         .order("created_at", { ascending: false });
 
       if (!error && data) {
+        const nextOrderIds = new Set(data.map(order => order.id));
+        const previousOrderIds = knownOrderIdsRef.current;
+        const previousOrders = previousOrdersRef.current;
+
+        if (previousOrderIds.size > 0) {
+          data
+            .filter(order => !previousOrderIds.has(order.id))
+            .forEach(createNotificationForOrder);
+
+          data.forEach(order => {
+            const previousOrder = previousOrders[order.id];
+            const wasCancelledBefore = previousOrder?.status === "cancelada";
+            const isCancelledNow = order.status === "cancelada";
+
+            if (previousOrder && !wasCancelledBefore && isCancelledNow) {
+              createNotificationForOrder(order, "cancelled");
+            }
+
+            if (
+              previousOrder &&
+              !isCancelledNow &&
+              hasTrackedOrderChanges(previousOrder, order)
+            ) {
+              setEditedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
+              createNotificationForOrder(order, "updated");
+            }
+          });
+        }
+
+        knownOrderIdsRef.current = nextOrderIds;
+        previousOrdersRef.current = data.reduce((acc, order) => {
+          acc[order.id] = order;
+          return acc;
+        }, {});
         ordersRef.current = data;
         setOrders(data);
         setLoading(false);
@@ -554,6 +736,12 @@ export default function PageDesigner() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      Object.values(notificationTimeoutsRef.current).forEach(clearTimeout);
+    };
+  }, []);
+
   const isNewOrder = (order) => {
     if (viewedOrders[order.id]) return false;
     const createdAt = new Date(order.created_at).getTime();
@@ -562,7 +750,6 @@ export default function PageDesigner() {
   };
 
   const isEditedOrder = (order) => {
-    if (viewedOrders[order.id]) return false;
     return !!editedOrders[order.id];
   };
 
@@ -859,6 +1046,18 @@ export default function PageDesigner() {
           )}
         </div>
       </main>
+
+      {notifications.length > 0 && (
+        <div className="pd-notification-stack">
+          {notifications.map(notification => (
+            <NotificationToast
+              key={notification.id}
+              notification={notification}
+              onClose={removeNotification}
+            />
+          ))}
+        </div>
+      )}
 
       <OrderDetailModal 
         open={!!selectedOrder} 
