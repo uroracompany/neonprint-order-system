@@ -1,6 +1,39 @@
 /* DESIGNER PAGE STYLES */
+/*
+  ============================================================================
+  DOCUMENTACION GENERAL DE page-designer.css
+  ============================================================================
+  Este archivo controla toda la interfaz visual de la vista del diseñador.
+
+  Estructura del archivo:
+  - Tokens globales (`:root`): colores, radios, sombras y superficies.
+  - Layout general: contenedor principal, sidebar, header y contenido.
+  - Dashboard: saludo, métricas, filtros, tabla y tarjetas de órdenes.
+  - Modal de detalle: overlay, contenedor, cards internas, uploads, preview,
+    badges, footer y estados visuales.
+  - Notificaciones: toast flotante para nuevas órdenes, órdenes editadas
+    y cancelaciones.
+  - Responsive: ajustes para móvil y pantallas pequeñas.
+
+  Convención de nombres:
+  - Todo lo de esta pantalla usa prefijo `pd-` (= page designer).
+  - Un mismo componente suele dividirse en:
+    contenedor -> elemento interno -> estado/modificador.
+    Ejemplo: `.pd-order-card`, `.pd-card-header`, `.pd-badge-new`.
+
+  IMPORTANTE ANTES DE EDITAR:
+  - Este archivo contiene bloques duplicados en algunas zonas, sobre todo modal
+    y detalles visuales refinados. En CSS, si un selector se repite, la ULTIMA
+    definición del archivo gana.
+  - Si cambias una regla y no ves efecto, busca si ese selector vuelve a aparecer
+    más abajo.
+  - Para cambios grandes, edita siempre el bloque más cercano al final del
+    archivo, porque normalmente es la versión vigente.
+*/
 
 :root {
+  /* Variables globales reutilizables.
+     Si quieres cambiar identidad visual general, empieza por aquí. */
   --pd-primary: #0f1e40;
   --pd-primary-light: #1a2d52;
   --pd-pink: #ff1f6e;
@@ -20,10 +53,13 @@
 }
 
 * {
+  /* Normaliza el modelo de caja para que padding y border no rompan tamaños. */
   box-sizing: border-box;
 }
 
 .pd-root {
+  /* Contenedor principal de toda la página Designer.
+     Aquí conviven sidebar + contenido principal. */
   display: flex;
   min-height: 100vh;
   overflow-y: auto;
@@ -32,6 +68,7 @@
 }
 
 /* ── SIDEBAR ─────────────────────────────────────────────────────────── */
+/* Sidebar expandida del diseñador: navegación principal y estado del usuario. */
 .pd-sidebar {
   width: 260px;
   min-width: 260px;
@@ -42,11 +79,13 @@
   box-shadow: 4px 0 24px rgba(15,30,64,0.2);
 }
 
+/* Variante compacta de la sidebar cuando se colapsa. */
 .pd-sidebar.closed {
   width: 80px;
   min-width: 80px;
 }
 
+/* Cabecera visual de la sidebar con marca/logo. */
 .pd-sidebar-logo {
   display: flex;
   align-items: center;
@@ -78,6 +117,7 @@
   margin-top: 2px;
 }
 
+/* Bloque del usuario autenticado dentro de la sidebar. */
 .pd-sidebar-user {
   display: flex;
   align-items: center;
@@ -111,6 +151,7 @@
   text-overflow: ellipsis;
 }
 
+/* Columna de navegación principal. */
 .pd-sidebar-nav {
   flex: 1;
   padding: 12px;
@@ -119,6 +160,7 @@
   gap: 4px;
 }
 
+/* Botón base del menú lateral. */
 .pd-nav-btn {
   display: flex;
   align-items: center;
@@ -156,6 +198,7 @@
   color: #ff6b6b;
 }
 
+/* Badge numérico que acompaña ciertos ítems del menú. */
 .pd-nav-badge {
   margin-left: auto;
   background: #00d4ff;
@@ -172,6 +215,7 @@
 }
 
 /* ── MAIN CONTENT ─────────────────────────────────────────────────────── */
+/* Columna principal del diseñador: header + contenido scrollable. */
 .pd-main {
   flex: 1;
   display: flex;
@@ -180,6 +224,7 @@
   height: 100vh;
 }
 
+/* Barra superior de la vista del diseñador. */
 .pd-header {
   display: flex;
   align-items: center;
@@ -189,6 +234,7 @@
   border-bottom: 1px solid var(--pd-border);
 }
 
+/* Botón para expandir/contraer la sidebar. */
 .pd-toggle-btn {
   width: 40px;
   height: 40px;
@@ -215,6 +261,7 @@
   margin: 0;
 }
 
+/* Área donde vive todo el contenido visible de dashboard/órdenes. */
 .pd-content {
   flex: 1;
   padding: 24px;
@@ -222,6 +269,7 @@
 }
 
 /* ── GREETING ─────────────────────────────────────────────────────────── */
+/* Encabezado corto de bienvenida del dashboard. */
 .pd-greeting {
   margin-bottom: 20px;
 }
@@ -247,6 +295,7 @@
 }
 
 /* ── METRICS ─────────────────────────────────────────────────────────── */
+/* Grid de tarjetas-resumen con métricas rápidas. */
 .pd-metrics {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -254,6 +303,7 @@
   margin-bottom: 24px;
 }
 
+/* Card individual de una métrica. */
 .pd-metric-card {
   background: #ffffff;
   border: 1px solid var(--pd-border);
@@ -301,6 +351,7 @@
 }
 
 /* ── FILTERS ─────────────────────────────────────────────────────────── */
+/* Barra de filtros: búsqueda, selects y contador de resultados. */
 .pd-filters {
   display: flex;
   gap: 10px;
@@ -309,6 +360,7 @@
   align-items: center;
 }
 
+/* Wrapper relativo para ubicar el icono dentro del campo de búsqueda. */
 .pd-search-wrap {
   position: relative;
   flex: 1;
@@ -324,6 +376,7 @@
   display: flex;
 }
 
+/* Input base compartido entre búsqueda y selects. */
 .pd-input {
   width: 100%;
   background: #ffffff;
@@ -365,6 +418,7 @@
 }
 
 /* ── View Toggle ─────────────────────────────────────────────────────── */
+/* Botones para cambiar entre vista tabla y vista cards. */
 .pd-view-toggle {
   display: flex;
   align-items: center;
@@ -391,6 +445,7 @@
 }
 
 /* ── TABLE VIEW ─────────────────────────────────────────────────────── */
+/* Caja contenedora de la tabla con scroll horizontal si hace falta. */
 .pd-table-wrap {
   overflow-x: auto;
   background: #ffffff;
@@ -398,6 +453,7 @@
   border: 1px solid #e8eaed;
 }
 
+/* Tabla principal de órdenes cuando se usa la vista tabular. */
 .pd-table {
   width: 100%;
   border-collapse: collapse;
@@ -472,6 +528,7 @@
   padding: 6px 12px !important;
 }
 
+/* Botón pequeño de acción dentro de la tabla. */
 .pd-action-btn {
   padding: 5px 12px;
   border: none;
@@ -501,12 +558,14 @@
 }
 
 /* ── ORDER CARDS ─────────────────────────────────────────────────────── */
+/* Grid responsive de tarjetas de órdenes. */
 .pd-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 14px;
 }
 
+/* Tarjeta individual de una orden en la vista cards. */
 .pd-order-card {
   background: #ffffff;
   border: 1px solid #e8eaed;
@@ -540,6 +599,7 @@
   opacity: 1;
 }
 
+/* Cabecera de la card: ID de la orden y grupo de badges. */
 .pd-card-header {
   display: flex;
   justify-content: space-between;
@@ -547,12 +607,14 @@
   padding: 14px 14px 0;
 }
 
+/* Agrupa visualmente badges como Nuevo, Editada y Estado. */
 .pd-card-badges {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
+/* Badge visual para órdenes nuevas. */
 .pd-badge-new {
   display: inline-flex;
   align-items: center;
@@ -567,6 +629,7 @@
   animation: pd-pulse-new 2s infinite;
 }
 
+/* Badge visual para órdenes cuya información fue modificada. */
 .pd-badge-edited {
   display: inline-flex;
   align-items: center;
@@ -580,11 +643,13 @@
   color: #ffffff;
 }
 
+/* Animación de pulso usada por el badge de orden nueva. */
 @keyframes pd-pulse-new {
   0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4); }
   50% { box-shadow: 0 0 0 4px rgba(139, 92, 246, 0); }
 }
 
+/* ID corto de la orden dentro de la card. */
 .pd-card-id {
   font-size: 10px;
   font-weight: 600;
@@ -594,6 +659,7 @@
   font-family: 'SF Mono', 'Monaco', monospace;
 }
 
+/* Nombre principal visible en la card, normalmente cliente o título corto. */
 .pd-card-client {
   font-size: 15px;
   font-weight: 600;
@@ -605,6 +671,7 @@
   line-height: 1.3;
 }
 
+/* Descripción resumida de la orden limitada a dos líneas. */
 .pd-card-desc {
   font-size: 12px;
   color: #6b7280;
@@ -617,6 +684,7 @@
   flex-grow: 1;
 }
 
+/* Fila secundaria con material, tipo 911 y badge de pago. */
 .pd-card-meta {
   display: flex;
   align-items: center;
@@ -625,6 +693,7 @@
   flex-wrap: wrap;
 }
 
+/* Chip pequeño para mostrar el material de la orden. */
 .pd-card-material {
   font-size: 10px;
   font-weight: 600;
@@ -635,6 +704,7 @@
   letter-spacing: 0.2px;
 }
 
+/* Badge compacto para identificar órdenes urgentes tipo 911. */
 .pd-card-911 {
   font-size: 9px;
   font-weight: 700;
@@ -645,6 +715,7 @@
   letter-spacing: 0.5px;
 }
 
+/* Pie de la card con fecha, adjuntos y acción principal. */
 .pd-card-footer {
   display: flex;
   justify-content: space-between;
@@ -656,6 +727,7 @@
   gap: 10px;
 }
 
+/* Subgrupo izquierdo del footer: fecha y adjuntos. */
 .pd-card-footer-left {
   display: flex;
   align-items: center;
@@ -663,6 +735,7 @@
   flex: 1;
 }
 
+/* Botón CTA para abrir el detalle de una orden. */
 .pd-view-btn {
   padding: 8px 14px;
   background: var(--pd-primary);
@@ -683,6 +756,7 @@
   box-shadow: 0 2px 8px rgba(15, 30, 64, 0.2);
 }
 
+/* Muestra la fecha de creación con icono de reloj. */
 .pd-card-date {
   display: flex;
   align-items: center;
@@ -692,6 +766,7 @@
   font-weight: 500;
 }
 
+/* Indicadores compactos de archivos o preview disponibles. */
 .pd-card-files,
 .pd-card-preview-badge {
   display: flex;
@@ -705,6 +780,7 @@
   color: #8B5CF6;
 }
 
+/* Indicador de adjuntos dentro del footer de la card. */
 .pd-card-attachments {
   display: flex;
   align-items: center;
@@ -722,6 +798,7 @@
   background: rgba(15, 30, 64, 0.1);
 }
 
+/* Variante del indicador cuando hay archivos y preview al mismo tiempo. */
 .pd-card-attachments.has-both {
   background: rgba(0, 212, 255, 0.1);
   color: #0891b2;
@@ -733,6 +810,7 @@
 }
 
 /* ── BADGES ─────────────────────────────────────────────────────────── */
+/* Badge base para estados generales de la orden. */
 .pd-badge {
   display: inline-flex;
   align-items: center;
@@ -744,6 +822,7 @@
   letter-spacing: 0.2px;
 }
 
+/* Badge base para estados de pago. */
 .pd-payment-badge {
   display: inline-flex;
   align-items: center;
@@ -755,12 +834,14 @@
   letter-spacing: 0.2px;
 }
 
+/* Punto de color interno usado en badges de estado. */
 .pd-badge-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
 }
 
+/* Badge amplio para 911 usado en vistas de detalle. */
 .pd-badge-911 {
   display: inline-block;
   padding: 4px 10px;
@@ -771,6 +852,7 @@
   color: #ffffff;
 }
 
+/* Badge amplio para órdenes normales en detalle y cards. */
 .pd-badge-normal {
   display: inline-block;
   padding: 4px 10px;
@@ -782,6 +864,7 @@
 }
 
 /* ── RECENT SECTION ─────────────────────────────────────────────────── */
+/* Panel del dashboard que agrupa las órdenes recientes. */
 .pd-recent-section {
   background: #ffffff;
   border-radius: 16px;
@@ -790,6 +873,7 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
+/* Título interno de la sección de órdenes recientes. */
 .pd-recent-section h3 {
   font-size: 13px;
   font-weight: 700;
@@ -811,6 +895,7 @@
 }
 
 /* ── LOADING & EMPTY STATES ─────────────────────────────────────────── */
+/* Estados vacíos o de carga compartidos. */
 .pd-loading,
 .pd-empty {
   text-align: center;
@@ -820,33 +905,43 @@
 }
 
 /* ── MODAL EJECUTIVO ─────────────────────────────────────────────── */
+/* Overlay que oscurece la app y centra el modal. Ojo: este selector puede
+   reaparecer más abajo; la última versión del archivo es la activa. */
 .pd-modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(10, 15, 30, 0.6);
+  background:
+    radial-gradient(circle at 20% 20%, rgba(15, 30, 64, 0.12) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.6) 0%, rgba(15, 23, 42, 0.72) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  padding: 24px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
+/* Contenedor principal del modal de detalle. */
 .pd-modal {
-  background: #ffffff;
-  border-radius: 20px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(99, 102, 241, 0.06) 0%, transparent 40%),
+    radial-gradient(circle at 0% 100%, rgba(15, 30, 64, 0.04) 0%, transparent 30%),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 24px;
   width: 100%;
-  max-width: 720px;
-  max-height: 90vh;
+  max-width: 760px;
+  max-height: min(90vh, 920px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border: 1px solid rgba(238, 242, 247, 0.9);
   box-shadow: 
-    0 25px 80px rgba(10, 15, 30, 0.25),
-    0 0 0 1px rgba(0, 0, 0, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  animation: modalSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    0 48px 120px rgba(15, 23, 42, 0.22),
+    0 16px 40px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+  animation: modalSlideIn 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes modalSlideIn {
@@ -860,153 +955,227 @@
   }
 }
 
+/* Cabecera del modal: título, subtítulo y cierre. */
 .pd-modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px 28px;
-  border-bottom: 1px solid #f1f3f5;
-  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+  padding: 28px 32px 22px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%);
 }
 
+/* Agrupa el título y subtítulo del encabezado del modal. */
 .pd-modal-title {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
+/* Título principal del modal con ID de la orden. */
 .pd-modal-title h3 {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   color: #0f172a;
   margin: 0;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.8px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
+/* Barra decorativa vertical delante del título principal. */
 .pd-modal-title h3::before {
   content: '';
   width: 4px;
-  height: 24px;
-  background: linear-gradient(180deg, #0f1e40 0%, #3b5998 100%);
-  border-radius: 2px;
+  height: 26px;
+  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
+/* Texto secundario que contextualiza el contenido del modal. */
 .pd-modal-subtitle {
   font-size: 13px;
   color: #64748b;
   font-weight: 500;
-  padding-left: 14px;
+  padding-left: 16px;
+  line-height: 1.5;
+  letter-spacing: 0.2px;
 }
 
 .pd-modal-close {
   width: 40px;
   height: 40px;
-  border: none;
+  border: 1px solid rgba(226, 232, 240, 0.8);
   border-radius: 12px;
-  background: #f1f5f9;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #64748b;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
   transition: all 0.2s ease;
 }
 
 .pd-modal-close:hover {
-  background: #e2e8f0;
-  color: #0f172a;
-  transform: rotate(90deg);
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #1e293b;
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
 }
 
+/* Área de contenido interno con scroll vertical. */
 .pd-modal-body {
   padding: 0;
   overflow-y: auto;
   flex: 1;
-  background: #fafbfc;
+  background: linear-gradient(180deg, #f7f9fc 0%, #f3f6fa 100%);
 }
 
 /* Cards de información */
+/* Tarjeta interna para separar categorías de información dentro del modal. */
 .pd-modal-card {
   background: #ffffff;
   margin: 20px 28px;
-  border-radius: 16px;
+  border-radius: 20px;
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
-  border: 1px solid #f1f5f9;
+  box-shadow: 
+    0 20px 40px rgba(15, 23, 42, 0.06),
+    0 6px 16px rgba(15, 23, 42, 0.04),
+    0 0 0 1px rgba(226, 232, 240, 0.5) inset;
+  border: 1px solid rgba(226, 232, 240, 0.7);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.25s ease;
 }
 
+.pd-modal-card:hover {
+  box-shadow: 
+    0 24px 48px rgba(15, 23, 42, 0.08),
+    0 8px 20px rgba(15, 23, 42, 0.05),
+    0 0 0 1px rgba(99, 102, 241, 0.1) inset;
+}
+
+/* Capa decorativa superior muy sutil para dar profundidad a la card. */
+.pd-modal-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 72px;
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.025) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Encabezado interno de cada tarjeta del modal. */
 .pd-modal-card-title {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  position: relative;
+  z-index: 1;
 }
 
+/* Estilo del icono que identifica cada bloque del modal. */
 .pd-modal-card-title svg {
-  width: 20px;
-  height: 20px;
-  color: #0f1e40;
+  width: 18px;
+  height: 18px;
+  color: #4f46e5;
+  padding: 10px;
+  box-sizing: content-box;
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+  border: 1px solid rgba(199, 210, 254, 0.5);
+  border-radius: 12px;
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.12);
 }
 
+/* Título pequeño en mayúsculas para cada sección del modal. */
 .pd-modal-card-title h4 {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
-  color: #0f172a;
+  color: #1e293b;
   margin: 0;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
+  letter-spacing: 1.1px;
 }
 
+/* Grid que distribuye los datos del modal en dos columnas. */
 .pd-modal-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
 }
 
+/* Celda individual de información dentro del modal. */
 .pd-modal-item {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 14px;
+  min-height: 80px;
+  box-shadow:
+    0 2px 8px rgba(15, 23, 42, 0.02),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: all 0.2s ease;
 }
 
+.pd-modal-item:hover {
+  border-color: rgba(99, 102, 241, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 
+    0 8px 20px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* Variante de item que ocupa todo el ancho del grid. */
 .pd-modal-item.full {
   grid-column: 1 / -1;
+  min-height: auto;
 }
 
+/* Etiqueta pequeña y técnica para identificar cada dato. */
 .pd-modal-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: #94a3b8;
+  color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.9px;
 }
 
+/* Valor visible del dato dentro de un bloque de información. */
 .pd-modal-value {
   font-size: 14px;
-  font-weight: 500;
-  color: #334155;
+  font-weight: 600;
+  color: #1e293b;
   line-height: 1.5;
 }
 
+/* Variante de valor resaltado para datos más importantes. */
 .pd-modal-value.highlight {
-  color: #0f1e40;
-  font-weight: 600;
+  color: #0f172a;
+  font-weight: 700;
 }
 
 /* Descripción elegante */
 .pd-modal-description {
   font-size: 14px;
   color: #475569;
-  line-height: 1.7;
-  padding: 16px 20px;
+  line-height: 1.75;
+  padding: 18px 20px;
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border-radius: 12px;
-  border-left: 4px solid #0f1e40;
+  border-radius: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.7);
+  border-left: 3px solid #6366f1;
   margin: 0;
 }
 
@@ -1020,7 +1189,7 @@
   color: white;
   font-size: 11px;
   font-weight: 700;
-  border-radius: 6px;
+  border-radius: 999px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -1033,7 +1202,7 @@
   color: #475569;
   font-size: 11px;
   font-weight: 600;
-  border-radius: 6px;
+  border-radius: 999px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -1043,39 +1212,43 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 10px 15px;
   background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
   color: white;
   text-decoration: none;
   font-weight: 600;
   font-size: 13px;
-  border-radius: 10px;
+  border-radius: 12px;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(37, 211, 102, 0.3);
+  box-shadow: 0 10px 24px rgba(37, 211, 102, 0.24);
 }
 
+/* Hover del botón de contacto por WhatsApp. */
 .pd-whatsapp-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
+  box-shadow: 0 14px 28px rgba(37, 211, 102, 0.28);
 }
 
 /* Upload Zone */
+/* Zona drag/drop o visual de subida de archivos. */
 .pd-upload-area {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 28px;
-  border: 2px dashed #e2e8f0;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #fafbfc 0%, #f8fafc 100%);
-  transition: all 0.2s ease;
-  margin-bottom: 16px;
+  gap: 14px;
+  padding: 34px;
+  border: 2px dashed #d9e2ee;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #f5f8fb 100%);
+  transition: all 0.22s ease;
+  margin-bottom: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
 }
 
+/* Estado hover del área visual de subida. */
 .pd-upload-area:hover {
-  border-color: #0f1e40;
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-color: #c8d3df;
+  background: linear-gradient(180deg, #fafcfe 0%, #eef3f8 100%);
 }
 
 .pd-upload-btn {
@@ -1085,33 +1258,37 @@
   padding: 12px 24px;
   background: linear-gradient(135deg, #0f1e40 0%, #1a2d52 100%);
   color: white;
-  border-radius: 12px;
+  border-radius: 14px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(15, 30, 64, 0.2);
+  transition: all 0.22s ease;
+  box-shadow: 0 14px 28px rgba(15, 30, 64, 0.16);
   border: none;
 }
 
 .pd-upload-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(15, 30, 64, 0.3);
+  box-shadow: 0 18px 34px rgba(15, 30, 64, 0.2);
 }
 
+/* Texto auxiliar que explica cómo funciona la subida de archivos. */
 .pd-upload-hint {
   font-size: 12px;
-  color: #94a3b8;
+  color: #8b95a7;
   text-align: center;
+  line-height: 1.55;
 }
 
 /* Files List */
+/* Listado agrupado de archivos pendientes o ya guardados. */
 .pd-files-container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
+/* Etiqueta del grupo de archivos: pendientes o guardados. */
 .pd-files-label {
   font-size: 11px;
   font-weight: 700;
@@ -1125,23 +1302,27 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  transition: all 0.15s ease;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  border: 1px solid #e4eaf1;
+  border-radius: 16px;
+  transition: all 0.18s ease;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.03);
 }
 
 .pd-file-card:hover {
-  border-color: #0f1e40;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-color: #d8e1ea;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
+  transform: translateY(-1px);
 }
 
+/* Variante visual de archivo pendiente de guardar. */
 .pd-file-card.pending {
   background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
   border-color: #fde047;
 }
 
+/* Caja del icono de archivo dentro de una fila del listado. */
 .pd-file-icon {
   width: 40px;
   height: 40px;
@@ -1149,20 +1330,23 @@
   align-items: center;
   justify-content: center;
   background: #f1f5f9;
-  border-radius: 10px;
+  border-radius: 12px;
   color: #64748b;
 }
 
+/* Variante del icono cuando el archivo aún está pendiente. */
 .pd-file-card.pending .pd-file-icon {
   background: #fef08a;
   color: #a16207;
 }
 
+/* Contenedor flexible del nombre del archivo. */
 .pd-file-info {
   flex: 1;
   min-width: 0;
 }
 
+/* Nombre visible de archivo con recorte si es largo. */
 .pd-file-name {
   font-size: 13px;
   font-weight: 600;
@@ -1172,6 +1356,7 @@
   text-overflow: ellipsis;
 }
 
+/* Agrupación de botones pequeños por archivo. */
 .pd-file-actions {
   display: flex;
   gap: 6px;
@@ -1185,16 +1370,17 @@
   justify-content: center;
   background: #f1f5f9;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   color: #64748b;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.18s ease;
   text-decoration: none;
 }
 
 .pd-file-action:hover {
   background: #0f1e40;
   color: white;
+  transform: translateY(-1px);
 }
 
 .pd-file-action.remove:hover {
@@ -1202,52 +1388,61 @@
 }
 
 /* Preview Zone */
+/* Caja visual donde se muestra la preview del diseño. */
 .pd-preview-container {
   position: relative;
-  border-radius: 16px;
+  border-radius: 20px;
   overflow: hidden;
-  background: #f1f5f9;
+  background: #eef2f7;
   aspect-ratio: 16 / 9;
-  max-height: 280px;
+  max-height: 320px;
+  border: 1px solid #e7edf4;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
 }
 
+/* Imagen renderizada dentro del preview principal. */
 .pd-preview-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
+/* Estado vacío del preview cuando todavía no existe una imagen. */
 .pd-preview-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 40px;
+  gap: 18px;
+  padding: 44px;
   border: 2px dashed #e2e8f0;
-  border-radius: 16px;
-  background: #fafbfc;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #f5f7fb 100%);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.22s ease;
 }
 
+/* Hover del estado vacío para sugerir que es interactivo. */
 .pd-preview-empty:hover {
-  border-color: #0f1e40;
-  background: #f8fafc;
+  border-color: #cfd8e3;
+  background: linear-gradient(180deg, #fafcfe 0%, #eef3f8 100%);
 }
 
+/* Icono grande del estado vacío del preview. */
 .pd-preview-empty svg {
   width: 48px;
   height: 48px;
   color: #94a3b8;
 }
 
+/* Texto descriptivo del estado vacío del preview. */
 .pd-preview-empty span {
   font-size: 13px;
   font-weight: 500;
   color: #64748b;
 }
 
+/* Badge que marca cuando la preview actual es nueva o temporal. */
 .pd-preview-badge {
   position: absolute;
   top: 12px;
@@ -1257,7 +1452,7 @@
   color: white;
   font-size: 10px;
   font-weight: 700;
-  border-radius: 6px;
+  border-radius: 999px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -1265,44 +1460,50 @@
 .pd-preview-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.14) 0%, rgba(15, 23, 42, 0.52) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.22s ease;
 }
 
+/* Hace visible el overlay al pasar el mouse por la preview. */
 .pd-preview-container:hover .pd-preview-overlay {
   opacity: 1;
 }
 
 /* Status Section */
+/* Resumen final del modal con badges de estado y pago. */
 .pd-status-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  background: #ffffff;
-  border-radius: 12px;
-  margin: 0 28px 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  border: 1px solid #f1f5f9;
+  padding: 18px 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 16px;
+  margin: 2px 28px 20px;
+  box-shadow: 
+    0 16px 32px rgba(15, 23, 42, 0.05),
+    0 4px 12px rgba(15, 23, 42, 0.03);
+  border: 1px solid rgba(226, 232, 240, 0.7);
 }
 
+/* Fila individual dentro del resumen de estado y pago. */
 .pd-status-item {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
+/* Etiqueta del resumen de estado/pago. */
 .pd-status-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.8px;
 }
 
 /* Badges */
@@ -1313,7 +1514,7 @@
   padding: 6px 12px;
   font-size: 12px;
   font-weight: 600;
-  border-radius: 8px;
+  border-radius: 999px;
 }
 
 .pd-badge-dot {
@@ -1328,17 +1529,19 @@
   padding: 6px 12px;
   font-size: 12px;
   font-weight: 600;
-  border-radius: 8px;
+  border-radius: 999px;
 }
 
 /* Modal Footer */
+/* Pie del modal con botones de acción. */
 .pd-modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding: 20px 28px;
-  border-top: 1px solid #f1f5f9;
-  background: #ffffff;
+  padding: 20px 28px 24px;
+  border-top: 1px solid rgba(226, 232, 240, 0.6);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%);
+  box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.04);
 }
 
 /* Buttons */
@@ -1347,41 +1550,51 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px 24px;
-  font-size: 14px;
+  padding: 12px 22px;
+  font-size: 13px;
   font-weight: 600;
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
   border: none;
+  letter-spacing: 0.2px;
 }
 
+/* Botón primario del modal: guardar cambios. */
 .pd-btn-primary {
-  background: linear-gradient(135deg, #0f1e40 0%, #1a2d52 100%);
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
   color: white;
-  box-shadow: 0 4px 12px rgba(15, 30, 64, 0.2);
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.25);
 }
 
+/* Hover del botón primario mientras está habilitado. */
 .pd-btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(15, 30, 64, 0.3);
+  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.35);
 }
 
+/* Estado deshabilitado del botón primario. */
 .pd-btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
+/* Botón secundario del modal: cerrar o volver. */
 .pd-btn-secondary {
-  background: #f1f5f9;
+  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
   color: #475569;
+  border: 1px solid rgba(203, 213, 225, 0.6);
 }
 
+/* Hover del botón secundario. */
 .pd-btn-secondary:hover {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: #ffffff;
+  color: #1e293b;
+  border-color: #94a3b8;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
+/* Spinner interno que aparece mientras se guardan cambios. */
 .pd-btn-spinner {
   width: 16px;
   height: 16px;
@@ -1391,21 +1604,24 @@
   animation: spin 0.8s linear infinite;
 }
 
+/* Animación de giro continua del spinner. */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
 /* Success/Error Messages */
+/* Alertas internas del modal para feedback de guardado o error. */
 .pd-alert {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 18px;
-  border-radius: 12px;
+  padding: 15px 18px;
+  border-radius: 16px;
   font-size: 13px;
   font-weight: 600;
-  margin: 0 28px 16px;
+  margin: 22px 32px 0;
   animation: slideDown 0.3s ease;
+  box-shadow: 0 12px 24px rgba(15, 30, 64, 0.06);
 }
 
 @keyframes slideDown {
@@ -1419,12 +1635,14 @@
   }
 }
 
+/* Feedback positivo tras guardar archivos o cambios. */
 .pd-alert-success {
   background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
   color: #065f46;
   border: 1px solid #a7f3d0;
 }
 
+/* Feedback de error cuando falla una acción del modal. */
 .pd-alert-error {
   background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
   color: #991b1b;
@@ -1432,10 +1650,16 @@
 }
 
 /* Responsive */
+/* Ajustes del modal y sus bloques para pantallas pequeñas. */
 @media (max-width: 640px) {
+  .pd-modal-overlay {
+    padding: 14px;
+  }
+
   .pd-modal {
     max-width: 100%;
-    border-radius: 16px;
+    border-radius: 22px;
+    max-height: 94vh;
   }
   
   .pd-modal-grid {
@@ -1446,10 +1670,39 @@
     margin: 16px;
     padding: 20px;
   }
+
+  .pd-modal-header {
+    padding: 20px 20px 18px;
+  }
+
+  .pd-modal-title h3 {
+    font-size: 18px;
+  }
+
+  .pd-modal-subtitle {
+    padding-left: 15px;
+  }
   
   .pd-modal-footer {
     padding: 16px;
     flex-direction: column;
+  }
+
+  .pd-status-bar {
+    margin: 0 16px 16px;
+    padding: 16px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .pd-upload-area,
+  .pd-preview-empty {
+    padding: 26px 18px;
+  }
+
+  .pd-modal-item {
+    min-height: auto;
   }
   
   .pd-btn {
@@ -1562,6 +1815,7 @@
 }
 
 /* ── NOTIFICATION TOAST ─────────────────────────────────────────────── */
+/* Stack flotante donde se apilan las notificaciones del diseñador. */
 .pd-notification-stack {
   position: fixed;
   top: 92px;
@@ -1574,6 +1828,7 @@
   pointer-events: none;
 }
 
+/* Tarjeta individual de notificación/toast. */
 .pd-notification {
   position: relative;
   --pd-toast-accent: #8b5cf6;
@@ -1593,6 +1848,7 @@
   isolation: isolate;
 }
 
+/* Capa decorativa superior de la notificación para dar profundidad. */
 .pd-notification::before {
   content: "";
   position: absolute;
@@ -1603,6 +1859,7 @@
   pointer-events: none;
 }
 
+/* Línea lateral que funciona como acento visual del tipo de notificación. */
 .pd-notification::after {
   content: "";
   position: absolute;
@@ -1613,21 +1870,25 @@
 }
 
 /* Notification types */
+/* Variables visuales para notificaciones de nueva orden. */
 .pd-notification.new {
   --pd-toast-accent: #8b5cf6;
   --pd-toast-accent-soft: rgba(139, 92, 246, 0.12);
 }
 
+/* Variables visuales para notificaciones de orden cancelada. */
 .pd-notification.cancelled {
   --pd-toast-accent: #f87171;
   --pd-toast-accent-soft: rgba(248, 113, 113, 0.12);
 }
 
+/* Variables visuales para notificaciones de orden completada. */
 .pd-notification.completed {
   --pd-toast-accent: #34d399;
   --pd-toast-accent-soft: rgba(52, 211, 153, 0.12);
 }
 
+/* Variables visuales para notificaciones de orden editada/actualizada. */
 .pd-notification.updated {
   --pd-toast-accent: #fbbf24;
   --pd-toast-accent-soft: rgba(251, 191, 36, 0.14);
@@ -1650,6 +1911,7 @@
   background: linear-gradient(90deg, #FBBF24 0%, #F59E0B 100%);
 }
 
+/* Barra interna que se vacía con el paso del tiempo. */
 .pd-notification-progress {
   height: 100%;
   background: linear-gradient(90deg, #8B5CF6 0%, #00d4ff 100%);
@@ -1658,6 +1920,7 @@
   box-shadow: none;
 }
 
+/* Barra de progreso que actúa como temporizador visual del toast. */
 .pd-notification-progress-track {
   position: relative;
   height: 5px;
@@ -1668,6 +1931,7 @@
   border: 1px solid rgba(226, 232, 240, 0.95);
 }
 
+/* Entrada animada de las notificaciones flotantes. */
 @keyframes pd-notify-in {
   from {
     opacity: 0;
@@ -1679,6 +1943,7 @@
   }
 }
 
+/* Layout principal del contenido interno del toast. */
 .pd-notification-main {
   display: flex;
   align-items: flex-start;
@@ -1686,6 +1951,7 @@
   padding: 18px 18px 14px 20px;
 }
 
+/* Caja del icono principal del toast. */
 .pd-notification-icon {
   width: 48px;
   height: 48px;
@@ -1699,6 +1965,7 @@
   box-shadow: 0 8px 18px rgba(15, 30, 64, 0.07);
 }
 
+/* Color del SVG dentro de la caja del icono. */
 .pd-notification-icon svg {
   color: var(--pd-toast-accent);
 }
@@ -1728,6 +1995,7 @@
   color: #FBBF24;
 }
 
+/* Columna de textos de la notificación. */
 .pd-notification-content {
   flex: 1;
   display: flex;
@@ -1736,6 +2004,7 @@
   min-width: 0;
 }
 
+/* Etiqueta superior pequeña del toast. */
 .pd-notification-title {
   display: inline-flex;
   align-items: center;
@@ -1751,6 +2020,7 @@
   letter-spacing: 0.95px;
 }
 
+/* Título principal de la notificación. */
 .pd-notification-subtitle {
   font-size: 14px;
   font-weight: 700;
@@ -1761,6 +2031,7 @@
   text-overflow: ellipsis;
 }
 
+/* Mensaje descriptivo debajo del título del toast. */
 .pd-notification-text {
   font-size: 12px;
   font-weight: 500;
@@ -1769,6 +2040,7 @@
   max-width: 28ch;
 }
 
+/* Botón para cerrar manualmente una notificación. */
 .pd-notification-close {
   width: 34px;
   height: 34px;
@@ -1785,6 +2057,7 @@
   box-shadow: 0 2px 6px rgba(15, 30, 64, 0.04);
 }
 
+/* Hover del botón de cierre del toast. */
 .pd-notification-close:hover {
   background: #ffffff;
   color: #1a1a2e;
