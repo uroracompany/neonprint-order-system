@@ -5,6 +5,7 @@ import Dashboard from './pages/dashboard'
 import ProtectedRoute from './ProtectedRoute'
 import PageDesigner from './pages/page-designer'
 import PageSeller from './pages/pages-seller'
+import PageQuote from './pages/page-quote'
 import './App.css'
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
         <Route path="/dashboard" element={<ProtectedRoute allowed={["admin"]}><Dashboard /></ProtectedRoute>} />
         <Route path="/designer" element={<ProtectedRoute allowed={["designer"]}><PageDesigner /></ProtectedRoute>} />
         <Route path="/page-seller" element={<ProtectedRoute allowed={["seller"]}><PageSeller /></ProtectedRoute>} />
+        <Route path="/quote" element={<ProtectedRoute allowed={["quote"]}><PageQuote /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )

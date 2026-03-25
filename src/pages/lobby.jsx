@@ -118,6 +118,9 @@ export default function Lobby() {
         if(profiles.role === "designer"){
           navigate("/designer");
         }
+        if(profiles.role === "quote"){
+          navigate("/quote");
+        }
       });
 
       
