@@ -1684,3 +1684,241 @@ select option { background: var(--surface); color: var(--text); }
   background: #065F46;
   color: #fff;
 }
+/* ── SELLER NOTIFICATION TOAST ─────────────────────────────────────── */
+/* Stack flotante donde se apilan las notificaciones del vendedor. */
+.ps-notification-stack {
+  position: fixed;
+  top: 92px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+/* Tarjeta individual de notificación/toast. */
+.ps-notification {
+  position: relative;
+  --ps-toast-accent: #8b5cf6;
+  --ps-toast-accent-soft: rgba(139, 92, 246, 0.12);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  color: #1a1a2e;
+  border-radius: 18px;
+  border: 1px solid #e7ebf2;
+  box-shadow:
+    0 20px 40px rgba(15, 30, 64, 0.10),
+    0 6px 16px rgba(15, 30, 64, 0.05);
+  animation: ps-notify-in 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+  width: 100%;
+  max-width: 380px;
+  overflow: hidden;
+  pointer-events: auto;
+  isolation: isolate;
+}
+
+.ps-notification::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 72px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.06), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+.ps-notification::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: linear-gradient(180deg, var(--ps-toast-accent) 0%, color-mix(in srgb, var(--ps-toast-accent) 48%, white) 100%);
+  pointer-events: none;
+}
+
+.ps-notification.completed {
+  --ps-toast-accent: #34d399;
+  --ps-toast-accent-soft: rgba(52, 211, 153, 0.12);
+}
+
+.ps-notification.cancelled {
+  --ps-toast-accent: #f87171;
+  --ps-toast-accent-soft: rgba(248, 113, 113, 0.12);
+}
+
+.ps-notification.completed .ps-notification-progress {
+  background: linear-gradient(90deg, #34D399 0%, #10B981 100%);
+}
+
+.ps-notification.cancelled .ps-notification-progress {
+  background: linear-gradient(90deg, #F87171 0%, #EF4444 100%);
+}
+
+.ps-notification-progress {
+  height: 100%;
+  background: linear-gradient(90deg, #34D399 0%, #10B981 100%);
+  transition: width 50ms linear;
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.ps-notification-progress-track {
+  position: relative;
+  height: 5px;
+  margin: 0 18px 18px;
+  background: #edf1f6;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+}
+
+@keyframes ps-notify-in {
+  from {
+    opacity: 0;
+    transform: translate3d(40px, 0, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.ps-notification-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px 18px 14px 20px;
+}
+
+.ps-notification-icon {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(145deg, var(--ps-toast-accent-soft) 0%, rgba(255, 255, 255, 1) 100%);
+  border: 1px solid rgba(222, 228, 237, 0.95);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 8px 18px rgba(15, 30, 64, 0.07);
+}
+
+.ps-notification-icon svg {
+  color: var(--ps-toast-accent);
+}
+
+.ps-notification.cancelled .ps-notification-icon {
+  background: linear-gradient(145deg, rgba(248, 113, 113, 0.12) 0%, rgba(255, 255, 255, 1) 100%);
+}
+
+.ps-notification.cancelled .ps-notification-icon svg {
+  color: #F87171;
+}
+
+.ps-notification.completed .ps-notification-icon {
+  background: linear-gradient(145deg, rgba(52, 211, 153, 0.12) 0%, rgba(255, 255, 255, 1) 100%);
+}
+
+.ps-notification.completed .ps-notification-icon svg {
+  color: #34D399;
+}
+
+.ps-notification-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ps-notification-title {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ps-toast-accent) 10%, white);
+  border: 1px solid color-mix(in srgb, var(--ps-toast-accent) 14%, #dbe3ef);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--ps-toast-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.95px;
+}
+
+.ps-notification-subtitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1a2e;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ps-notification-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  line-height: 1.5;
+  max-width: 28ch;
+}
+
+.ps-notification-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #e5eaf1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.22s ease;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(15, 30, 64, 0.04);
+}
+
+.ps-notification-close:hover {
+  background: #ffffff;
+  color: #1a1a2e;
+  border-color: #d7dee9;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+  .ps-notification-stack {
+    top: 82px;
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
+
+  .ps-notification {
+    max-width: none;
+  }
+
+  .ps-notification-main {
+    padding: 16px 16px 12px;
+    gap: 12px;
+  }
+
+  .ps-notification-icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .ps-notification-subtitle {
+    font-size: 14px;
+  }
+
+  .ps-notification-text {
+    max-width: none;
+  }
+
+  .ps-notification-progress-track {
+    margin: 0 16px 16px;
+  }
+}

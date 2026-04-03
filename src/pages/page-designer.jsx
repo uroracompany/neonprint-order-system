@@ -39,6 +39,7 @@ const STATUS_CONFIG = {
   "en entrega": { label: "En Entrega", value: "en entrega", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
   "completada": { label: "Completada", value: "completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
   "cancelada": { label: "Cancelada", value: "cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
+  "cancelled": { label: "Cancelada", value: "cancelled", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
 };
 
 // Colores y etiquetas para estados de pago
@@ -171,7 +172,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const canEditDesignerAssets = order.status === "In_Design";
-  const isCancelledReadonly = order.is_archived_designer && ["cancelada", "cancelado"].includes(order.status);
+  const isCancelledReadonly = order.is_archived_designer && ["cancelada", "cancelado", "cancelled"].includes(order.status);
   const readonlyMessage =
     isCancelledReadonly
       ? "Esta orden está en modo lectura porque fue cancelada."
@@ -935,8 +936,8 @@ export default function PageDesigner() {
 
           data.forEach(order => {
             const previousOrder = previousOrders[order.id];
-            const wasCancelledBefore = previousOrder?.status === "cancelada";
-            const isCancelledNow = order.status === "cancelada";
+            const wasCancelledBefore = ["cancelada", "cancelled"].includes(previousOrder?.status);
+            const isCancelledNow = ["cancelada", "cancelled"].includes(order.status);
 
             if (previousOrder && !wasCancelledBefore && isCancelledNow) {
               createNotificationForOrder(order, "cancelled");
@@ -989,7 +990,7 @@ export default function PageDesigner() {
   };
 
   const isDesignerArchivable = (order) => {
-    return ["cancelada", "cancelado"].includes(order.status);
+    return ["cancelada", "cancelado", "cancelled"].includes(order.status);
   };
 
   const metrics = [
@@ -1259,55 +1260,35 @@ export default function PageDesigner() {
               </div>
               
               <div className="pd-recent-section">
-                <h3>5 Órdenes Recientes</h3>
+                <div className="pd-recent-header">
+                  <h3>Órdenes Recientes</h3>
+                  <span className="pd-recent-count">{orders.length} órdenes</span>
+                </div>
                 {loading ? (
                   <div className="pd-loading">Cargando órdenes...</div>
                 ) : orders.length === 0 ? (
                   <div className="pd-empty">No tienes órdenes asignadas</div>
                 ) : (
-                  <div className="pd-cards-grid">
+                  <div className="pd-recent-list">
                     {orders.slice(0, 5).map(order => (
-                      <div key={order.id} className="pd-order-card">
-                        <div className="pd-card-header">
-                          <span className="pd-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-                          <div className="pd-card-badges">
-                            {isNewOrder(order) && (
-                              <span className="pd-badge-new">Nuevo</span>
-                            )}
-                            {isEditedOrder(order) && (
-                              <span className="pd-badge-edited">Editada</span>
-                            )}
-                            <StatusBadge status={order.status} />
-                          </div>
+                      <div key={order.id} className="pd-recent-item" onClick={() => handleViewOrder(order)}>
+                        <div className="pd-recent-item-left">
+                          <span className="pd-recent-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                          <span className="pd-recent-client">{order.client_name}</span>
                         </div>
-                        <div className="pd-card-client">{order.client_name}</div>
-                        <div className="pd-card-desc">{order.description}</div>
-                        <div className="pd-card-meta">
-                          <span className="pd-card-material">{order.material}</span>
-                          {order.order_type === "orden 911" && (
-                            <span className="pd-card-911">911</span>
-                          )}
+                        <div className="pd-recent-item-center">
+                          <span className="pd-recent-desc">
+                            {order.description?.length > 60 
+                              ? order.description.substring(0, 60) + '...' 
+                              : order.description || 'Sin descripción'}
+                          </span>
+                        </div>
+                        <div className="pd-recent-item-right">
+                          <StatusBadge status={order.status} />
                           <PaymentBadge status={order.payment_status} />
-                        </div>
-                        <div className="pd-card-footer">
-                          <div className="pd-card-footer-left">
-                            <div className="pd-card-date">
-                              <Icon.Clock />
-                              {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}
-                            </div>
-                            {(hasFiles(order, orderFiles) || hasPreview(order, orderPreviews)) && (
-                              <div className={`pd-card-attachments ${hasFiles(order, orderFiles) && hasPreview(order, orderPreviews) ? 'has-both' : ''}`}>
-                                {hasFiles(order, orderFiles) && (
-                                  <>
-                                    <Icon.File />
-                                    <span>{getFilesCountFromDB(order) + (orderFiles[order.id]?.length || 0)}</span>
-                                  </>
-                                )}
-                                {hasPreview(order, orderPreviews) && <Icon.Image />}
-                              </div>
-                            )}
-                          </div>
-                          <button className="pd-view-btn" onClick={() => handleViewOrder(order)}>Ver</button>
+                          <button className="pd-recent-view-btn" title="Ver detalle">
+                            <Icon.Eye />
+                          </button>
                         </div>
                       </div>
                     ))}

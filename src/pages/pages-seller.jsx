@@ -62,6 +62,7 @@ const STATUS_CONFIG = {
   "en entrega": { label: "En Entrega", value: "en entrega", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
   "completada": { label: "Completada", value: "completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
   "cancelada": { label: "Cancelada", value: "cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
+  "cancelled": { label: "Cancelada", value: "cancelled", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
   "archivada": { label: "Archivada", value: "archivada", color: "#7C3AED", bg: "#EDE9FE", dot: "#8B5CF6" },
 };
 
@@ -112,7 +113,59 @@ const FLOW_STEP_LABELS = {
   "en entrega": "Entrega",
   "completada": "Completada",
   "cancelada": "Cancelada",
+  "cancelled": "Cancelada",
 };
+
+const NOTIFICATION_DURATION = 5000;
+
+function SellerNotificationToast({ notification, onClose }) {
+  const [progress, setProgress] = useState(100);
+
+  useEffect(() => {
+    const updateProgress = () => {
+      const remaining = notification.expiresAt - Date.now();
+      const nextProgress = Math.max(0, (remaining / notification.duration) * 100);
+      setProgress(nextProgress);
+    };
+
+    updateProgress();
+
+    const interval = setInterval(updateProgress, 50);
+    return () => clearInterval(interval);
+  }, [notification.duration, notification.expiresAt]);
+
+  return (
+    <div className={`ps-notification ${notification.type}`} role="status" aria-live="polite">
+      <div className="ps-notification-main">
+        <div className="ps-notification-icon">
+          {notification.type === "cancelled" ? <Icon.X /> : <Icon.Package />}
+        </div>
+
+        <div className="ps-notification-content">
+          <span className="ps-notification-title">{notification.label}</span>
+          <span className="ps-notification-subtitle">{notification.orderTitle}</span>
+          <span className="ps-notification-text">{notification.message}</span>
+        </div>
+
+        <button
+          type="button"
+          className="ps-notification-close"
+          onClick={() => onClose(notification.id)}
+          aria-label="Cerrar notificación"
+        >
+          <Icon.X />
+        </button>
+      </div>
+
+      <div className="ps-notification-progress-track">
+        <div
+          className="ps-notification-progress"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 const CARD_ACCENTS = [
   { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
@@ -233,6 +286,7 @@ function FlowTrackerExternal({ status }) {
     "en entrega": 4,
     "completada": 4,
     "cancelada": -1,
+    "cancelled": -1,
   };
   
   const idx = statusToIndex[status] ?? -1;
@@ -1177,7 +1231,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
             </div>
 
             {/* Botón Enviar a Diseño / Cotización */}
-            {order.status !== "In_Design" && order.status !== "en produccion" && order.status !== "en entrega" && order.status !== "completada" && order.status !== "cancelada" && order.status !== "in_Quotation" && order.status !== "cotizacion" && (
+            {order.status !== "In_Design" && order.status !== "en produccion" && order.status !== "en entrega" && order.status !== "completada" && order.status !== "cancelada" && order.status !== "cancelled" && order.status !== "in_Quotation" && order.status !== "cotizacion" && (
               <div style={{ marginTop: 16 }}>
                 {order.order_design_type === "EXTERNAL_DESING" ? (
                   <button
@@ -1571,6 +1625,160 @@ function SendToDesignerModal({ open, onClose, onConfirm, order, loading }) {
   );
 }
 
+// ─── ENVIAR A COTIZACIÓN MODAL ───────────────────────────────────────
+function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
+  const [quoteUsers, setQuoteUsers] = useState([]);
+  const [selectedQuoteUser, setSelectedQuoteUser] = useState("");
+  const [loadingQuoteUsers, setLoadingQuoteUsers] = useState(true);
+
+  useEffect(() => {
+    if (open) {
+      setLoadingQuoteUsers(true);
+      setSelectedQuoteUser("");
+
+      supabase
+        .from("profiles")
+        .select("id, name, role")
+        .then(({ data, error }) => {
+          setLoadingQuoteUsers(false);
+
+          if (!error && data) {
+            const quotes = data
+              .filter(profile => profile.role && profile.role.toLowerCase().includes("quote"))
+              .map(profile => ({
+                ...profile,
+                displayName: profile.name || "Cotizador"
+              }));
+
+            setQuoteUsers(quotes);
+          } else {
+            setQuoteUsers([]);
+          }
+        });
+    }
+  }, [open]);
+
+  const handleConfirm = () => {
+    if (selectedQuoteUser) {
+      onConfirm(selectedQuoteUser);
+    }
+  };
+
+  const getQuoteName = (quoteUser) => {
+    return quoteUser.displayName || quoteUser.name || "Cotizador";
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Enviar a Cotización">
+      <div style={{ minWidth: 380, paddingTop: 8 }}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: 20
+        }}>
+          <div style={{
+            width: 64, height: 64,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 4px 12px rgba(2, 132, 199, 0.25)"
+          }}>
+            <Icon.Package style={{ color: "#0284C7", width: 28, height: 28 }} />
+          </div>
+        </div>
+
+        <p style={{ fontSize: 15, color: "#374151", marginBottom: 12, lineHeight: 1.5, textAlign: "center", fontWeight: 500 }}>
+          Selecciona el usuario responsable de cotización
+        </p>
+
+        {order && (
+          <div style={{
+            background: "#F9FAFB",
+            border: "1px solid #E5E7EB",
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 16,
+            textAlign: "center"
+          }}>
+            <span style={{ fontSize: 13, color: "#6B7280" }}>Orden </span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#0f1e40" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
+            <span style={{ fontSize: 13, color: "#6B7280" }}> - </span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#0f1e40" }}>{order.client_name}</span>
+          </div>
+        )}
+
+        {loadingQuoteUsers ? (
+          <div style={{ textAlign: "center", padding: "20px 0", color: "#6B7280" }}>
+            Cargando usuarios de cotización...
+          </div>
+        ) : quoteUsers.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "20px 0", color: "#EF4444" }}>
+            No hay usuarios de cotización disponibles
+          </div>
+        ) : (
+          <div style={{ marginBottom: 24 }}>
+            <select
+              value={selectedQuoteUser}
+              onChange={(e) => {
+                setSelectedQuoteUser(e.target.value);
+              }}
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: "1.5px solid #E5E7EB",
+                fontSize: 14,
+                fontFamily: "'Poppins', sans-serif",
+                background: "#fff",
+                color: "#374151",
+                cursor: "pointer",
+                outline: "none"
+              }}
+            >
+              <option value="">Seleccionar usuario de cotización...</option>
+              {quoteUsers.map(quoteUser => (
+                <option key={quoteUser.id} value={quoteUser.id}>
+                  {getQuoteName(quoteUser)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {loading && (
+          <div style={{ textAlign: "center", padding: "12px 0", color: "#0284C7", fontSize: 14 }}>
+            Enviando orden...
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+          <button
+            className="ps-btn-cancel"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancelar
+          </button>
+          <button
+            className="ps-btn-submit"
+            onClick={handleConfirm}
+            disabled={loading || !selectedQuoteUser}
+            style={{
+              background: "linear-gradient(135deg, #0369A1 0%, #0284C7 100%)",
+              border: "1px solid #0369A1",
+              boxShadow: "0 2px 8px rgba(2, 132, 199, 0.3)",
+              opacity: (!selectedQuoteUser || loading) ? 0.6 : 1
+            }}
+          >
+            {loading ? "Enviando..." : "Asignar Orden"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── CANCELAR ORDEN VENTANA DE COMFIRMACION ───────────────────────────────────────────
 function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
   return (
@@ -1707,13 +1915,44 @@ export default function PageSeller() {
   const [archivedingOrder , setArchivedingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [sendingToDesigner, setSendingToDesigner] = useState(null);
+  const [sendingToQuotation, setSendingToQuotation] = useState(null);
   const [designers, setDesigners] = useState([]);
   const [sendingLoading, setSendingLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const notificationTimeoutsRef = useRef({});
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 1500);
+  };
+
+  const removeNotification = (notificationId) => {
+    setNotifications(prev => prev.filter(notification => notification.id !== notificationId));
+
+    if (notificationTimeoutsRef.current[notificationId]) {
+      clearTimeout(notificationTimeoutsRef.current[notificationId]);
+      delete notificationTimeoutsRef.current[notificationId];
+    }
+  };
+
+  const showActionNotification = ({ type = "completed", label, orderTitle, message }) => {
+    const notificationId = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const notification = {
+      id: notificationId,
+      type,
+      label,
+      orderTitle,
+      message,
+      duration: NOTIFICATION_DURATION,
+      expiresAt: Date.now() + NOTIFICATION_DURATION,
+    };
+
+    setNotifications(prev => [notification, ...prev].slice(0, 3));
+
+    notificationTimeoutsRef.current[notificationId] = setTimeout(() => {
+      removeNotification(notificationId);
+    }, NOTIFICATION_DURATION);
   };
 
   // Obtener usuario y ordenes al cargar la pagina
@@ -1801,7 +2040,7 @@ export default function PageSeller() {
     if (!cancelingOrder) return;
     
     setCancelLoading(true);
-    const { error } = await supabase.from("orders").update({ status: "cancelada" }).eq("id", cancelingOrder.id);
+    const { error } = await supabase.from("orders").update({ status: "cancelled" }).eq("id", cancelingOrder.id);
     setCancelLoading(false);
     
     if (error) {
@@ -1834,21 +2073,58 @@ export default function PageSeller() {
   };
 
   // ── Enviar a Cotización (Diseño Externo) ─────────────────────────────────
-  const handleSendToQuotation = async (order) => {
+  const handleSendToQuotation = (order) => {
+    setSelectedOrder(null);
+    setSendingToQuotation(order);
+  };
+
+  const handleConfirmSendToQuotation = async (quoteUserId) => {
+    if (!sendingToQuotation) return;
+
     setSendingLoading(true);
-    const { error } = await supabase
-      .from("orders")
-      .update({ status: "in_Quotation" })
-      .eq("id", order.id);
+
+    const assignmentPayloads = [
+      { status: "cotizacion", quote_id: quoteUserId },
+      { status: "cotizacion", quotation_id: quoteUserId },
+      { status: "cotizacion", quote_user_id: quoteUserId },
+    ];
+
+    let updateError = null;
+    let assignedOrder = null;
+
+    for (const payload of assignmentPayloads) {
+      const { data, error } = await supabase
+        .from("orders")
+        .update(payload)
+        .eq("id", sendingToQuotation.id)
+        .select("*")
+        .single();
+
+      if (!error) {
+        updateError = null;
+        assignedOrder = data || null;
+        break;
+      }
+
+      updateError = error;
+    }
 
     setSendingLoading(false);
 
-    if (error) {
-      console.error("Error al enviar a cotización:", error);
+    if (updateError) {
+      showToast("Error al enviar a cotización", "error");
+      return;
     }
 
+    setSendingToQuotation(null);
     setSelectedOrder(null);
-    fetchOrders(user?.id);
+    await fetchOrders(user?.id);
+    showActionNotification({
+      type: "completed",
+      label: "Enviada a cotización",
+      orderTitle: assignedOrder?.client_name || assignedOrder?.description || sendingToQuotation.client_name || sendingToQuotation.description || `Orden #${sendingToQuotation.id?.slice(0, 8).toUpperCase()}`,
+      message: "La orden ha sido enviada a cotización correctamente.",
+    });
   };
 
   const handleConfirmSendToDesigner = async (designerId) => {
@@ -2095,7 +2371,7 @@ export default function PageSeller() {
                                     <Icon.Edit />
                                   </button>
                                 )}
-                                {o.status === "cancelada" && (
+                                {["cancelada", "cancelled"].includes(o.status) && (
                                   o.is_archived ? (
                                     <button 
                                       className="table-action-btn archive"
@@ -2228,7 +2504,7 @@ export default function PageSeller() {
                                       <Icon.Edit />
                                     </button>
                                   )}
-                                  {o.status !== "cancelada" && !o.is_archived && (
+                                  {!["cancelada", "cancelled"].includes(o.status) && !o.is_archived && (
                                     <button 
                                       className="table-action-btn cancel" 
                                       onClick={() => handleCancelOrder(o)} 
@@ -2237,7 +2513,7 @@ export default function PageSeller() {
                                       <Icon.Trash />
                                     </button>
                                   )}
-                                  {o.status === "cancelada" && (
+                                  {["cancelada", "cancelled"].includes(o.status) && (
                                     o.is_archived ? (
                                       <button 
                                         className="table-action-btn archive"
@@ -2304,12 +2580,12 @@ export default function PageSeller() {
                                 <Icon.Edit />
                               </button>
                             )}
-                            {o.status !== "cancelada" && !o.is_archived && (
+                            {!["cancelada", "cancelled"].includes(o.status) && !o.is_archived && (
                               <button className="card-action-btn cancel" onClick={() => handleCancelOrder(o)} title="Cancelar">
                                 <Icon.Trash />
                               </button>
                             )}
-                            {o.status === "cancelada" && !o.is_archived && (
+                            {["cancelada", "cancelled"].includes(o.status) && !o.is_archived && (
                               <button className="card-action-btn archive" onClick={() => handleArchiveOrder(o)} title="Archivar">
                                 <Icon.Archived />
                               </button>
@@ -2336,6 +2612,13 @@ export default function PageSeller() {
         onConfirm={handleConfirmSendToDesigner} 
         loading={sendingLoading} 
       />
+      <SendToQuotationModal
+        open={!!sendingToQuotation}
+        onClose={() => setSendingToQuotation(null)}
+        order={sendingToQuotation}
+        onConfirm={handleConfirmSendToQuotation}
+        loading={sendingLoading}
+      />
       <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
       <ArchivedOrderModal open={!!archivedingOrder} onClose={() => setArchivedingOrder(null)} order={archivedingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />
       
@@ -2352,6 +2635,16 @@ export default function PageSeller() {
           <span className="ps-toast-message">{toast.message}</span>
         </div>
       )}
+
+      <div className="ps-notification-stack">
+        {notifications.map(notification => (
+          <SellerNotificationToast
+            key={notification.id}
+            notification={notification}
+            onClose={removeNotification}
+          />
+        ))}
+      </div>
     </div>
   );
 }

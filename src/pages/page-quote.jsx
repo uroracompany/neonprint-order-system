@@ -20,6 +20,7 @@ const Icon = {
   Upload: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>),
   Archive: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8h14v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8z" /><line x1="10" y1="12" x2="14" y2="12" /></svg>),
   Money: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" /></svg>),
+  Package: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16.5 9.4 7.55 4.24" /><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="M3.29 7 12 12l8.71-5" /><path d="M12 22V12" /></svg>),
   Menu: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>),
   Eye: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>),
 };
@@ -36,6 +37,7 @@ const STATUS_CONFIG = {
   completada: { label: "Completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
   cancelada: { label: "Cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
   cancelado: { label: "Cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
+  cancelled: { label: "Cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
 };
 
 const PAYMENT_CONFIG = {
@@ -53,8 +55,16 @@ const getStatusConfig = (status) => STATUS_CONFIG[status] || STATUS_CONFIG.Pendi
 const getPaymentConfig = (status) => PAYMENT_CONFIG[status] || PAYMENT_CONFIG.Pending_Payment;
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
 const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map(field => order?.[field]).find(Boolean) || null;
+const hasQuoteAssignment = (order, quoteUserId) => QUOTE_ASSIGNMENT_FIELDS.some(field => order?.[field] === quoteUserId);
+const resolveSellerId = (order) => order?.seller_id || order?.created_by || null;
+const resolveSellerName = (order, sellerDirectory) => order?.seller_name || sellerDirectory?.[resolveSellerId(order)] || "No definido";
 const resolveReceiptUrl = (order) => RECEIPT_FIELDS.map(field => order?.[field]).find(Boolean) || "";
 const isQuoteEditable = (order) => ["cotizacion", "in_Quotation"].includes(order?.status) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
+const isOrderRelevantToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId);
+const formatQuoteDate = (value) => {
+  if (!value) return "Sin fecha";
+  return new Date(value).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" });
+};
 
 const getOrderFiles = (order) => {
   if (!order?.order_file_url) return [];
@@ -101,7 +111,7 @@ function QuoteNotificationToast({ notification, onClose }) {
     <div className={`pq-toast ${notification.type}`}>
       <div className="pq-toast-main">
         <div className="pq-toast-icon">
-          {notification.type === "error" ? <Icon.X /> : <Icon.Check />}
+          {notification.type === "cancelled" ? <Icon.X /> : <Icon.Package />}
         </div>
         <div className="pq-toast-content">
           <span className="pq-toast-title">{notification.label}</span>
@@ -146,7 +156,7 @@ function ArchiveQuoteOrderModal({ open, onClose, onConfirm, order, loading }) {
 }
 
 // Modal principal para revisar el detalle y confirmar el pago.
-function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving }) {
+function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory }) {
   const [receiptFile, setReceiptFile] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState("pagado");
   const [localError, setLocalError] = useState("");
@@ -212,7 +222,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
               <div className="pq-panel-title">Información de la orden</div>
               <div className="pq-info-list">
                 <div className="pq-info-row"><span>Cliente</span><strong>{order.client_name || "No definido"}</strong></div>
-                <div className="pq-info-row"><span>Vendedor</span><strong>{order.seller_name || "No definido"}</strong></div>
+                <div className="pq-info-row"><span>Vendedor</span><strong>{resolveSellerName(order, sellerDirectory)}</strong></div>
                 <div className="pq-info-row"><span>Teléfono</span><strong>{order.client_contact || order.client_phone || "No definido"}</strong></div>
                 <div className="pq-info-row"><span>Tipo</span><strong>{order.order_type || "No definido"}</strong></div>
                 <div className="pq-info-row"><span>Material</span><strong>{order.material || "No definido"}</strong></div>
@@ -333,10 +343,14 @@ export default function PageQuote() {
   const [filterDate, setFilterDate] = useState("all");
   const [filterArchive, setFilterArchive] = useState("active");
   const [notifications, setNotifications] = useState([]);
+  const [toastNotifications, setToastNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [sellerDirectory, setSellerDirectory] = useState({});
 
-  // Refs auxiliares para polling y limpieza de notificaciones.
+  // Refs auxiliares para detección de nuevas asignaciones y limpieza de notificaciones.
   const previousAssignedIdsRef = useRef(new Set());
+  const previousOrdersRef = useRef({});
+  const assignmentsInitializedRef = useRef(false);
   const notificationTimeoutsRef = useRef({});
 
   // Obtiene la sesión y valida explícitamente el rol quote para esta sección.
@@ -369,16 +383,33 @@ export default function PageQuote() {
     loadSession();
   }, [navigate]);
 
-  // Polling principal para mantener órdenes y notificaciones actualizadas.
+  // Suscripción en tiempo real para refrescar automáticamente la bandeja de cotización.
   useEffect(() => {
     if (!user?.id) return undefined;
 
     fetchOrders(user.id);
-    const interval = setInterval(() => fetchOrders(user.id, true), 5000);
+    const channel = supabase
+      .channel(`quote-orders-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        async (payload) => {
+          const nextOrder = payload.new;
+          const previousOrder = payload.old;
+
+          if (
+            isOrderRelevantToQuote(nextOrder, user.id)
+            || isOrderRelevantToQuote(previousOrder, user.id)
+          ) {
+            await fetchOrders(user.id, true);
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      clearInterval(interval);
       Object.values(notificationTimeoutsRef.current).forEach(clearTimeout);
+      supabase.removeChannel(channel);
     };
   }, [user?.id]);
 
@@ -395,6 +426,31 @@ export default function PageQuote() {
   }, []);
 
   // Consulta órdenes asignadas al usuario quote tolerando distintos nombres de campo.
+  const syncSellerDirectory = async (ordersToSync) => {
+    const sellerIds = [...new Set(
+      (ordersToSync || [])
+        .map(order => resolveSellerId(order))
+        .filter(Boolean)
+    )];
+
+    if (sellerIds.length === 0) return;
+
+    const missingSellerIds = sellerIds.filter(id => !sellerDirectory[id]);
+    if (missingSellerIds.length === 0) return;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, name")
+      .in("id", missingSellerIds);
+
+    if (!error && Array.isArray(data)) {
+      setSellerDirectory(prev => ({
+        ...prev,
+        ...Object.fromEntries(data.map(profile => [profile.id, profile.name || "Vendedor"]))
+      }));
+    }
+  };
+
   const fetchOrders = async (quoteUserId, silent = false) => {
     if (!silent) setLoading(true);
 
@@ -425,7 +481,7 @@ export default function PageQuote() {
         .order("created_at", { ascending: false });
 
       if (!error) {
-        fetchedOrders = (data || []).filter(order => resolveQuoteAssignmentId(order) === quoteUserId);
+        fetchedOrders = (data || []).filter(order => hasQuoteAssignment(order, quoteUserId));
         fetchError = null;
       }
     }
@@ -434,7 +490,7 @@ export default function PageQuote() {
       setOrders([]);
       if (!silent) setLoading(false);
       showActionNotification({
-        type: "error",
+        type: "cancelled",
         label: "Error al cargar",
         orderTitle: "Órdenes de cotización",
         message: "No se pudieron cargar las órdenes asignadas a cotización.",
@@ -443,6 +499,7 @@ export default function PageQuote() {
     }
 
     setOrders(fetchedOrders);
+    await syncSellerDirectory(fetchedOrders);
     registerNewAssignments(fetchedOrders);
     if (!silent) setLoading(false);
   };
@@ -450,13 +507,24 @@ export default function PageQuote() {
   // Detecta nuevas órdenes asignadas a Quote y genera notificaciones visuales.
   const registerNewAssignments = (nextOrders) => {
     const previousIds = previousAssignedIdsRef.current;
+    const previousOrders = previousOrdersRef.current;
     const nextIds = new Set(nextOrders.map(order => order.id));
     const newOrders = nextOrders.filter(order => !previousIds.has(order.id));
 
-    if (previousIds.size > 0 && newOrders.length > 0) {
+    if (!assignmentsInitializedRef.current) {
+      previousAssignedIdsRef.current = nextIds;
+      previousOrdersRef.current = nextOrders.reduce((acc, order) => {
+        acc[order.id] = order;
+        return acc;
+      }, {});
+      assignmentsInitializedRef.current = true;
+      return;
+    }
+
+    if (newOrders.length > 0) {
       newOrders.forEach(order => {
         createPersistentNotification({
-          type: "assignment",
+          type: "new",
           label: "Nueva orden asignada",
           orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
           message: "Se asignó una nueva orden a tu bandeja de cotización.",
@@ -464,7 +532,26 @@ export default function PageQuote() {
       });
     }
 
+    nextOrders.forEach(order => {
+      const previousOrder = previousOrders[order.id];
+      const wasCancelledBefore = ["cancelada", "cancelled"].includes(previousOrder?.status);
+      const isCancelledNow = ["cancelada", "cancelled"].includes(order.status);
+
+      if (previousOrder && !wasCancelledBefore && isCancelledNow) {
+        createPersistentNotification({
+          type: "cancelled",
+          label: "Orden cancelada",
+          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+          message: "Una de tus órdenes asignadas ha sido cancelada.",
+        });
+      }
+    });
+
     previousAssignedIdsRef.current = nextIds;
+    previousOrdersRef.current = nextOrders.reduce((acc, order) => {
+      acc[order.id] = order;
+      return acc;
+    }, {});
   };
 
   // Crea notificaciones internas del módulo sin usar localStorage.
@@ -483,18 +570,19 @@ export default function PageQuote() {
     };
 
     setNotifications(prev => [notification, ...prev].slice(0, 20));
+    setToastNotifications(prev => [notification, ...prev].slice(0, 3));
 
     notificationTimeoutsRef.current[id] = setTimeout(() => {
-      removeNotification(id);
+      removeToastNotification(id);
     }, NOTIFICATION_DURATION);
   };
 
-  const showActionNotification = ({ type = "success", label, orderTitle, message }) => {
+  const showActionNotification = ({ type = "completed", label, orderTitle, message }) => {
     createPersistentNotification({ type, label, orderTitle, message });
   };
 
-  const removeNotification = (id) => {
-    setNotifications(prev => prev.filter(notification => notification.id !== id));
+  const removeToastNotification = (id) => {
+    setToastNotifications(prev => prev.filter(notification => notification.id !== id));
     if (notificationTimeoutsRef.current[id]) {
       clearTimeout(notificationTimeoutsRef.current[id]);
       delete notificationTimeoutsRef.current[id];
@@ -519,14 +607,16 @@ export default function PageQuote() {
       .eq("id", order.id)
       .single();
 
-    setSelectedOrder(data || order);
+    const nextOrder = data || order;
+    await syncSellerDirectory([nextOrder]);
+    setSelectedOrder(nextOrder);
   };
 
   // Confirma el pago solo si la imagen sube correctamente y existe un campo compatible en la orden.
   const handleConfirmPayment = async ({ order, receiptFile, paymentStatus }) => {
     if (!receiptFile) {
       showActionNotification({
-        type: "error",
+        type: "cancelled",
         label: "Imagen requerida",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
         message: "No puedes confirmar el pago sin subir la imagen del recibo o factura.",
@@ -545,7 +635,7 @@ export default function PageQuote() {
     if (uploadError || !uploadData) {
       setPaymentSaving(false);
       showActionNotification({
-        type: "error",
+        type: "cancelled",
         label: "Error al subir",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
         message: "No se pudo subir la imagen del comprobante. Inténtalo nuevamente.",
@@ -585,7 +675,7 @@ export default function PageQuote() {
 
     if (updateError || !updatedOrder) {
       showActionNotification({
-        type: "error",
+        type: "cancelled",
         label: "Error al confirmar",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
         message: "No se pudo guardar el comprobante en la orden. Verifica el esquema de la base de datos.",
@@ -617,7 +707,7 @@ export default function PageQuote() {
 
     if (error) {
       showActionNotification({
-        type: "error",
+        type: "cancelled",
         label: "Error al archivar",
         orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
         message: "No se pudo archivar la orden.",
@@ -665,7 +755,7 @@ export default function PageQuote() {
         order.description,
         order.id,
         order.material,
-        order.seller_name,
+        resolveSellerName(order, sellerDirectory),
       ];
 
       const matchesSearch = !query || searchableValues.some(value => normalizeText(value).includes(query));
@@ -703,7 +793,9 @@ export default function PageQuote() {
     { id: "orders", label: "Mis órdenes", icon: <Icon.Orders />, badge: orders.filter(order => !order.is_archived_quote).length },
   ];
 
-  const recentOrders = filteredOrders.slice(0, 5);
+  const dashboardRecentOrders = orders
+    .filter(order => !order.is_archived_quote)
+    .slice(0, 4);
 
   return (
     <div className="pq-root">
@@ -725,6 +817,7 @@ export default function PageQuote() {
             </button>
             <div>
               <span className="pq-header-kicker">Cotización</span>
+              {/* Nombre del apartado de la pantalla */}
               <h1 className="pq-header-title">
                 {activeTab === "dashboard" ? "Panel de Quote" : "Mis órdenes de cotización"}
               </h1>
@@ -797,26 +890,33 @@ export default function PageQuote() {
               <div className="pq-panel-head">
                 <div>
                   <span className="pq-section-kicker">Actividad reciente</span>
-                  <h2>Órdenes asignadas a cotización</h2>
+                  <h2>Órdenes para Cotizar <span className="pq-orders-count">({dashboardRecentOrders.length})</span></h2>
                 </div>
                 <button className="pq-link-btn" onClick={() => setActiveTab("orders")}>Ver todas</button>
               </div>
 
               {loading ? (
                 <div className="pq-empty-panel">Cargando órdenes...</div>
-              ) : recentOrders.length === 0 ? (
+              ) : dashboardRecentOrders.length === 0 ? (
                 <div className="pq-empty-panel">No hay órdenes asignadas actualmente.</div>
               ) : (
                 <div className="pq-recent-list">
-                  {recentOrders.map(order => (
-                    <button key={order.id} className="pq-recent-item" onClick={() => handleViewOrder(order)}>
-                      <div>
-                        <strong>{order.client_name || "Cliente sin nombre"}</strong>
-                        <span>{order.description || "Sin descripción"}</span>
+                  {dashboardRecentOrders.map(order => (
+                    <button key={order.id} type="button" className="pq-recent-item" onClick={() => handleViewOrder(order)}>
+                      <div className="pq-recent-primary">
+                      <div className="pq-recent-item-header">
+                        <span className="pq-recent-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                        <span className="pq-recent-client">{order.client_name || "Cliente sin nombre"}</span>
                       </div>
-                      <div className="pq-recent-meta">
-                        <StatusBadge status={order.status} />
-                        <PaymentBadge status={order.payment_status} />
+                      </div>
+                      <div className="pq-recent-item-footer">
+                        <div className="pq-recent-badges">
+                          <StatusBadge status={order.status} />
+                          <PaymentBadge status={order.payment_status} />
+                        </div>
+                        <span className="pq-recent-view-btn" aria-hidden="true">
+                          <Icon.Eye />
+                        </span>
                       </div>
                     </button>
                   ))}
@@ -825,7 +925,9 @@ export default function PageQuote() {
             </div>
           </section>
         ) : (
+          // Vista de listado principal de órdenes, con filtros y búsqueda.
           <section className="pq-section">
+            {/* Filtros y búsqueda */}
             <div className="pq-filters">
               <div className="pq-search-box">
                 <Icon.Search />
@@ -844,6 +946,7 @@ export default function PageQuote() {
                 <option value="in_Quotation">Cotización (legacy)</option>
                 <option value="en produccion">En producción</option>
                 <option value="cancelada">Cancelada</option>
+                <option value="cancelled">Cancelada (EN)</option>
                 <option value="completada">Completada</option>
               </select>
 
@@ -874,34 +977,43 @@ export default function PageQuote() {
                 {filteredOrders.map(order => (
                   <article key={order.id} className="pq-order-card">
                     <div className="pq-order-top">
-                      <span className="pq-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                      <div className="pq-order-identity">
+                        <span className="pq-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                        <span className="pq-order-date">
+                          <Icon.Clock /> {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}
+                        </span>
+                      </div>
                       <div className="pq-order-badges">
                         <StatusBadge status={order.status} />
                         <PaymentBadge status={order.payment_status} />
                       </div>
                     </div>
 
-                    <div className="pq-order-client">{order.client_name || "Cliente sin nombre"}</div>
-                    <div className="pq-order-description">{order.description || "Sin descripción"}</div>
-
-                    <div className="pq-order-meta">
-                      <span><Icon.User /> {order.seller_name || "Vendedor no definido"}</span>
-                      <span><Icon.Clock /> {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</span>
+                    <div className="pq-order-heading">
+                      <div className="pq-order-client">{order.client_name || "Cliente sin nombre"}</div>
+                      <div className="pq-order-description">{order.description || "Sin descripción"}</div>
                     </div>
 
+                    <div className="pq-order-meta">
+                      <span><Icon.User /> {resolveSellerName(order, sellerDirectory)}</span>
+                      <span><Icon.File /> {order.material || "Material no definido"}</span>
+                    </div>
+                    {/* Acciones de la orden */}
                     <div className="pq-order-footer">
+                      {/* Botón para ver detalles de la orden */}
                       <button className="pq-btn pq-btn-ghost" onClick={() => handleViewOrder(order)}>
                         <Icon.Eye />
                         Ver detalles
                       </button>
-
-                      {!order.is_archived_quote ? (
-                        <button className="pq-btn pq-btn-inline-archive" onClick={() => setArchivingOrder(order)}>
+                      {/* Botón para archivar la orden */}
+                      {!order.is_archived_quote && ["cancelada", "cancelled"].includes(order.status) &&(
+                        <button
+                          className="pq-btn pq-btn-inline-archive"
+                          onClick={() => setArchivingOrder(order)}
+                        >
                           <Icon.Archive />
                           Archivar
                         </button>
-                      ) : (
-                        <span className="pq-archived-chip">Archivada</span>
                       )}
                     </div>
                   </article>
@@ -918,6 +1030,7 @@ export default function PageQuote() {
         order={selectedOrder}
         onConfirmPayment={handleConfirmPayment}
         paymentSaving={paymentSaving}
+        sellerDirectory={sellerDirectory}
       />
 
       <ArchiveQuoteOrderModal
@@ -929,8 +1042,8 @@ export default function PageQuote() {
       />
 
       <div className="pq-toast-stack">
-        {notifications.slice(0, 3).map(notification => (
-          <QuoteNotificationToast key={notification.id} notification={notification} onClose={removeNotification} />
+        {toastNotifications.map(notification => (
+          <QuoteNotificationToast key={notification.id} notification={notification} onClose={removeToastNotification} />
         ))}
       </div>
     </div>
