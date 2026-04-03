@@ -792,6 +792,7 @@ export default function PageDesigner() {
   const userRef = useRef(null);
   const knownOrderIdsRef = useRef(new Set());
   const previousOrdersRef = useRef({});
+  const ordersInitializedRef = useRef(false);
   const notificationTimeoutsRef = useRef({});
 
   viewedOrdersRef.current = viewedOrders;
@@ -929,30 +930,41 @@ export default function PageDesigner() {
         const previousOrderIds = knownOrderIdsRef.current;
         const previousOrders = previousOrdersRef.current;
 
-        if (previousOrderIds.size > 0) {
-          data
-            .filter(order => !previousOrderIds.has(order.id))
-            .forEach(createNotificationForOrder);
-
-          data.forEach(order => {
-            const previousOrder = previousOrders[order.id];
-            const wasCancelledBefore = ["cancelada", "cancelled"].includes(previousOrder?.status);
-            const isCancelledNow = ["cancelada", "cancelled"].includes(order.status);
-
-            if (previousOrder && !wasCancelledBefore && isCancelledNow) {
-              createNotificationForOrder(order, "cancelled");
-            }
-
-            if (
-              previousOrder &&
-              !isCancelledNow &&
-              hasTrackedOrderChanges(previousOrder, order)
-            ) {
-              setEditedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
-              createNotificationForOrder(order, "updated");
-            }
-          });
+        if (!ordersInitializedRef.current) {
+          knownOrderIdsRef.current = nextOrderIds;
+          previousOrdersRef.current = data.reduce((acc, order) => {
+            acc[order.id] = order;
+            return acc;
+          }, {});
+          ordersInitializedRef.current = true;
+          ordersRef.current = data;
+          setOrders(data);
+          setLoading(false);
+          return;
         }
+
+        data
+          .filter(order => !previousOrderIds.has(order.id))
+          .forEach(createNotificationForOrder);
+
+        data.forEach(order => {
+          const previousOrder = previousOrders[order.id];
+          const wasCancelledBefore = ["cancelada", "cancelled"].includes(previousOrder?.status);
+          const isCancelledNow = ["cancelada", "cancelled"].includes(order.status);
+
+          if (previousOrder && !wasCancelledBefore && isCancelledNow) {
+            createNotificationForOrder(order, "cancelled");
+          }
+
+          if (
+            previousOrder &&
+            !isCancelledNow &&
+            hasTrackedOrderChanges(previousOrder, order)
+          ) {
+            setEditedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
+            createNotificationForOrder(order, "updated");
+          }
+        });
 
         knownOrderIdsRef.current = nextOrderIds;
         previousOrdersRef.current = data.reduce((acc, order) => {
