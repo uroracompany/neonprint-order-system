@@ -91,16 +91,27 @@ export default function Lobby() {
         throw error; //send to catch block
       }
 
-      // Finding user role (assuming you have a 'profiles' table linked to auth users)
+      // Busca el rol y el estado laboral del usuario para decidir si puede entrar al sistema.
       const {data: profiles} = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, employment_status")
       .eq("id",data.user.id)
       .single();
 
 
       // If login successful, you can redirect or show success message
       console.log("Login Exitoso:", data);
+
+      // Si el usuario fue desactivado por el admin, cerramos la sesión y bloqueamos el acceso.
+      if (profiles?.employment_status === false) {
+        await supabase.auth.signOut();
+        setMessage({
+          type: "error",
+          text: "Tu cuenta está desactivada. Contacta al administrador.",
+        });
+        setLoading(false);
+        return;
+      }
 
       setMessage({
         type: "success",

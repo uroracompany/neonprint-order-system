@@ -6,6 +6,8 @@ import ProtectedRoute from './ProtectedRoute'
 import PageDesigner from './pages/page-designer'
 import PageSeller from './pages/pages-seller'
 import PageQuote from './pages/page-quote'
+import PageProduction from './pages/page-production'
+import PageDelivery from './pages/page-delivery'
 import './App.css'
 
 function App() {
@@ -17,6 +19,8 @@ function App() {
         <Route path="/designer" element={<ProtectedRoute allowed={["designer"]}><PageDesigner /></ProtectedRoute>} />
         <Route path="/page-seller" element={<ProtectedRoute allowed={["seller"]}><PageSeller /></ProtectedRoute>} />
         <Route path="/quote" element={<ProtectedRoute allowed={["quote"]}><PageQuote /></ProtectedRoute>} />
+        <Route path="/production" element={<ProtectedRoute allowed={["printer"]}><PageProduction /></ProtectedRoute>} />
+        <Route path="/delivery" element={<ProtectedRoute allowed={["printer", "admin"]}><PageDelivery /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )
