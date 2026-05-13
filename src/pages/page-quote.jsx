@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
+import { validateImage } from "../utils/imageValidation";
+import { uploadOrderAsset, buildPaymentReceiptPath } from "../utils/uploadOrderAsset";
 import "../css-components/page-quote.css";
 
 // Iconos base reutilizados para mantener una interfaz consistente.
@@ -23,6 +25,7 @@ const Icon = {
   Package: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16.5 9.4 7.55 4.24" /><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="M3.29 7 12 12l8.71-5" /><path d="M12 22V12" /></svg>),
   Menu: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>),
   Eye: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>),
+  ArrowLeft: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>),
 };
 
 // Estados base de orden y pago usados en el módulo.
@@ -47,7 +50,7 @@ const PAYMENT_CONFIG = {
 };
 
 const QUOTE_ASSIGNMENT_FIELDS = ["quote_id", "quotation_id", "quote_user_id"];
-const RECEIPT_FIELDS = ["payment_receipt_url", "receipt_image", "invoice_image", "payment_image_url"];
+const INVOICE_PAYMENT_FIELD = "invoice_payment";
 const NOTIFICATION_DURATION = 5000;
 
 // Helpers de normalización para tolerar pequeñas variaciones del backend.
@@ -58,13 +61,17 @@ const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map(field =>
 const hasQuoteAssignment = (order, quoteUserId) => QUOTE_ASSIGNMENT_FIELDS.some(field => order?.[field] === quoteUserId);
 const resolveSellerId = (order) => order?.seller_id || order?.created_by || null;
 const resolveSellerName = (order, sellerDirectory) => order?.seller_name || sellerDirectory?.[resolveSellerId(order)] || "No definido";
-const resolveReceiptUrl = (order) => RECEIPT_FIELDS.map(field => order?.[field]).find(Boolean) || "";
+const resolveReceiptUrl = (order) => order?.[INVOICE_PAYMENT_FIELD] || "";
 const isQuoteEditable = (order) => ["cotizacion", "in_Quotation"].includes(order?.status) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
-const isOrderRelevantToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId);
+const isQuoteInboxStatus = (status) => ["cotizacion", "in_Quotation"].includes(status);
+const isOrderRelevantToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId) && isQuoteInboxStatus(order?.status);
+const canArchiveQuoteOrder = (order) => order?.payment_status === "pagado" && !order?.is_archived_quote;
 const formatQuoteDate = (value) => {
   if (!value) return "Sin fecha";
   return new Date(value).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" });
 };
+const isReturnedOrder = (order) => ["In_Design", "Pending"].includes(order?.status) && Boolean(String(order?.return_reason || "").trim());
+const normalizeNotificationType = (type) => (type === "success" ? "completed" : type);
 
 const getOrderFiles = (order) => {
   if (!order?.order_file_url) return [];
@@ -91,6 +98,14 @@ function PaymentBadge({ status }) {
   return (
     <span className="pq-payment-badge" style={{ background: cfg.bg, color: cfg.color }}>
       {cfg.label}
+    </span>
+  );
+}
+
+function ReturnedBadge({ compact = false }) {
+  return (
+    <span className={`pq-returned-badge${compact ? " compact" : ""}`}>
+      Devuelta
     </span>
   );
 }
@@ -155,8 +170,62 @@ function ArchiveQuoteOrderModal({ open, onClose, onConfirm, order, loading }) {
   );
 }
 
+// Modal para devolver una orden al diseñador.
+const getReturnTargetLabel = (order) => (
+  order?.order_design_type === "EXTERNAL_DESING" ? "Vendedor" : "Diseñador"
+);
+
+function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
+  const [reason, setReason] = useState("");
+  const targetLabel = getReturnTargetLabel(order);
+  const nextStatusLabel = order?.order_design_type === "EXTERNAL_DESING" ? "Pendiente" : "En Diseño";
+
+  const handleConfirm = () => {
+    if (!reason.trim()) return;
+    onConfirm(reason);
+  };
+
+  if (!open || !order) return null;
+
+  return (
+    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className="pq-dialog">
+        <div className="pq-dialog-icon return">
+          <Icon.ArrowLeft />
+        </div>
+        <h3 className="pq-dialog-title">{`Devolver al ${targetLabel}`}</h3>
+        <p className="pq-dialog-text">
+          {`¿Estás seguro de que deseas devolver esta orden al ${targetLabel.toLowerCase()} para correcciones?`}
+          {` El estado cambiará a "${nextStatusLabel}".`}
+        </p>
+        <div className="pq-dialog-order">
+          <span className="pq-dialog-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+          <span className="pq-dialog-order-name">{order.client_name || order.description || "Orden sin título"}</span>
+        </div>
+        <div className="pq-form-group">
+          <label className="pq-input-label">Razón de la devolución</label>
+          <textarea
+            className="pq-input pq-textarea"
+            placeholder="Describe los cambios o correcciones necesarias..."
+            value={reason}
+            onChange={event => setReason(event.target.value)}
+            disabled={loading}
+            rows={3}
+          />
+        </div>
+        <div className="pq-dialog-actions">
+          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button className="pq-btn pq-btn-return" onClick={handleConfirm} disabled={loading || !reason.trim()}>
+            {loading ? "Devolviendo..." : `Devolver al ${targetLabel}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Modal principal para revisar el detalle y confirmar el pago.
-function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory }) {
+function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory, onOpenReturnModal, onOpenArchiveModal }) {
   const [receiptFile, setReceiptFile] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState("pagado");
   const [localError, setLocalError] = useState("");
@@ -164,7 +233,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   useEffect(() => {
     if (open) {
       setReceiptFile(null);
-      setPaymentStatus(order?.payment_status === "pagado" ? "pagado" : "pagado");
+      setPaymentStatus(order?.payment_status || "Pending_Payment");
       setLocalError("");
     }
   }, [open, order]);
@@ -175,6 +244,9 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   const receiptUrl = resolveReceiptUrl(order);
   const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const canConfirmPayment = isQuoteEditable(order);
+  const canReturnToDesigner = ["cotizacion", "in_Quotation"].includes(order?.status) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
+  const canMoveToProduction = ["cotizacion", "in_Quotation"].includes(order?.status) && order?.payment_status === "pagado" && !order?.is_archived_quote;
+  const returnedReason = String(order?.return_reason || "").trim();
   const readonlyMessage =
     order.is_archived_quote
       ? "Esta orden está en modo lectura porque fue archivada en cotización."
@@ -183,13 +255,8 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
         : "Esta orden está en modo lectura porque su estado actual no permite confirmar pago.";
 
   const handleSubmit = () => {
-    if (!receiptFile) {
+    if (paymentStatus === "pagado" && !receiptFile) {
       setLocalError("Debes subir una imagen del recibo o factura antes de confirmar.");
-      return;
-    }
-
-    if (paymentStatus !== "pagado") {
-      setLocalError("Debes cambiar el estado del pago a pagado para continuar.");
       return;
     }
 
@@ -214,6 +281,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
           <div className="pq-flow-summary">
             <StatusBadge status={order.status} />
             <PaymentBadge status={order.payment_status} />
+            {isReturnedOrder(order) && <ReturnedBadge />}
             <span className="pq-flow-date"><Icon.Clock /> {createdAt}</span>
           </div>
 
@@ -240,7 +308,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                   {orderFiles.map((fileUrl, index) => (
                     <a key={`${fileUrl}-${index}`} className="pq-file-link" href={fileUrl} target="_blank" rel="noreferrer">
                       <Icon.File />
-                      Archivo principal {index + 1}
+                      Archivo {index + 1}
                     </a>
                   ))}
                 </div>
@@ -252,7 +320,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                 <span className="pq-description-label">Orden de trabajo</span>
                 {order.preview_image ? (
                   <a href={order.preview_image} target="_blank" rel="noreferrer" className="pq-preview-link">
-                    Ver imagen de preview
+                    Ver orden de trabajo
                   </a>
                 ) : (
                   <span className="pq-preview-empty">No hay preview cargado.</span>
@@ -260,6 +328,13 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
               </div>
             </div>
           </div>
+
+          {isReturnedOrder(order) && (
+            <div className="pq-panel pq-return-panel">
+              <div className="pq-panel-title">Motivo de devolución</div>
+              <div className="pq-return-reason">{returnedReason}</div>
+            </div>
+          )}
 
           <div className="pq-panel pq-payment-panel">
             <div className="pq-panel-title">Confirmación de pago</div>
@@ -280,25 +355,31 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                   disabled={!canConfirmPayment || paymentSaving}
                   onChange={event => setPaymentStatus(event.target.value)}
                 >
+                  <option value="Pending_Payment">Pendiente</option>
+                  <option value="parcial">Parcial</option>
                   <option value="pagado">Pagado</option>
                 </select>
               </div>
 
               <div className="pq-payment-field">
                 <label>Recibo o factura</label>
-                <label className={`pq-upload-box ${!canConfirmPayment ? "disabled" : ""}`}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    disabled={!canConfirmPayment || paymentSaving}
-                    onChange={event => {
-                      const nextFile = event.target.files?.[0] || null;
-                      setReceiptFile(nextFile);
-                      setLocalError("");
-                    }}
-                  />
-                  <span><Icon.Upload /> {receiptFile ? receiptFile.name : "Subir imagen del recibo"}</span>
-                </label>
+                {paymentStatus === "pagado" ? (
+                  <label className={`pq-upload-box ${!canConfirmPayment ? "disabled" : ""}`}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={!canConfirmPayment || paymentSaving}
+                      onChange={event => {
+                        const nextFile = event.target.files?.[0] || null;
+                        setReceiptFile(nextFile);
+                        setLocalError("");
+                      }}
+                    />
+                    <span><Icon.Upload /> {receiptFile ? receiptFile.name : "Subir imagen del recibo"}</span>
+                  </label>
+                ) : (
+                  <span className="pq-upload-hint">El campo de recibo solo se muestra cuando el estado es "Pagado"</span>
+                )}
               </div>
             </div>
 
@@ -309,9 +390,29 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
               </a>
             )}
 
+            {/* Contenedor de errores */}
             {localError && <div className="pq-inline-error">{localError}</div>}
 
+            {/* Acciones del modal para cotizar orden */}
             <div className="pq-modal-actions">
+              {canReturnToDesigner && (
+                <button className="pq-btn pq-btn-return" onClick={() => onOpenReturnModal(order)}>
+                  <Icon.ArrowLeft />
+                  {`Devolver al ${getReturnTargetLabel(order)}`}
+                </button>
+              )}
+              {canMoveToProduction && (
+                <button className="pq-btn pq-btn-return" onClick={() => onConfirmPayment({ order, moveToProduction: true })}>
+                  <Icon.Package />
+                  Dar paso a producción
+                </button>
+              )}
+              {canArchiveQuoteOrder(order) && (
+                <button className="pq-btn pq-btn-secondary" onClick={() => onOpenArchiveModal(order)}>
+                  <Icon.Archive />
+                  Archivar
+                </button>
+              )}
               <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
               <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving}>
                 {paymentSaving ? "Confirmando..." : "Confirmar pago"}
@@ -337,6 +438,8 @@ export default function PageQuote() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [returningOrder, setReturningOrder] = useState(null);
+  const [returnLoading, setReturnLoading] = useState(false);
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -413,6 +516,15 @@ export default function PageQuote() {
     };
   }, [user?.id]);
 
+  // Sincroniza la orden seleccionada con los datos más recientes del servidor.
+  useEffect(() => {
+    if (!selectedOrder) return;
+    const freshOrder = orders.find(o => o.id === selectedOrder.id);
+    if (freshOrder) {
+      setSelectedOrder(freshOrder);
+    }
+  }, [orders]);
+
   // Cierra el panel de notificaciones al hacer click fuera.
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -465,7 +577,7 @@ export default function PageQuote() {
         .order("created_at", { ascending: false });
 
       if (!error) {
-        fetchedOrders = data || [];
+        fetchedOrders = (data || []).filter(order => isOrderRelevantToQuote(order, quoteUserId));
         fetchError = null;
         break;
       }
@@ -481,7 +593,7 @@ export default function PageQuote() {
         .order("created_at", { ascending: false });
 
       if (!error) {
-        fetchedOrders = (data || []).filter(order => hasQuoteAssignment(order, quoteUserId));
+        fetchedOrders = (data || []).filter(order => isOrderRelevantToQuote(order, quoteUserId));
         fetchError = null;
       }
     }
@@ -556,10 +668,11 @@ export default function PageQuote() {
 
   // Crea notificaciones internas del módulo sin usar localStorage.
   const createPersistentNotification = ({ type, label, orderTitle, message }) => {
-    const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const normalizedType = normalizeNotificationType(type);
+    const id = `${normalizedType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const notification = {
       id,
-      type,
+      type: normalizedType,
       label,
       orderTitle,
       message,
@@ -612,9 +725,45 @@ export default function PageQuote() {
     setSelectedOrder(nextOrder);
   };
 
-  // Confirma el pago solo si la imagen sube correctamente y existe un campo compatible en la orden.
-  const handleConfirmPayment = async ({ order, receiptFile, paymentStatus }) => {
-    if (!receiptFile) {
+  // Confirma el pago validando imagen, subiendo a storage y actualizando la BD.
+  const handleConfirmPayment = async ({ order, receiptFile, paymentStatus, moveToProduction = false }) => {
+    if (moveToProduction) {
+      setPaymentSaving(true);
+
+      const { data: updatedOrder, error } = await supabase
+        .from("orders")
+        .update({ status: "en produccion" })
+        .eq("id", order.id)
+        .select("*")
+        .single();
+
+      setPaymentSaving(false);
+
+      if (error || !updatedOrder) {
+        console.error("Error moving to production:", error);
+        showActionNotification({
+          type: "cancelled",
+          label: "Error al mover",
+          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+          message: error?.message || "No se pudo dar paso a producción a la orden.",
+        });
+        return;
+      }
+
+      setOrders(prev => prev.filter(item => item.id !== updatedOrder.id));
+      setSelectedOrder(updatedOrder);
+
+      showActionNotification({
+        type: "success",
+        label: "En producción",
+        orderTitle: updatedOrder.client_name || updatedOrder.description || `Orden #${updatedOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "La orden fue enviada a producción correctamente.",
+      });
+      return;
+    }
+
+    // Validar que se cargue imagen si el pago es confirmado
+    if (paymentStatus === "pagado" && !receiptFile) {
       showActionNotification({
         type: "cancelled",
         label: "Imagen requerida",
@@ -626,59 +775,84 @@ export default function PageQuote() {
 
     setPaymentSaving(true);
 
-    const fileName = `${Date.now()}-${receiptFile.name}`;
-    const storagePath = `orders/${order.id}/payments/${fileName}`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("order-docs")
-      .upload(storagePath, receiptFile, { upsert: true });
+    let invoicePaymentUrl = null;
 
-    if (uploadError || !uploadData) {
-      setPaymentSaving(false);
-      showActionNotification({
-        type: "cancelled",
-        label: "Error al subir",
-        orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-        message: "No se pudo subir la imagen del comprobante. Inténtalo nuevamente.",
-      });
-      return;
-    }
+    // Si hay archivo, validar y subir
+    if (receiptFile) {
+      // Validar imagen antes de subir
+      const validation = await validateImage(receiptFile);
 
-    const { data: publicUrlData } = supabase.storage
-      .from("order-docs")
-      .getPublicUrl(storagePath);
-
-    const receiptUrl = publicUrlData?.publicUrl;
-    let updatedOrder = null;
-    let updateError = null;
-
-    for (const field of RECEIPT_FIELDS) {
-      const { data, error } = await supabase
-        .from("orders")
-        .update({
-          payment_status: paymentStatus,
-          [field]: receiptUrl,
-        })
-        .eq("id", order.id)
-        .select("*")
-        .single();
-
-      if (!error && data) {
-        updatedOrder = data;
-        updateError = null;
-        break;
+      if (!validation.isValid) {
+        setPaymentSaving(false);
+        showActionNotification({
+          type: "cancelled",
+          label: "Imagen inválida",
+          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+          message: validation.error || "La imagen no cumple con los requisitos. Asegúrate de que sea JPG o PNG válido.",
+        });
+        return;
       }
 
-      updateError = error;
+      // Construir ruta del archivo
+      const filePath = buildPaymentReceiptPath(order.id, receiptFile.name);
+
+      try {
+        // Subir a storage usando bucket "payment-invoice" (mismo que Admin)
+        invoicePaymentUrl = await uploadOrderAsset({
+          bucket: "payment-invoice",
+          path: filePath,
+          file: receiptFile,
+        });
+
+        if (!invoicePaymentUrl) {
+          setPaymentSaving(false);
+          showActionNotification({
+            type: "cancelled",
+            label: "Error al subir",
+            orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+            message: "No se pudo obtener la URL de la imagen. Inténtalo nuevamente.",
+          });
+          return;
+        }
+      } catch (uploadError) {
+        console.error("Error uploading image:", uploadError);
+        setPaymentSaving(false);
+        showActionNotification({
+          type: "cancelled",
+          label: "Error al subir",
+          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+          message: uploadError?.message || "No se pudo subir la imagen del comprobante. Inténtalo nuevamente.",
+        });
+        return;
+      }
     }
+
+    // Actualizar orden en BD con el campo invoice_payment estándar
+    const updatePayload = {
+      payment_status: paymentStatus,
+    };
+
+    // Solo incluir invoice_payment si hay URL (o si es null para limpiar)
+    if (invoicePaymentUrl) {
+      updatePayload[INVOICE_PAYMENT_FIELD] = invoicePaymentUrl;
+    }
+
+    const { data: updatedOrder, error: updateError } = await supabase
+      .from("orders")
+      .update(updatePayload)
+      .eq("id", order.id)
+      .select("*")
+      .single();
 
     setPaymentSaving(false);
 
     if (updateError || !updatedOrder) {
+      console.error("Error updating order:", updateError);
       showActionNotification({
         type: "cancelled",
         label: "Error al confirmar",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-        message: "No se pudo guardar el comprobante en la orden. Verifica el esquema de la base de datos.",
+        message: updateError?.message || "No se pudo guardar los cambios de pago. Verifica la conexión a la base de datos.",
       });
       return;
     }
@@ -686,17 +860,27 @@ export default function PageQuote() {
     setOrders(prev => prev.map(item => item.id === updatedOrder.id ? updatedOrder : item));
     setSelectedOrder(updatedOrder);
 
+    const paymentLabel = { Pending_Payment: "Pendiente", parcial: "Parcial", pagado: "Pagado" };
     showActionNotification({
       type: "success",
-      label: "Pago confirmado",
+      label: "Estado actualizado",
       orderTitle: updatedOrder.client_name || updatedOrder.description || `Orden #${updatedOrder.id?.slice(0, 8).toUpperCase()}`,
-      message: "El pago fue confirmado correctamente y el comprobante quedó guardado.",
+      message: `El estado de pago fue actualizado a ${paymentLabel[paymentStatus] || paymentStatus}.`,
     });
   };
 
   // Archiva órdenes en el campo específico del rol Quote.
   const handleConfirmArchive = async () => {
     if (!archivingOrder) return;
+    if (!canArchiveQuoteOrder(archivingOrder)) {
+      showActionNotification({
+        type: "cancelled",
+        label: "Archivado no permitido",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "Solo puedes archivar órdenes con el pago confirmado.",
+      });
+      return;
+    }
 
     setArchiveLoading(true);
     const { error } = await supabase
@@ -729,6 +913,65 @@ export default function PageQuote() {
     });
 
     setArchivingOrder(null);
+  };
+
+  // Devuelve una orden al diseñador para correcciones.
+  const handleConfirmReturn = async (reason) => {
+    if (!returningOrder) return;
+
+    setReturnLoading(true);
+    const isExternalDesign = returningOrder.order_design_type === "EXTERNAL_DESING";
+    const nextStatus = isExternalDesign ? "Pending" : "In_Design";
+    const returnedAt = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        status: nextStatus,
+        return_reason: reason,
+        returned_to_designer_at: returnedAt,
+      })
+      .eq("id", returningOrder.id);
+
+    setReturnLoading(false);
+
+    if (error) {
+      showActionNotification({
+        type: "cancelled",
+        label: "Error al devolver",
+        orderTitle: returningOrder.client_name || returningOrder.description || `Orden #${returningOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: isExternalDesign
+          ? "No se pudo devolver la orden al vendedor."
+          : "No se pudo devolver la orden al diseñador.",
+      });
+      return;
+    }
+
+    const nextOrder = {
+      ...returningOrder,
+      status: nextStatus,
+      return_reason: reason,
+      returned_to_designer_at: returnedAt,
+    };
+    setOrders(prev => (
+      isExternalDesign
+        ? prev.filter(order => order.id !== returningOrder.id)
+        : prev.map(order => order.id === returningOrder.id ? nextOrder : order)
+    ));
+    if (selectedOrder?.id === returningOrder.id) {
+      setSelectedOrder(nextOrder);
+    }
+
+    showActionNotification({
+      type: "success",
+      label: "Orden devuelta",
+      orderTitle: nextOrder.client_name || nextOrder.description || `Orden #${nextOrder.id?.slice(0, 8).toUpperCase()}`,
+      message: isExternalDesign
+        ? "La orden fue devuelta al vendedor para correcciones."
+        : "La orden fue devuelta al diseñador para correcciones.",
+    });
+
+    setReturningOrder(null);
   };
 
   const handleLogout = async () => {
@@ -911,6 +1154,7 @@ export default function PageQuote() {
                       </div>
                       <div className="pq-recent-item-footer">
                         <div className="pq-recent-badges">
+                          {isReturnedOrder(order) && <ReturnedBadge compact />}
                           <StatusBadge status={order.status} />
                           <PaymentBadge status={order.payment_status} />
                         </div>
@@ -942,6 +1186,7 @@ export default function PageQuote() {
 
               <select className="pq-input" value={filterStatus} onChange={event => setFilterStatus(event.target.value)}>
                 <option value="all">Todos los estados</option>
+                <option value="In_Design">Devueltas / En diseño</option>
                 <option value="cotizacion">Cotización</option>
                 <option value="in_Quotation">Cotización (legacy)</option>
                 <option value="en produccion">En producción</option>
@@ -984,6 +1229,7 @@ export default function PageQuote() {
                         </span>
                       </div>
                       <div className="pq-order-badges">
+                        {isReturnedOrder(order) && <ReturnedBadge compact />}
                         <StatusBadge status={order.status} />
                         <PaymentBadge status={order.payment_status} />
                       </div>
@@ -1006,7 +1252,7 @@ export default function PageQuote() {
                         Ver detalles
                       </button>
                       {/* Botón para archivar la orden */}
-                      {!order.is_archived_quote && ["cancelada", "cancelled"].includes(order.status) &&(
+                      {canArchiveQuoteOrder(order) && (
                         <button
                           className="pq-btn pq-btn-inline-archive"
                           onClick={() => setArchivingOrder(order)}
@@ -1031,6 +1277,8 @@ export default function PageQuote() {
         onConfirmPayment={handleConfirmPayment}
         paymentSaving={paymentSaving}
         sellerDirectory={sellerDirectory}
+        onOpenReturnModal={setReturningOrder}
+        onOpenArchiveModal={setArchivingOrder}
       />
 
       <ArchiveQuoteOrderModal
@@ -1039,6 +1287,14 @@ export default function PageQuote() {
         onConfirm={handleConfirmArchive}
         order={archivingOrder}
         loading={archiveLoading}
+      />
+
+      <ReturnToDesignerModal
+        open={!!returningOrder}
+        onClose={() => setReturningOrder(null)}
+        onConfirm={handleConfirmReturn}
+        order={returningOrder}
+        loading={returnLoading}
       />
 
       <div className="pq-toast-stack">

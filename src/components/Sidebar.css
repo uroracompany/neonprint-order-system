@@ -2,16 +2,20 @@
 .sb-sidebar {
   width: 260px;
   min-width: 260px;
+  height: 100vh;
   background: #091127;
   display: flex;
   flex-direction: column;
   transition: all 0.3s ease;
   box-shadow: 4px 0 24px rgba(15,30,64,0.2);
+  flex-shrink: 0;
 }
 
 .sb-sidebar.closed {
   width: 80px;
   min-width: 80px;
+  height: 100vh;
+  flex-shrink: 0;
 }
 
 .sb-sidebar-logo {

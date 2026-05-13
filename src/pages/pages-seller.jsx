@@ -117,6 +117,76 @@ const FLOW_STEP_LABELS = {
 };
 
 const NOTIFICATION_DURATION = 5000;
+const RETURNED_ORDERS_STORAGE_KEY = "ps_returned_orders";
+const TRACKED_ORDER_FIELDS = [
+  "client_name",
+  "client_contact",
+  "description",
+  "material",
+  "termination_type",
+  "delivery_date",
+  "order_type",
+];
+
+const normalizeTrackedValue = (value) => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const isExternalReturnedOrder = (order) => (
+  order?.order_design_type === "EXTERNAL_DESING" &&
+  order?.status === "Pending" &&
+  String(order?.return_reason || "").trim().length > 0
+);
+
+const hasExternalReturnUpdate = (previousOrder, nextOrder) => {
+  if (!isExternalReturnedOrder(nextOrder)) return false;
+
+  return (
+    !isExternalReturnedOrder(previousOrder) ||
+    normalizeTrackedValue(previousOrder?.return_reason) !== normalizeTrackedValue(nextOrder?.return_reason) ||
+    normalizeTrackedValue(previousOrder?.returned_to_designer_at) !== normalizeTrackedValue(nextOrder?.returned_to_designer_at)
+  );
+};
+
+const hasTrackedOrderChanges = (previousOrder, nextOrder) => {
+  return TRACKED_ORDER_FIELDS.some(field => (
+    normalizeTrackedValue(previousOrder?.[field]) !== normalizeTrackedValue(nextOrder?.[field])
+  ));
+};
+
+const resolveOriginalQuoteId = (order) => order?.quote_id || order?.quotation_id || order?.quote_user_id || "";
+const PHONE_PLACEHOLDER = "Ej: 809-555-1234";
+
+const isValidDominicanPhone = (value) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  const normalized = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+
+  if (normalized.length !== 10) return false;
+
+  const areaCode = normalized.slice(0, 3);
+  return ["809", "829", "849"].includes(areaCode);
+};
+
+// Formattea número de teléfono dominicano: solo permite 10 dígitos y auto-formattea con guiones
+const formatDominicanPhone = (value) => {
+  // Elimina todo excepto números
+  let digits = String(value || "").replace(/\D/g, "");
+  
+  // Limita a 10 dígitos
+  if (digits.length > 10) {
+    digits = digits.slice(0, 10);
+  }
+  
+  // Auto-formattea con guiones: XXX-XXX-XXXX
+  if (digits.length <= 3) {
+    return digits;
+  } else if (digits.length <= 6) {
+    return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  } else {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+};
 
 function SellerNotificationToast({ notification, onClose }) {
   const [progress, setProgress] = useState(100);
@@ -235,16 +305,19 @@ function Modal({ open, onClose, title, children, wide }) {
 }
 
 // CAMPO DE FORMULARIO QUE RECIBE VALORES
-function Field({ label, required, optional, hint, children }) {
+function Field({ label, required, optional, hint, error, children }) {
   return (
-    <div className="ps-field">
+    <div className={`ps-field ${error ? "ps-field-error" : ""}`}>
       <label className="ps-label">
         {label}
         {required && <span className="ps-label-req">*</span>}
         {optional && <span className="ps-label-opt">(opcional)</span>}
       </label>
       {hint && <p className="ps-field-hint">{hint}</p>}
-      {children}
+      <div className={`ps-field-input-wrapper ${error ? "has-error" : ""}`}>
+        {children}
+      </div>
+      {error && <p className="ps-field-error-message">{error}</p>}
     </div>
   );
 }
@@ -417,18 +490,60 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
 
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k, v) => {
+    setForm(p => ({ ...p, [k]: v }));
+    // Limpiar error del campo cuando se edita
+    if (fieldErrors[k]) {
+      setFieldErrors(p => {
+        const next = { ...p };
+        delete next[k];
+        return next;
+      });
+    }
+  };
+
+  // Función de validación que retorna objeto de errores por campo
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!form.client_name.trim()) {
+      errors.client_name = "El nombre del cliente es requerido.";
+    }
+    if (!form.description.trim()) {
+      errors.description = "La descripción del trabajo es requerida.";
+    }
+    if (form.materials.length === 0) {
+      errors.materials = "Selecciona al menos un material.";
+    }
+    if (!form.order_type) {
+      errors.order_type = "Selecciona el tipo de orden.";
+    }
+    if (!form.design_type) {
+      errors.design_type = "Indica si el diseño es interno o externo.";
+    }
+    if (form.client_phone.trim() && !isValidDominicanPhone(form.client_phone)) {
+      errors.client_phone = "El teléfono debe ser un número válido de República Dominicana (809, 829 o 849).";
+    }
+    
+    return errors;
+  };
 
   // ── Submit ─────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!form.client_name) { setError("El nombre del cliente es requerido."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-    if (!form.description) { setError("La descripcion del trabajo es requerida."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-    if (form.materials.length === 0) { setError("Selecciona al menos un material."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-    if (!form.order_type) { setError("Selecciona el tipo de orden."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-    if (!form.design_type) { setError("Indica si el diseno es interno o externo."); formTopRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
-
-    setLoading(true); setError("");
+    const errors = validateForm();
+    
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setError("Por favor, corrige los errores en el formulario.");
+      formTopRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+    
+    setLoading(true);
+    setError("");
+    setFieldErrors({});
 
     const payload = {
       client_name: form.client_name.trim(),
@@ -513,17 +628,17 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
       </div>
       <div className="ps-form-grid">
         <div className="col-full">
-          <Field label="Nombre del cliente" required>
+          <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
             <input className="ps-form-input" placeholder="Ej: Empresa ABC"
               value={form.client_name} onChange={e => set("client_name", e.target.value)} />
           </Field>
         </div>
         <div className="col-full">
-          <Field label="Telefono / Contacto" optional hint="WhatsApp o numero de contacto del cliente">
+          <Field label="Telefono / Contacto" optional hint="WhatsApp o numero de contacto del cliente" error={fieldErrors.client_phone}>
             <div className="ps-input-icon-wrap">
               <span className="ps-input-icon"><Icon.Phone /></span>
-              <input className="ps-form-input with-icon" placeholder="Ej: 809-555-1234"
-                value={form.client_phone} onChange={e => set("client_phone", e.target.value)} />
+              <input className="ps-form-input with-icon" placeholder={PHONE_PLACEHOLDER}
+                value={form.client_phone} onChange={e => set("client_phone", formatDominicanPhone(e.target.value))} maxLength="12" />
             </div>
           </Field>
         </div>
@@ -535,7 +650,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
       </div>
       <div className="ps-form-grid">
         <div className="col-full">
-          <Field label="Descripcion del trabajo" required>
+          <Field label="Descripcion del trabajo" required error={fieldErrors.description}>
             <textarea className="ps-form-input textarea" placeholder="Describe el trabajo solicitado por el cliente..."
               value={form.description} onChange={e => set("description", e.target.value)} />
           </Field>
@@ -543,7 +658,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
 
         {/* Multi-material */}
         <div className="col-full">
-          <Field label="Materiales" required hint="Puedes seleccionar más de un material">
+          <Field label="Materiales" required hint="Puedes seleccionar más de un material" error={fieldErrors.materials}>
             <MultiMaterialSelector selected={form.materials} onChange={v => set("materials", v)} />
           </Field>
         </div>
@@ -558,7 +673,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
 
         {/* Tipo de orden */}
         <div className="col-full">
-          <Field label="Tipo de orden" required>
+          <Field label="Tipo de orden" required error={fieldErrors.order_type}>
             <div className="ps-order-type-group">
               {[
                 { val: "orden normal", label: "Orden Normal", desc: "Flujo estándar de produccion" },
@@ -579,7 +694,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
 
         {/* Tipo de diseño */}
         <div className="col-full">
-          <Field label="Tipo de diseno" required>
+          <Field label="Tipo de diseno" required error={fieldErrors.design_type}>
             <div className="ps-order-type-group">
               {[
                 { val: "INTERNAL_DESING", label: "Diseño Interno", desc: "El diseno lo realiza NeonPrint" },
@@ -640,7 +755,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
             <div className="col-full">
               <Field label="Imagen de preview" hint="Vista previa del diseño">
                 {!form.design_preview ? (
-                  <div className="ps-preview-empty" onClick={() => previewInputRef.current?.click()}>
+                  <div className="ps-upload-zone" onClick={() => previewInputRef.current?.click()}>
                     <input
                       ref={previewInputRef}
                       type="file"
@@ -652,10 +767,11 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
                       }}
                       style={{ display: "none" }}
                     />
-                    <div className="ps-preview-upload-content">
-                      <div className="ps-preview-upload-icon"><Icon.Image /></div>
-                      <span className="ps-preview-upload-text">Subir imagen de preview</span>
+                    <div className="ps-upload-icon"><Icon.Image /></div>
+                    <div className="ps-upload-btn-wrapper">
+                      <span className="ps-upload-btn-text">Subir imagen de preview</span>
                     </div>
+                    <span className="ps-upload-hint">Imagen de la orden de trabajo (PNG, JPG...)</span>
                   </div>
                 ) : (
                   <div className="ps-preview-showcase">
@@ -691,9 +807,14 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
                   style={{ opacity: form.indefinido ? 0.4 : 1 }}
                 />
               </div>
-              <label className="ps-indefinido-check">
-                <input type="checkbox" checked={form.indefinido} onChange={e => set("indefinido", e.target.checked)} />
-                <span>Indefinido</span>
+              <label className="ps-indefinido-check" style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
+                <input 
+                  type="checkbox" 
+                  checked={form.indefinido} 
+                  onChange={e => set("indefinido", e.target.checked)}
+                  style={{ width: "16px", height: "16px", margin: 0, cursor: "pointer" }}
+                />
+                <span style={{ fontSize: "13px", color: "#64748b" }}>Por definir</span>
               </label>
             </div>
           </Field>
@@ -730,6 +851,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
   const [removedFileUrls, setRemovedFileUrls] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     if (order) {
@@ -760,7 +882,34 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
     }
   }, [order]);
 
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k, v) => {
+    setForm(p => ({ ...p, [k]: v }));
+    // Limpiar error del campo cuando se edita
+    if (fieldErrors[k]) {
+      setFieldErrors(p => {
+        const next = { ...p };
+        delete next[k];
+        return next;
+      });
+    }
+  };
+
+  // Función de validación que retorna objeto de errores por campo
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!form.client_name.trim()) {
+      errors.client_name = "El nombre del cliente es requerido.";
+    }
+    if (!form.description.trim()) {
+      errors.description = "La descripción es requerida.";
+    }
+    if (form.client_contact.trim() && !isValidDominicanPhone(form.client_contact)) {
+      errors.client_contact = "El teléfono debe ser un número válido de República Dominicana (809, 829 o 849).";
+    }
+    
+    return errors;
+  };
 
   const handleRemoveExistingFile = (url) => {
     setRemovedFileUrls(prev => [...prev, url]);
@@ -796,11 +945,17 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
   };
 
   const handleSubmit = async () => {
-    if (!form.client_name) { setError("El nombre del cliente es requerido."); return; }
-    if (!form.description) { setError("La descripción es requerida."); return; }
-
+    const errors = validateForm();
+    
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setError("Por favor, corrige los errores en el formulario.");
+      return;
+    }
+    
     setLoading(true);
     setError("");
+    setFieldErrors({});
 
     const { error: err } = await supabase
       .from("orders")
@@ -895,13 +1050,13 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
       </div>
       <div className="ps-form-grid">
         <div className="col-full">
-          <Field label="Nombre del cliente" required>
+          <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
             <input className="ps-form-input" value={form.client_name} onChange={e => set("client_name", e.target.value)} />
           </Field>
         </div>
         <div className="col-full">
-          <Field label="Contacto" optional>
-            <input className="ps-form-input" value={form.client_contact} onChange={e => set("client_contact", e.target.value)} />
+          <Field label="Contacto" optional hint="Telefono opcional. Si lo completas, debe ser un numero de Republica Dominicana." error={fieldErrors.client_contact}>
+            <input className="ps-form-input" placeholder={PHONE_PLACEHOLDER} value={form.client_contact} onChange={e => set("client_contact", formatDominicanPhone(e.target.value))} maxLength="12" />
           </Field>
         </div>
       </div>
@@ -911,7 +1066,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
       </div>
       <div className="ps-form-grid">
         <div className="col-full">
-          <Field label="Descripción" required>
+          <Field label="Descripción" required error={fieldErrors.description}>
             <textarea className="ps-form-input textarea" value={form.description} onChange={e => set("description", e.target.value)} />
           </Field>
         </div>
@@ -1010,7 +1165,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
                 </div>
               </div>
             ) : (
-              <div className="ps-preview-empty" onClick={() => previewInputRef.current?.click()}>
+              <div className="ps-upload-zone" onClick={() => previewInputRef.current?.click()}>
                 <input
                   ref={previewInputRef}
                   type="file"
@@ -1018,10 +1173,11 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
                   onChange={handleAddNewPreview}
                   style={{ display: "none" }}
                 />
-                <div className="ps-preview-upload-content">
-                  <div className="ps-preview-upload-icon"><Icon.Image /></div>
-                  <span className="ps-preview-upload-text">Subir imagen de preview</span>
+                <div className="ps-upload-icon"><Icon.Image /></div>
+                <div className="ps-upload-btn-wrapper">
+                  <span className="ps-upload-btn-text">Subir imagen de preview</span>
                 </div>
+                <span className="ps-upload-hint">Imagen de la orden de trabajo (PNG, JPG...)</span>
               </div>
             )}
           </Field>
@@ -1203,7 +1359,10 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                 <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 7px 0", fontWeight: 600 }}>
                   ESTADO ACTUAL
                 </p>
-                <StatusBadge status={order.status} />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <StatusBadge status={order.status} />
+                  {isExternalReturnedOrder(order) && <ReturnedBadge />}
+                </div>
               </div>
 
               <div>
@@ -1228,6 +1387,22 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                   {order.price ? "RD$" + order.price.toLocaleString("es-DO") : "Sin cotizar"}
                 </p>
               </div>
+
+              {isExternalReturnedOrder(order) && (
+                <div style={{
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  borderRadius: "var(--radius-md)",
+                  padding: 14,
+                }}>
+                  <p style={{ fontSize: 11, color: "#991B1B", margin: "0 0 6px 0", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Orden devuelta
+                  </p>
+                  <p style={{ fontSize: 13, color: "#7F1D1D", margin: 0, lineHeight: 1.55 }}>
+                    {order.return_reason}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Botón Enviar a Diseño / Cotización */}
@@ -1625,11 +1800,21 @@ function SendToDesignerModal({ open, onClose, onConfirm, order, loading }) {
   );
 }
 
+function ReturnedBadge({ compact = false }) {
+  return (
+    <span className={`ps-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta desde cotización">
+      Devuelta
+    </span>
+  );
+}
+
 // ─── ENVIAR A COTIZACIÓN MODAL ───────────────────────────────────────
 function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
   const [quoteUsers, setQuoteUsers] = useState([]);
   const [selectedQuoteUser, setSelectedQuoteUser] = useState("");
   const [loadingQuoteUsers, setLoadingQuoteUsers] = useState(true);
+  const wasReturned = isExternalReturnedOrder(order);
+  const originalQuoterId = wasReturned ? resolveOriginalQuoteId(order) : "";
 
   useEffect(() => {
     if (open) {
@@ -1651,12 +1836,15 @@ function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
               }));
 
             setQuoteUsers(quotes);
+            if (wasReturned && originalQuoterId) {
+              setSelectedQuoteUser(originalQuoterId);
+            }
           } else {
             setQuoteUsers([]);
           }
         });
     }
-  }, [open]);
+  }, [open, wasReturned, originalQuoterId]);
 
   const handleConfirm = () => {
     if (selectedQuoteUser) {
@@ -1715,6 +1903,46 @@ function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
         ) : quoteUsers.length === 0 ? (
           <div style={{ textAlign: "center", padding: "20px 0", color: "#EF4444" }}>
             No hay usuarios de cotización disponibles
+          </div>
+        ) : wasReturned && originalQuoterId ? (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{
+              marginBottom: 12,
+              padding: "12px 14px",
+              borderRadius: 8,
+              border: "1px solid #FECACA",
+              background: "#FEF2F2",
+              color: "#991B1B",
+              fontSize: 13,
+              fontWeight: 500,
+              lineHeight: 1.5,
+            }}>
+              Esta orden fue devuelta. Solo se puede reenviar al cotizador que la regresó.
+            </div>
+            <select
+              value={selectedQuoteUser}
+              disabled={true}
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: "1.5px solid #FECACA",
+                fontSize: 14,
+                fontFamily: "'Poppins', sans-serif",
+                background: "#FFF7F7",
+                color: "#374151",
+                cursor: "not-allowed",
+                outline: "none"
+              }}
+            >
+              {quoteUsers
+                .filter(quoteUser => quoteUser.id === originalQuoterId)
+                .map(quoteUser => (
+                  <option key={quoteUser.id} value={quoteUser.id}>
+                    {getQuoteName(quoteUser)} (Original)
+                  </option>
+                ))}
+            </select>
           </div>
         ) : (
           <div style={{ marginBottom: 24 }}>
@@ -1781,36 +2009,86 @@ function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
 
 // ─── CANCELAR ORDEN VENTANA DE COMFIRMACION ───────────────────────────────────────────
 function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setReason("");
+    }
+  }, [open]);
+  
+  // Validación: No permitir cancelar órdenes pagadas
+  const isPaid = order?.payment_status === "pagado";
+
   return (
     <Modal open={open} onClose={onClose} title="Cancelar Orden">
       <div style={{ minWidth: 350, paddingTop: 8 }}>
-        <p style={{ fontSize: 14, color: "#4A5E80", marginBottom: 16, lineHeight: 1.5 }}>
-          ¿Estás seguro de que deseas cancelar esta orden?{order && (
-            <span style={{ display: "block", marginTop: 8, fontWeight: 500, color: "#0f1e40" }}>
-              Orden #{order.id?.slice(0, 8)} - {order.client_name}
-            </span>
-          )}
-        </p>
-        <p style={{ fontSize: 13, color: "#8899B5", marginBottom: 20, lineHeight: 1.5 }}>
-          El estado de la orden cambiará a "Cancelada" y esta acción no podra ser revertida fácilmente.
-        </p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button 
-            className="ps-btn-cancel" 
-            onClick={onClose}
-            disabled={loading}
-          >
-            Mantener orden
-          </button>
-          <button 
-            className="ps-btn-submit" 
-            onClick={onConfirm}
-            disabled={loading}
-            style={{ background: "#EF4444", border: "1px solid #DC2626" }}
-          >
-            {loading ? "Cancelando..." : "Si, cancelar orden"}
-          </button>
-        </div>
+        {isPaid ? (
+          <>
+            <p style={{ fontSize: 14, color: "#991B1B", marginBottom: 16, lineHeight: 1.5, fontWeight: 500 }}>
+              ⚠️ No se puede cancelar esta orden
+            </p>
+            <p style={{ fontSize: 13, color: "#7F1D1D", marginBottom: 20, lineHeight: 1.5 }}>
+              Esta orden ya ha sido pagada. No se permite cancelar órdenes con pago confirmado. Si necesitas anular esta orden, contacta con el administrador.
+            </p>
+            {order && (
+              <p style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 16 }}>
+                Orden #{order.id?.slice(0, 8)} - {order.client_name}
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button 
+                className="ps-btn-cancel" 
+                onClick={onClose}
+              >
+                Entendido
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 14, color: "#4A5E80", marginBottom: 16, lineHeight: 1.5 }}>
+              ¿Estás seguro de que deseas cancelar esta orden?{order && (
+                <span style={{ display: "block", marginTop: 8, fontWeight: 500, color: "#0f1e40" }}>
+                  Orden #{order.id?.slice(0, 8)} - {order.client_name}
+                </span>
+              )}
+            </p>
+            <p style={{ fontSize: 13, color: "#8899B5", marginBottom: 20, lineHeight: 1.5 }}>
+              El estado de la orden cambiará a "Cancelada" y esta acción no podra ser revertida fácilmente.
+            </p>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#0f1e40", marginBottom: 8 }}>
+                Motivo de cancelacion
+              </label>
+              <textarea
+                className="ps-form-input textarea"
+                placeholder="Describe por que se cancela esta orden..."
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                disabled={loading}
+                rows={4}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button 
+                className="ps-btn-cancel" 
+                onClick={onClose}
+                disabled={loading}
+              >
+                Mantener orden
+              </button>
+              <button 
+                className="ps-btn-submit" 
+                onClick={() => onConfirm(reason)}
+                disabled={loading || !reason.trim()}
+                style={{ background: "#EF4444", border: "1px solid #DC2626" }}
+              >
+                {loading ? "Cancelando..." : "Si, cancelar orden"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -1920,7 +2198,22 @@ export default function PageSeller() {
   const [sendingLoading, setSendingLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [returnedOrders, setReturnedOrders] = useState(() => {
+    try {
+      const stored = localStorage.getItem(RETURNED_ORDERS_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
   const notificationTimeoutsRef = useRef({});
+  const knownOrderIdsRef = useRef(new Set());
+  const previousOrdersRef = useRef({});
+  const ordersInitializedRef = useRef(false);
+
+  useEffect(() => {
+    localStorage.setItem(RETURNED_ORDERS_STORAGE_KEY, JSON.stringify(returnedOrders));
+  }, [returnedOrders]);
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
@@ -1944,6 +2237,51 @@ export default function PageSeller() {
       label,
       orderTitle,
       message,
+      duration: NOTIFICATION_DURATION,
+      expiresAt: Date.now() + NOTIFICATION_DURATION,
+    };
+
+    setNotifications(prev => [notification, ...prev].slice(0, 3));
+
+    notificationTimeoutsRef.current[notificationId] = setTimeout(() => {
+      removeNotification(notificationId);
+    }, NOTIFICATION_DURATION);
+  };
+
+  const createNotificationForOrder = (order, type = "new") => {
+    const notificationId = `${type}-${order.id}`;
+    if (notificationTimeoutsRef.current[notificationId]) return;
+
+    const orderTitle =
+      order.client_name ||
+      order.description ||
+      `Orden #${order.id?.slice(0, 8).toUpperCase()}`;
+
+    const notificationConfig = {
+      new: {
+        label: "Nueva orden",
+        message: "Se creó una nueva orden en tu bandeja.",
+      },
+      returned: {
+        label: "Orden devuelta",
+        message: "Cotización devolvió la orden. Revisa el motivo y corrígela antes de reenviarla.",
+      },
+      updated: {
+        label: "Orden actualizada",
+        message: "Se actualizó la información de una orden asignada a ti.",
+      },
+      cancelled: {
+        label: "Orden cancelada",
+        message: "Una de tus órdenes fue cancelada.",
+      },
+    };
+
+    const notification = {
+      id: notificationId,
+      type,
+      label: notificationConfig[type]?.label || "Notificación",
+      orderTitle,
+      message: notificationConfig[type]?.message || "Tienes una actualización en una orden.",
       duration: NOTIFICATION_DURATION,
       expiresAt: Date.now() + NOTIFICATION_DURATION,
     };
@@ -2022,6 +2360,56 @@ export default function PageSeller() {
     console.log("Orders data:", data);
     console.log("Error:", error);
     if (!error && Array.isArray(data)) {
+      const nextOrderIds = new Set(data.map(order => order.id));
+      const previousOrderIds = knownOrderIdsRef.current;
+      const previousOrders = previousOrdersRef.current;
+
+      if (!ordersInitializedRef.current) {
+        knownOrderIdsRef.current = nextOrderIds;
+        previousOrdersRef.current = data.reduce((acc, order) => {
+          acc[order.id] = order;
+          return acc;
+        }, {});
+        ordersInitializedRef.current = true;
+        setOrders(data);
+        setLoading(false);
+        return;
+      }
+
+      data
+        .filter(order => !previousOrderIds.has(order.id))
+        .forEach(order => createNotificationForOrder(order, "new"));
+
+      data.forEach(order => {
+        const previousOrder = previousOrders[order.id];
+        const wasCancelledBefore = ["cancelada", "cancelled"].includes(previousOrder?.status);
+        const isCancelledNow = ["cancelada", "cancelled"].includes(order.status);
+
+        if (previousOrder && !wasCancelledBefore && isCancelledNow) {
+          createNotificationForOrder(order, "cancelled");
+        }
+
+        if (previousOrder && hasExternalReturnUpdate(previousOrder, order)) {
+          setReturnedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
+          createNotificationForOrder(order, "returned");
+        }
+
+        if (
+          previousOrder &&
+          !isCancelledNow &&
+          !hasExternalReturnUpdate(previousOrder, order) &&
+          hasTrackedOrderChanges(previousOrder, order)
+        ) {
+          setReturnedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
+          createNotificationForOrder(order, "updated");
+        }
+      });
+
+      knownOrderIdsRef.current = nextOrderIds;
+      previousOrdersRef.current = data.reduce((acc, order) => {
+        acc[order.id] = order;
+        return acc;
+      }, {});
       setOrders(data);
     } else {
       setOrders([]);
@@ -2033,14 +2421,34 @@ export default function PageSeller() {
 
   // ── Funcion para cancelar orden ───────────────────────────────────────────────────────
   const handleCancelOrder = (order) => {
+    // Validación: No permitir cancelar órdenes pagadas
+    if (order?.payment_status === "pagado") {
+      showToast("No se puede cancelar una orden que ya ha sido pagada", "error");
+      return;
+    }
     setCancelingOrder(order);
   };
 
-  const handleConfirmCancel = async () => {
+  const handleConfirmCancel = async (reason) => {
     if (!cancelingOrder) return;
     
+    // Validación adicional: Verificar nuevamente que no esté pagada
+    if (cancelingOrder?.payment_status === "pagado") {
+      showToast("No se puede cancelar una orden que ya ha sido pagada", "error");
+      setCancelingOrder(null);
+      return;
+    }
+    
+    if (!String(reason || "").trim()) {
+      showToast("Debes indicar el motivo de cancelacion", "error");
+      return;
+    }
+    
     setCancelLoading(true);
-    const { error } = await supabase.from("orders").update({ status: "cancelled" }).eq("id", cancelingOrder.id);
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: "cancelled", cancellation_reason: String(reason).trim() })
+      .eq("id", cancelingOrder.id);
     setCancelLoading(false);
     
     if (error) {
@@ -2054,6 +2462,13 @@ export default function PageSeller() {
 
   // ── Ver detalles de orden ─────────────────────────────────────────────────
   const handleViewOrder = async (order) => {
+    setReturnedOrders(prev => {
+      if (!prev[order.id]) return prev;
+      const next = { ...prev };
+      delete next[order.id];
+      return next;
+    });
+
     const { data } = await supabase
       .from("orders")
       .select("*")
@@ -2084,9 +2499,9 @@ export default function PageSeller() {
     setSendingLoading(true);
 
     const assignmentPayloads = [
-      { status: "cotizacion", quote_id: quoteUserId },
-      { status: "cotizacion", quotation_id: quoteUserId },
-      { status: "cotizacion", quote_user_id: quoteUserId },
+      { status: "cotizacion", quote_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
+      { status: "cotizacion", quotation_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
+      { status: "cotizacion", quote_user_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
     ];
 
     let updateError = null;
@@ -2116,6 +2531,13 @@ export default function PageSeller() {
       return;
     }
 
+    setReturnedOrders(prev => {
+      if (!sendingToQuotation?.id || !prev[sendingToQuotation.id]) return prev;
+      const next = { ...prev };
+      delete next[sendingToQuotation.id];
+      return next;
+    });
+
     setSendingToQuotation(null);
     setSelectedOrder(null);
     await fetchOrders(user?.id);
@@ -2137,7 +2559,9 @@ export default function PageSeller() {
       .from("orders")
       .update({ 
         status: "In_Design",
-        designer_id: designerId
+        designer_id: designerId,
+        return_reason: null,
+        returned_to_designer_at: null
       })
       .eq("id", sendingToDesigner.id);
 
@@ -2199,6 +2623,7 @@ export default function PageSeller() {
   const inProd = orders.filter(o => o.status === "en produccion").length;
   const inTerminacion = orders.filter(o => o.status === "terminacion").length;
   const completed = orders.filter(o => o.status === "completada").length;
+  const returnedCount = orders.filter(o => isExternalReturnedOrder(o)).length;
 
   // Funcionalidad para filtrar las ordenes
   const filtered = orders.filter(o => {
@@ -2279,6 +2704,7 @@ export default function PageSeller() {
     { icon: <Icon.Package />, label: "En producción", value: inProd, sub: "Siendo impresas", accentIdx: 3 },
     { icon: <Icon.Package />, label: "Terminación", value: inTerminacion, sub: "En proceso final", accentIdx: 2 },
     { icon: <Icon.Truck />, label: "Completadas", value: completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
+    { icon: <Icon.X />, label: "Devueltas", value: returnedCount, sub: "Pendientes de corrección", accentIdx: 3 },
   ];
 
   return (
@@ -2482,7 +2908,12 @@ export default function PageSeller() {
                           filtered.map(o => (
                             <tr key={o.id} className="row-hover">
                               <td className="td-pad td-id">{o.id?.slice(0, 8) || "---"}</td>
-                              <td className="td-pad td-name">{o.client_name}</td>
+                              <td className="td-pad td-name">
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                  <span>{o.client_name}</span>
+                                  {(returnedOrders[o.id] || isExternalReturnedOrder(o)) && <ReturnedBadge compact />}
+                                </div>
+                              </td>
                               <td className="td-pad td-desc">{o.description}</td>
                               <td className="td-pad td-mat">{o.material}</td>
                               <td className="td-pad"><StatusBadge status={o.status} /></td>
@@ -2551,7 +2982,10 @@ export default function PageSeller() {
                         <div key={o.id} className="ps-order-card">
                           <div className="ps-order-card-header">
                             <span className="ps-order-card-id">#{o.id?.slice(0, 8).toUpperCase() || "---"}</span>
-                            <StatusBadge status={o.status} />
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                              <StatusBadge status={o.status} />
+                              {(returnedOrders[o.id] || isExternalReturnedOrder(o)) && <ReturnedBadge compact />}
+                            </div>
                           </div>
                           <div className="ps-order-card-client">{o.client_name}</div>
                           <div className="ps-order-card-desc">{o.description}</div>
@@ -2580,8 +3014,13 @@ export default function PageSeller() {
                                 <Icon.Edit />
                               </button>
                             )}
-                            {!["cancelada", "cancelled"].includes(o.status) && !o.is_archived && (
+                            {!["cancelada", "cancelled"].includes(o.status) && !o.is_archived && o.payment_status !== "pagado" && (
                               <button className="card-action-btn cancel" onClick={() => handleCancelOrder(o)} title="Cancelar">
+                                <Icon.Trash />
+                              </button>
+                            )}
+                            {o.payment_status === "pagado" && !o.is_archived && !["cancelada", "cancelled"].includes(o.status) && (
+                              <button className="card-action-btn cancel" disabled title="No se puede cancelar: orden pagada" style={{ opacity: 0.5, cursor: "not-allowed" }}>
                                 <Icon.Trash />
                               </button>
                             )}

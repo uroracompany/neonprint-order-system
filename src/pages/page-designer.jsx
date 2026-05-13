@@ -27,6 +27,8 @@ const Icon = {
   X: () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>),
   Send: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>),
   Package: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16.5 9.4-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>),
+  ChevronLeft: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>),
+  ChevronRight: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>)
 };
 
 // Configuración de estados y pagos para badges
@@ -91,6 +93,29 @@ const hasTrackedOrderChanges = (previousOrder, nextOrder) => {
     normalizeTrackedValue(previousOrder?.[field]) !== normalizeTrackedValue(nextOrder?.[field])
   ));
 };
+
+const isReturnedOrder = (order) => (
+  order?.status === "In_Design" &&
+  String(order?.return_reason || "").trim().length > 0
+);
+
+const hasReturnUpdate = (previousOrder, nextOrder) => {
+  if (!isReturnedOrder(nextOrder)) return false;
+
+  return (
+    !isReturnedOrder(previousOrder) ||
+    normalizeTrackedValue(previousOrder?.return_reason) !== normalizeTrackedValue(nextOrder?.return_reason) ||
+    normalizeTrackedValue(previousOrder?.returned_to_designer_at) !== normalizeTrackedValue(nextOrder?.returned_to_designer_at)
+  );
+};
+
+function ReturnedBadge({ compact = false }) {
+  return (
+    <span className={`pd-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta por cotización">
+      Devuelta
+    </span>
+  );
+}
 
 function NotificationToast({ notification, onClose }) {
   const [progress, setProgress] = useState(100);
@@ -161,9 +186,23 @@ const hasFiles = (order, orderFiles) => {
   return storageFiles > 0 || dbFiles > 0;
 };
 
+function AttachmentIndicator({ compact = false }) {
+  return (
+    <span
+      className={`pd-attachment-indicator${compact ? " compact" : ""}`}
+      title="Esta orden tiene archivos adjuntos"
+      aria-label="Esta orden tiene archivos adjuntos"
+    >
+      <Icon.File />
+      {!compact && <span>Adjuntos</span>}
+    </span>
+  );
+}
+
 function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview, onRefresh, onSendToQuotation, quotationSending }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingPreview, setPendingPreview] = useState(null);
+  const [pendingPreviewName, setPendingPreviewName] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -179,6 +218,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
       : order.status === "cotizacion"
         ? "Esta orden está en modo lectura mientras permanece en cotización."
         : "Esta orden está en modo lectura según su estado actual.";
+  const returnedReason = String(order.return_reason || "").trim();
   
   const handleFileSelect = (e) => {
     if (!canEditDesignerAssets) return;
@@ -191,6 +231,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
     if (!canEditDesignerAssets) return;
     if (e.target.files && e.target.files[0]) {
       setPendingPreview(e.target.files[0]);
+      setPendingPreviewName(e.target.files[0].name);
       setSaveSuccess(false);
     }
   };
@@ -316,14 +357,17 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   return (
     <div className="pd-modal-overlay" onClick={e => e.target === e.currentTarget && handleClose()}>
       <div className="pd-modal">
+        <div className="pd-modal-stripe"></div>
         <div className="pd-modal-header">
-          <div className="pd-modal-title">
-            <h3>Orden #{order.id?.slice(0, 8).toUpperCase()}</h3>
-            <span className="pd-modal-subtitle">Detalles de la orden de trabajo</span>
+          <div className="pd-modal-inner-header">
+            <div className="pd-modal-title">
+              <h3>Orden #{order.id?.slice(0, 8).toUpperCase()}</h3>
+              <span className="pd-modal-subtitle">Detalles de la orden de trabajo</span>
+            </div>
+            <button className="pd-modal-close" onClick={handleClose}>
+              <Icon.Close />
+            </button>
           </div>
-          <button className="pd-modal-close" onClick={handleClose}>
-            <Icon.Close />
-          </button>
         </div>
         
         <div className="pd-modal-body">
@@ -390,6 +434,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
             <div className="pd-modal-card-title">
               <Icon.Package />
               <h4>Detalles del Trabajo</h4>
+              {isReturnedOrder(order) && <ReturnedBadge />}
             </div>
             <div className="pd-modal-grid">
               <div className="pd-modal-item full">
@@ -414,6 +459,18 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
               )}
             </div>
           </div>
+
+          {isReturnedOrder(order) && (
+            <div className="pd-modal-card">
+              <div className="pd-modal-card-title">
+                <Icon.X />
+                <h4>Motivo de devolución</h4>
+              </div>
+              <div className="pd-return-note">
+                <p>{returnedReason}</p>
+              </div>
+            </div>
+          )}
           
           <div className="pd-modal-card">
             <div className="pd-modal-card-title">
@@ -430,7 +487,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
             )}
             
             {canEditDesignerAssets ? (
-              <div className="pd-upload-area">
+              <div className="pd-upload-area" style={{ position: 'relative', zIndex: 100 }}>
                 <input
                   type="file"
                   id="designer-file-upload"
@@ -438,9 +495,9 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                   onChange={handleFileSelect}
                   style={{ display: "none" }}
                 />
-                <label htmlFor="designer-file-upload" className="pd-upload-btn">
+                <label htmlFor="designer-file-upload" className="pd-upload-btn" style={{ cursor: 'pointer' }}>
                   <Icon.Upload />
-                  <span>Subir Archivos</span>
+                  <span>Agregar archivo</span>
                 </label>
                 <span className="pd-upload-hint">Archivos seleccionados se guardarán al hacer clic en "Guardar cambios"</span>
               </div>
@@ -450,7 +507,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                 <span className="pd-upload-hint">Los archivos ya no se pueden modificar después de enviarse a cotización.</span>
               </div>
             )}
-            
+            {/* Contenedor de para ver todos los arhivos seleccionados */}
             {pendingFiles.length > 0 && (
               <div className="pd-files-container">
                 <span className="pd-files-label">Archivos pendientes ({pendingFiles.length})</span>
@@ -505,12 +562,13 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                 <>
                   <img src={displayPreview} alt="Preview" className="pd-preview-image" />
                   {pendingPreview && <span className="pd-preview-badge">Nuevo</span>}
+                  {pendingPreviewName && <span className="pd-file-name-badge">{pendingPreviewName}</span>}
                   <div className="pd-preview-overlay">
                     <a href={displayPreview} target="_blank" rel="noopener noreferrer" className="pd-file-action" style={{ background: 'white', color: '#0f172a' }}>
                       <Icon.Eye />
                     </a>
                     {canEditDesignerAssets && (
-                      <button className="pd-file-action remove" style={{ background: 'white' }} onClick={() => { setPendingPreview(null); setSaveSuccess(false); }}>
+                      <button className="pd-file-action remove" style={{ background: 'white' }} onClick={() => { setPendingPreview(null); setPendingPreviewName(null); setSaveSuccess(false); }}>
                         <Icon.Trash />
                       </button>
                     )}
@@ -527,7 +585,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                       style={{ display: "none" }}
                     />
                     <Icon.Image />
-                    <span>Subir imagen de preview</span>
+                    <span>Subir orden de trabajo</span>
                   </label>
                 ) : (
                   <div className="pd-preview-empty pd-preview-empty-disabled">
@@ -597,11 +655,13 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   );
 }
 
-function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
+function SendToQuotationModal({ open, onClose, onConfirm, order, loading, originalQuoterId }) {
   const [quoteUsers, setQuoteUsers] = useState([]);
   const [selectedQuoteUser, setSelectedQuoteUser] = useState("");
   const [loadingQuoteUsers, setLoadingQuoteUsers] = useState(true);
   const [localError, setLocalError] = useState("");
+
+  const wasReturned = originalQuoterId && isReturnedOrder(order);
 
   useEffect(() => {
     if (!open) return;
@@ -622,20 +682,32 @@ function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
           return;
         }
 
-        const quotes = (data || [])
+        let quotes = (data || [])
           .filter(profile => profile.role && profile.role.toLowerCase().includes("quote"))
           .map(profile => ({
             ...profile,
             displayName: profile.name || "Cotizador",
           }));
 
+        if (wasReturned && originalQuoterId) {
+          quotes = quotes.sort((a, b) => {
+            if (a.id === originalQuoterId) return -1;
+            if (b.id === originalQuoterId) return 1;
+            return 0;
+          });
+        }
+
         setQuoteUsers(quotes);
 
         if (quotes.length === 0) {
           setLocalError("No hay usuarios con rol Quote disponibles.");
         }
+
+        if (wasReturned && originalQuoterId) {
+          setSelectedQuoteUser(originalQuoterId);
+        }
       });
-  }, [open]);
+  }, [open, wasReturned, originalQuoterId]);
 
   if (!open || !order) return null;
 
@@ -668,6 +740,23 @@ function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
 
         {loadingQuoteUsers ? (
           <div className="pd-assign-loading">Cargando usuarios de cotización...</div>
+        ) : wasReturned && originalQuoterId ? (
+          <>
+            <div className="pd-assign-notice">
+              <span>Esta orden fue devuelta. Solo se puede reenviar al cotizador que la regresó.</span>
+            </div>
+            <select
+              className="pd-assign-select"
+              value={selectedQuoteUser}
+              disabled={true}
+            >
+              {quoteUsers.map((quoteUser) => (
+                <option key={quoteUser.id} value={quoteUser.id}>
+                  {quoteUser.displayName}{quoteUser.id === originalQuoterId ? " (Original)" : ""}
+                </option>
+              ))}
+            </select>
+          </>
         ) : (
           <select
             className="pd-assign-select"
@@ -783,6 +872,7 @@ export default function PageDesigner() {
   const [orderPreviews, setOrderPreviews] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
+  const [originalQuoterId, setOriginalQuoterId] = useState(null);
   const [quotationSending, setQuotationSending] = useState(false);
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -794,6 +884,7 @@ export default function PageDesigner() {
   const previousOrdersRef = useRef({});
   const ordersInitializedRef = useRef(false);
   const notificationTimeoutsRef = useRef({});
+  const mainScrollRef = useRef(null);
 
   viewedOrdersRef.current = viewedOrders;
 
@@ -804,6 +895,20 @@ export default function PageDesigner() {
   useEffect(() => {
     localStorage.setItem(EDITED_ORDERS_STORAGE_KEY, JSON.stringify(editedOrders));
   }, [editedOrders]);
+
+  useEffect(() => {
+    const mainNode = mainScrollRef.current;
+    if (!mainNode) return;
+
+    const resetHorizontalScroll = () => {
+      mainNode.scrollLeft = 0;
+    };
+
+    resetHorizontalScroll();
+    const frameId = window.requestAnimationFrame(resetHorizontalScroll);
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeTab]);
 
   const removeNotification = (notificationId) => {
     setNotifications(prev => prev.filter(item => item.id !== notificationId));
@@ -851,6 +956,10 @@ export default function PageDesigner() {
       cancelled: {
         label: "Orden cancelada",
         message: "Una de tus órdenes asignadas ha sido cancelada.",
+      },
+      returned: {
+        label: "Orden devuelta",
+        message: "Una orden fue devuelta desde cotización para realizar correcciones.",
       },
     };
 
@@ -956,9 +1065,14 @@ export default function PageDesigner() {
             createNotificationForOrder(order, "cancelled");
           }
 
+          if (previousOrder && hasReturnUpdate(previousOrder, order)) {
+            createNotificationForOrder(order, "returned");
+          }
+
           if (
             previousOrder &&
             !isCancelledNow &&
+            !hasReturnUpdate(previousOrder, order) &&
             hasTrackedOrderChanges(previousOrder, order)
           ) {
             setEditedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
@@ -1005,11 +1119,32 @@ export default function PageDesigner() {
     return ["cancelada", "cancelado", "cancelled"].includes(order.status);
   };
 
+  const displayName =
+    user?.user_metadata?.display_name ||
+    user?.displayName ||
+    user?.email?.split("@")[0] ||
+    "Disenador";
+
+  const todayLabel = new Date().toLocaleDateString("es-DO", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const activeOrdersCount = orders.filter(order => (
+    !order.is_archived_designer &&
+    !["cancelada", "cancelado", "cancelled", "completada"].includes(order.status)
+  )).length;
+
+  const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
+
   const metrics = [
-    { label: "Total Órdenes", value: orders.length, color: "#8B5CF6", icon: <Icon.Package /> },
-    { label: "En Diseño", value: orders.filter(o => o.status === "In_Design").length, color: "#F59E0B", icon: <Icon.File /> },
-    { label: "Cotización", value: orders.filter(o => o.status === "cotizacion").length, color: "#0EA5E9", icon: <Icon.Send /> },
-    { label: "Completadas", value: orders.filter(o => o.status === "completada").length, color: "#10B981", icon: <Icon.Check /> },
+    { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", color: "#8B5CF6", icon: <Icon.Package /> },
+    { label: "En diseño", value: orders.filter(o => o.status === "In_Design").length, sub: "Trabajándose ahora", color: "#F59E0B", icon: <Icon.File /> },
+    { label: "En cotización", value: orders.filter(o => o.status === "cotizacion").length, sub: "Listas para seguir flujo", color: "#0EA5E9", icon: <Icon.Send /> },
+    { label: "Devueltas", value: returnedOrdersCount, sub: "Requieren corrección", color: "#EF4444", icon: <Icon.X /> },
+    { label: "Completadas", value: orders.filter(o => o.status === "completada").length, sub: "Entregables cerrados", color: "#10B981", icon: <Icon.Check /> },
   ];
 
   const filteredOrders = orders.filter((order) => {
@@ -1117,7 +1252,12 @@ export default function PageDesigner() {
   };
 
   const handleOpenSendToQuotation = (order) => {
+    const wasReturned = isReturnedOrder(order);
+    const originalQuoterId = wasReturned ? (order.quote_id || order.quotation_id || order.quote_user_id) : null;
     setSendingToQuotation(order);
+    if (wasReturned && originalQuoterId) {
+      setOriginalQuoterId(originalQuoterId);
+    }
   };
 
   const handleOpenArchiveOrder = (order) => {
@@ -1130,9 +1270,9 @@ export default function PageDesigner() {
     setQuotationSending(true);
 
     const assignmentPayloads = [
-      { status: "cotizacion", quote_id: quoteUserId },
-      { status: "cotizacion", quotation_id: quoteUserId },
-      { status: "cotizacion", quote_user_id: quoteUserId },
+      { status: "cotizacion", quote_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
+      { status: "cotizacion", quotation_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
+      { status: "cotizacion", quote_user_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
     ];
 
     let updateError = null;
@@ -1166,10 +1306,14 @@ export default function PageDesigner() {
     const updatedOrder = {
       ...sendingToQuotation,
       status: "cotizacion",
+      return_reason: null,
+      returned_to_designer_at: null,
     };
 
     setOrders(prev => prev.map(order => (
-      order.id === sendingToQuotation.id ? { ...order, status: "cotizacion" } : order
+      order.id === sendingToQuotation.id
+        ? { ...order, status: "cotizacion", return_reason: null, returned_to_designer_at: null }
+        : order
     )));
     setSelectedOrder(updatedOrder);
     setSendingToQuotation(null);
@@ -1234,31 +1378,57 @@ export default function PageDesigner() {
         onTabChange={setActiveTab}
         menuItems={[
           { id: "dashboard", label: "Dashboard", icon: <Icon.Dashboard /> },
-          { id: "orders", label: "Mis Órdenes", icon: <Icon.Orders />, badge: orders.length }
+          { id: "orders", label: "Mis Órdenes", icon: <Icon.Orders />, badge: activeOrdersCount }
         ]}
         onLogout={handleLogout}
       />
 
-      <main className="pd-main">
-        <header className="pd-header">
-          <button className="pd-toggle-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
-            <Icon.Menu />
-          </button>
-          <div className="pd-header-title">
-            <h2>{activeTab === "dashboard" ? "Dashboard" : "Mis Órdenes"}</h2>
+      
+
+      <div className="pd-main-wrap">
+        <header className="pd-topbar">
+          <div className="pd-topbar-left">
+            {/* Boton para abril y cerral slidebar */}
+            <button className="ps-icon-btn" onClick={() => setSidebarOpen(p => !p)}>
+              {sidebarOpen ? <Icon.ChevronLeft /> : <Icon.ChevronRight />}
+            </button>
+            <div>
+              <div className="pd-page-title">{activeTab === "dashboard" ? "Dashboard Diseñador" : "Gestión de órdenes"}</div>
+              <div className="pd-page-date">{todayLabel}</div>
+            </div>
+          </div>
+
+          <div className="pd-topbar-right">
+            {/* Span para mostrar las ordenes activas */}
+            <div className="pd-topbar-stat">
+              <span>Activas</span>
+              <strong>{activeOrdersCount}</strong>
+            </div>
+            <button
+              className="pd-topbar-switch"
+              onClick={() => setActiveTab(activeTab === "dashboard" ? "orders" : "dashboard")}
+            >
+              <div className="pd-topbar-switch-inner">
+                {activeTab === "dashboard" ? <Icon.Orders /> : <Icon.Dashboard />}
+                {activeTab === "dashboard" ? "Ver órdenes" : "Ver tablero"}
+              </div>
+              <div className="pd-topbar-switch-stripe" />
+            </button>
           </div>
         </header>
-
-        <div className="pd-content">
+        {/* Contenedor con Contenido principal */}
+        <main className="pd-main-content" ref={mainScrollRef}>
           {activeTab === "dashboard" && (
             <>
               <div className="pd-greeting">
-                <h2>Bienvenido, <span>{user?.displayName || "Diseñador"}</span></h2>
-                <p>Estas son tus órdenes asignadas para trabajar.</p>
+                <h2>Buen día, <span className="pd-user-name">{displayName}</span></h2>
+                <p>Aquí tienes el resumen de tu flujo creativo y las órdenes que requieren acción.</p>
               </div>
               
               <div className="pd-metrics">
+                {/* Tarjetas de métricas */}
                 {metrics.map((m, i) => (
+                  // Cada tarjeta muestra una métrica clave del desempeño del diseñador, con un ícono representativo, el valor actual y una breve descripción. El color de fondo del ícono ayuda a diferenciar visualmente cada métrica. Si la métrica tiene un valor secundario (sub), se muestra como una etiqueta adicional para proporcionar contexto extra. Estas tarjetas permiten al diseñador tener una visión rápida de su carga de trabajo y progreso.
                   <div key={i} className="pd-metric-card">
                     <div className="pd-metric-icon" style={{ background: m.color }}>
                       {m.icon}
@@ -1266,20 +1436,25 @@ export default function PageDesigner() {
                     <div className="pd-metric-info">
                       <span className="pd-metric-value">{m.value}</span>
                       <span className="pd-metric-label">{m.label}</span>
+                      {m.sub && <span className="pd-status-label">{m.sub}</span>}
                     </div>
                   </div>
                 ))}
               </div>
               
-              <div className="pd-recent-section">
-                <div className="pd-recent-header">
-                  <h3>Órdenes Recientes</h3>
-                  <span className="pd-recent-count">{orders.length} órdenes</span>
+            <section className="pd-panel pd-recent-section">
+              <div className="pd-panel-stripe" />
+                <div className="pd-panel-header">
+                  <div>
+                    <div className="pd-panel-title">Órdenes recientes</div>
+                    <div className="pd-panel-sub">Las últimas asignaciones del área de diseño.</div>
+                  </div>
+                  <span className="pd-recent-count">{orders.length} orden{orders.length !== 1 ? "es" : ""}</span>
                 </div>
                 {loading ? (
                   <div className="pd-loading">Cargando órdenes...</div>
                 ) : orders.length === 0 ? (
-                  <div className="pd-empty">No tienes órdenes asignadas</div>
+                  <div className="pd-empty">No tienes órdenes asignadas.</div>
                 ) : (
                   <div className="pd-recent-list">
                     {orders.slice(0, 5).map(order => (
@@ -1296,9 +1471,11 @@ export default function PageDesigner() {
                           </span>
                         </div>
                         <div className="pd-recent-item-right">
+                          {isReturnedOrder(order) && <ReturnedBadge compact />}
+                          {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
                           <StatusBadge status={order.status} />
                           <PaymentBadge status={order.payment_status} />
-                          <button className="pd-recent-view-btn" title="Ver detalle">
+                          <button className="pd-recent-view-btn" title="Ver detalle" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>
                             <Icon.Eye />
                           </button>
                         </div>
@@ -1306,167 +1483,197 @@ export default function PageDesigner() {
                     ))}
                   </div>
                 )}
-              </div>
+              </section>
             </>
           )}
 
           {activeTab === "orders" && (
             <>
-              <div className="pd-filters">
-                <div className="pd-search-wrap">
-                  <span className="pd-search-icon"><Icon.Search /></span>
-                  <input 
-                    className="pd-input" 
-                    placeholder="Buscar por cliente, ID o descripción..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                  />
+              {/* Componetes cabezero del apartado de diseñador */}
+              <div className="pd-section-heading">
+                <div>
+                  <h2>Gestión de órdenes</h2>
                 </div>
-                <div className="pd-select-wrap">
-                  <select className="pd-input" value={filterType} onChange={e => setFilterType(e.target.value)}>
-                    <option value="all">Todos los tipos</option>
-                    <option value="normal">Normal</option>
-                    <option value="911">911 - Urgente</option>
-                  </select>
-                </div>
-                <div className="pd-select-wrap">
-                  <select className="pd-input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                    <option value="all">Todos los estados</option>
-                    <option value="In_Design">En Diseño</option>
-                    <option value="cotizacion">Cotización</option>
-                    <option value="en produccion">En Producción</option>
-                    <option value="completada">Completada</option>
-                  </select>
-                </div>
-                <div className="pd-select-wrap">
-                  <select className="pd-input" value={filterDate} onChange={e => setFilterDate(e.target.value)}>
-                    <option value="all">Todas las fechas</option>
-                    <option value="today">Hoy</option>
-                    <option value="yesterday">Ayer</option>
-                    <option value="3days">Últimos 3 días</option>
-                    <option value="7days">Últimos 7 días</option>
-                    <option value="month">Este mes</option>
-                  </select>
-                </div>
-                <div className="pd-select-wrap">
-                  <select className="pd-input" value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>
-                    <option value="active">Activas</option>
-                    <option value="archived">Archivadas</option>
-                    <option value="all">Todas</option>
-                  </select>
-                </div>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button onClick={() => setViewMode("cards")} className={`pd-view-toggle ${viewMode === "cards" ? "active" : ""}`} title="Vista de tarjetas">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                  </button>
-                  <button onClick={() => setViewMode("table")} className={`pd-view-toggle ${viewMode === "table" ? "active" : ""}`} title="Vista de tabla">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                  </button>
-                </div>
-                <span className="pd-filters-count">{filteredOrders.length} orden{filteredOrders.length !== 1 ? "es" : ""}</span>
               </div>
 
-              {loading ? (
-                <div className="pd-loading">Cargando órdenes...</div>
-              ) : filteredOrders.length === 0 ? (
-                <div className="pd-empty">No hay órdenes que coincidan con los filtros</div>
-              ) : viewMode === "table" ? (
-                <div className={`pd-table-wrap ${shouldEnableOrdersScroll ? "pd-orders-scroll" : ""}`}>
-                  <table className="pd-table">
-                    <thead>
-                      <tr>
-                        <th>ID</th>
-                        <th>Cliente</th>
-                        <th>Descripción</th>
-                        <th>Material</th>
-                        <th>Tipo</th>
-                        <th>Estado</th>
-                        <th>Pago</th>
-                        <th>Fecha</th>
-                        <th>Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredOrders.map(order => (
-                        <tr key={order.id}>
-                          <td className="pd-td-id">#{order.id?.slice(0, 8).toUpperCase()}</td>
-                          <td className="pd-td-client">{order.client_name}</td>
-                          <td className="pd-td-desc">{order.description}</td>
-                          <td className="pd-td-material">{order.material}</td>
-                          <td className="pd-td-type">
-                            {order.order_type === "orden 911" ? <span className="pd-card-911">911</span> : <span className="pd-badge-normal-table">Normal</span>}
-                          </td>
-                          <td className="pd-td-status"><StatusBadge status={order.status} /></td>
-                          <td className="pd-td-status"><PaymentBadge status={order.payment_status} /></td>
-                          <td className="pd-td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
-                          <td className="pd-td-actions">
-                            <div className="pd-row-actions">
-                              <button className="pd-action-btn view" onClick={() => handleViewOrder(order)}>Ver</button>
-                              {isDesignerArchivable(order) && !order.is_archived_designer && (
-                                <button className="pd-action-btn archive" onClick={() => handleOpenArchiveOrder(order)}>
-                                  Archivar orden
-                                </button>
-                              )}
-                              {isDesignerArchivable(order) && order.is_archived_designer && (
-                                <button className="pd-action-btn archived" disabled>
-                                  Archivada
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <section className="pd-panel">
+                <div className="pd-panel-stripe" />
+                <div className="pd-panel-header">
+                  <div>
+                    <div className="pd-panel-title">Workspace de diseño</div>
+                    <div className="pd-panel-sub">Todo tu flujo de trabajo en un solo lugar.</div>
+                  </div>
+                  <div className="pd-card-actions">
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button onClick={() => setViewMode("cards")} className={`pd-view-toggle ${viewMode === "cards" ? "active" : ""}`} title="Vista de tarjetas">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                      </button>
+                      <button onClick={() => setViewMode("table")} className={`pd-view-toggle ${viewMode === "table" ? "active" : ""}`} title="Vista de tabla">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                      </button>
+                    </div>
+                    <span className="pd-recent-count">{filteredOrders.length} visible{filteredOrders.length !== 1 ? "s" : ""}</span>
+                  </div>
                 </div>
-              ) : (
-                <div className={`pd-cards-grid ${shouldEnableOrdersScroll ? "pd-orders-scroll" : ""}`}>
-                  {filteredOrders.map(order => (
-                    <div key={order.id} className="pd-order-card">
-                      <div className="pd-card-header">
-                        <span className="pd-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-                        <div className="pd-card-badges">
-                          {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
-                          {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
-                          <StatusBadge status={order.status} />
-                        </div>
-                      </div>
-                      <div className="pd-card-client">{order.client_name}</div>
-                      <div className="pd-card-desc">{order.description}</div>
-                      <div className="pd-card-meta">
-                        <span className="pd-card-material">{order.material}</span>
-                        {order.order_type === "orden 911" && <span className="pd-card-911">911</span>}
-                        <PaymentBadge status={order.payment_status} />
-                      </div>
-                      <div className="pd-card-footer">
-                        <div className="pd-card-footer-left">
-                          <div className="pd-card-date">
-                            <Icon.Clock />
-                            {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}
+
+                <div className="pd-filters">
+                  <div className="pd-search-wrap">
+                    <span className="pd-search-icon"><Icon.Search /></span>
+                    <input 
+                      className="pd-input" 
+                      placeholder="Buscar por cliente, ID o descripción..."
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                    />
+                  </div>
+                  <div className="pd-select-wrap">
+                    <select className="pd-input" value={filterType} onChange={e => setFilterType(e.target.value)}>
+                      <option value="all">Todos los tipos</option>
+                      <option value="normal">Normal</option>
+                      <option value="911">911 - Urgente</option>
+                    </select>
+                  </div>
+                  <div className="pd-select-wrap">
+                    <select className="pd-input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                      <option value="all">Todos los estados</option>
+                      <option value="In_Design">En Diseño</option>
+                      <option value="cotizacion">Cotización</option>
+                      <option value="en produccion">En Producción</option>
+                      <option value="completada">Completada</option>
+                    </select>
+                  </div>
+                  <div className="pd-select-wrap">
+                    <select className="pd-input" value={filterDate} onChange={e => setFilterDate(e.target.value)}>
+                      <option value="all">Todas las fechas</option>
+                      <option value="today">Hoy</option>
+                      <option value="yesterday">Ayer</option>
+                      <option value="3days">Últimos 3 días</option>
+                      <option value="7days">Últimos 7 días</option>
+                      <option value="month">Este mes</option>
+                    </select>
+                  </div>
+                  <div className="pd-select-wrap">
+                    <select className="pd-input" value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>
+                      <option value="active">Activas</option>
+                      <option value="archived">Archivadas</option>
+                      <option value="all">Todas</option>
+                    </select>
+                  </div>
+                </div>
+
+                {loading ? (
+                  <div className="pd-loading">Cargando órdenes...</div>
+                ) : filteredOrders.length === 0 ? (
+                  <div className="pd-empty">No hay órdenes que coincidan con los filtros.</div>
+                ) : viewMode === "table" ? (
+                  <div className={`pd-table-wrap ${shouldEnableOrdersScroll ? "pd-orders-scroll" : ""}`}>
+                    <table className="pd-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Cliente</th>
+                          <th>Descripción</th>
+                          <th>Material</th>
+                          <th>Tipo</th>
+                          <th>Estado</th>
+                          <th>Pago</th>
+                          <th>Fecha</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredOrders.map(order => (
+                          <tr key={order.id}>
+                            <td className="pd-td-id">
+                              <div className="pd-td-id-wrap">
+                                <span>#{order.id?.slice(0, 8).toUpperCase()}</span>
+                                {isReturnedOrder(order) && <ReturnedBadge compact />}
+                                {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
+                              </div>
+                            </td>
+                            <td className="pd-td-client">{order.client_name}</td>
+                            <td className="pd-td-desc">{order.description}</td>
+                            <td className="pd-td-material">{order.material}</td>
+                            <td className="pd-td-type">
+                              {order.order_type === "orden 911" ? <span className="pd-card-911">911</span> : <span className="pd-badge-normal-table">Normal</span>}
+                            </td>
+                            <td className="pd-td-status"><StatusBadge status={order.status} /></td>
+                            <td className="pd-td-status"><PaymentBadge status={order.payment_status} /></td>
+                            <td className="pd-td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
+                            <td className="pd-td-actions">
+                              <div className="pd-row-actions">
+                                {/* Boton para ver detalles de la orden */}
+                                <button className="pd-action-btn view" onClick={() => handleViewOrder(order)}>Ver detalle</button>
+                                {isDesignerArchivable(order) && !order.is_archived_designer && (
+                                  <button className="pd-action-btn archive" onClick={() => handleOpenArchiveOrder(order)}>
+                                    Archivar
+                                  </button>
+                                )}
+                                {isDesignerArchivable(order) && order.is_archived_designer && (
+                                  <button className="pd-action-btn archived" disabled>
+                                    Archivada
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className={`pd-cards-grid ${shouldEnableOrdersScroll ? "pd-orders-scroll" : ""}`}>
+                    {/* Ordenes en formato carta */}
+                    {filteredOrders.map(order => (
+                      // Plantilla para mostrar las ordenes en formato carta, se muestra la informacion mas relevante y se pueden agregar etiquetas para resaltar ciertas caracteristicas de la orden */}
+                      <div key={order.id} className="pd-order-card" onClick={() => handleViewOrder(order)}>
+                        <div className="pd-card-header">
+                          <span className="pd-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                          <div className="pd-card-badges">
+                            {isReturnedOrder(order) && <ReturnedBadge compact />}
+                            {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
+                            {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
+                            {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
+                            <StatusBadge status={order.status} />
                           </div>
                         </div>
-                        <div className="pd-card-actions">
-                          <button className="pd-view-btn" onClick={() => handleViewOrder(order)}>Ver</button>
-                          {isDesignerArchivable(order) && !order.is_archived_designer && (
-                            <button className="pd-action-btn archive" onClick={() => handleOpenArchiveOrder(order)}>
-                              Archivar orden
-                            </button>
-                          )}
-                          {isDesignerArchivable(order) && order.is_archived_designer && (
-                            <button className="pd-action-btn archived" disabled>
-                              Archivada
-                            </button>
-                          )}
+                        <div className="pd-card-client">{order.client_name}</div>
+                        <div className="pd-card-desc">{order.description}</div>
+                        <div className="pd-card-meta">
+                          <span className="pd-card-material">{order.material}</span>
+                          {order.order_type === "orden 911" && <span className="pd-card-911">911</span>}
+                          <PaymentBadge status={order.payment_status} />
+                        </div>
+                        <div className="pd-card-footer">
+                          <div className="pd-card-footer-left">
+                            <div className="pd-card-date">
+                              <Icon.Clock />
+                              {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}
+                            </div>
+                          </div>
+                          <div className="pd-card-actions">
+                            <button className="pd-view-btn" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>Detalles</button>
+                            {isDesignerArchivable(order) && !order.is_archived_designer && (
+                              <button className="pd-action-btn archive" onClick={(event) => { event.stopPropagation(); handleOpenArchiveOrder(order); }}>
+                                Archivar
+                              </button>
+                            )}
+                            {isDesignerArchivable(order) && order.is_archived_designer && (
+                              <button className="pd-action-btn archived" disabled>
+                                Archivada
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </section>
             </>
           )}
-        </div>
-      </main>
+        </main>
+      </div>
 
       {notifications.length > 0 && (
         <div className="pd-notification-stack">
@@ -1497,10 +1704,11 @@ export default function PageDesigner() {
       />
       <SendToQuotationModal
         open={!!sendingToQuotation}
-        onClose={() => setSendingToQuotation(null)}
+        onClose={() => { setSendingToQuotation(null); setOriginalQuoterId(null); }}
         onConfirm={handleConfirmSendToQuotation}
         order={sendingToQuotation}
         loading={quotationSending}
+        originalQuoterId={originalQuoterId}
       />
       <ArchiveDesignerOrderModal
         open={!!archivingOrder}
