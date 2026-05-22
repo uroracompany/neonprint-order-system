@@ -28,7 +28,7 @@ CREATE TRIGGER trg_set_tracking_token
   EXECUTE FUNCTION public.set_tracking_token();
 
 -- 3. RPC pública: obtener datos de tracking por token
-CREATE OR REPLACE FUNCTION public.get_order_tracking(p_token uuid)
+CREATE OR REPLACE FUNCTION public.get_order_tracking(p_token text)
 RETURNS TABLE(
   id uuid,
   client_name text,
@@ -52,22 +52,22 @@ AS $$
 BEGIN
   RETURN QUERY
   SELECT
-    o.id::uuid,
-    o.client_name::text,
-    o.status::text,
-    o.payment_status::text,
-    o.created_at::timestamptz,
-    o.updated_at::timestamptz,
-    o.delivery_date::text,
-    o.order_type::text,
-    o.order_design_type::text,
-    o.description::text,
-    o.material::text,
-    o.termination_type::text,
-    o.preview_image::text,
-    o.cancellation_reason::text
+    o.id,
+    o.client_name,
+    o.status,
+    o.payment_status,
+    o.created_at,
+    o.updated_at,
+    o.delivery_date,
+    o.order_type,
+    o.order_design_type,
+    o.description,
+    o.material,
+    o.termination_type,
+    o.preview_image,
+    o.cancellation_reason
   FROM public.orders o
-  WHERE o.tracking_token = p_token
+  WHERE o.tracking_token = p_token::uuid
   LIMIT 1;
 END;
 $$;
@@ -75,7 +75,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.get_order_tracking TO anon;
 
 -- 4. RPC pública: obtener historial de eventos por token
-CREATE OR REPLACE FUNCTION public.get_order_tracking_events(p_token uuid)
+CREATE OR REPLACE FUNCTION public.get_order_tracking_events(p_token text)
 RETURNS TABLE(
   event_type text,
   old_status text,
@@ -98,7 +98,7 @@ AS $$
     e.created_at
   FROM public.order_events e
   INNER JOIN public.orders o ON o.id = e.order_id
-  WHERE o.tracking_token = p_token
+  WHERE o.tracking_token = p_token::uuid
   ORDER BY e.created_at ASC;
 $$;
 

@@ -30,11 +30,11 @@ export default function PageTracking() {
         { p_token: token }
       );
       if (orderErr) throw orderErr;
-      if (!orderData) {
+      if (!orderData || orderData.length === 0) {
         setError("ORDEN_NO_ENCONTRADA");
         return;
       }
-      setOrder(orderData);
+      setOrder(orderData[0]);
 
       const { data: eventData, error: eventErr } = await supabase.rpc(
         "get_order_tracking_events",
