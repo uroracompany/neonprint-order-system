@@ -28,6 +28,10 @@ CREATE TRIGGER trg_set_tracking_token
   EXECUTE FUNCTION public.set_tracking_token();
 
 -- 3. RPC pública: obtener datos de tracking por token
+-- DROP viejas firmas para evitar ambigüedad
+DROP FUNCTION IF EXISTS public.get_order_tracking(uuid);
+DROP FUNCTION IF EXISTS public.get_order_tracking(text);
+
 CREATE OR REPLACE FUNCTION public.get_order_tracking(p_token text)
 RETURNS TABLE(
   id uuid,
@@ -45,36 +49,37 @@ RETURNS TABLE(
   preview_image text,
   cancellation_reason text
 )
-LANGUAGE plpgsql
+LANGUAGE sql
 STABLE
 SECURITY DEFINER
+SET search_path = 'public'
 AS $$
-BEGIN
-  RETURN QUERY
   SELECT
-    o.id,
-    o.client_name,
-    o.status,
-    o.payment_status,
-    o.created_at,
-    o.updated_at,
-    o.delivery_date,
-    o.order_type,
-    o.order_design_type,
-    o.description,
-    o.material,
-    o.termination_type,
-    o.preview_image,
-    o.cancellation_reason
+    o.id::uuid,
+    o.client_name::text,
+    o.status::text,
+    o.payment_status::text,
+    o.created_at::timestamptz,
+    o.updated_at::timestamptz,
+    o.delivery_date::text,
+    o.order_type::text,
+    o.order_design_type::text,
+    o.description::text,
+    o.material::text,
+    o.termination_type::text,
+    o.preview_image::text,
+    o.cancellation_reason::text
   FROM public.orders o
   WHERE o.tracking_token = p_token::uuid
   LIMIT 1;
-END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_order_tracking TO anon;
 
 -- 4. RPC pública: obtener historial de eventos por token
+DROP FUNCTION IF EXISTS public.get_order_tracking_events(uuid);
+DROP FUNCTION IF EXISTS public.get_order_tracking_events(text);
+
 CREATE OR REPLACE FUNCTION public.get_order_tracking_events(p_token text)
 RETURNS TABLE(
   event_type text,
@@ -90,12 +95,12 @@ SECURITY DEFINER
 SET search_path = 'public'
 AS $$
   SELECT
-    e.event_type,
-    e.old_status,
-    e.new_status,
-    e.old_payment_status,
-    e.new_payment_status,
-    e.created_at
+    e.event_type::text,
+    e.old_status::text,
+    e.new_status::text,
+    e.old_payment_status::text,
+    e.new_payment_status::text,
+    e.created_at::timestamptz
   FROM public.order_events e
   INNER JOIN public.orders o ON o.id = e.order_id
   WHERE o.tracking_token = p_token::uuid
