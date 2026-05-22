@@ -143,8 +143,8 @@ export const CLIENT_FLOW_STEPS = [
   { key: ORDER_STATUS.IN_DESIGN, label: "Diseño" },
   { key: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
   { key: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
-  { key: ORDER_STATUS.IN_DELIVERED, label: "Lista para entrega" },
-  { key: ORDER_STATUS.IN_COMPLETED, label: "Entregada exitosamente" },
+  { key: ORDER_STATUS.IN_COMPLETED, label: "Lista para entrega" },
+  { key: ORDER_STATUS.IN_DELIVERED, label: "Entregada" },
 ];
 
 export const CLIENT_STATUS_MAP = {
@@ -165,8 +165,8 @@ export const FLOW_STEPS = [
   { key: ORDER_STATUS.IN_QUOTE, label: "Cotización" },
   { key: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
   { key: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
-  { key: ORDER_STATUS.IN_DELIVERED, label: "Entregado" },
   { key: ORDER_STATUS.IN_COMPLETED, label: "Completada" },
+  { key: ORDER_STATUS.IN_DELIVERED, label: "Entregado" },
 ];
 
 // Flujo simplificado para vistas externas (sin diseño, solo etapas clave)

@@ -64,7 +64,7 @@ function MetricCard({ icon, label, value, accentIdx = 0 }) {
   );
 }
 
-function OrderDetailModal({ open, onClose, order, onUpdateStatus }) {
+function OrderDetailModal({ open, onClose, order, onUpdateStatus, onCompleteOrder }) {
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [orderFiles, setOrderFiles] = useState([]);
   const [updating, setUpdating] = useState(false);
@@ -374,7 +374,7 @@ function OrderDetailModal({ open, onClose, order, onUpdateStatus }) {
             // Solo mostrar botón de completado si ya está en terminación
             <button
               className="pp-btn pp-btn-success"
-              onClick={() => handleUpdateStatus(ORDER_STATUS.IN_DELIVERED)}
+              onClick={() => onCompleteOrder?.(order)}
               disabled={updating}
             >
               {updating ? (
@@ -384,8 +384,8 @@ function OrderDetailModal({ open, onClose, order, onUpdateStatus }) {
                 </>
               ) : (
                 <>
-                  <Icons.Truck />
-                  Marcar como entregado
+                  <Icons.Check />
+                  Marcar como completado
                 </>
               )}
             </button>
@@ -408,6 +408,7 @@ export default function PageProduction() {
   const [filterPayment, setFilterPayment] = useState("all");
   const [viewMode, setViewMode] = useState("table");
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [assignDeliveryOrder, setAssignDeliveryOrder] = useState(null);
   const notif = useNotifications(user?.id);
 
   useEffect(() => {
@@ -508,13 +509,13 @@ export default function PageProduction() {
 
   const getAdvanceIcon = (order) => {
     if (isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)) return <Icons.Play />;
-    if (isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)) return <Icons.Truck />;
+    if (isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)) return <Icons.Check />;
     return null;
   };
 
   const getAdvanceLabel = (order) => {
     if (isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)) return "Terminación";
-    if (isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)) return "Entregado";
+    if (isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)) return "Completado";
     return "";
   };
 
@@ -798,7 +799,137 @@ export default function PageProduction() {
         onClose={() => setSelectedOrder(null)}
         order={selectedOrder}
         onUpdateStatus={refreshOrders}
+        onCompleteOrder={(order) => { setSelectedOrder(null); setAssignDeliveryOrder(order); }}
       />
+      <AssignDeliveryModal
+        open={!!assignDeliveryOrder}
+        onClose={() => setAssignDeliveryOrder(null)}
+        order={assignDeliveryOrder}
+        onConfirm={() => { setAssignDeliveryOrder(null); refreshOrders(); }}
+      />
+    </div>
+  );
+}
+
+function AssignDeliveryModal({ open, onClose, order, onConfirm }) {
+  const [deliveryUsers, setDeliveryUsers] = useState([]);
+  const [selectedDeliveryUser, setSelectedDeliveryUser] = useState("");
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setLoadingUsers(true);
+      setSelectedDeliveryUser("");
+      supabase
+        .from("profiles")
+        .select("id, name, role")
+        .then(({ data, error }) => {
+          setLoadingUsers(false);
+          if (!error && data) {
+            const deliveries = data
+              .filter(profile => profile.role && profile.role.toLowerCase().includes("delivery"))
+              .map(profile => ({ ...profile, displayName: profile.name || "Entregador" }));
+            setDeliveryUsers(deliveries);
+          } else {
+            setDeliveryUsers([]);
+          }
+        });
+    }
+  }, [open]);
+
+  const handleConfirm = async () => {
+    if (!selectedDeliveryUser || !order) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: ORDER_STATUS.IN_COMPLETED, delivery_id: selectedDeliveryUser })
+        .eq("id", order.id);
+      if (error) throw error;
+      onConfirm?.();
+      onClose();
+    } catch (err) {
+      console.error("Error assigning delivery:", err);
+    }
+    setSaving(false);
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="pp-modal" style={{ maxWidth: 580 }}>
+        <div className="pp-modal-stripe" />
+        <div className="pp-modal-header">
+          <div><h3 style={{ margin: 0 }}>Asignar Repartidor</h3></div>
+          <button className="pp-modal-close" onClick={onClose}><Icons.Close /></button>
+        </div>
+        <div style={{ padding: "22px 26px 28px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+            <div style={{ width: 64, height: 64, borderRadius: "50%",
+              background: "linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 4px 12px rgba(5, 150, 105, 0.25)" }}>
+              <Icons.Truck style={{ color: "#059669", width: 28, height: 28 }} />
+            </div>
+          </div>
+
+          <p style={{ fontSize: 15, color: "#374151", marginBottom: 12, lineHeight: 1.5, textAlign: "center", fontWeight: 500 }}>
+            Selecciona el usuario de delivery responsable
+          </p>
+
+          {order && (
+            <div style={{ background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, marginBottom: 16, textAlign: "center" }}>
+              <span style={{ fontSize: 13, color: "#6B7280" }}>Orden </span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#0f1e40" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
+              <span style={{ fontSize: 13, color: "#6B7280" }}> - </span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "#0f1e40" }}>{order.client_name}</span>
+            </div>
+          )}
+
+          {loadingUsers ? (
+            <div style={{ textAlign: "center", padding: "20px 0", color: "#6B7280" }}>
+              Cargando usuarios de delivery...
+            </div>
+          ) : deliveryUsers.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "20px 0", color: "#EF4444" }}>
+              No hay usuarios de delivery disponibles
+            </div>
+          ) : (
+            <div style={{ marginBottom: 24 }}>
+              <select value={selectedDeliveryUser}
+                onChange={(e) => setSelectedDeliveryUser(e.target.value)}
+                style={{ width: "100%", padding: "12px 16px", borderRadius: 8,
+                  border: "1.5px solid #E5E7EB", fontSize: 14, fontFamily: "'Poppins', sans-serif",
+                  background: "#fff", color: "#374151", cursor: "pointer", outline: "none" }}>
+                <option value="">Seleccionar usuario de delivery...</option>
+                {deliveryUsers.map(u => (
+                  <option key={u.id} value={u.id}>{u.displayName}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {saving && <div style={{ textAlign: "center", padding: "12px 0", color: "#059669", fontSize: 14 }}>Asignando delivery...</div>}
+
+          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+            <button className="ps-btn-cancel" onClick={onClose} disabled={saving}>Cancelar</button>
+            <button onClick={handleConfirm}
+              disabled={saving || !selectedDeliveryUser || deliveryUsers.length === 0}
+              style={{
+                padding: "10px 24px", borderRadius: 8, border: "none",
+                background: !selectedDeliveryUser || saving ? "rgba(5, 150, 105, 0.5)" : "linear-gradient(135deg, #059669 0%, #10B981 100%)",
+                color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer",
+                fontFamily: "'Poppins', sans-serif",
+                boxShadow: !selectedDeliveryUser || saving ? "none" : "0 2px 8px rgba(5, 150, 105, 0.3)",
+                opacity: (!selectedDeliveryUser || saving) ? 0.6 : 1
+              }}>
+              {saving ? "Asignando..." : "Asignar Orden"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

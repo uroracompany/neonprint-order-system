@@ -39,8 +39,10 @@ export function FlowTrackClient({ status, events, order }) {
 
       <div className="ftc-timeline">
         {CLIENT_FLOW_STEPS.map((step, i) => {
-          const isCompleted = currentStepIdx >= 0 && i < currentStepIdx;
-          const isActive = i === currentStepIdx;
+          const isCurrent = i === currentStepIdx;
+          const isFinishedStatus = normalizedStatus === ORDER_STATUS.IN_COMPLETED || normalizedStatus === ORDER_STATUS.IN_DELIVERED;
+          const isCompleted = currentStepIdx >= 0 && (i < currentStepIdx || (isCurrent && isFinishedStatus));
+          const isActive = isCurrent && !isCompleted;
           const hasDate = !!eventDates[step.key];
           const isQuoteSub = isActive && normalizedStatus === ORDER_STATUS.IN_QUOTE;
 

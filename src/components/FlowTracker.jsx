@@ -31,8 +31,8 @@ export function FlowTrackerExternal({ status }) {
     [ORDER_STATUS.IN_QUOTE]: 1,
     [ORDER_STATUS.IN_PRODUCTION]: 2,
     [ORDER_STATUS.IN_TERMINATION]: 3,
-    [ORDER_STATUS.IN_DELIVERED]: 4,
-    [ORDER_STATUS.IN_COMPLETED]: 5,
+    [ORDER_STATUS.IN_COMPLETED]: 4,
+    [ORDER_STATUS.IN_DELIVERED]: 5,
     [ORDER_STATUS.CANCELLED]: -1,
   };
   const idx = statusToIndex[normalizedStatus] ?? -1;
