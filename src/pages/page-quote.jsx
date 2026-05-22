@@ -1,88 +1,86 @@
-// QUOTE PAGE - ORDER DASHBOARD FOR QUOTATION USERS
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
 import { validateImage } from "../utils/imageValidation";
 import { uploadOrderAsset, buildPaymentReceiptPath } from "../utils/uploadOrderAsset";
+import { Icons } from "../utils/icons";
+import {
+  ORDER_STATUS,
+  PAYMENT_COLORS,
+  QUOTE_ASSIGNMENT_FIELDS,
+  STATUS_OPTIONS,
+  getOrderStatusConfig,
+  isOrderStatus,
+  isOrderStatusIn,
+} from "../utils/constants";
+import useNotifications from "../hooks/useNotifications";
+import NotificationCenter from "../components/NotificationCenter";
 import "../css-components/page-quote.css";
 
-// Iconos base reutilizados para mantener una interfaz consistente.
-const Icon = {
-  Dashboard: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>),
-  Orders: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>),
-  Search: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>),
-  Bell: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 17h5l-1.4-1.4a2 2 0 0 1-.6-1.4V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" /><path d="M9 17a3 3 0 0 0 6 0" /></svg>),
-  Check: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>),
-  X: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>),
-  Clock: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>),
-  User: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>),
-  File: () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>),
-  Upload: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>),
-  Archive: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8h14v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8z" /><line x1="10" y1="12" x2="14" y2="12" /></svg>),
-  Money: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" /></svg>),
-  Package: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16.5 9.4 7.55 4.24" /><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="M3.29 7 12 12l8.71-5" /><path d="M12 22V12" /></svg>),
-  Menu: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>),
-  Eye: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>),
-  ArrowLeft: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>),
-};
+// PÁGINA DE COTIZACIÓN - Gestiona el flujo de cotización de órdenes
+// El usuario con rol "quote" visualiza órdenes asignadas a él y gestiona:
+// 1. Revisión de detalles de la orden
+// 2. Confirmación de pagos (con recibo)
+// 3. Devolución de órdenes al diseñador si hay errores
+// 4. Envío de órdenes a producción
+// 5. Archivo de órdenes completadas
 
-// Estados base de orden y pago usados en el módulo.
-const STATUS_CONFIG = {
-  Pending: { label: "Pendiente", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
-  In_Design: { label: "En Diseño", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
-  cotizacion: { label: "Cotización", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
-  in_Quotation: { label: "Cotización", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
-  "en produccion": { label: "En Producción", color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
-  terminacion: { label: "Terminación", color: "#0369A1", bg: "#E0F2FE", dot: "#0284C7" },
-  "en entrega": { label: "En Entrega", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
-  completada: { label: "Completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
-  cancelada: { label: "Cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
-  cancelado: { label: "Cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
-  cancelled: { label: "Cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
-};
-
-const PAYMENT_CONFIG = {
-  pagado: { label: "Pagado", color: "#14532D", bg: "#DCFCE7" },
-  Pending_Payment: { label: "Pago pendiente", color: "#92620A", bg: "#FEF3C7" },
-  parcial: { label: "Parcial", color: "#0369A1", bg: "#E0F2FE" },
-};
-
-const QUOTE_ASSIGNMENT_FIELDS = ["quote_id", "quotation_id", "quote_user_id"];
+// Campo estándar para almacenar la URL del comprobante de pago
 const INVOICE_PAYMENT_FIELD = "invoice_payment";
-const NOTIFICATION_DURATION = 5000;
 
-// Helpers de normalización para tolerar pequeñas variaciones del backend.
-const getStatusConfig = (status) => STATUS_CONFIG[status] || STATUS_CONFIG.Pending;
-const getPaymentConfig = (status) => PAYMENT_CONFIG[status] || PAYMENT_CONFIG.Pending_Payment;
+// FUNCIONES HELPER PARA NORMALIZAR Y RESOLVER DATOS
+// Estas funciones toleran variaciones del backend (campos con nombres alternativos, valores null, etc.)
+// y aseguran que el código no se rompa por cambios menores en la estructura de datos
+
+// Obtiene la configuración de colores y estilos para un estado de orden
+const getStatusConfig = (status) => getOrderStatusConfig(status);
+// Obtiene los colores para mostrar el estado del pago (Pendiente, Parcial, Pagado)
+const getPaymentConfig = (status) => PAYMENT_COLORS[status] || PAYMENT_COLORS.Pending_Payment;
+// Normaliza texto a minúsculas y sin espacios para comparaciones seguras
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
+// Resuelve el ID del usuario asignado a cotización (busca en múltiples campos posibles)
 const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map(field => order?.[field]).find(Boolean) || null;
+// Verifica si una orden está asignada a un usuario específico de cotización
 const hasQuoteAssignment = (order, quoteUserId) => QUOTE_ASSIGNMENT_FIELDS.some(field => order?.[field] === quoteUserId);
+// Obtiene el ID del vendedor que creó la orden
 const resolveSellerId = (order) => order?.seller_id || order?.created_by || null;
+// Obtiene el nombre del vendedor buscando en el directorio o usando valor por defecto
 const resolveSellerName = (order, sellerDirectory) => order?.seller_name || sellerDirectory?.[resolveSellerId(order)] || "No definido";
+// Obtiene la URL del comprobante de pago guardado
 const resolveReceiptUrl = (order) => order?.[INVOICE_PAYMENT_FIELD] || "";
-const isQuoteEditable = (order) => ["cotizacion", "in_Quotation"].includes(order?.status) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
-const isQuoteInboxStatus = (status) => ["cotizacion", "in_Quotation"].includes(status);
-const isOrderRelevantToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId) && isQuoteInboxStatus(order?.status);
+// Verifica si una orden puede ser editada en cotización (debe estar en estado IN_QUOTE, no pagada, no archivada)
+const isQuoteEditable = (order) => isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
+// Verifica si una orden está asignada al usuario actual
+const isOrderAssignedToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId);
+// Verifica si una orden completada y pagada puede ser archivada
 const canArchiveQuoteOrder = (order) => order?.payment_status === "pagado" && !order?.is_archived_quote;
+// Formatea una fecha en formato local español (Ej: "21 may 2026")
 const formatQuoteDate = (value) => {
   if (!value) return "Sin fecha";
   return new Date(value).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" });
 };
-const isReturnedOrder = (order) => ["In_Design", "Pending"].includes(order?.status) && Boolean(String(order?.return_reason || "").trim());
-const normalizeNotificationType = (type) => (type === "success" ? "completed" : type);
-
+// Verifica si una orden fue devuelta (tiene estado de diseño/pendiente Y razón de devolución)
+const isReturnedOrder = (order) => isOrderStatusIn(order?.status, [ORDER_STATUS.IN_DESIGN, ORDER_STATUS.PENDING]) && Boolean(String(order?.return_reason || "").trim());
+// FUNCIÓN PARA PARSEAR ARCHIVOS DE ORDEN
+// Los archivos de una orden se guardan como JSON string (puede ser un array o un objeto único)
+// Esta función maneja ambos casos y devuelve siempre un array
 const getOrderFiles = (order) => {
   if (!order?.order_file_url) return [];
   try {
     const parsed = JSON.parse(order.order_file_url);
     return Array.isArray(parsed) ? parsed : [parsed];
   } catch {
+    // Si no es válido como JSON, asumimos que es una URL directa
     return [order.order_file_url];
   }
 };
 
+// COMPONENTES DE BADGE (INSIGNIAS)
+// Muestran visualmente el estado actual de una orden o pago
+// Son pequeños elementos informativos que se repiten en toda la UI
+
+// Badge de estado de orden (Ej: Cotización, Producción, Completada)
 function StatusBadge({ status }) {
   const cfg = getStatusConfig(status);
   return (
@@ -93,6 +91,7 @@ function StatusBadge({ status }) {
   );
 }
 
+// Badge de estado de pago (Ej: Pendiente, Parcial, Pagado)
 function PaymentBadge({ status }) {
   const cfg = getPaymentConfig(status);
   return (
@@ -102,6 +101,7 @@ function PaymentBadge({ status }) {
   );
 }
 
+// Badge que indica que una orden fue devuelta para correcciones
 function ReturnedBadge({ compact = false }) {
   return (
     <span className={`pq-returned-badge${compact ? " compact" : ""}`}>
@@ -110,40 +110,9 @@ function ReturnedBadge({ compact = false }) {
   );
 }
 
-function QuoteNotificationToast({ notification, onClose }) {
-  const [progress, setProgress] = useState(100);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const remaining = notification.expiresAt - Date.now();
-      setProgress(Math.max(0, (remaining / notification.duration) * 100));
-    }, 50);
-
-    return () => clearInterval(interval);
-  }, [notification.duration, notification.expiresAt]);
-
-  return (
-    <div className={`pq-toast ${notification.type}`}>
-      <div className="pq-toast-main">
-        <div className="pq-toast-icon">
-          {notification.type === "cancelled" ? <Icon.X /> : <Icon.Package />}
-        </div>
-        <div className="pq-toast-content">
-          <span className="pq-toast-title">{notification.label}</span>
-          <span className="pq-toast-subtitle">{notification.orderTitle}</span>
-          <span className="pq-toast-text">{notification.message}</span>
-        </div>
-        <button className="pq-toast-close" onClick={() => onClose(notification.id)} aria-label="Cerrar notificación">
-          <Icon.X />
-        </button>
-      </div>
-      <div className="pq-toast-track">
-        <div className="pq-toast-progress" style={{ width: `${progress}%` }} />
-      </div>
-    </div>
-  );
-}
-
+// MODAL PARA ARCHIVAR ÓRDENES DE COTIZACIÓN
+// Cuando una orden está pagada y completada, se puede archivar
+// El archivo mueve la orden del flujo activo al histórico
 function ArchiveQuoteOrderModal({ open, onClose, onConfirm, order, loading }) {
   if (!open || !order) return null;
 
@@ -151,7 +120,7 @@ function ArchiveQuoteOrderModal({ open, onClose, onConfirm, order, loading }) {
     <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
       <div className="pq-dialog">
         <div className="pq-dialog-icon archive">
-          <Icon.Archive />
+          <Icons.Archive />
         </div>
         <h3 className="pq-dialog-title">Archivar orden</h3>
         <p className="pq-dialog-text">¿Estás seguro de que deseas archivar esta orden?</p>
@@ -170,7 +139,12 @@ function ArchiveQuoteOrderModal({ open, onClose, onConfirm, order, loading }) {
   );
 }
 
-// Modal para devolver una orden al diseñador.
+// MODAL PARA DEVOLVER ÓRDENES AL DISEÑADOR
+// Cuando hay problemas con el diseño, la orden se devuelve al diseñador o vendedor
+// Se debe especificar el motivo de la devolución para que sepan qué corregir
+// Este modal determina automáticamente si la devuelve al diseñador o vendedor
+// basándose en el tipo de diseño (interno vs. externo)
+
 const getReturnTargetLabel = (order) => (
   order?.order_design_type === "EXTERNAL_DESING" ? "Vendedor" : "Diseñador"
 );
@@ -191,7 +165,7 @@ function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
     <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
       <div className="pq-dialog">
         <div className="pq-dialog-icon return">
-          <Icon.ArrowLeft />
+          <Icons.ArrowLeft />
         </div>
         <h3 className="pq-dialog-title">{`Devolver al ${targetLabel}`}</h3>
         <p className="pq-dialog-text">
@@ -224,8 +198,132 @@ function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
   );
 }
 
-// Modal principal para revisar el detalle y confirmar el pago.
-function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory, onOpenReturnModal, onOpenArchiveModal }) {
+// MODAL PARA ENVIAR ÓRDENES A PRODUCCIÓN
+// Cuando una orden está cotizada y pagada, se envía a un impresor para que produzca
+// Este modal:
+// 1. Carga los usuarios con rol "printer" (impresores) disponibles
+// 2. Permite seleccionar el impresor responsable
+// 3. Asigna la orden al impresor seleccionado
+
+function SendToProductionModal({ open, onClose, onConfirm, order, loading }) {
+  const [productionUsers, setProductionUsers] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [loadingUsers, setLoadingUsers] = useState(true);
+
+  // Efecto para cargar impresores disponibles cuando se abre el modal
+  // Solo se ejecuta si el modal está abierto
+  // Busca usuarios con rol "printer" y estado de empleo activo (employment_status = true)
+  useEffect(() => {
+    if (open) {
+      setLoadingUsers(true);
+      setSelectedUserId("");
+      supabase
+        .from("profiles")
+        .select("id, name, role, employment_status")
+        .eq("role", "printer")
+        .eq("employment_status", true)
+        .then(({ data, error }) => {
+          setLoadingUsers(false);
+          if (!error && data) {
+            setProductionUsers(
+              data.map(p => ({ ...p, displayName: p.name || "Impresor" }))
+            );
+          } else {
+            if (error) console.error("Error cargando impresores:", error);
+            setProductionUsers([]);
+          }
+        });
+    }
+  }, [open]);
+
+  const handleConfirm = () => {
+    if (selectedUserId) {
+      onConfirm(selectedUserId);
+    }
+  };
+
+  const getUserName = (user) => user.displayName || user.name || "Impresor";
+
+  if (!open || !order) return null;
+
+  return (
+    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className="pq-dialog">
+        <div className="pq-dialog-icon return" style={{ background: "linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%)", color: "#9A3412" }}>
+          <Icons.Package />
+        </div>
+        <h3 className="pq-dialog-title">Enviar a Producción</h3>
+
+        <p className="pq-dialog-text" style={{ marginBottom: 16 }}>
+          Selecciona el impresor que recibirá esta orden para producción.
+        </p>
+
+        <div className="pq-dialog-order">
+          <span className="pq-dialog-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+          <span className="pq-dialog-order-name">{order.client_name || order.description || "Orden sin título"}</span>
+        </div>
+
+        {loadingUsers ? (
+          <div className="pq-form-group" style={{ textAlign: "center", padding: "16px 0", color: "#6B7280" }}>
+            Cargando impresores...
+          </div>
+        ) : productionUsers.length === 0 ? (
+          <div className="pq-form-group" style={{ textAlign: "center", padding: "16px 0", color: "#EF4444" }}>
+            No hay impresores disponibles
+          </div>
+        ) : (
+          <div className="pq-form-group">
+            <label className="pq-input-label">Impresor responsable</label>
+            <select
+              className="pq-input"
+              value={selectedUserId}
+              onChange={e => setSelectedUserId(e.target.value)}
+            >
+              <option value="">Seleccionar impresor...</option>
+              {productionUsers.map(u => (
+                <option key={u.id} value={u.id}>
+                  {getUserName(u)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {loading && (
+          <div style={{ textAlign: "center", padding: "8px 0", color: "#9A3412", fontSize: 14 }}>
+            Enviando a producción...
+          </div>
+        )}
+
+        <div className="pq-dialog-actions">
+          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>
+            Cancelar
+          </button>
+          <button
+            className="pq-btn pq-btn-primary"
+            onClick={handleConfirm}
+            disabled={loading || !selectedUserId}
+            style={!selectedUserId || loading ? { opacity: 0.6 } : {}}
+          >
+            {loading ? "Enviando..." : "Enviar a Producción"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// MODAL PRINCIPAL DE DETALLE DE COTIZACIÓN
+// Este es el modal más importante de la página
+// Permite:
+// 1. Ver todos los detalles de la orden (cliente, vendedor, materiales, descripción, archivos)
+// 2. Confirmar o rechazar pagos
+// 3. Subir comprobantes de pago (solo si el estado es "Pagado")
+// 4. Devolver la orden al diseñador si hay problemas
+// 5. Enviar la orden a producción cuando está lista
+// 6. Archivar órdenes completadas
+
+function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory, onOpenReturnModal, onOpenArchiveModal, onValidationError, onOpenProductionModal }) {
   const [receiptFile, setReceiptFile] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState("pagado");
   const [localError, setLocalError] = useState("");
@@ -236,7 +334,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
       setPaymentStatus(order?.payment_status || "Pending_Payment");
       setLocalError("");
     }
-  }, [open, order]);
+  }, [open, order?.id]);
 
   if (!open || !order) return null;
 
@@ -244,8 +342,8 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   const receiptUrl = resolveReceiptUrl(order);
   const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const canConfirmPayment = isQuoteEditable(order);
-  const canReturnToDesigner = ["cotizacion", "in_Quotation"].includes(order?.status) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
-  const canMoveToProduction = ["cotizacion", "in_Quotation"].includes(order?.status) && order?.payment_status === "pagado" && !order?.is_archived_quote;
+  const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
+  const canMoveToProduction = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status === "pagado" && !order?.is_archived_quote;
   const returnedReason = String(order?.return_reason || "").trim();
   const readonlyMessage =
     order.is_archived_quote
@@ -256,7 +354,11 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
 
   const handleSubmit = () => {
     if (paymentStatus === "pagado" && !receiptFile) {
-      setLocalError("Debes subir una imagen del recibo o factura antes de confirmar.");
+      const msg = "Debes subir una imagen del recibo o factura antes de confirmar.";
+      // Mostramos error inline DENTRO del modal
+      setLocalError(msg);
+      // Y también mostramos un toast flotante para que el usuario no se lo pierda
+      if (onValidationError) onValidationError(order, msg);
       return;
     }
 
@@ -273,7 +375,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
             <h2 className="pq-modal-title">Orden #{order.id?.slice(0, 8).toUpperCase()}</h2>
           </div>
           <button className="pq-icon-btn" onClick={onClose} aria-label="Cerrar detalle">
-            <Icon.X />
+            <Icons.X />
           </button>
         </div>
 
@@ -282,7 +384,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
             <StatusBadge status={order.status} />
             <PaymentBadge status={order.payment_status} />
             {isReturnedOrder(order) && <ReturnedBadge />}
-            <span className="pq-flow-date"><Icon.Clock /> {createdAt}</span>
+            <span className="pq-flow-date"><Icons.Clock /> {createdAt}</span>
           </div>
 
           <div className="pq-detail-grid">
@@ -307,7 +409,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                 <div className="pq-file-list">
                   {orderFiles.map((fileUrl, index) => (
                     <a key={`${fileUrl}-${index}`} className="pq-file-link" href={fileUrl} target="_blank" rel="noreferrer">
-                      <Icon.File />
+                      <Icons.File />
                       Archivo {index + 1}
                     </a>
                   ))}
@@ -341,7 +443,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
 
             {!canConfirmPayment && (
               <div className={`pq-readonly-note ${order.payment_status === "pagado" ? "success" : ""}`}>
-                <Icon.Check />
+                <Icons.Check />
                 {readonlyMessage}
               </div>
             )}
@@ -375,7 +477,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                         setLocalError("");
                       }}
                     />
-                    <span><Icon.Upload /> {receiptFile ? receiptFile.name : "Subir imagen del recibo"}</span>
+                    <span><Icons.Upload /> {receiptFile ? receiptFile.name : "Subir imagen del recibo"}</span>
                   </label>
                 ) : (
                   <span className="pq-upload-hint">El campo de recibo solo se muestra cuando el estado es "Pagado"</span>
@@ -385,7 +487,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
 
             {receiptUrl && (
               <a href={receiptUrl} target="_blank" rel="noreferrer" className="pq-receipt-link">
-                <Icon.Eye />
+                <Icons.Eye />
                 Ver comprobante guardado
               </a>
             )}
@@ -397,19 +499,19 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
             <div className="pq-modal-actions">
               {canReturnToDesigner && (
                 <button className="pq-btn pq-btn-return" onClick={() => onOpenReturnModal(order)}>
-                  <Icon.ArrowLeft />
+                  <Icons.ArrowLeft />
                   {`Devolver al ${getReturnTargetLabel(order)}`}
                 </button>
               )}
               {canMoveToProduction && (
-                <button className="pq-btn pq-btn-return" onClick={() => onConfirmPayment({ order, moveToProduction: true })}>
-                  <Icon.Package />
+                <button className="pq-btn pq-btn-return" onClick={() => onOpenProductionModal(order)}>
+                  <Icons.Package />
                   Dar paso a producción
                 </button>
               )}
               {canArchiveQuoteOrder(order) && (
                 <button className="pq-btn pq-btn-secondary" onClick={() => onOpenArchiveModal(order)}>
-                  <Icon.Archive />
+                  <Icons.Archive />
                   Archivar
                 </button>
               )}
@@ -428,35 +530,58 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
 export default function PageQuote() {
   const navigate = useNavigate();
 
-  // Estados globales del apartado Quote.
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [archivingOrder, setArchivingOrder] = useState(null);
-  const [archiveLoading, setArchiveLoading] = useState(false);
-  const [returningOrder, setReturningOrder] = useState(null);
-  const [returnLoading, setReturnLoading] = useState(false);
-  const [paymentSaving, setPaymentSaving] = useState(false);
-  const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [filterDate, setFilterDate] = useState("all");
-  const [filterArchive, setFilterArchive] = useState("active");
-  const [notifications, setNotifications] = useState([]);
-  const [toastNotifications, setToastNotifications] = useState([]);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  // ============= ESTADOS GLOBALES DEL COMPONENTE =============
+  // Estados de UI
+  const [sidebarOpen, setSidebarOpen] = useState(true); // Control del menú lateral
+  const [activeTab, setActiveTab] = useState("dashboard"); // Tab activo (dashboard, etc.)
+  
+  // Estados del usuario
+  const [user, setUser] = useState(null); // Usuario autenticado
+  const [profile, setProfile] = useState(null); // Perfil del usuario (nombre, rol, etc.)
+  
+  // Estados de órdenes
+  const [orders, setOrders] = useState([]); // Lista de todas las órdenes asignadas al usuario
+  const [loading, setLoading] = useState(true); // Indica si se están cargando órdenes
+  const [selectedOrder, setSelectedOrder] = useState(null); // Orden actualmente abierta en el modal
+  
+  // Estados para archivo
+  const [archivingOrder, setArchivingOrder] = useState(null); // Orden que se va a archivar
+  const [archiveLoading, setArchiveLoading] = useState(false); // Indica si se está archivando
+  
+  // Estados para devolución
+  const [returningOrder, setReturningOrder] = useState(null); // Orden que se va a devolver
+  const [returnLoading, setReturnLoading] = useState(false); // Indica si se está devolviendo
+  
+  // Estados para envío a producción
+  const [forwardToProductionOrder, setForwardToProductionOrder] = useState(null); // Orden que se enviará a producción
+  const [productionSaving, setProductionSaving] = useState(false); // Indica si se está enviando a producción
+  
+  // Estados de pago
+  const [paymentSaving, setPaymentSaving] = useState(false); // Indica si se está guardando pago
+  
+  // Estados de búsqueda y filtrado
+  const [search, setSearch] = useState(""); // Texto de búsqueda
+  const [filterStatus, setFilterStatus] = useState("all"); // Filtro por estado de orden
+  const [filterDate, setFilterDate] = useState("all"); // Filtro por fecha
+  const [filterArchive, setFilterArchive] = useState("active"); // Mostrar activas o archivadas
+  
+  // Directorio de vendedores (cache para no hacer múltiples queries)
   const [sellerDirectory, setSellerDirectory] = useState({});
 
-  // Refs auxiliares para detección de nuevas asignaciones y limpieza de notificaciones.
+  // Hook personalizado para notificaciones y alertas
+  const notif = useNotifications(user?.id);
+
+  // Referencias mutables para rastrear cambios sin causar re-renders
   const previousAssignedIdsRef = useRef(new Set());
   const previousOrdersRef = useRef({});
   const assignmentsInitializedRef = useRef(false);
-  const notificationTimeoutsRef = useRef({});
 
-  // Obtiene la sesión y valida explícitamente el rol quote para esta sección.
+  // ============= EFECTO 1: VALIDAR SESIÓN Y ROL =============
+  // Se ejecuta una sola vez al montar el componente
+  // Verifica que:
+  // 1. El usuario esté autenticado
+  // 2. El usuario tenga el rol "quote"
+  // Si no cumple, lo redirige al login
   useEffect(() => {
     const loadSession = async () => {
       const { data } = await supabase.auth.getUser();
@@ -486,11 +611,22 @@ export default function PageQuote() {
     loadSession();
   }, [navigate]);
 
-  // Suscripción en tiempo real para refrescar automáticamente la bandeja de cotización.
+
+  // ============= EFECTO 2: SUSCRIPCIÓN EN TIEMPO REAL Y REFRESCO =============
+  // Se ejecuta cuando el user cambia
+  // Este es el corazón del sistema de actualización en tiempo real:
+  // 1. Carga las órdenes asignadas al usuario
+  // 2. Se suscribe a cambios en la tabla "orders"
+  // 3. Si una orden asignada a este usuario cambia, recarga la lista
+  // 4. Si la página pierde y recupera el foco, recarga las órdenes
+  // Esto asegura que el usuario siempre vea datos actualizados sin necesidad de F5
   useEffect(() => {
     if (!user?.id) return undefined;
 
+    // Carga inicial de órdenes
     fetchOrders(user.id);
+    
+    // SUSCRIPCIÓN EN TIEMPO REAL: escucha cambios en la tabla "orders"
     const channel = supabase
       .channel(`quote-orders-${user.id}`)
       .on(
@@ -500,45 +636,54 @@ export default function PageQuote() {
           const nextOrder = payload.new;
           const previousOrder = payload.old;
 
+          // Solo recarga si la orden cambió pertenece a este usuario
           if (
-            isOrderRelevantToQuote(nextOrder, user.id)
-            || isOrderRelevantToQuote(previousOrder, user.id)
+            isOrderAssignedToQuote(nextOrder, user.id)
+            || isOrderAssignedToQuote(previousOrder, user.id)
           ) {
-            await fetchOrders(user.id, true);
+            await fetchOrders(user.id, true); // true = sin mostrar loading spinner
           }
         }
       )
       .subscribe();
 
+    // REFRESCO AL RECUPERAR FOCO: cuando el usuario vuelve a la pestaña
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") fetchOrders(user.id, true);
+    };
+    
+    // REFRESCO CUANDO LA VENTANA RECUPERA FOCO
+    const handleFocus = () => fetchOrders(user.id, true);
+    
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleFocus);
+
+    // LIMPIEZA: desuscribirse de Supabase y remover listeners al desmontar
     return () => {
-      Object.values(notificationTimeoutsRef.current).forEach(clearTimeout);
       supabase.removeChannel(channel);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleFocus);
     };
   }, [user?.id]);
 
-  // Sincroniza la orden seleccionada con los datos más recientes del servidor.
+
+  // ============= EFECTO 3: SINCRONIZAR ORDEN SELECCIONADA =============
+  // Mantiene el modal actualizado si la orden cambia en tiempo real
+  // Si la orden abierta en el modal se actualiza en la BD, refleja los cambios
   useEffect(() => {
     if (!selectedOrder) return;
     const freshOrder = orders.find(o => o.id === selectedOrder.id);
     if (freshOrder) {
-      setSelectedOrder(freshOrder);
+      setSelectedOrder(freshOrder); // Actualiza los datos del modal sin cerrarlo
     }
   }, [orders]);
 
-  // Cierra el panel de notificaciones al hacer click fuera.
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (!event.target.closest(".pq-bell-wrap")) {
-        setNotificationsOpen(false);
-      }
-    };
-
-    window.addEventListener("click", handleClickOutside);
-    return () => window.removeEventListener("click", handleClickOutside);
-  }, []);
-
-  // Consulta órdenes asignadas al usuario quote tolerando distintos nombres de campo.
+  // ============= FUNCIÓN: SINCRONIZAR DIRECTORIO DE VENDEDORES =============
+  // Carga los nombres de los vendedores desde la tabla "profiles"
+  // Evita múltiples queries a BD usando un cache (sellerDirectory)
+  // Se ejecuta automáticamente después de cargar órdenes
   const syncSellerDirectory = async (ordersToSync) => {
+    // Extrae IDs únicos de vendedores de las órdenes
     const sellerIds = [...new Set(
       (ordersToSync || [])
         .map(order => resolveSellerId(order))
@@ -547,15 +692,18 @@ export default function PageQuote() {
 
     if (sellerIds.length === 0) return;
 
+    // Solo consulta vendedores que aún no están en el cache
     const missingSellerIds = sellerIds.filter(id => !sellerDirectory[id]);
     if (missingSellerIds.length === 0) return;
 
+    // Query a BD para obtener nombres de vendedores
     const { data, error } = await supabase
       .from("profiles")
       .select("id, name")
       .in("id", missingSellerIds);
 
     if (!error && Array.isArray(data)) {
+      // Actualiza el cache con los nuevos vendedores
       setSellerDirectory(prev => ({
         ...prev,
         ...Object.fromEntries(data.map(profile => [profile.id, profile.name || "Vendedor"]))
@@ -563,12 +711,19 @@ export default function PageQuote() {
     }
   };
 
+  // ============= FUNCIÓN: CARGAR ÓRDENES DEL USUARIO =============
+  // Estrategia robusta para obtener órdenes asignadas a este usuario
+  // Intenta múltiples campos de asignación (quote_id, quotation_id, quote_user_id)
+  // porque el backend puede usar nombres diferentes en distintas versiones
   const fetchOrders = async (quoteUserId, silent = false) => {
+    // silent = true evita mostrar el spinner de loading (refresco silencioso)
     if (!silent) setLoading(true);
 
     let fetchedOrders = [];
     let fetchError = null;
+    let successfulAssignmentFetch = false;
 
+    // INTENTO 1: Buscar en cada uno de los posibles campos de asignación
     for (const field of QUOTE_ASSIGNMENT_FIELDS) {
       const { data, error } = await supabase
         .from("orders")
@@ -577,32 +732,45 @@ export default function PageQuote() {
         .order("created_at", { ascending: false });
 
       if (!error) {
-        fetchedOrders = (data || []).filter(order => isOrderRelevantToQuote(order, quoteUserId));
+        successfulAssignmentFetch = true;
+        // Filtra para evitar duplicados y ordenes no asignadas
+        fetchedOrders = [
+          ...fetchedOrders,
+          ...(data || []).filter(order => isOrderAssignedToQuote(order, quoteUserId)),
+        ];
         fetchError = null;
-        break;
+        continue;
       }
 
-      fetchError = error;
+      if (!successfulAssignmentFetch) fetchError = error;
     }
 
-    // Fallback para escenarios donde el filtro directo no sea compatible con el esquema activo.
-    if (fetchError && fetchedOrders.length === 0) {
+    // Elimina duplicados combinando por ID y ordena por fecha
+    if (successfulAssignmentFetch) {
+      fetchedOrders = [...new Map(fetchedOrders.map(order => [order.id, order])).values()]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+
+    // FALLBACK: Si los filtros directos fallan, obtiene todas y filtra localmente
+    // Esto es un plan B para esquemas no estándares
+    if (!successfulAssignmentFetch && fetchError && fetchedOrders.length === 0) {
       const { data, error } = await supabase
         .from("orders")
         .select("*")
         .order("created_at", { ascending: false });
 
       if (!error) {
-        fetchedOrders = (data || []).filter(order => isOrderRelevantToQuote(order, quoteUserId));
+        fetchedOrders = (data || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
         fetchError = null;
       }
     }
 
+    // Si todo falla, muestra error
     if (fetchError) {
       setOrders([]);
       if (!silent) setLoading(false);
-      showActionNotification({
-        type: "cancelled",
+      notif.showActionNotification({
+        type: "order_cancelled",
         label: "Error al cargar",
         orderTitle: "Órdenes de cotización",
         message: "No se pudieron cargar las órdenes asignadas a cotización.",
@@ -610,19 +778,21 @@ export default function PageQuote() {
       return;
     }
 
+    // Actualiza estado y sincroniza directorio de vendedores
     setOrders(fetchedOrders);
     await syncSellerDirectory(fetchedOrders);
     registerNewAssignments(fetchedOrders);
     if (!silent) setLoading(false);
   };
 
-  // Detecta nuevas órdenes asignadas a Quote y genera notificaciones visuales.
+  // ============= FUNCIÓN: REGISTRAR NUEVAS ASIGNACIONES =============
+  // Mantiene el seguimiento local de qué órdenes se han visto
+  // Se usa para detectar cambios sin hacer queries constantes a BD
+  // Las notificaciones de cambios las maneja Supabase en tiempo real
   const registerNewAssignments = (nextOrders) => {
-    const previousIds = previousAssignedIdsRef.current;
-    const previousOrders = previousOrdersRef.current;
     const nextIds = new Set(nextOrders.map(order => order.id));
-    const newOrders = nextOrders.filter(order => !previousIds.has(order.id));
 
+    // INICIALIZACIÓN (primera carga)
     if (!assignmentsInitializedRef.current) {
       previousAssignedIdsRef.current = nextIds;
       previousOrdersRef.current = nextOrders.reduce((acc, order) => {
@@ -633,32 +803,7 @@ export default function PageQuote() {
       return;
     }
 
-    if (newOrders.length > 0) {
-      newOrders.forEach(order => {
-        createPersistentNotification({
-          type: "new",
-          label: "Nueva orden asignada",
-          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-          message: "Se asignó una nueva orden a tu bandeja de cotización.",
-        });
-      });
-    }
-
-    nextOrders.forEach(order => {
-      const previousOrder = previousOrders[order.id];
-      const wasCancelledBefore = ["cancelada", "cancelled"].includes(previousOrder?.status);
-      const isCancelledNow = ["cancelada", "cancelled"].includes(order.status);
-
-      if (previousOrder && !wasCancelledBefore && isCancelledNow) {
-        createPersistentNotification({
-          type: "cancelled",
-          label: "Orden cancelada",
-          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-          message: "Una de tus órdenes asignadas ha sido cancelada.",
-        });
-      }
-    });
-
+    // ACTUALIZACIONES POSTERIORES
     previousAssignedIdsRef.current = nextIds;
     previousOrdersRef.current = nextOrders.reduce((acc, order) => {
       acc[order.id] = order;
@@ -666,53 +811,11 @@ export default function PageQuote() {
     }, {});
   };
 
-  // Crea notificaciones internas del módulo sin usar localStorage.
-  const createPersistentNotification = ({ type, label, orderTitle, message }) => {
-    const normalizedType = normalizeNotificationType(type);
-    const id = `${normalizedType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const notification = {
-      id,
-      type: normalizedType,
-      label,
-      orderTitle,
-      message,
-      read: false,
-      createdAt: Date.now(),
-      duration: NOTIFICATION_DURATION,
-      expiresAt: Date.now() + NOTIFICATION_DURATION,
-    };
 
-    setNotifications(prev => [notification, ...prev].slice(0, 20));
-    setToastNotifications(prev => [notification, ...prev].slice(0, 3));
 
-    notificationTimeoutsRef.current[id] = setTimeout(() => {
-      removeToastNotification(id);
-    }, NOTIFICATION_DURATION);
-  };
-
-  const showActionNotification = ({ type = "completed", label, orderTitle, message }) => {
-    createPersistentNotification({ type, label, orderTitle, message });
-  };
-
-  const removeToastNotification = (id) => {
-    setToastNotifications(prev => prev.filter(notification => notification.id !== id));
-    if (notificationTimeoutsRef.current[id]) {
-      clearTimeout(notificationTimeoutsRef.current[id]);
-      delete notificationTimeoutsRef.current[id];
-    }
-  };
-
-  const markNotificationAsRead = (id) => {
-    setNotifications(prev => prev.map(notification => (
-      notification.id === id ? { ...notification, read: true } : notification
-    )));
-  };
-
-  const markAllNotificationsAsRead = () => {
-    setNotifications(prev => prev.map(notification => ({ ...notification, read: true })));
-  };
-
-  // Refresca el detalle desde la base antes de abrir el modal.
+  // ============= FUNCIÓN: ABRIR DETALLE DE ORDEN =============
+  // Se ejecuta cuando el usuario hace click en una orden
+  // Refresca los datos desde BD antes de abrir el modal (asegura que siempre esté actualizado)
   const handleViewOrder = async (order) => {
     const { data } = await supabase
       .from("orders")
@@ -725,47 +828,18 @@ export default function PageQuote() {
     setSelectedOrder(nextOrder);
   };
 
-  // Confirma el pago validando imagen, subiendo a storage y actualizando la BD.
-  const handleConfirmPayment = async ({ order, receiptFile, paymentStatus, moveToProduction = false }) => {
-    if (moveToProduction) {
-      setPaymentSaving(true);
-
-      const { data: updatedOrder, error } = await supabase
-        .from("orders")
-        .update({ status: "en produccion" })
-        .eq("id", order.id)
-        .select("*")
-        .single();
-
-      setPaymentSaving(false);
-
-      if (error || !updatedOrder) {
-        console.error("Error moving to production:", error);
-        showActionNotification({
-          type: "cancelled",
-          label: "Error al mover",
-          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-          message: error?.message || "No se pudo dar paso a producción a la orden.",
-        });
-        return;
-      }
-
-      setOrders(prev => prev.filter(item => item.id !== updatedOrder.id));
-      setSelectedOrder(updatedOrder);
-
-      showActionNotification({
-        type: "success",
-        label: "En producción",
-        orderTitle: updatedOrder.client_name || updatedOrder.description || `Orden #${updatedOrder.id?.slice(0, 8).toUpperCase()}`,
-        message: "La orden fue enviada a producción correctamente.",
-      });
-      return;
-    }
-
-    // Validar que se cargue imagen si el pago es confirmado
+  // ============= FUNCIÓN: CONFIRMAR PAGO DE ORDEN =============
+  // Este es uno de los procesos más complejos:
+  // 1. Valida que se haya subido un recibo si el pago es "Pagado"
+  // 2. Valida que la imagen sea JPG o PNG válida
+  // 3. Sube la imagen a Supabase Storage
+  // 4. Actualiza la BD con el nuevo estado de pago y URL del recibo
+  // 5. Notifica al usuario del resultado
+  const handleConfirmPayment = async ({ order, receiptFile, paymentStatus }) => {
+    // Validación inicial: si es pagado, debe haber recibo
     if (paymentStatus === "pagado" && !receiptFile) {
-      showActionNotification({
-        type: "cancelled",
+      notif.showActionNotification({
+        type: "order_cancelled",
         label: "Imagen requerida",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
         message: "No puedes confirmar el pago sin subir la imagen del recibo o factura.",
@@ -777,15 +851,15 @@ export default function PageQuote() {
 
     let invoicePaymentUrl = null;
 
-    // Si hay archivo, validar y subir
+    // PASO 1: Si hay archivo, validar formato y subir a Storage
     if (receiptFile) {
-      // Validar imagen antes de subir
+      // Validar que sea una imagen válida (JPG/PNG, tamaño razonable)
       const validation = await validateImage(receiptFile);
 
       if (!validation.isValid) {
         setPaymentSaving(false);
-        showActionNotification({
-          type: "cancelled",
+        notif.showActionNotification({
+          type: "order_cancelled",
           label: "Imagen inválida",
           orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
           message: validation.error || "La imagen no cumple con los requisitos. Asegúrate de que sea JPG o PNG válido.",
@@ -793,11 +867,11 @@ export default function PageQuote() {
         return;
       }
 
-      // Construir ruta del archivo
+      // Construir ruta: /order-{orderId}/payment-{timestamp}.jpg
       const filePath = buildPaymentReceiptPath(order.id, receiptFile.name);
 
       try {
-        // Subir a storage usando bucket "payment-invoice" (mismo que Admin)
+        // Subir a Storage en el bucket "payment-invoice" (compartido con módulo Admin)
         invoicePaymentUrl = await uploadOrderAsset({
           bucket: "payment-invoice",
           path: filePath,
@@ -806,8 +880,8 @@ export default function PageQuote() {
 
         if (!invoicePaymentUrl) {
           setPaymentSaving(false);
-          showActionNotification({
-            type: "cancelled",
+          notif.showActionNotification({
+            type: "order_cancelled",
             label: "Error al subir",
             orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
             message: "No se pudo obtener la URL de la imagen. Inténtalo nuevamente.",
@@ -817,8 +891,8 @@ export default function PageQuote() {
       } catch (uploadError) {
         console.error("Error uploading image:", uploadError);
         setPaymentSaving(false);
-        showActionNotification({
-          type: "cancelled",
+        notif.showActionNotification({
+          type: "order_cancelled",
           label: "Error al subir",
           orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
           message: uploadError?.message || "No se pudo subir la imagen del comprobante. Inténtalo nuevamente.",
@@ -827,7 +901,8 @@ export default function PageQuote() {
       }
     }
 
-    // Actualizar orden en BD con el campo invoice_payment estándar
+    // PASO 2: Actualizar BD con nuevo estado de pago
+    // El campo "invoice_payment" es estándar y se usa en Admin también
     const updatePayload = {
       payment_status: paymentStatus,
     };
@@ -846,10 +921,11 @@ export default function PageQuote() {
 
     setPaymentSaving(false);
 
+    // Manejar errores de actualización
     if (updateError || !updatedOrder) {
       console.error("Error updating order:", updateError);
-      showActionNotification({
-        type: "cancelled",
+      notif.showActionNotification({
+        type: "order_cancelled",
         label: "Error al confirmar",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
         message: updateError?.message || "No se pudo guardar los cambios de pago. Verifica la conexión a la base de datos.",
@@ -857,15 +933,67 @@ export default function PageQuote() {
       return;
     }
 
+    // Actualiza estado local con los nuevos datos
     setOrders(prev => prev.map(item => item.id === updatedOrder.id ? updatedOrder : item));
     setSelectedOrder(updatedOrder);
 
-    const paymentLabel = { Pending_Payment: "Pendiente", parcial: "Parcial", pagado: "Pagado" };
-    showActionNotification({
-      type: "success",
-      label: "Estado actualizado",
+  };
+
+  // Muestra un toast de error cuando el usuario intenta confirmar el pago
+  // sin haber seleccionado una imagen de comprobante.
+  // Se dispara desde QuoteOrderDetailModal.handleSubmit
+  const handlePaymentValidationError = (order, message) => {
+    notif.showActionNotification({
+      type: "order_cancelled",
+      label: "Imagen requerida",
+      orderTitle: order?.client_name || order?.description || `Orden #${order?.id?.slice(0, 8).toUpperCase()}`,
+      message,
+    });
+  };
+
+  // Abre el modal para seleccionar un impresor antes de enviar a producción.
+  const handleOpenProductionModal = (order) => {
+    setForwardToProductionOrder(order);
+  };
+
+  // Envía la orden a producción asignándola al impresor seleccionado.
+  const handleConfirmSendToProduction = async (productionUserId) => {
+    if (!forwardToProductionOrder) return;
+
+    setProductionSaving(true);
+
+    const { data: updatedOrder, error } = await supabase
+      .from("orders")
+      .update({
+        status: ORDER_STATUS.IN_PRODUCTION,
+        production_id: productionUserId,
+      })
+      .eq("id", forwardToProductionOrder.id)
+      .select("*")
+      .single();
+
+    setProductionSaving(false);
+
+    if (error || !updatedOrder) {
+      console.error("Error moving to production:", error);
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al enviar",
+        orderTitle: forwardToProductionOrder.client_name || forwardToProductionOrder.description || `Orden #${forwardToProductionOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: error?.message || "No se pudo enviar la orden a producción.",
+      });
+      return;
+    }
+
+    // Actualizamos la orden seleccionada
+    setSelectedOrder(updatedOrder);
+    setForwardToProductionOrder(null);
+
+    notif.showActionNotification({
+      type: "order_cancelled",
+      label: "En producción",
       orderTitle: updatedOrder.client_name || updatedOrder.description || `Orden #${updatedOrder.id?.slice(0, 8).toUpperCase()}`,
-      message: `El estado de pago fue actualizado a ${paymentLabel[paymentStatus] || paymentStatus}.`,
+      message: `La orden fue enviada a producción y asignada a un impresor.`,
     });
   };
 
@@ -873,8 +1001,8 @@ export default function PageQuote() {
   const handleConfirmArchive = async () => {
     if (!archivingOrder) return;
     if (!canArchiveQuoteOrder(archivingOrder)) {
-      showActionNotification({
-        type: "cancelled",
+      notif.showActionNotification({
+        type: "order_cancelled",
         label: "Archivado no permitido",
         orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
         message: "Solo puedes archivar órdenes con el pago confirmado.",
@@ -890,8 +1018,8 @@ export default function PageQuote() {
     setArchiveLoading(false);
 
     if (error) {
-      showActionNotification({
-        type: "cancelled",
+      notif.showActionNotification({
+        type: "order_cancelled",
         label: "Error al archivar",
         orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
         message: "No se pudo archivar la orden.",
@@ -905,13 +1033,6 @@ export default function PageQuote() {
       setSelectedOrder(nextOrder);
     }
 
-    showActionNotification({
-      type: "success",
-      label: "Orden archivada",
-      orderTitle: nextOrder.client_name || nextOrder.description || `Orden #${nextOrder.id?.slice(0, 8).toUpperCase()}`,
-      message: "La orden fue archivada correctamente.",
-    });
-
     setArchivingOrder(null);
   };
 
@@ -921,7 +1042,7 @@ export default function PageQuote() {
 
     setReturnLoading(true);
     const isExternalDesign = returningOrder.order_design_type === "EXTERNAL_DESING";
-    const nextStatus = isExternalDesign ? "Pending" : "In_Design";
+    const nextStatus = isExternalDesign ? ORDER_STATUS.PENDING : ORDER_STATUS.IN_DESIGN;
     const returnedAt = new Date().toISOString();
 
     const { error } = await supabase
@@ -936,8 +1057,8 @@ export default function PageQuote() {
     setReturnLoading(false);
 
     if (error) {
-      showActionNotification({
-        type: "cancelled",
+      notif.showActionNotification({
+        type: "order_cancelled",
         label: "Error al devolver",
         orderTitle: returningOrder.client_name || returningOrder.description || `Orden #${returningOrder.id?.slice(0, 8).toUpperCase()}`,
         message: isExternalDesign
@@ -961,15 +1082,6 @@ export default function PageQuote() {
     if (selectedOrder?.id === returningOrder.id) {
       setSelectedOrder(nextOrder);
     }
-
-    showActionNotification({
-      type: "success",
-      label: "Orden devuelta",
-      orderTitle: nextOrder.client_name || nextOrder.description || `Orden #${nextOrder.id?.slice(0, 8).toUpperCase()}`,
-      message: isExternalDesign
-        ? "La orden fue devuelta al vendedor para correcciones."
-        : "La orden fue devuelta al diseñador para correcciones.",
-    });
 
     setReturningOrder(null);
   };
@@ -1002,7 +1114,7 @@ export default function PageQuote() {
       ];
 
       const matchesSearch = !query || searchableValues.some(value => normalizeText(value).includes(query));
-      const matchesStatus = filterStatus === "all" || order.status === filterStatus;
+      const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
       const matchesArchive =
         filterArchive === "all" ||
         (filterArchive === "active" && !order.is_archived_quote) ||
@@ -1021,19 +1133,18 @@ export default function PageQuote() {
     });
   }, [orders, search, filterStatus, filterArchive, filterDate]);
 
-  const unreadCount = notifications.filter(notification => !notification.read).length;
   const shouldEnableOrdersScroll = filteredOrders.length > 7;
 
   const metrics = [
-    { label: "Órdenes asignadas", value: orders.length, icon: <Icon.Orders /> },
-    { label: "Pendientes de pago", value: orders.filter(order => order.payment_status !== "pagado" && !order.is_archived_quote).length, icon: <Icon.Money /> },
-    { label: "Pagadas", value: orders.filter(order => order.payment_status === "pagado").length, icon: <Icon.Check /> },
-    { label: "Archivadas", value: orders.filter(order => order.is_archived_quote).length, icon: <Icon.Archive /> },
+    { label: "Órdenes asignadas", value: orders.length, icon: <Icons.Orders /> },
+    { label: "Pendientes de pago", value: orders.filter(order => order.payment_status !== "pagado" && !order.is_archived_quote).length, icon: <Icons.Money /> },
+    { label: "Pagadas", value: orders.filter(order => order.payment_status === "pagado").length, icon: <Icons.Check /> },
+    { label: "Archivadas", value: orders.filter(order => order.is_archived_quote).length, icon: <Icons.Archive /> },
   ];
 
   const menuItems = [
-    { id: "dashboard", label: "Resumen", icon: <Icon.Dashboard /> },
-    { id: "orders", label: "Mis órdenes", icon: <Icon.Orders />, badge: orders.filter(order => !order.is_archived_quote).length },
+    { id: "dashboard", label: "Resumen", icon: <Icons.Dashboard /> },
+    { id: "orders", label: "Mis órdenes", icon: <Icons.Orders />, badge: orders.filter(order => !order.is_archived_quote).length },
   ];
 
   const dashboardRecentOrders = orders
@@ -1056,7 +1167,7 @@ export default function PageQuote() {
         <header className="pq-header">
           <div className="pq-header-left">
             <button className="pq-mobile-toggle" onClick={() => setSidebarOpen(prev => !prev)} aria-label="Toggle sidebar">
-              <Icon.Menu />
+              <Icons.Menu />
             </button>
             <div>
               <span className="pq-header-kicker">Cotización</span>
@@ -1068,50 +1179,16 @@ export default function PageQuote() {
           </div>
 
           <div className="pq-header-actions">
-            <div className="pq-bell-wrap">
-              <button className="pq-bell-btn" onClick={(event) => {
-                event.stopPropagation();
-                setNotificationsOpen(prev => !prev);
-              }}>
-                <Icon.Bell />
-                {unreadCount > 0 && <span className="pq-bell-count">{unreadCount}</span>}
-              </button>
-
-              {notificationsOpen && (
-                <div className="pq-notification-panel" onClick={event => event.stopPropagation()}>
-                  <div className="pq-notification-panel-head">
-                    <div>
-                      <strong>Notificaciones</strong>
-                      <span>{unreadCount} sin leer</span>
-                    </div>
-                    {notifications.length > 0 && (
-                      <button className="pq-link-btn" onClick={markAllNotificationsAsRead}>Marcar todas</button>
-                    )}
-                  </div>
-
-                  <div className="pq-notification-panel-body">
-                    {notifications.length === 0 ? (
-                      <div className="pq-empty-notification">No hay notificaciones por ahora.</div>
-                    ) : (
-                      notifications.map(notification => (
-                        <div key={notification.id} className={`pq-notification-item ${notification.read ? "read" : "unread"}`}>
-                          <div className="pq-notification-copy">
-                            <strong>{notification.label}</strong>
-                            <span>{notification.orderTitle}</span>
-                            <p>{notification.message}</p>
-                          </div>
-                          {!notification.read && (
-                            <button className="pq-link-btn" onClick={() => markNotificationAsRead(notification.id)}>
-                              Leída
-                            </button>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <NotificationCenter
+              notifications={notif.notifications}
+              unreadCount={notif.unreadCount}
+              toasts={notif.toasts}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDismissToast={notif.dismissToast}
+            />
           </div>
         </header>
 
@@ -1159,7 +1236,7 @@ export default function PageQuote() {
                           <PaymentBadge status={order.payment_status} />
                         </div>
                         <span className="pq-recent-view-btn" aria-hidden="true">
-                          <Icon.Eye />
+                          <Icons.Eye />
                         </span>
                       </div>
                     </button>
@@ -1174,7 +1251,7 @@ export default function PageQuote() {
             {/* Filtros y búsqueda */}
             <div className="pq-filters">
               <div className="pq-search-box">
-                <Icon.Search />
+                <Icons.Search />
                 <input
                   type="text"
                   className="pq-search-input"
@@ -1186,13 +1263,9 @@ export default function PageQuote() {
 
               <select className="pq-input" value={filterStatus} onChange={event => setFilterStatus(event.target.value)}>
                 <option value="all">Todos los estados</option>
-                <option value="In_Design">Devueltas / En diseño</option>
-                <option value="cotizacion">Cotización</option>
-                <option value="in_Quotation">Cotización (legacy)</option>
-                <option value="en produccion">En producción</option>
-                <option value="cancelada">Cancelada</option>
-                <option value="cancelled">Cancelada (EN)</option>
-                <option value="completada">Completada</option>
+                {STATUS_OPTIONS.map(status => (
+                  <option key={status} value={status}>{getOrderStatusConfig(status).label}</option>
+                ))}
               </select>
 
               <select className="pq-input" value={filterDate} onChange={event => setFilterDate(event.target.value)}>
@@ -1225,7 +1298,7 @@ export default function PageQuote() {
                       <div className="pq-order-identity">
                         <span className="pq-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
                         <span className="pq-order-date">
-                          <Icon.Clock /> {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}
+                          <Icons.Clock /> {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}
                         </span>
                       </div>
                       <div className="pq-order-badges">
@@ -1241,14 +1314,14 @@ export default function PageQuote() {
                     </div>
 
                     <div className="pq-order-meta">
-                      <span><Icon.User /> {resolveSellerName(order, sellerDirectory)}</span>
-                      <span><Icon.File /> {order.material || "Material no definido"}</span>
+                      <span><Icons.User /> {resolveSellerName(order, sellerDirectory)}</span>
+                      <span><Icons.File /> {order.material || "Material no definido"}</span>
                     </div>
                     {/* Acciones de la orden */}
                     <div className="pq-order-footer">
                       {/* Botón para ver detalles de la orden */}
                       <button className="pq-btn pq-btn-ghost" onClick={() => handleViewOrder(order)}>
-                        <Icon.Eye />
+                        <Icons.Eye />
                         Ver detalles
                       </button>
                       {/* Botón para archivar la orden */}
@@ -1257,7 +1330,7 @@ export default function PageQuote() {
                           className="pq-btn pq-btn-inline-archive"
                           onClick={() => setArchivingOrder(order)}
                         >
-                          <Icon.Archive />
+                          <Icons.Archive />
                           Archivar
                         </button>
                       )}
@@ -1279,6 +1352,8 @@ export default function PageQuote() {
         sellerDirectory={sellerDirectory}
         onOpenReturnModal={setReturningOrder}
         onOpenArchiveModal={setArchivingOrder}
+        onValidationError={handlePaymentValidationError}
+        onOpenProductionModal={handleOpenProductionModal}
       />
 
       <ArchiveQuoteOrderModal
@@ -1297,11 +1372,14 @@ export default function PageQuote() {
         loading={returnLoading}
       />
 
-      <div className="pq-toast-stack">
-        {toastNotifications.map(notification => (
-          <QuoteNotificationToast key={notification.id} notification={notification} onClose={removeToastNotification} />
-        ))}
-      </div>
+      <SendToProductionModal
+        open={!!forwardToProductionOrder}
+        onClose={() => setForwardToProductionOrder(null)}
+        onConfirm={handleConfirmSendToProduction}
+        order={forwardToProductionOrder}
+        loading={productionSaving}
+      />
+
     </div>
   );
 }

@@ -1,59 +1,16 @@
-// DESIGNER PAGE - ORDER DASHBOARD FOR DESIGNERS
-
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-designer.css";
 import Sidebar from "../components/Sidebar";
+import { Icons } from "../utils/icons";
+import { ORDER_STATUS, PAYMENT_COLORS, getOrderStatusConfig, isOrderStatus, isOrderStatusIn } from "../utils/constants";
+import useNotifications from "../hooks/useNotifications";
+import NotificationCenter from "../components/NotificationCenter";
+import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
 
-// Icones SVG para la interfaz
-const Icon = {
-  Dashboard: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>),
-  Orders: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>),
-  Search: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>),
-  Logout: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>),
-  Eye: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>),
-  Close: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>),
-  ChevronDown: () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>),
-  Upload: () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16" /><line x1="12" y1="12" x2="12" y2="21" /><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" /></svg>),
-  Image: () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>),
-  File: () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>),
-  Trash: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>),
-  Menu: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>),
-  Clock: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>),
-  User: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>),
-  Check: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>),
-  Download: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>),
-  X: () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>),
-  Send: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>),
-  Package: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16.5 9.4-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>),
-  ChevronLeft: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>),
-  ChevronRight: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>)
-};
-
-// Configuración de estados y pagos para badges
-const STATUS_CONFIG = {
-  "Pending": { label: "Pendiente", value: "Pending", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
-  "In_Design": { label: "En Diseño", value: "In_Design", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
-  "cotizacion": { label: "Cotización", value: "cotizacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
-  "en produccion": { label: "En Producción", value: "en produccion", color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
-  "terminacion": { label: "Terminación", value: "terminacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0284C7" },
-  "en entrega": { label: "En Entrega", value: "en entrega", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
-  "completada": { label: "Completada", value: "completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
-  "cancelada": { label: "Cancelada", value: "cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
-  "cancelled": { label: "Cancelada", value: "cancelled", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
-};
-
-// Colores y etiquetas para estados de pago
-const PAYMENT_CONFIG = {
-  "pagado": { label: "Pagado", color: "#14532D", bg: "#DCFCE7" },
-  "Pending_Payment": { label: "Pago Pendiente", color: "#92620A", bg: "#FEF3C7" },
-  "parcial": { label: "Parcial", color: "#0369A1", bg: "#E0F2FE" },
-};
-
-// Badge component para mostrar estado de la orden
 function StatusBadge({ status }) {
-  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG["Pending"];
+  const cfg = getOrderStatusConfig(status);
   return (
     <span className="pd-badge" style={{ background: cfg.bg, color: cfg.color }}>
       <span className="pd-badge-dot" style={{ background: cfg.dot }} />
@@ -63,7 +20,7 @@ function StatusBadge({ status }) {
 }
 
 function PaymentBadge({ status }) {
-  const cfg = PAYMENT_CONFIG[status] || PAYMENT_CONFIG["Pending_Payment"];
+  const cfg = PAYMENT_COLORS[status] || PAYMENT_COLORS["Pending_Payment"];
   return (
     <span className="pd-payment-badge" style={{ background: cfg.bg, color: cfg.color }}>
       {cfg.label}
@@ -71,7 +28,6 @@ function PaymentBadge({ status }) {
   );
 }
 
-const NOTIFICATION_DURATION = 5000;
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const TRACKED_ORDER_FIELDS = [
   "client_name",
@@ -95,7 +51,7 @@ const hasTrackedOrderChanges = (previousOrder, nextOrder) => {
 };
 
 const isReturnedOrder = (order) => (
-  order?.status === "In_Design" &&
+  isOrderStatus(order?.status, ORDER_STATUS.IN_DESIGN) &&
   String(order?.return_reason || "").trim().length > 0
 );
 
@@ -117,54 +73,7 @@ function ReturnedBadge({ compact = false }) {
   );
 }
 
-function NotificationToast({ notification, onClose }) {
-  const [progress, setProgress] = useState(100);
 
-  useEffect(() => {
-    const updateProgress = () => {
-      const remaining = notification.expiresAt - Date.now();
-      const nextProgress = Math.max(0, (remaining / notification.duration) * 100);
-      setProgress(nextProgress);
-    };
-
-    updateProgress();
-
-    const interval = setInterval(updateProgress, 50);
-    return () => clearInterval(interval);
-  }, [notification.duration, notification.expiresAt]);
-
-  return (
-    <div className={`pd-notification ${notification.type}`} role="status" aria-live="polite">
-      <div className="pd-notification-main">
-        <div className="pd-notification-icon">
-          {notification.type === "cancelled" ? <Icon.X /> : <Icon.Package />}
-        </div>
-
-        <div className="pd-notification-content">
-          <span className="pd-notification-title">{notification.label}</span>
-          <span className="pd-notification-subtitle">{notification.orderTitle}</span>
-          <span className="pd-notification-text">{notification.message}</span>
-        </div>
-
-        <button
-          type="button"
-          className="pd-notification-close"
-          onClick={() => onClose(notification.id)}
-          aria-label="Cerrar notificación"
-        >
-          <Icon.X />
-        </button>
-      </div>
-
-      <div className="pd-notification-progress-track">
-        <div
-          className="pd-notification-progress"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-    </div>
-  );
-}
 
 const getFilesCountFromDB = (order) => {
   if (!order?.order_file_url) return 0;
@@ -193,11 +102,41 @@ function AttachmentIndicator({ compact = false }) {
       title="Esta orden tiene archivos adjuntos"
       aria-label="Esta orden tiene archivos adjuntos"
     >
-      <Icon.File />
+      <Icons.File />
       {!compact && <span>Adjuntos</span>}
     </span>
   );
 }
+
+const parseOrderFileUrls = (value) => {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    const values = Array.isArray(parsed) ? parsed : [parsed];
+    return values
+      .map((item) => (typeof item === "string" ? item : item?.url))
+      .filter(Boolean);
+  } catch {
+    return String(value)
+      .split(/[\n,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+};
+
+const buildDesignerAssetPath = (orderId, folder, file, prefix = "") => {
+  const safeName = String(file?.name || "archivo")
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9._-]/g, "") || "archivo";
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  return `orders/${orderId}/${folder}/${prefix}${suffix}-${safeName}`;
+};
+
+const DESIGNER_FILES_BUCKET = "order-docs";
+const DESIGNER_PREVIEW_BUCKET = "order-previews";
 
 function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview, onRefresh, onSendToQuotation, quotationSending }) {
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -210,12 +149,12 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   if (!order) return null;
   
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
-  const canEditDesignerAssets = order.status === "In_Design";
-  const isCancelledReadonly = order.is_archived_designer && ["cancelada", "cancelado", "cancelled"].includes(order.status);
+  const canEditDesignerAssets = isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN);
+  const isCancelledReadonly = order.is_archived_designer && isOrderStatus(order.status, ORDER_STATUS.CANCELLED);
   const readonlyMessage =
     isCancelledReadonly
       ? "Esta orden está en modo lectura porque fue cancelada."
-      : order.status === "cotizacion"
+      : isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)
         ? "Esta orden está en modo lectura mientras permanece en cotización."
         : "Esta orden está en modo lectura según su estado actual.";
   const returnedReason = String(order.return_reason || "").trim();
@@ -223,17 +162,45 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   const handleFileSelect = (e) => {
     if (!canEditDesignerAssets) return;
     const files = Array.from(e.target.files);
-    setPendingFiles(prev => [...prev, ...files]);
+    const acceptedFiles = [];
+    const rejectedFiles = [];
+
+    files.forEach((file) => {
+      const sizeError = validateOrderAssetSize({ bucket: DESIGNER_FILES_BUCKET, file });
+      if (sizeError) {
+        rejectedFiles.push(sizeError);
+      } else {
+        acceptedFiles.push(file);
+      }
+    });
+
+    if (acceptedFiles.length > 0) {
+      setPendingFiles(prev => [...prev, ...acceptedFiles]);
+    }
+
+    setSaveError(rejectedFiles.length > 0 ? rejectedFiles.join(" ") : null);
     setSaveSuccess(false);
+    e.target.value = "";
   };
   
   const handlePreviewSelect = (e) => {
     if (!canEditDesignerAssets) return;
     if (e.target.files && e.target.files[0]) {
-      setPendingPreview(e.target.files[0]);
-      setPendingPreviewName(e.target.files[0].name);
+      const file = e.target.files[0];
+      const sizeError = validateOrderAssetSize({ bucket: DESIGNER_PREVIEW_BUCKET, file });
+
+      if (sizeError) {
+        setSaveError(sizeError);
+        e.target.value = "";
+        return;
+      }
+
+      setPendingPreview(file);
+      setPendingPreviewName(file.name);
+      setSaveError(null);
       setSaveSuccess(false);
     }
+    e.target.value = "";
   };
   
   const removePendingFile = (index) => {
@@ -255,18 +222,17 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
         const fileUrls = [];
         for (let i = 0; i < pendingFiles.length; i++) {
           const file = pendingFiles[i];
-          const fileName = `${Date.now()}-${i}-${file.name}`;
-          
-          const { data, error } = await supabase.storage
-            .from("order-docs")
-            .upload(`orders/${order.id}/files/${fileName}`, file, { upsert: true });
-          
-          if (!error && data) {
-            const { data: { publicUrl } } = supabase.storage
-              .from("order-docs")
-              .getPublicUrl(`orders/${order.id}/files/${fileName}`);
-            fileUrls.push(publicUrl);
+          const publicUrl = await uploadOrderAsset({
+            bucket: DESIGNER_FILES_BUCKET,
+            path: buildDesignerAssetPath(order.id, "files", file),
+            file,
+          });
+
+          if (!publicUrl) {
+            throw new Error(`No se pudo obtener la URL pública de ${file.name}.`);
           }
+
+          fileUrls.push(publicUrl);
         }
         
         if (fileUrls.length > 0) {
@@ -276,30 +242,24 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
             .eq("id", order.id)
             .single();
           
-          let existingUrls = [];
-          if (orderData?.order_file_url) {
-            try {
-              existingUrls = JSON.parse(orderData.order_file_url);
-              if (!Array.isArray(existingUrls)) existingUrls = [existingUrls];
-            } catch { existingUrls = []; }
-          }
+          const existingUrls = parseOrderFileUrls(orderData?.order_file_url);
           
           updateData.order_file_url = JSON.stringify([...existingUrls, ...fileUrls]);
         }
       }
       
       if (pendingPreview) {
-        const fileName = `preview-${Date.now()}.${pendingPreview.name.split('.').pop()}`;
-        const { data, error } = await supabase.storage
-          .from("order-previews")
-          .upload(`orders/${order.id}/preview/${fileName}`, pendingPreview, { upsert: true });
-        
-        if (!error && data) {
-          const { data: { publicUrl } } = supabase.storage
-            .from("order-previews")
-            .getPublicUrl(`orders/${order.id}/preview/${fileName}`);
-          updateData.preview_image = publicUrl;
+        const publicUrl = await uploadOrderAsset({
+          bucket: DESIGNER_PREVIEW_BUCKET,
+          path: buildDesignerAssetPath(order.id, "preview", pendingPreview, "preview-"),
+          file: pendingPreview,
+        });
+
+        if (!publicUrl) {
+          throw new Error(`No se pudo obtener la URL pública de ${pendingPreview.name}.`);
         }
+
+        updateData.preview_image = publicUrl;
       }
       
       if (Object.keys(updateData).length > 0) {
@@ -311,18 +271,19 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
         if (updateError) throw updateError;
       }
       
-      if (onRefresh) onRefresh();
+      if (onRefresh) await onRefresh();
       
       setPendingFiles([]);
       setPendingPreview(null);
+      setPendingPreviewName(null);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
       console.error("Error saving:", error);
-      setSaveError("Error al guardar los archivos");
+      setSaveError(error?.message || "Error al guardar los archivos");
+    } finally {
+      setSaving(false);
     }
-    
-    setSaving(false);
   };
   
   const handleClose = () => {
@@ -335,19 +296,10 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   
   const hasChanges = pendingFiles.length > 0 || pendingPreview !== null;
   
-  const dbFiles = (() => {
-    if (!order.order_file_url) return [];
-    try {
-      const urls = JSON.parse(order.order_file_url);
-      const arr = Array.isArray(urls) ? urls : [urls];
-      return arr.map((url, i) => ({
-        name: url.split('/').pop() || `archivo-${i + 1}`,
-        url: url
-      }));
-    } catch {
-      return [{ name: order.order_file_url.split('/').pop(), url: order.order_file_url }];
-    }
-  })();
+  const dbFiles = parseOrderFileUrls(order.order_file_url).map((url, i) => ({
+    name: url.split('/').pop() || `archivo-${i + 1}`,
+    url,
+  }));
   
   const allFiles = [...(designerFiles || []), ...dbFiles];
   const uniqueFiles = allFiles.filter((f, i, arr) => arr.findIndex(x => x.url === f.url) === i);
@@ -365,7 +317,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
               <span className="pd-modal-subtitle">Detalles de la orden de trabajo</span>
             </div>
             <button className="pd-modal-close" onClick={handleClose}>
-              <Icon.Close />
+              <Icons.Close />
             </button>
           </div>
         </div>
@@ -373,21 +325,21 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
         <div className="pd-modal-body">
           {saveSuccess && (
             <div className="pd-alert pd-alert-success">
-              <Icon.Check />
+              <Icons.Check />
               Archivos guardados correctamente
             </div>
           )}
           
           {saveError && (
             <div className="pd-alert pd-alert-error">
-              <Icon.X />
+              <Icons.X />
               {saveError}
             </div>
           )}
           
           <div className="pd-modal-card">
             <div className="pd-modal-card-title">
-              <Icon.User />
+              <Icons.User />
               <h4>Información del Cliente</h4>
             </div>
             <div className="pd-modal-grid">
@@ -432,7 +384,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
           
           <div className="pd-modal-card">
             <div className="pd-modal-card-title">
-              <Icon.Package />
+              <Icons.Package />
               <h4>Detalles del Trabajo</h4>
               {isReturnedOrder(order) && <ReturnedBadge />}
             </div>
@@ -463,7 +415,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
           {isReturnedOrder(order) && (
             <div className="pd-modal-card">
               <div className="pd-modal-card-title">
-                <Icon.X />
+                <Icons.X />
                 <h4>Motivo de devolución</h4>
               </div>
               <div className="pd-return-note">
@@ -474,14 +426,14 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
           
           <div className="pd-modal-card">
             <div className="pd-modal-card-title">
-              <Icon.File />
+              <Icons.File />
               <h4>Archivos del Diseño</h4>
               {hasChanges && <span className="pd-pending-badge">Cambios pendientes</span>}
             </div>
 
             {!canEditDesignerAssets && (
               <div className={`pd-readonly-note ${isCancelledReadonly ? "pd-readonly-note-cancelled" : ""}`}>
-                <Icon.Check />
+                <Icons.Check />
                 {readonlyMessage}
               </div>
             )}
@@ -496,14 +448,14 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                   style={{ display: "none" }}
                 />
                 <label htmlFor="designer-file-upload" className="pd-upload-btn" style={{ cursor: 'pointer' }}>
-                  <Icon.Upload />
+                  <Icons.Upload />
                   <span>Agregar archivo</span>
                 </label>
-                <span className="pd-upload-hint">Archivos seleccionados se guardarán al hacer clic en "Guardar cambios"</span>
+                <span className="pd-upload-hint">Archivos hasta {formatFileSize(getOrderAssetLimit(DESIGNER_FILES_BUCKET))} se guardarán al hacer clic en "Guardar cambios"</span>
               </div>
             ) : (
               <div className="pd-upload-area pd-upload-area-disabled">
-                <Icon.File />
+                <Icons.File />
                 <span className="pd-upload-hint">Los archivos ya no se pueden modificar después de enviarse a cotización.</span>
               </div>
             )}
@@ -514,14 +466,15 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                 {pendingFiles.map((file, i) => (
                   <div key={i} className="pd-file-card pending">
                     <div className="pd-file-icon">
-                      <Icon.File />
+                      <Icons.File />
                     </div>
                     <div className="pd-file-info">
                       <span className="pd-file-name">{file.name}</span>
+                      <span className="pd-file-size">{formatFileSize(file.size)}</span>
                     </div>
                     <div className="pd-file-actions">
                       <button className="pd-file-action remove" onClick={() => removePendingFile(i)}>
-                        <Icon.X />
+                        <Icons.X />
                       </button>
                     </div>
                   </div>
@@ -535,14 +488,14 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                 {uniqueFiles.map((file, i) => (
                   <div key={i} className="pd-file-card">
                     <div className="pd-file-icon">
-                      <Icon.File />
+                      <Icons.File />
                     </div>
                     <div className="pd-file-info">
                       <span className="pd-file-name">{file.name}</span>
                     </div>
                     <div className="pd-file-actions">
                       <a href={file.url} target="_blank" rel="noopener noreferrer" className="pd-file-action">
-                        <Icon.Download />
+                        <Icons.Download />
                       </a>
                     </div>
                   </div>
@@ -553,7 +506,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
           
           <div className="pd-modal-card">
             <div className="pd-modal-card-title">
-              <Icon.Image />
+              <Icons.Image />
               <h4>Vista Previa</h4>
             </div>
             
@@ -565,11 +518,11 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                   {pendingPreviewName && <span className="pd-file-name-badge">{pendingPreviewName}</span>}
                   <div className="pd-preview-overlay">
                     <a href={displayPreview} target="_blank" rel="noopener noreferrer" className="pd-file-action" style={{ background: 'white', color: '#0f172a' }}>
-                      <Icon.Eye />
+                      <Icons.Eye />
                     </a>
                     {canEditDesignerAssets && (
                       <button className="pd-file-action remove" style={{ background: 'white' }} onClick={() => { setPendingPreview(null); setPendingPreviewName(null); setSaveSuccess(false); }}>
-                        <Icon.Trash />
+                        <Icons.Trash />
                       </button>
                     )}
                   </div>
@@ -584,12 +537,13 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                       onChange={handlePreviewSelect}
                       style={{ display: "none" }}
                     />
-                    <Icon.Image />
+                    <Icons.Image />
                     <span>Subir orden de trabajo</span>
+                    <small>Max. {formatFileSize(getOrderAssetLimit(DESIGNER_PREVIEW_BUCKET))}</small>
                   </label>
                 ) : (
                   <div className="pd-preview-empty pd-preview-empty-disabled">
-                    <Icon.Image />
+                    <Icons.Image />
                     <span>La preview permanece disponible solo para consulta.</span>
                   </div>
                 )
@@ -626,7 +580,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
                 </>
               ) : (
                 <>
-                  <Icon.Send />
+                  <Icons.Send />
                   Enviar a cotización
                 </>
               )}
@@ -644,7 +598,7 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
               </>
             ) : (
               <>
-                <Icon.Check />
+                <Icons.Check />
                 Guardar cambios
               </>
             )}
@@ -725,7 +679,7 @@ function SendToQuotationModal({ open, onClose, onConfirm, order, loading, origin
     <div className="pd-assign-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="pd-assign-modal">
         <div className="pd-assign-icon">
-          <Icon.Send />
+          <Icons.Send />
         </div>
 
         <h3 className="pd-assign-title">Enviar a cotización</h3>
@@ -809,7 +763,7 @@ function ArchiveDesignerOrderModal({ open, onClose, onConfirm, order, loading })
     <div className="pd-assign-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="pd-assign-modal">
         <div className="pd-assign-icon pd-assign-icon-archive">
-          <Icon.File />
+          <Icons.File />
         </div>
 
         <h3 className="pd-assign-title">Archivar orden</h3>
@@ -870,7 +824,7 @@ export default function PageDesigner() {
   });
   const [orderFiles, setOrderFiles] = useState({});
   const [orderPreviews, setOrderPreviews] = useState({});
-  const [notifications, setNotifications] = useState([]);
+  const notif = useNotifications(user?.id);
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
   const [originalQuoterId, setOriginalQuoterId] = useState(null);
   const [quotationSending, setQuotationSending] = useState(false);
@@ -883,7 +837,6 @@ export default function PageDesigner() {
   const knownOrderIdsRef = useRef(new Set());
   const previousOrdersRef = useRef({});
   const ordersInitializedRef = useRef(false);
-  const notificationTimeoutsRef = useRef({});
   const mainScrollRef = useRef(null);
 
   viewedOrdersRef.current = viewedOrders;
@@ -910,80 +863,7 @@ export default function PageDesigner() {
     return () => window.cancelAnimationFrame(frameId);
   }, [activeTab]);
 
-  const removeNotification = (notificationId) => {
-    setNotifications(prev => prev.filter(item => item.id !== notificationId));
 
-    if (notificationTimeoutsRef.current[notificationId]) {
-      clearTimeout(notificationTimeoutsRef.current[notificationId]);
-      delete notificationTimeoutsRef.current[notificationId];
-    }
-  };
-
-  const showActionNotification = ({ type = "completed", label, orderTitle, message }) => {
-    const notificationId = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const notification = {
-      id: notificationId,
-      type,
-      label,
-      orderTitle,
-      message,
-      duration: NOTIFICATION_DURATION,
-      expiresAt: Date.now() + NOTIFICATION_DURATION,
-    };
-
-    setNotifications(prev => [notification, ...prev].slice(0, 3));
-
-    notificationTimeoutsRef.current[notificationId] = setTimeout(() => {
-      removeNotification(notificationId);
-    }, NOTIFICATION_DURATION);
-  };
-
-  const createNotificationForOrder = (order, type = "new") => {
-    const notificationId = `${type}-${order.id}`;
-
-    if (notificationTimeoutsRef.current[notificationId]) return;
-
-    const orderTitle =
-      order.description ||
-      order.client_name ||
-      `Orden #${order.id?.slice(0, 8).toUpperCase()}`;
-
-    const notificationConfig = {
-      new: {
-        label: "Nueva orden asignada",
-        message: "Se ha creado una nueva orden para ti.",
-      },
-      cancelled: {
-        label: "Orden cancelada",
-        message: "Una de tus órdenes asignadas ha sido cancelada.",
-      },
-      returned: {
-        label: "Orden devuelta",
-        message: "Una orden fue devuelta desde cotización para realizar correcciones.",
-      },
-    };
-
-    notificationConfig.updated = {
-      label: "Orden editada",
-      message: "Se actualizó la información de una orden asignada a ti.",
-    };
-
-    const notification = {
-      id: notificationId,
-      type,
-      label: notificationConfig[type]?.label || "Notificación",
-      orderTitle,
-      message: notificationConfig[type]?.message || "Tienes una actualización en una orden.",
-      duration: NOTIFICATION_DURATION,
-      expiresAt: Date.now() + NOTIFICATION_DURATION,
-    };
-
-    setNotifications(prev => [notification, ...prev].slice(0, 3));
-
-    notificationTimeoutsRef.current[notificationId] = setTimeout(() => {
-      removeNotification(notificationId);
-    }, NOTIFICATION_DURATION);
-  };
 
   const handleViewOrder = async (order) => {
     setEditedOrders(prev => {
@@ -1052,31 +932,16 @@ export default function PageDesigner() {
           return;
         }
 
-        data
-          .filter(order => !previousOrderIds.has(order.id))
-          .forEach(createNotificationForOrder);
-
         data.forEach(order => {
           const previousOrder = previousOrders[order.id];
-          const wasCancelledBefore = ["cancelada", "cancelled"].includes(previousOrder?.status);
-          const isCancelledNow = ["cancelada", "cancelled"].includes(order.status);
-
-          if (previousOrder && !wasCancelledBefore && isCancelledNow) {
-            createNotificationForOrder(order, "cancelled");
-          }
-
-          if (previousOrder && hasReturnUpdate(previousOrder, order)) {
-            createNotificationForOrder(order, "returned");
-          }
 
           if (
             previousOrder &&
-            !isCancelledNow &&
+            !isOrderStatus(order.status, ORDER_STATUS.CANCELLED) &&
             !hasReturnUpdate(previousOrder, order) &&
             hasTrackedOrderChanges(previousOrder, order)
           ) {
             setEditedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
-            createNotificationForOrder(order, "updated");
           }
         });
 
@@ -1100,7 +965,7 @@ export default function PageDesigner() {
 
   useEffect(() => {
     return () => {
-      Object.values(notificationTimeoutsRef.current).forEach(clearTimeout);
+
     };
   }, []);
 
@@ -1116,7 +981,7 @@ export default function PageDesigner() {
   };
 
   const isDesignerArchivable = (order) => {
-    return ["cancelada", "cancelado", "cancelled"].includes(order.status);
+    return isOrderStatus(order.status, ORDER_STATUS.CANCELLED);
   };
 
   const displayName =
@@ -1134,17 +999,17 @@ export default function PageDesigner() {
 
   const activeOrdersCount = orders.filter(order => (
     !order.is_archived_designer &&
-    !["cancelada", "cancelado", "cancelled", "completada"].includes(order.status)
+    !isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED])
   )).length;
 
   const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
 
   const metrics = [
-    { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", color: "#8B5CF6", icon: <Icon.Package /> },
-    { label: "En diseño", value: orders.filter(o => o.status === "In_Design").length, sub: "Trabajándose ahora", color: "#F59E0B", icon: <Icon.File /> },
-    { label: "En cotización", value: orders.filter(o => o.status === "cotizacion").length, sub: "Listas para seguir flujo", color: "#0EA5E9", icon: <Icon.Send /> },
-    { label: "Devueltas", value: returnedOrdersCount, sub: "Requieren corrección", color: "#EF4444", icon: <Icon.X /> },
-    { label: "Completadas", value: orders.filter(o => o.status === "completada").length, sub: "Entregables cerrados", color: "#10B981", icon: <Icon.Check /> },
+    { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", color: "#8B5CF6", icon: <Icons.Package /> },
+    { label: "En diseño", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DESIGN)).length, sub: "Trabajándose ahora", color: "#F59E0B", icon: <Icons.File /> },
+    { label: "En cotización", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length, sub: "Listas para seguir flujo", color: "#0EA5E9", icon: <Icons.Send /> },
+    { label: "Devueltas", value: returnedOrdersCount, sub: "Requieren corrección", color: "#EF4444", icon: <Icons.X /> },
+    { label: "Completadas", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length, sub: "Entregables cerrados", color: "#10B981", icon: <Icons.Check /> },
   ];
 
   const filteredOrders = orders.filter((order) => {
@@ -1166,7 +1031,7 @@ export default function PageDesigner() {
         : order.order_type !== "orden 911"
     );
 
-    const matchesStatus = filterStatus === "all" || order.status === filterStatus;
+    const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
 
     const matchesArchive =
       filterArchive === "all" ||
@@ -1270,9 +1135,7 @@ export default function PageDesigner() {
     setQuotationSending(true);
 
     const assignmentPayloads = [
-      { status: "cotizacion", quote_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
-      { status: "cotizacion", quotation_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
-      { status: "cotizacion", quote_user_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
+      { status: ORDER_STATUS.IN_QUOTE, quote_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
     ];
 
     let updateError = null;
@@ -1294,8 +1157,8 @@ export default function PageDesigner() {
     setQuotationSending(false);
 
     if (updateError) {
-      showActionNotification({
-        type: "cancelled",
+      notif.showActionNotification({
+        type: "order_cancelled",
         label: "Error al enviar",
         orderTitle: sendingToQuotation.client_name || sendingToQuotation.description || `Orden #${sendingToQuotation.id?.slice(0, 8).toUpperCase()}`,
         message: "No se pudo enviar la orden a cotización. Verifica la asignación o el estado.",
@@ -1305,25 +1168,19 @@ export default function PageDesigner() {
 
     const updatedOrder = {
       ...sendingToQuotation,
-      status: "cotizacion",
+      status: ORDER_STATUS.IN_QUOTE,
       return_reason: null,
       returned_to_designer_at: null,
     };
 
     setOrders(prev => prev.map(order => (
       order.id === sendingToQuotation.id
-        ? { ...order, status: "cotizacion", return_reason: null, returned_to_designer_at: null }
+        ? { ...order, status: ORDER_STATUS.IN_QUOTE, return_reason: null, returned_to_designer_at: null }
         : order
     )));
     setSelectedOrder(updatedOrder);
     setSendingToQuotation(null);
 
-    showActionNotification({
-      type: "completed",
-      label: "Enviada a cotización",
-      orderTitle: updatedOrder.client_name || updatedOrder.description || `Orden #${updatedOrder.id?.slice(0, 8).toUpperCase()}`,
-      message: "La orden ha sido enviada a cotización correctamente.",
-    });
   };
 
   const handleConfirmArchiveDesignerOrder = async () => {
@@ -1339,8 +1196,8 @@ export default function PageDesigner() {
     setArchiveLoading(false);
 
     if (error) {
-      showActionNotification({
-        type: "cancelled",
+      notif.showActionNotification({
+        type: "order_cancelled",
         label: "Error al archivar",
         orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
         message: "No se pudo archivar la orden.",
@@ -1358,13 +1215,6 @@ export default function PageDesigner() {
       setSelectedOrder(prev => prev ? { ...prev, is_archived_designer: true } : prev);
     }
 
-    showActionNotification({
-      type: "completed",
-      label: "Orden archivada",
-      orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
-      message: "La orden fue archivada correctamente.",
-    });
-
     setArchivingOrder(null);
   };
 
@@ -1377,8 +1227,8 @@ export default function PageDesigner() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         menuItems={[
-          { id: "dashboard", label: "Dashboard", icon: <Icon.Dashboard /> },
-          { id: "orders", label: "Mis Órdenes", icon: <Icon.Orders />, badge: activeOrdersCount }
+          { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
+          { id: "orders", label: "Mis Órdenes", icon: <Icons.Orders />, badge: activeOrdersCount }
         ]}
         onLogout={handleLogout}
       />
@@ -1390,7 +1240,7 @@ export default function PageDesigner() {
           <div className="pd-topbar-left">
             {/* Boton para abril y cerral slidebar */}
             <button className="ps-icon-btn" onClick={() => setSidebarOpen(p => !p)}>
-              {sidebarOpen ? <Icon.ChevronLeft /> : <Icon.ChevronRight />}
+              {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
             <div>
               <div className="pd-page-title">{activeTab === "dashboard" ? "Dashboard Diseñador" : "Gestión de órdenes"}</div>
@@ -1399,7 +1249,16 @@ export default function PageDesigner() {
           </div>
 
           <div className="pd-topbar-right">
-            {/* Span para mostrar las ordenes activas */}
+            <NotificationCenter
+              notifications={notif.notifications}
+              unreadCount={notif.unreadCount}
+              toasts={notif.toasts}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDismissToast={notif.dismissToast}
+            />
             <div className="pd-topbar-stat">
               <span>Activas</span>
               <strong>{activeOrdersCount}</strong>
@@ -1409,7 +1268,7 @@ export default function PageDesigner() {
               onClick={() => setActiveTab(activeTab === "dashboard" ? "orders" : "dashboard")}
             >
               <div className="pd-topbar-switch-inner">
-                {activeTab === "dashboard" ? <Icon.Orders /> : <Icon.Dashboard />}
+                {activeTab === "dashboard" ? <Icons.Orders /> : <Icons.Dashboard />}
                 {activeTab === "dashboard" ? "Ver órdenes" : "Ver tablero"}
               </div>
               <div className="pd-topbar-switch-stripe" />
@@ -1473,10 +1332,12 @@ export default function PageDesigner() {
                         <div className="pd-recent-item-right">
                           {isReturnedOrder(order) && <ReturnedBadge compact />}
                           {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
+                          {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
+                          {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
                           <StatusBadge status={order.status} />
                           <PaymentBadge status={order.payment_status} />
                           <button className="pd-recent-view-btn" title="Ver detalle" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>
-                            <Icon.Eye />
+                            <Icons.Eye />
                           </button>
                         </div>
                       </div>
@@ -1500,7 +1361,6 @@ export default function PageDesigner() {
                 <div className="pd-panel-stripe" />
                 <div className="pd-panel-header">
                   <div>
-                    <div className="pd-panel-title">Workspace de diseño</div>
                     <div className="pd-panel-sub">Todo tu flujo de trabajo en un solo lugar.</div>
                   </div>
                   <div className="pd-card-actions">
@@ -1518,7 +1378,7 @@ export default function PageDesigner() {
 
                 <div className="pd-filters">
                   <div className="pd-search-wrap">
-                    <span className="pd-search-icon"><Icon.Search /></span>
+                    <span className="pd-search-icon"><Icons.Search /></span>
                     <input 
                       className="pd-input" 
                       placeholder="Buscar por cliente, ID o descripción..."
@@ -1536,10 +1396,10 @@ export default function PageDesigner() {
                   <div className="pd-select-wrap">
                     <select className="pd-input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                       <option value="all">Todos los estados</option>
-                      <option value="In_Design">En Diseño</option>
-                      <option value="cotizacion">Cotización</option>
-                      <option value="en produccion">En Producción</option>
-                      <option value="completada">Completada</option>
+                      <option value={ORDER_STATUS.IN_DESIGN}>En Diseño</option>
+                      <option value={ORDER_STATUS.IN_QUOTE}>Cotización</option>
+                      <option value={ORDER_STATUS.IN_PRODUCTION}>Producción</option>
+                      <option value={ORDER_STATUS.IN_COMPLETED}>Completada</option>
                     </select>
                   </div>
                   <div className="pd-select-wrap">
@@ -1589,6 +1449,8 @@ export default function PageDesigner() {
                                 <span>#{order.id?.slice(0, 8).toUpperCase()}</span>
                                 {isReturnedOrder(order) && <ReturnedBadge compact />}
                                 {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
+                                {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
+                                {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
                               </div>
                             </td>
                             <td className="pd-td-client">{order.client_name}</td>
@@ -1647,7 +1509,7 @@ export default function PageDesigner() {
                         <div className="pd-card-footer">
                           <div className="pd-card-footer-left">
                             <div className="pd-card-date">
-                              <Icon.Clock />
+                              <Icons.Clock />
                               {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}
                             </div>
                           </div>
@@ -1675,17 +1537,6 @@ export default function PageDesigner() {
         </main>
       </div>
 
-      {notifications.length > 0 && (
-        <div className="pd-notification-stack">
-          {notifications.map(notification => (
-            <NotificationToast
-              key={notification.id}
-              notification={notification}
-              onClose={removeNotification}
-            />
-          ))}
-        </div>
-      )}
 
       <OrderDetailModal 
         open={!!selectedOrder} 

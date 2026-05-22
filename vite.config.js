@@ -24,7 +24,8 @@ function createApiHandler(path, handler) {
         req.on("end", async () => {
           try {
             const body = rawBody ? JSON.parse(rawBody) : {};
-            const result = await handler(body, env);
+            const authHeader = req.headers["authorization"] || "";
+            const result = await handler(body, { ...env, authHeader });
 
             res.statusCode = result.status;
             res.setHeader("Content-Type", "application/json");

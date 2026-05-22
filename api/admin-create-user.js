@@ -1,8 +1,19 @@
 import { handleAdminCreateUser } from "../server/admin-create-user-handler.js";
+import { verifyAdmin, jsonResponse } from "../server/auth-middleware.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método no permitido." });
+  }
+
+  const auth = await verifyAdmin(
+    req.headers.authorization || "",
+    process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL,
+    process.env.VITE_SUPABASE_ANON_KEY
+  );
+
+  if (!auth.authorized) {
+    return res.status(401).json({ error: auth.error });
   }
 
   const result = await handleAdminCreateUser(req.body, process.env);

@@ -1,0 +1,8 @@
+-- Deprecated entrypoint.
+-- The active Supabase migrations are stored in the supabase/ directory:
+-- - 20260519_enterprise_notifications_rls.sql
+-- - 20260519_function_grants_and_storage_limits.sql
+-- - 20260519_raise_order_docs_upload_limit.sql
+--
+-- Keep this file non-destructive so it cannot accidentally drop production
+-- notification data from an old manual SQL workflow.

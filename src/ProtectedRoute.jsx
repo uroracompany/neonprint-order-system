@@ -1,3 +1,12 @@
+// ============= COMPONENTE PROTECTEDROUTE =============
+// Este componente protege las rutas de la aplicación verificando:
+// 1. Si el usuario está autenticado en Supabase
+// 2. Si el usuario tiene el rol requerido
+// 
+// USO: <ProtectedRoute allowed={["quote"]}><PageQuote /></ProtectedRoute>
+// 
+// Si el usuario no está autenticado o no tiene permisos, lo redirige al login
+
 // Import React Dependencies
 import { Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -6,7 +15,8 @@ import { supabase } from "../supabaseClient";
 // Import Components and Assets
 import "./css-components/ProtectedRoute.css";
 
-/* ── NeonPrint28 Logo ── */
+/* ── LOGO NEONPRINT ── */
+// Logo decorativo que se muestra durante la carga
 const NeonLogo = ({ size = 56 }) => (
   <div style={{
     width: size, height: size, borderRadius: "50%", flexShrink: 0,
@@ -26,7 +36,8 @@ const NeonLogo = ({ size = 56 }) => (
   </div>
 );
 
-/* ── Spinner ── */
+/* ── SPINNER ANIMADO ── */
+// Spinner que se muestra mientras se verifica la autenticación
 const TriSpinner = ({ size = 44 }) => (
   <div style={{ position:"relative", width:size, height:size }}>
     <div style={{
@@ -43,26 +54,30 @@ const TriSpinner = ({ size = 44 }) => (
   </div>
 );
 
+// ============= COMPONENTE MAIN =============
+// Props:
+//   children: El componente a proteger
+//   allowed: Array de roles permitidos (ej: ["quote", "designer"])
 export default function ProtectedRoute({ children, allowed = [] }) {
 
-  const [session, setSession] = useState(undefined);
-  const [unauthorized, setUnauthorized] = useState(false);
+  const [session, setSession] = useState(undefined); // undefined = cargando, null = sin sesión, user = autenticado
+  const [unauthorized, setUnauthorized] = useState(false); // true = autenticado pero sin permisos
 
   useEffect(() => {
 
     const checkAccess = async () => {
 
-      // Obtener usuario actual
+      // PASO 1: Obtener usuario autenticado de Supabase
       const { data } = await supabase.auth.getUser();
 
       if (!data.user) {
-        setSession(null);
+        setSession(null); // No hay usuario autenticado
         return;
       }
 
       setSession(data.user);
 
-      // Obtener rol
+      // PASO 2: Obtener rol del usuario desde la tabla "profiles"
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
@@ -71,9 +86,10 @@ export default function ProtectedRoute({ children, allowed = [] }) {
 
       const role = profile?.role;
 
-      // Verificar permisos
+      // PASO 3: Verificar si el rol está en la lista de permisos
+      // Si allowed está vacío, permite cualquier rol autenticado
       if (allowed.length && !allowed.includes(role)) {
-        setUnauthorized(true);
+        setUnauthorized(true); // Usuario sin permisos para esta ruta
       }
 
     };

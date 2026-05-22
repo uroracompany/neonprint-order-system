@@ -1,161 +1,53 @@
-// SELLER'S HOME PAGE - ORDER DASHBOARD
-
-// IMPORT REACT  &  SUPABASE
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
-
-// IMPORT CSS & ASSETS
 import "../css-components/page-seller.css";
 import Sidebar from "../components/Sidebar";
+import { Icons } from "../utils/icons";
+import {
+  ORDER_STATUS,
+  PAYMENT_COLORS,
+  QUOTE_ASSIGNMENT_FIELDS,
+  STATUS_OPTIONS,
+  MATERIAL_OPTIONS,
+  getOrderStatusConfig,
+  isOrderStatus,
+  isOrderStatusIn,
+  parseFileUrls,
+} from "../utils/constants";
+import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
+import useNotifications from "../hooks/useNotifications";
+import NotificationCenter from "../components/NotificationCenter";
+import { buildStorageSafeFileName, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
 
-// ─── ICONS ────────────────────────────────────────────────────────────────────
-const Icon = {
-  Dashboard: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>),
-  Orders: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>),
-  Plus: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>),
-  Search: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>),
-  Logout: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>),
-  Eye: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>),
-  Close: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>),
-  ChevronDown: () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>),
-  Bell: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>),
-  TrendUp: () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></svg>),
-  Package: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21" /><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>),
-  Truck: () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>),
-  Refresh: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>),
-  ArrowRight: () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>),
-  Upload: () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16" /><line x1="12" y1="12" x2="12" y2="21" /><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" /></svg>),
-  Trash: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>),
-  Menu: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>),
-  ExternalLink: () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>),
-  Phone: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.1 6.1l1.06-1.06a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" /></svg>),
-  Calendar: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>),
-  Receipt: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16l3-2 2 2 2-2 2 2 2-2 3 2V4a2 2 0 0 0-2-2z" /><line x1="9" y1="9" x2="15" y2="9" /><line x1="9" y1="13" x2="15" y2="13" /></svg>),
-  Brush: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 0 1 4.03 4.03l-8.06 8.08" /><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1 1 6.23 1 7 0 .48-.93.49-2.01 0-3.04a3.03 3.03 0 0 0-2-2z" /></svg>),
-  X: () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>),
-  Edit: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
-  Archived: () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" /></svg>),
-  Check: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>),
-  ChevronLeft: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>),
-  ChevronRight: () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>),
-  Clipboard: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" /></svg>),
-  Paintbrush: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.37 2.63a3.75 3.75 0 0 0-5.3 0l-.4.4a3.75 3.75 0 0 0 0 5.3l4.26 4.26a3.75 3.75 0 0 0 5.3 0l.4-.4a3.75 3.75 0 0 0 0-5.3l-4.26-4.26Z" /><path d="M9.41 2.63a3.75 3.75 0 0 1 5.3 0l.4.4a3.75 3.75 0 0 1 0 5.3l-4.26 4.26a3.75 3.75 0 0 1-5.3 0l-.4-.4a3.75 3.75 0 0 1 0-5.3l4.26-4.26Z" /></svg>),
-  FileText: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>),
-  Paperclip: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>),
-  Settings: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>),
-  Key: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m-3.5 3.5L12 12" /></svg>),
-  Clock: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>),
-  User: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>),
-  Image: () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>),
-  File: () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>),
+const isReturnedOrder = (order) => {
+  if (!order || !order.return_reason) return false;
+  const validStatuses = order.order_design_type === "EXTERNAL_DESING"
+    ? [ORDER_STATUS.PENDING]
+    : [ORDER_STATUS.IN_DESIGN];
+  return isOrderStatusIn(order.status, validStatuses);
 };
 
-// ─── STATUS & PAYMENT CONFIG ──────────────────────────────────────────────────
-const STATUS_CONFIG = {
-  "Pending": { label: "Pendiente", value: "Pending", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
-  "In_Design": { label: "En Diseño", value: "In_Design", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
-  "in_Quotation": { label: "En Cotización", value: "in_Quotation", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
-  "cotizacion": { label: "Cotización", value: "cotizacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
-  "en produccion": { label: "En Producción", value: "en produccion", color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
-  "terminacion": { label: "Terminación", value: "terminacion", color: "#0369A1", bg: "#E0F2FE", dot: "#0284C7" },
-  "en entrega": { label: "En Entrega", value: "en entrega", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
-  "completada": { label: "Completada", value: "completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
-  "cancelada": { label: "Cancelada", value: "cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
-  "cancelled": { label: "Cancelada", value: "cancelled", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },
-  "archivada": { label: "Archivada", value: "archivada", color: "#7C3AED", bg: "#EDE9FE", dot: "#8B5CF6" },
-};
+const SELLER_HIDDEN_NOTIFICATION_EVENTS = new Set([
+  "designer_assigned",
+  "quote_assigned",
+]);
 
-const PAYMENT_CONFIG = {
-  "pagado": { label: "Pagado", color: "#14532D", bg: "#DCFCE7" },
-  "Pending_Payment": { label: "Pago Pendiente", value: "Pending_Payment", color: "#92620A", bg: "#FEF3C7" },
-  "parcial": { label: "Parcial", color: "#0369A1", bg: "#E0F2FE" },
-};
-
-// Helper function to parse order_file_url (handles both single string and JSON array)
-const parseFileUrls = (fileUrl) => {
-  if (!fileUrl) return [];
-  try {
-    const parsed = JSON.parse(fileUrl);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    return [fileUrl];
-  }
-};
-
-const FLOW_STEPS = [
-  { key: "Pending", label: "Pendiente" },
-  { key: "In_Design", label: "Diseño" },
-  { key: "cotizacion", label: "Cotización" },
-  { key: "Produccion", label: "Producción" },
-  { key: "en produccion", label: "Terminación" },
-  { key: "en entrega", label: "Entrega" },
+const ACTIVE_WORKFLOW_STATUSES_FOR_SELLER = [
+  ORDER_STATUS.IN_DESIGN,
+  ORDER_STATUS.IN_QUOTE,
+  ORDER_STATUS.IN_PRODUCTION,
+  ORDER_STATUS.IN_TERMINATION,
+  ORDER_STATUS.IN_DELIVERED,
+  ORDER_STATUS.IN_COMPLETED,
+  ORDER_STATUS.CANCELLED,
 ];
 
-// Flujo para órdenes de Diseño Externo (sin paso de diseño)
-const FLOW_STEPS_EXTERNAL = [
-  { key: "Pending", label: "Pendiente" },
-  { key: "cotizacion", label: "Cotización" },
-  { key: "en produccion", label: "Producción" },
-  { key: "terminacion", label: "Terminación" },
-  { key: "en entrega", label: "Entrega" },
-];
-
-// Mapeo para mostrar la etiqueta correcta del paso actual
-const FLOW_STEP_LABELS = {
-  "Pending": "Pendiente",
-  "In_Design": "Diseño", 
-  "in_Quotation": "Cotización",
-  "cotizacion": "Cotización",
-  "Produccion": "Producción",
-  "en produccion": "Terminación",
-  "terminacion": "Terminación",
-  "en entrega": "Entrega",
-  "completada": "Completada",
-  "cancelada": "Cancelada",
-  "cancelled": "Cancelada",
+const isSellerVisibleNotification = (notification) => {
+  const eventKind = notification?.metadata?.event_kind;
+  return !SELLER_HIDDEN_NOTIFICATION_EVENTS.has(eventKind);
 };
 
-const NOTIFICATION_DURATION = 5000;
-const RETURNED_ORDERS_STORAGE_KEY = "ps_returned_orders";
-const TRACKED_ORDER_FIELDS = [
-  "client_name",
-  "client_contact",
-  "description",
-  "material",
-  "termination_type",
-  "delivery_date",
-  "order_type",
-];
-
-const normalizeTrackedValue = (value) => {
-  if (value === null || value === undefined) return "";
-  return String(value).trim();
-};
-
-const isExternalReturnedOrder = (order) => (
-  order?.order_design_type === "EXTERNAL_DESING" &&
-  order?.status === "Pending" &&
-  String(order?.return_reason || "").trim().length > 0
-);
-
-const hasExternalReturnUpdate = (previousOrder, nextOrder) => {
-  if (!isExternalReturnedOrder(nextOrder)) return false;
-
-  return (
-    !isExternalReturnedOrder(previousOrder) ||
-    normalizeTrackedValue(previousOrder?.return_reason) !== normalizeTrackedValue(nextOrder?.return_reason) ||
-    normalizeTrackedValue(previousOrder?.returned_to_designer_at) !== normalizeTrackedValue(nextOrder?.returned_to_designer_at)
-  );
-};
-
-const hasTrackedOrderChanges = (previousOrder, nextOrder) => {
-  return TRACKED_ORDER_FIELDS.some(field => (
-    normalizeTrackedValue(previousOrder?.[field]) !== normalizeTrackedValue(nextOrder?.[field])
-  ));
-};
-
-const resolveOriginalQuoteId = (order) => order?.quote_id || order?.quotation_id || order?.quote_user_id || "";
 const PHONE_PLACEHOLDER = "Ej: 809-555-1234";
 
 const isValidDominicanPhone = (value) => {
@@ -188,55 +80,6 @@ const formatDominicanPhone = (value) => {
   }
 };
 
-function SellerNotificationToast({ notification, onClose }) {
-  const [progress, setProgress] = useState(100);
-
-  useEffect(() => {
-    const updateProgress = () => {
-      const remaining = notification.expiresAt - Date.now();
-      const nextProgress = Math.max(0, (remaining / notification.duration) * 100);
-      setProgress(nextProgress);
-    };
-
-    updateProgress();
-
-    const interval = setInterval(updateProgress, 50);
-    return () => clearInterval(interval);
-  }, [notification.duration, notification.expiresAt]);
-
-  return (
-    <div className={`ps-notification ${notification.type}`} role="status" aria-live="polite">
-      <div className="ps-notification-main">
-        <div className="ps-notification-icon">
-          {notification.type === "cancelled" ? <Icon.X /> : <Icon.Package />}
-        </div>
-
-        <div className="ps-notification-content">
-          <span className="ps-notification-title">{notification.label}</span>
-          <span className="ps-notification-subtitle">{notification.orderTitle}</span>
-          <span className="ps-notification-text">{notification.message}</span>
-        </div>
-
-        <button
-          type="button"
-          className="ps-notification-close"
-          onClick={() => onClose(notification.id)}
-          aria-label="Cerrar notificación"
-        >
-          <Icon.X />
-        </button>
-      </div>
-
-      <div className="ps-notification-progress-track">
-        <div
-          className="ps-notification-progress"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 const CARD_ACCENTS = [
   { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
   { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
@@ -245,20 +88,13 @@ const CARD_ACCENTS = [
   { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
 ];
 
-// ─── CONSTANTES DE FORMULARIO ─────────────────────────────────────────────────
-const MATERIALS = [
-  "Vinilo", "Banner", "Lona", "Papel Fotografico", "Carton",
-  "Adhesivo", "PVC", "Acrilico", "Tela", "Foam", "Otro"
-];
 
 
-// ─── COMPONENTES REUTILIZABLES ────────────────────────────────────────────────
-function ErrorBoundary({ children }) {
-  return children;
-}
+
+
 
 function StatusBadge({ status, type = "status" }) {
-  const cfg = type === "status" ? STATUS_CONFIG[status] : PAYMENT_CONFIG[status];
+  const cfg = type === "status" ? getOrderStatusConfig(status) : PAYMENT_COLORS[status];
   if (!cfg) return <span style={{ color: "#8899B5", fontSize: 12 }}>{status || "---"}</span>;
   return (
     <span className="ps-badge" style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}20` }}>
@@ -276,7 +112,7 @@ function MetricCard({ icon, label, value, sub, accentIdx = 0, trend }) {
       onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
       onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
       <div className="ps-card-glow" style={{ background: acc.glow }} />
-      {trend !== undefined && <span className="ps-trend-badge"><Icon.TrendUp /> +{trend}%</span>}
+      {trend !== undefined && <span className="ps-trend-badge"><Icons.TrendUp /> +{trend}%</span>}
       <div className="ps-card-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
       <div className="ps-card-value">{value}</div>
       <div className="ps-card-label">{label}</div>
@@ -296,7 +132,7 @@ function Modal({ open, onClose, title, children, wide }) {
         <div className="ps-modal-stripe" />
         <div className="ps-modal-header">
           <span className="ps-modal-title">{title}</span>
-          <button className="ps-modal-close" onClick={onClose}><Icon.Close /></button>
+          <button className="ps-modal-close" onClick={onClose}><Icons.Close /></button>
         </div>
         <div className="ps-modal-body">{children}</div>
       </div>
@@ -322,68 +158,9 @@ function Field({ label, required, optional, hint, error, children }) {
   );
 }
 
-// BARRA DE POGRESO SE SEGUIMIENTO DE  LA ORDEN
-function FlowTracker({ status }) {
-  const idx = FLOW_STEPS.findIndex(s => s.key === status);
-  
-  return (
-    <div className="ps-flow">
-      {FLOW_STEPS.map((step, i) => {
-        const isCompleted = idx >= 0 && i < idx;
-        const isActive = i === idx;
-        return (
-          <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < FLOW_STEPS.length - 1 ? 1 : "none" }}>
-            <div className="ps-flow-step">
-              <div className={`ps-flow-circle ${isCompleted ? "done" : isActive ? "active" : ""}`}>
-                {isCompleted ? "✓" : i + 1}
-              </div>
-              <span className={`ps-flow-label ${isCompleted ? "done" : isActive ? "active" : ""}`}>{step.label}</span>
-            </div>
-            {i < FLOW_STEPS.length - 1 && <div className={`ps-flow-line ${isCompleted ? "done" : ""}`} />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
-// FlowTracker para órdenes de Diseño Externo
-function FlowTrackerExternal({ status }) {
-  // Mapeo de estados a índice del tracker (ambos estados de cotización van al mismo paso)
-  const statusToIndex = {
-    "Pending": 0,
-    "in_Quotation": 1,
-    "cotizacion": 1,
-    "en produccion": 2,
-    "terminacion": 3,
-    "en entrega": 4,
-    "completada": 4,
-    "cancelada": -1,
-    "cancelled": -1,
-  };
-  
-  const idx = statusToIndex[status] ?? -1;
-  
-  return (
-    <div className="ps-flow">
-      {FLOW_STEPS_EXTERNAL.map((step, i) => {
-        const isCompleted = idx >= 0 && i < idx;
-        const isActive = i === idx;
-        return (
-          <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < FLOW_STEPS_EXTERNAL.length - 1 ? 1 : "none" }}>
-            <div className="ps-flow-step">
-              <div className={`ps-flow-circle ${isCompleted ? "done" : isActive ? "active" : ""}`}>
-                {isCompleted ? "✓" : i + 1}
-              </div>
-              <span className={`ps-flow-label ${isCompleted ? "done" : isActive ? "active" : ""}`}>{step.label}</span>
-            </div>
-            {i < FLOW_STEPS_EXTERNAL.length - 1 && <div className={`ps-flow-line ${isCompleted ? "done" : ""}`} />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+
+
 
 // ─── Selector de diferentes materiales ──────────────────────────────────────────────────
 function MultiMaterialSelector({ selected, onChange }) {
@@ -410,17 +187,17 @@ function MultiMaterialSelector({ selected, onChange }) {
           : selected.map(m => (
             <span key={m} className="ps-chip">
               {m}
-              <button className="ps-chip-remove" onClick={e => { e.stopPropagation(); remove(m); }}><Icon.X /></button>
+              <button className="ps-chip-remove" onClick={e => { e.stopPropagation(); remove(m); }}><Icons.X /></button>
             </span>
           ))
         }
-        <span className="ps-multimat-arrow"><Icon.ChevronDown /></span>
+        <span className="ps-multimat-arrow"><Icons.ChevronDown /></span>
       </div>
 
       {/* Dropdown */}
       {open && (
         <div className="ps-multimat-dropdown">
-          {MATERIALS.map(mat => (
+          {MATERIAL_OPTIONS.map(mat => (
             <div key={mat} className={`ps-multimat-option ${selected.includes(mat) ? "selected" : ""}`} onClick={() => toggle(mat)}>
               <span className="ps-multimat-check">{selected.includes(mat) ? "✓" : ""}</span>
               {mat}
@@ -436,7 +213,7 @@ function MultiMaterialSelector({ selected, onChange }) {
 function UploadField({ fileRef, previewUrl, fileName, onFileChange, onRemove, onChangeClick, accept = "image/*", maxMB = 5 }) {
   return !previewUrl ? (
     <div className="ps-upload-zone" onClick={() => fileRef.current?.click()}>
-      <div className="ps-upload-icon"><Icon.Upload /></div>
+      <div className="ps-upload-icon"><Icons.Upload /></div>
       <p className="ps-upload-title">Haz clic para seleccionar un archivo</p>
       <p className="ps-upload-sub">{accept === "image/*" ? "PNG, JPG, WEBP" : "PDF, PNG, JPG"} &mdash; max. {maxMB} MB</p>
       <input ref={fileRef} type="file" accept={accept} style={{ display: "none" }} onChange={onFileChange} />
@@ -447,7 +224,7 @@ function UploadField({ fileRef, previewUrl, fileName, onFileChange, onRemove, on
         ? <img src={previewUrl} alt="preview" className="ps-preview-img" />
         : (
           <div className="ps-file-preview-box">
-            <Icon.Receipt />
+            <Icons.Receipt />
             <span className="ps-file-preview-name">{fileName}</span>
           </div>
         )
@@ -459,7 +236,7 @@ function UploadField({ fileRef, previewUrl, fileName, onFileChange, onRemove, on
         </div>
         <div className="ps-preview-actions">
           <button className="ps-preview-change-btn" onClick={onChangeClick}>Cambiar</button>
-          <button className="ps-preview-del-btn" onClick={onRemove}><Icon.Trash /></button>
+          <button className="ps-preview-del-btn" onClick={onRemove}><Icons.Trash /></button>
         </div>
       </div>
       <input ref={fileRef} type="file" accept={accept} style={{ display: "none" }} onChange={onFileChange} />
@@ -554,8 +331,8 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
       order_type: form.order_type,
       order_design_type: form.design_type,
       delivery_date: form.indefinido ? null : (form.delivery_date || null),
-      status: "Pending",
-      payment_status: PAYMENT_CONFIG["Pending_Payment"].value,
+      status: ORDER_STATUS.PENDING,
+      payment_status: "Pending_Payment",
       seller_id: userId,
       created_by: userId,
     };
@@ -568,33 +345,37 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
       setLoading(true);
       const fileUrls = [];
       
-      for (let i = 0; i < form.design_files.length; i++) {
-        const file = form.design_files[i];
-        const fileName = `${Date.now()}-${i}-${file.name}`;
-        const { data, error } = await supabase.storage
-          .from("order-docs")
-          .upload(`orders/${newOrder.id}/files/${fileName}`, file, { upsert: true });
-        
-        if (!error && data) {
-          const { data: { publicUrl } } = supabase.storage
-            .from("order-docs")
-            .getPublicUrl(`orders/${newOrder.id}/files/${fileName}`);
-          fileUrls.push(publicUrl);
+      try {
+        for (let i = 0; i < form.design_files.length; i++) {
+          const file = form.design_files[i];
+          const fileName = buildStorageSafeFileName(file, `${i}-`);
+          const publicUrl = await uploadOrderAsset({
+            bucket: "order-docs",
+            path: `orders/${newOrder.id}/files/${fileName}`,
+            file,
+          });
+
+          if (publicUrl) fileUrls.push(publicUrl);
         }
+      } catch (uploadError) {
+        setLoading(false);
+        setError(uploadError?.message || "Error al subir los archivos de diseño.");
+        return;
       }
-      
+
       let previewUrl = null;
       if (form.design_preview) {
-        const fileName = `preview-${Date.now()}.${form.design_preview.name.split('.').pop()}`;
-        const { data, error } = await supabase.storage
-          .from("order-previews")
-          .upload(`orders/${newOrder.id}/preview/${fileName}`, form.design_preview, { upsert: true });
-        
-        if (!error && data) {
-          const { data: { publicUrl } } = supabase.storage
-            .from("order-previews")
-            .getPublicUrl(`orders/${newOrder.id}/preview/${fileName}`);
-          previewUrl = publicUrl;
+        try {
+          const fileName = buildStorageSafeFileName(form.design_preview, "preview-");
+          previewUrl = await uploadOrderAsset({
+            bucket: "order-previews",
+            path: `orders/${newOrder.id}/preview/${fileName}`,
+            file: form.design_preview,
+          });
+        } catch (uploadError) {
+          setLoading(false);
+          setError(uploadError?.message || "Error al subir el preview de la orden.");
+          return;
         }
       }
       
@@ -636,7 +417,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
         <div className="col-full">
           <Field label="Telefono / Contacto" optional hint="WhatsApp o numero de contacto del cliente" error={fieldErrors.client_phone}>
             <div className="ps-input-icon-wrap">
-              <span className="ps-input-icon"><Icon.Phone /></span>
+              <span className="ps-input-icon"><Icons.Phone /></span>
               <input className="ps-form-input with-icon" placeholder={PHONE_PLACEHOLDER}
                 value={form.client_phone} onChange={e => set("client_phone", formatDominicanPhone(e.target.value))} maxLength="12" />
             </div>
@@ -730,7 +511,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
                     }}
                     style={{ display: "none" }}
                   />
-                  <div className="ps-upload-icon"><Icon.Upload /></div>
+                  <div className="ps-upload-icon"><Icons.Upload /></div>
                   <div className="ps-upload-btn-wrapper">
                     <span className="ps-upload-btn-text">Subir archivos</span>
                   </div>
@@ -740,10 +521,10 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
                   <div className="ps-files-list">
                     {form.design_files.map((file, i) => (
                       <div key={i} className="ps-file-item">
-                        <Icon.File />
+                        <Icons.File />
                         <span className="ps-file-name">{file.name}</span>
                         <button className="ps-file-remove" onClick={(e) => { e.stopPropagation(); set("design_files", form.design_files.filter((_, idx) => idx !== i)); }}>
-                          <Icon.X />
+                          <Icons.X />
                         </button>
                       </div>
                     ))}
@@ -767,7 +548,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
                       }}
                       style={{ display: "none" }}
                     />
-                    <div className="ps-upload-icon"><Icon.Image /></div>
+                    <div className="ps-upload-icon"><Icons.Image /></div>
                     <div className="ps-upload-btn-wrapper">
                       <span className="ps-upload-btn-text">Subir imagen de preview</span>
                     </div>
@@ -781,7 +562,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
                         <span className="ps-preview-card-label">Vista previa del diseño</span>
                         <div className="ps-preview-card-actions">
                           <button className="ps-preview-change-btn" onClick={() => previewInputRef.current?.click()}>Cambiar</button>
-                          <button className="ps-preview-del-btn" onClick={() => set("design_preview", null)}><Icon.Trash /></button>
+                          <button className="ps-preview-del-btn" onClick={() => set("design_preview", null)}><Icons.Trash /></button>
                         </div>
                       </div>
                     </div>
@@ -797,7 +578,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
           <Field label="Fecha de entrega" optional>
             <div className="ps-date-row">
               <div className="ps-input-icon-wrap" style={{ flex: 1 }}>
-                <span className="ps-input-icon"><Icon.Calendar /></span>
+                <span className="ps-input-icon"><Icons.Calendar /></span>
                 <input
                   className="ps-form-input with-icon"
                   type="date"
@@ -957,6 +738,45 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
     setError("");
     setFieldErrors({});
 
+    // 1. Upload files first (no disparan el trigger de orders)
+    let fileUrls = [...existingFiles];
+    try {
+      for (let i = 0; i < newFiles.length; i++) {
+        const file = newFiles[i];
+        const fileName = buildStorageSafeFileName(file, `${i}-`);
+        const publicUrl = await uploadOrderAsset({
+          bucket: "order-docs",
+          path: `orders/${order.id}/files/${fileName}`,
+          file,
+        });
+
+        if (publicUrl) fileUrls.push(publicUrl);
+      }
+    } catch (uploadError) {
+      setLoading(false);
+      setError(uploadError?.message || "Error al subir los archivos de diseño.");
+      return;
+    }
+
+    let previewUrl = existingPreview;
+    if (newPreview) {
+      try {
+        const fileName = buildStorageSafeFileName(newPreview, "preview-");
+        previewUrl = await uploadOrderAsset({
+          bucket: "order-previews",
+          path: `orders/${order.id}/preview/${fileName}`,
+          file: newPreview,
+        });
+      } catch (uploadError) {
+        setLoading(false);
+        setError(uploadError?.message || "Error al subir el preview de la orden.");
+        return;
+      }
+    } else if (!existingPreview) {
+      previewUrl = null;
+    }
+
+    // 2. ÚNICO update a orders → 1 sola ejecución del trigger
     const { error: err } = await supabase
       .from("orders")
       .update({
@@ -966,6 +786,8 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
         material: form.material.trim(),
         termination_type: form.termination_type.trim() || null,
         delivery_date: form.delivery_date || null,
+        order_file_url: JSON.stringify(fileUrls),
+        preview_image: previewUrl,
       })
       .eq("id", order.id);
 
@@ -975,50 +797,15 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
       return;
     }
 
-    let fileUrls = [...existingFiles];
-    for (let i = 0; i < newFiles.length; i++) {
-      const file = newFiles[i];
-      const fileName = `${Date.now()}-${i}-${file.name}`;
-      const { data, error } = await supabase.storage
-        .from("order-docs")
-        .upload(`orders/${order.id}/files/${fileName}`, file, { upsert: true });
-
-      if (!error && data) {
-        const { data: { publicUrl } } = supabase.storage
-          .from("order-docs")
-          .getPublicUrl(`orders/${order.id}/files/${fileName}`);
-        fileUrls.push(publicUrl);
-      }
-    }
-
-    if (fileUrls.length > 0 || existingFiles.length === 0) {
-      await supabase
-        .from("orders")
-        .update({ order_file_url: JSON.stringify(fileUrls) })
-        .eq("id", order.id);
-    }
-
-    let previewUrl = existingPreview;
-    if (newPreview) {
-      const fileName = `preview-${Date.now()}.${newPreview.name.split('.').pop()}`;
-      const { data, error } = await supabase.storage
-        .from("order-previews")
-        .upload(`orders/${order.id}/preview/${fileName}`, newPreview, { upsert: true });
-
-      if (!error && data) {
-        const { data: { publicUrl } } = supabase.storage
-          .from("order-previews")
-          .getPublicUrl(`orders/${order.id}/preview/${fileName}`);
-        previewUrl = publicUrl;
-      }
-    } else if (!existingPreview) {
-      previewUrl = null;
-    }
-
-    await supabase
-      .from("orders")
-      .update({ preview_image: previewUrl })
-      .eq("id", order.id);
+    await Promise.all([
+      ...removedFileUrls.flatMap((url) => [
+        removeOrderAssetByPublicUrl({ bucket: "order-docs", url }),
+        removeOrderAssetByPublicUrl({ bucket: "order-previews", url }),
+      ]),
+      !previewUrl && existingPreview
+        ? removeOrderAssetByPublicUrl({ bucket: "order-previews", url: existingPreview })
+        : Promise.resolve({ removed: false, error: null }),
+    ]);
 
     setLoading(false);
     onUpdated?.();
@@ -1083,7 +870,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
         <div className="col-full">
           <Field label="Fecha de entrega" optional>
             <div className="ps-input-icon-wrap">
-              <span className="ps-input-icon"><Icon.Calendar /></span>
+              <span className="ps-input-icon"><Icons.Calendar /></span>
               <input className="ps-form-input with-icon" type="date" value={form.delivery_date} onChange={e => set("delivery_date", e.target.value)} />
             </div>
           </Field>
@@ -1100,10 +887,10 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {existingFiles.map((url, i) => (
                   <div key={i} className="ps-file-item">
-                    <Icon.File />
+                    <Icons.File />
                     <span className="ps-file-name">{parseFileName(url)}</span>
                     <button className="ps-file-remove" onClick={() => handleRemoveExistingFile(url)}>
-                      <Icon.X />
+                      <Icons.X />
                     </button>
                   </div>
                 ))}
@@ -1113,10 +900,10 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {newFiles.map((file, i) => (
                   <div key={i} className="ps-file-item" style={{ borderColor: "var(--cyan)", background: "rgba(6, 182, 212, 0.04)" }}>
-                    <Icon.File />
+                    <Icons.File />
                     <span className="ps-file-name">{file.name}</span>
                     <button className="ps-file-remove" onClick={() => handleRemoveNewFile(i)}>
-                      <Icon.X />
+                      <Icons.X />
                     </button>
                   </div>
                 ))}
@@ -1130,7 +917,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
                 onChange={handleAddNewFiles}
                 style={{ display: "none" }}
               />
-              <div className="ps-upload-icon"><Icon.Upload /></div>
+              <div className="ps-upload-icon"><Icons.Upload /></div>
               <div className="ps-upload-btn-wrapper">
                 <span className="ps-upload-btn-text">Agregar archivos</span>
               </div>
@@ -1158,7 +945,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
                         {newPreview ? "Cancelar" : "Cambiar"}
                       </button>
                       <button className="ps-preview-del-btn" onClick={newPreview ? handleRemoveNewPreview : handleRemoveExistingPreview}>
-                        <Icon.Trash />
+                        <Icons.Trash />
                       </button>
                     </div>
                   </div>
@@ -1173,7 +960,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
                   onChange={handleAddNewPreview}
                   style={{ display: "none" }}
                 />
-                <div className="ps-upload-icon"><Icon.Image /></div>
+                <div className="ps-upload-icon"><Icons.Image /></div>
                 <div className="ps-upload-btn-wrapper">
                   <span className="ps-upload-btn-text">Subir imagen de preview</span>
                 </div>
@@ -1198,8 +985,8 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
 function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSendToQuotation }) {
   if (!order) return null;
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
-  const statusConfig = STATUS_CONFIG[order.status];
-  const paymentConfig = PAYMENT_CONFIG[order.payment_status];
+  const statusConfig = getOrderStatusConfig(order.status);
+  const paymentConfig = PAYMENT_COLORS[order.payment_status];
   
   const [designerName, setDesignerName] = useState("");
   
@@ -1270,7 +1057,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                 </p>
                 {order.client_contact && (
                   <p style={{ fontSize: 12, color: "var(--text-sub)", margin: 0, display: "flex", alignItems: "center", gap: 5 }}>
-                    <Icon.Phone />{order.client_contact}
+                    <Icons.Phone />{order.client_contact}
                   </p>
                 )}
               </div>
@@ -1299,14 +1086,14 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {[
-                { label: "Material", value: order.material, icon: <Icon.Paintbrush /> },
-                { label: "Tipo de terminación", value: order.termination_type || "---", icon: <Icon.Check /> },
-                { label: "Tipo de orden", value: order.order_type, icon: <Icon.Package /> },
+                { label: "Material", value: order.material, icon: <Icons.Paintbrush /> },
+                { label: "Tipo de terminación", value: order.termination_type || "---", icon: <Icons.Check /> },
+                { label: "Tipo de orden", value: order.order_type, icon: <Icons.Package /> },
                 { label: "Diseño", 
                   value: order.order_design_type === "INTERNAL_DESING" ? "Diseño interno" :
                          order.order_design_type === "EXTERNAL_DESING" ? "Diseño externo" : "---", 
-                  icon: <Icon.Edit /> },
-                { label: "Fecha entrega", value: order.delivery_date || "Indefinida", icon: <Icon.Calendar /> },
+                  icon: <Icons.Edit /> },
+                { label: "Fecha entrega", value: order.delivery_date || "Indefinida", icon: <Icons.Calendar /> },
               ].map((item, i) => (
                 <div key={i} style={{
                   display: "grid", gridTemplateColumns: "28px 1fr auto",
@@ -1361,7 +1148,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                 </p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <StatusBadge status={order.status} />
-                  {isExternalReturnedOrder(order) && <ReturnedBadge />}
+                  {isReturnedOrder(order) && <ReturnedBadge />}
                 </div>
               </div>
 
@@ -1388,7 +1175,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                 </p>
               </div>
 
-              {isExternalReturnedOrder(order) && (
+              {isReturnedOrder(order) && (
                 <div style={{
                   background: "#FEF2F2",
                   border: "1px solid #FECACA",
@@ -1406,7 +1193,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
             </div>
 
             {/* Botón Enviar a Diseño / Cotización */}
-            {order.status !== "In_Design" && order.status !== "en produccion" && order.status !== "en entrega" && order.status !== "completada" && order.status !== "cancelada" && order.status !== "cancelled" && order.status !== "in_Quotation" && order.status !== "cotizacion" && (
+            {!isOrderStatusIn(order.status, ACTIVE_WORKFLOW_STATUSES_FOR_SELLER) && (
               <div style={{ marginTop: 16 }}>
                 {order.order_design_type === "EXTERNAL_DESING" ? (
                   <button
@@ -1430,7 +1217,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                       transition: "all 0.2s"
                     }}
                   >
-                    <Icon.Edit style={{ width: 18, height: 18 }} />
+                    <Icons.Edit style={{ width: 18, height: 18 }} />
                     Enviar a Cotización
                   </button>
                 ) : (
@@ -1455,7 +1242,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                       transition: "all 0.2s"
                     }}
                   >
-                    <Icon.Edit style={{ width: 18, height: 18 }} />
+                    <Icons.Edit style={{ width: 18, height: 18 }} />
                     Enviar a Diseño
                   </button>
                 )}
@@ -1479,10 +1266,10 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
-                { label: "ID Orden", value: order.id?.slice(0, 8), icon: <Icon.Key /> },
-                { label: "Creada", value: created, icon: <Icon.Clock /> },
-                { label: "Responsable", value: user?.displayName || "---", icon: <Icon.User /> },
-                ...(order.designer_id ? [{ label: "Diseñador", value: designerName || "Asignado", icon: <Icon.Edit style={{ color: "#8B5CF6" }} /> }] : []),
+                { label: "ID Orden", value: order.id?.slice(0, 8), icon: <Icons.Key /> },
+                { label: "Creada", value: created, icon: <Icons.Clock /> },
+                { label: "Responsable", value: user?.displayName || "---", icon: <Icons.User /> },
+                ...(order.designer_id ? [{ label: "Diseñador", value: designerName || "Asignado", icon: <Icons.Edit style={{ color: "#8B5CF6" }} /> }] : []),
               ].map((item, i) => (
                 <div key={i} style={{
                   display: "grid", gridTemplateColumns: "20px 1fr auto",
@@ -1498,6 +1285,23 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Card: Link de Seguimiento */}
+          <div style={{
+            background: "var(--surface)",
+            border: "1.5px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            padding: 16,
+            marginBottom: 18
+          }}>
+            <p style={{
+              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+              textTransform: "uppercase", letterSpacing: "0.07em",
+              marginBottom: 12
+            }}>🔗 Link de Seguimiento</p>
+
+            <TrackingLinkField orderId={order.id} />
           </div>
         </div>
       </div>
@@ -1521,7 +1325,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
             {order.preview_image && (
               <div>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icon.Eye /> Orden de Trabajo
+                  <Icons.Eye /> Orden de Trabajo
                 </p>
                 <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
                   <img 
@@ -1544,7 +1348,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
             {order.order_file_url && (
               <div>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icon.Brush /> Diseño del cliente
+                  <Icons.Brush /> Diseño del cliente
                 </p>
                 {(() => {
                   const fileUrls = parseFileUrls(order.order_file_url);
@@ -1577,7 +1381,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                           e.currentTarget.style.color = "var(--primary)";
                         }}
                       >
-                        <Icon.Receipt style={{ fontSize: 24 }} />
+                        <Icons.Receipt style={{ fontSize: 24 }} />
                         Ver archivo PDF
                       </a>
                     ) : (
@@ -1627,7 +1431,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                               e.currentTarget.style.color = "var(--primary)";
                             }}
                           >
-                            <Icon.FileText />
+                            <Icons.FileText />
                             Ver archivo {index + 1}
                           </a>
                         ))}
@@ -1654,25 +1458,21 @@ function SendToDesignerModal({ open, onClose, onConfirm, order, loading }) {
     if (open) {
       setLoadingDesigners(true);
       setSelectedDesigner("");
-      // Consultar diseñadores desde profiles (que tiene el nombre sincronizado desde auth)
       supabase
         .from("profiles")
-        .select("id, name, role")
+        .select("id, name, role, employment_status")
+        .eq("role", "designer")
+        .eq("employment_status", true)
         .then(({ data, error }) => {
           setLoadingDesigners(false);
-          console.log("Todos los perfiles:", data, error);
           if (!error && data) {
-            // Filtrar manualmente por rol que contenga "design"
-            const designers = data
-              .filter(p => p.role && p.role.toLowerCase().includes("design"))
-              .map(p => ({
-                ...p,
-                // Usar el nombre del perfil como display_name
-                displayName: p.name || "Diseñador"
-              }));
-            console.log("Diseñadores filtrados:", designers);
+            const designers = data.map(p => ({
+              ...p,
+              displayName: p.name || "Diseñador"
+            }));
             setDesigners(designers);
           } else {
+            if (error) console.error("Error cargando diseñadores:", error);
             setDesigners([]);
           }
         });
@@ -1705,7 +1505,7 @@ function SendToDesignerModal({ open, onClose, onConfirm, order, loading }) {
             display: "flex", alignItems: "center", justifyContent: "center",
             boxShadow: "0 4px 12px rgba(139, 92, 246, 0.25)"
           }}>
-            <Icon.Edit style={{ color: "#7C3AED", width: 28, height: 28 }} />
+            <Icons.Edit style={{ color: "#7C3AED", width: 28, height: 28 }} />
           </div>
         </div>
         
@@ -1813,8 +1613,8 @@ function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
   const [quoteUsers, setQuoteUsers] = useState([]);
   const [selectedQuoteUser, setSelectedQuoteUser] = useState("");
   const [loadingQuoteUsers, setLoadingQuoteUsers] = useState(true);
-  const wasReturned = isExternalReturnedOrder(order);
-  const originalQuoterId = wasReturned ? resolveOriginalQuoteId(order) : "";
+  const wasReturned = isReturnedOrder(order);
+  const originalQuoterId = wasReturned ? (order?.quote_id || "") : "";
 
   useEffect(() => {
     if (open) {
@@ -1872,7 +1672,7 @@ function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
             display: "flex", alignItems: "center", justifyContent: "center",
             boxShadow: "0 4px 12px rgba(2, 132, 199, 0.25)"
           }}>
-            <Icon.Package style={{ color: "#0284C7", width: 28, height: 28 }} />
+            <Icons.Package style={{ color: "#0284C7", width: 28, height: 28 }} />
           </div>
         </div>
 
@@ -2196,131 +1996,18 @@ export default function PageSeller() {
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
   const [designers, setDesigners] = useState([]);
   const [sendingLoading, setSendingLoading] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [notifications, setNotifications] = useState([]);
-  const [returnedOrders, setReturnedOrders] = useState(() => {
-    try {
-      const stored = localStorage.getItem(RETURNED_ORDERS_STORAGE_KEY);
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
-  const notificationTimeoutsRef = useRef({});
-  const knownOrderIdsRef = useRef(new Set());
-  const previousOrdersRef = useRef({});
-  const ordersInitializedRef = useRef(false);
-
-  useEffect(() => {
-    localStorage.setItem(RETURNED_ORDERS_STORAGE_KEY, JSON.stringify(returnedOrders));
-  }, [returnedOrders]);
-
+  const [toastMsg, setToastMsg] = useState(null);
+  const notif = useNotifications(user?.id);
   const showToast = (message, type = "success") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 1500);
+    setToastMsg({ message, type });
+    setTimeout(() => setToastMsg(null), 1500);
   };
 
-  const removeNotification = (notificationId) => {
-    setNotifications(prev => prev.filter(notification => notification.id !== notificationId));
 
-    if (notificationTimeoutsRef.current[notificationId]) {
-      clearTimeout(notificationTimeoutsRef.current[notificationId]);
-      delete notificationTimeoutsRef.current[notificationId];
-    }
-  };
 
-  const showActionNotification = ({ type = "completed", label, orderTitle, message }) => {
-    const notificationId = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const notification = {
-      id: notificationId,
-      type,
-      label,
-      orderTitle,
-      message,
-      duration: NOTIFICATION_DURATION,
-      expiresAt: Date.now() + NOTIFICATION_DURATION,
-    };
 
-    setNotifications(prev => [notification, ...prev].slice(0, 3));
-
-    notificationTimeoutsRef.current[notificationId] = setTimeout(() => {
-      removeNotification(notificationId);
-    }, NOTIFICATION_DURATION);
-  };
-
-  const createNotificationForOrder = (order, type = "new") => {
-    const notificationId = `${type}-${order.id}`;
-    if (notificationTimeoutsRef.current[notificationId]) return;
-
-    const orderTitle =
-      order.client_name ||
-      order.description ||
-      `Orden #${order.id?.slice(0, 8).toUpperCase()}`;
-
-    const notificationConfig = {
-      new: {
-        label: "Nueva orden",
-        message: "Se creó una nueva orden en tu bandeja.",
-      },
-      returned: {
-        label: "Orden devuelta",
-        message: "Cotización devolvió la orden. Revisa el motivo y corrígela antes de reenviarla.",
-      },
-      updated: {
-        label: "Orden actualizada",
-        message: "Se actualizó la información de una orden asignada a ti.",
-      },
-      cancelled: {
-        label: "Orden cancelada",
-        message: "Una de tus órdenes fue cancelada.",
-      },
-    };
-
-    const notification = {
-      id: notificationId,
-      type,
-      label: notificationConfig[type]?.label || "Notificación",
-      orderTitle,
-      message: notificationConfig[type]?.message || "Tienes una actualización en una orden.",
-      duration: NOTIFICATION_DURATION,
-      expiresAt: Date.now() + NOTIFICATION_DURATION,
-    };
-
-    setNotifications(prev => [notification, ...prev].slice(0, 3));
-
-    notificationTimeoutsRef.current[notificationId] = setTimeout(() => {
-      removeNotification(notificationId);
-    }, NOTIFICATION_DURATION);
-  };
-
-  // Obtener usuario y ordenes al cargar la pagina
+  // Carga inicial + listener de sesión
   useEffect(() => {
-    let isFirstLoad = true;
-
-    // Listener para detectar cuando la sesión expire
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // Solo procesar cuando es SIGNED_IN (no TOKEN_REFRESHED)
-      if (event === 'SIGNED_IN' && session?.user) {
-        // Extraer nombre desde user_metadata
-        const displayName = 
-          session.user.user_metadata?.display_name ||
-          session.user.user_metadata?.full_name || 
-          session.user.user_metadata?.name || 
-          session.user.user_metadata?.first_name || 
-          session.user.email?.split("@")[0];
-        
-        // Solo actualizar si es la primera carga o si el nombre es diferente
-        if (isFirstLoad || displayName) {
-          setUser({ ...session.user, displayName });
-          fetchOrders(session.user.id);
-          isFirstLoad = false;
-        }
-      } else if (event === 'SIGNED_OUT') {
-        navigate("/");
-      }
-    });
-
-    // Carga inicial
     (async () => {
       const { data } = await supabase.auth.getUser();
       if (data?.user) {
@@ -2336,80 +2023,70 @@ export default function PageSeller() {
       }
     })();
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') navigate("/");
+    });
+
     return () => {
       subscription.unsubscribe();
     };
   }, []);
 
-  // Funcion para obtener las ordenes desde Supabase
+  // Sincronización en tiempo real + refresco al volver a la página
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const refreshOrders = async () => {
+      const { data } = await supabase
+        .from("orders")
+        .select(RELEVANT_COLUMNS)
+        .eq("seller_id", user.id)
+        .is("is_archived", false)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (data) setOrders(data);
+    };
+
+    const channel = supabase
+      .channel(`orders-realtime-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        refreshOrders
+      )
+      .subscribe();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") refreshOrders();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", refreshOrders);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", refreshOrders);
+    };
+  }, [user?.id]);
+
+  const RELEVANT_COLUMNS = "id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token";
+
   const fetchOrders = async (sellerId) => {
-    // Si no hay sellerId, no hacer la consulta
     if (!sellerId) {
       setOrders([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    const idToUse = sellerId || user?.id;
-    console.log("User ID:", idToUse);
     const { data, error } = await supabase
       .from("orders")
-      .select("*")
-      .eq("seller_id", idToUse)
-      .order("created_at", { ascending: false });
-    console.log("Orders data:", data);
-    console.log("Error:", error);
+      .select(RELEVANT_COLUMNS)
+      .eq("seller_id", sellerId)
+      .is("is_archived", false)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
     if (!error && Array.isArray(data)) {
-      const nextOrderIds = new Set(data.map(order => order.id));
-      const previousOrderIds = knownOrderIdsRef.current;
-      const previousOrders = previousOrdersRef.current;
-
-      if (!ordersInitializedRef.current) {
-        knownOrderIdsRef.current = nextOrderIds;
-        previousOrdersRef.current = data.reduce((acc, order) => {
-          acc[order.id] = order;
-          return acc;
-        }, {});
-        ordersInitializedRef.current = true;
-        setOrders(data);
-        setLoading(false);
-        return;
-      }
-
-      data
-        .filter(order => !previousOrderIds.has(order.id))
-        .forEach(order => createNotificationForOrder(order, "new"));
-
-      data.forEach(order => {
-        const previousOrder = previousOrders[order.id];
-        const wasCancelledBefore = ["cancelada", "cancelled"].includes(previousOrder?.status);
-        const isCancelledNow = ["cancelada", "cancelled"].includes(order.status);
-
-        if (previousOrder && !wasCancelledBefore && isCancelledNow) {
-          createNotificationForOrder(order, "cancelled");
-        }
-
-        if (previousOrder && hasExternalReturnUpdate(previousOrder, order)) {
-          setReturnedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
-          createNotificationForOrder(order, "returned");
-        }
-
-        if (
-          previousOrder &&
-          !isCancelledNow &&
-          !hasExternalReturnUpdate(previousOrder, order) &&
-          hasTrackedOrderChanges(previousOrder, order)
-        ) {
-          setReturnedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
-          createNotificationForOrder(order, "updated");
-        }
-      });
-
-      knownOrderIdsRef.current = nextOrderIds;
-      previousOrdersRef.current = data.reduce((acc, order) => {
-        acc[order.id] = order;
-        return acc;
-      }, {});
       setOrders(data);
     } else {
       setOrders([]);
@@ -2447,7 +2124,7 @@ export default function PageSeller() {
     setCancelLoading(true);
     const { error } = await supabase
       .from("orders")
-      .update({ status: "cancelled", cancellation_reason: String(reason).trim() })
+      .update({ status: ORDER_STATUS.CANCELLED, cancellation_reason: String(reason).trim() })
       .eq("id", cancelingOrder.id);
     setCancelLoading(false);
     
@@ -2462,13 +2139,6 @@ export default function PageSeller() {
 
   // ── Ver detalles de orden ─────────────────────────────────────────────────
   const handleViewOrder = async (order) => {
-    setReturnedOrders(prev => {
-      if (!prev[order.id]) return prev;
-      const next = { ...prev };
-      delete next[order.id];
-      return next;
-    });
-
     const { data } = await supabase
       .from("orders")
       .select("*")
@@ -2499,25 +2169,21 @@ export default function PageSeller() {
     setSendingLoading(true);
 
     const assignmentPayloads = [
-      { status: "cotizacion", quote_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
-      { status: "cotizacion", quotation_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
-      { status: "cotizacion", quote_user_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
+      { status: ORDER_STATUS.IN_QUOTE, quote_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
     ];
 
     let updateError = null;
-    let assignedOrder = null;
 
     for (const payload of assignmentPayloads) {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("orders")
         .update(payload)
         .eq("id", sendingToQuotation.id)
-        .select("*")
+        .select("id")
         .single();
 
       if (!error) {
         updateError = null;
-        assignedOrder = data || null;
         break;
       }
 
@@ -2531,22 +2197,10 @@ export default function PageSeller() {
       return;
     }
 
-    setReturnedOrders(prev => {
-      if (!sendingToQuotation?.id || !prev[sendingToQuotation.id]) return prev;
-      const next = { ...prev };
-      delete next[sendingToQuotation.id];
-      return next;
-    });
-
     setSendingToQuotation(null);
     setSelectedOrder(null);
     await fetchOrders(user?.id);
-    showActionNotification({
-      type: "completed",
-      label: "Enviada a cotización",
-      orderTitle: assignedOrder?.client_name || assignedOrder?.description || sendingToQuotation.client_name || sendingToQuotation.description || `Orden #${sendingToQuotation.id?.slice(0, 8).toUpperCase()}`,
-      message: "La orden ha sido enviada a cotización correctamente.",
-    });
+
   };
 
   const handleConfirmSendToDesigner = async (designerId) => {
@@ -2554,41 +2208,42 @@ export default function PageSeller() {
 
     setSendingLoading(true);
 
-    // Actualizar la orden con el diseñador y cambiar estado a en diseno
-    const { error } = await supabase
-      .from("orders")
-      .update({ 
-        status: "In_Design",
-        designer_id: designerId,
-        return_reason: null,
-        returned_to_designer_at: null
-      })
-      .eq("id", sendingToDesigner.id);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ 
+          status: ORDER_STATUS.IN_DESIGN,
+          designer_id: designerId,
+          return_reason: null,
+          returned_to_designer_at: null
+        })
+        .eq("id", sendingToDesigner.id);
 
-    setSendingLoading(false);
+      if (error) {
+        console.error("Error asignando diseñador:", error);
+        showToast(`Error: ${error.message}`, "error");
+        setSendingLoading(false);
+        return;
+      }
 
-    if (error) {
-      showToast("Error al enviar a diseño", "error");
-      return;
-    }
+      setSendingToDesigner(null);
+      await fetchOrders(user?.id);
 
-    // Fetch updated orders and then update selectedOrder with new data
-    const fetchAndUpdate = async () => {
-      const { data } = await supabase
+      const { data: updated } = await supabase
         .from("orders")
         .select("*")
         .eq("id", sendingToDesigner.id)
         .single();
       
-      if (data) {
-        setSelectedOrder(data);
+      if (updated) {
+        setSelectedOrder(updated);
       }
-    };
+    } catch (err) {
+      console.error("Error inesperado:", err);
+      showToast(`Error inesperado: ${err.message}`, "error");
+    }
 
-    setSendingToDesigner(null);
-    await fetchOrders(user?.id);
-    await fetchAndUpdate();
-    showToast("Orden enviada a diseño exitosamente!");
+    setSendingLoading(false);
   };
 
 
@@ -2617,16 +2272,16 @@ export default function PageSeller() {
   // ── Metrics Values ─────────────────────────────────────────────────────────────
   const today = new Date().toDateString();
   const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === today).length;
-  const inQuote = orders.filter(o => ["Pending", "Pendiente"].includes(o.status)).length;
-  const inDesign = orders.filter(o => o.status === "In_Design").length;
-  const inCotizacion = orders.filter(o => ["in_Quotation", "cotizacion"].includes(o.status)).length;
-  const inProd = orders.filter(o => o.status === "en produccion").length;
-  const inTerminacion = orders.filter(o => o.status === "terminacion").length;
-  const completed = orders.filter(o => o.status === "completada").length;
-  const returnedCount = orders.filter(o => isExternalReturnedOrder(o)).length;
+  const inQuote = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.PENDING)).length;
+  const inDesign = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DESIGN)).length;
+  const inCotizacion = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length;
+  const inProd = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length;
+  const inTerminacion = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length;
+  const completed = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length;
+  const returnedCount = orders.filter(o => isReturnedOrder(o)).length;
 
   // Funcionalidad para filtrar las ordenes
-  const filtered = orders.filter(o => {
+  const filtered = useMemo(() => orders.filter(o => {
     const q = search.toLowerCase();
     const orderDate = new Date(o.created_at);
     const now = new Date();
@@ -2676,7 +2331,6 @@ export default function PageSeller() {
       }
     }
     
-    // Si hay filtro de fecha activo, mostrar todas las órdenes (incluidas archivadas)
     const isDateFilterActive = filterDate !== "all";
     
     return (
@@ -2684,28 +2338,43 @@ export default function PageSeller() {
       (isDateFilterActive ? true :
         (filterStatus === "all" ? !o.is_archived : 
           (filterStatus === "archivada" ? o.is_archived === true : 
-            o.status === filterStatus))) &&
+            isOrderStatus(o.status, filterStatus)))) &&
       (filterPayment === "all" || o.payment_status === filterPayment) &&
       dateMatch
     );
-  });
+  }), [orders, search, filterDate, filterStatus, filterPayment]);
 
   const nav = [
-    { id: "dashboard", label: "Dashboard", icon: <Icon.Dashboard /> },
-    { id: "orders", label: "Ordenes", icon: <Icon.Orders />, badge: orders.filter(o => !o.is_archived).length },
+    { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
+    { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: orders.filter(o => !o.is_archived).length },
   ];
 
   // Valores para las cartas metricas
   const metrics = [
-    { icon: <Icon.Orders />, label: "Ordenes hoy", value: todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
-    { icon: <Icon.Package />, label: "Pendientes", value: inQuote, sub: "Ordenes Pendientes", accentIdx: 1 },
-    { icon: <Icon.Edit />, label: "En diseño", value: inDesign, sub: "En proceso de diseño", accentIdx: 2 },
-    { icon: <Icon.Package />, label: "En cotización", value: inCotizacion, sub: "Esperando aprobación", accentIdx: 1 },
-    { icon: <Icon.Package />, label: "En producción", value: inProd, sub: "Siendo impresas", accentIdx: 3 },
-    { icon: <Icon.Package />, label: "Terminación", value: inTerminacion, sub: "En proceso final", accentIdx: 2 },
-    { icon: <Icon.Truck />, label: "Completadas", value: completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
-    { icon: <Icon.X />, label: "Devueltas", value: returnedCount, sub: "Pendientes de corrección", accentIdx: 3 },
+    { icon: <Icons.Orders />, label: "Ordenes hoy", value: todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
+    { icon: <Icons.Package />, label: "Pendientes", value: inQuote, sub: "Ordenes Pendientes", accentIdx: 1 },
+    { icon: <Icons.Edit />, label: "En diseño", value: inDesign, sub: "En proceso de diseño", accentIdx: 2 },
+    { icon: <Icons.Package />, label: "En cotización", value: inCotizacion, sub: "Esperando aprobación", accentIdx: 1 },
+    { icon: <Icons.Package />, label: "En producción", value: inProd, sub: "Siendo impresas", accentIdx: 3 },
+    { icon: <Icons.Package />, label: "Terminación", value: inTerminacion, sub: "En proceso final", accentIdx: 2 },
+    { icon: <Icons.Truck />, label: "Completadas", value: completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
+    { icon: <Icons.X />, label: "Devueltas", value: returnedCount, sub: "Pendientes de corrección", accentIdx: 3 },
   ];
+
+  const visibleSellerNotifications = useMemo(
+    () => notif.notifications.filter(isSellerVisibleNotification),
+    [notif.notifications]
+  );
+
+  const visibleSellerToasts = useMemo(
+    () => notif.toasts.filter(isSellerVisibleNotification),
+    [notif.toasts]
+  );
+
+  const visibleSellerUnreadCount = useMemo(
+    () => visibleSellerNotifications.filter((notification) => !notification.is_read && !notification.is_archived).length,
+    [visibleSellerNotifications]
+  );
 
   return (
     <div className="ps-root">
@@ -2728,7 +2397,7 @@ export default function PageSeller() {
         <header className="ps-topbar">
           <div className="ps-topbar-left">
             <button className="ps-icon-btn" onClick={() => setSidebarOpen(p => !p)}>
-              {sidebarOpen ? <Icon.ChevronLeft /> : <Icon.ChevronRight />}
+              {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
             <div>
               <div className="ps-page-title">{activeTab === "dashboard" ? "Dashboard" : "Gestion de Ordenes"}</div>
@@ -2736,11 +2405,20 @@ export default function PageSeller() {
             </div>
           </div>
           <div className="ps-topbar-right">
-            <button className="ps-icon-btn" onClick={() => fetchOrders(user?.id)}><Icon.Refresh /></button>
-            <button className="ps-icon-btn"><Icon.Bell /><span className="ps-notif-dot" /></button>
+            <button className="ps-icon-btn" onClick={() => fetchOrders(user?.id)}><Icons.Refresh /></button>
+            <NotificationCenter
+              notifications={visibleSellerNotifications}
+              unreadCount={visibleSellerUnreadCount}
+              toasts={visibleSellerToasts}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDismissToast={notif.dismissToast}
+            />
             <div className="ps-topbar-divider" />
             <button className="ps-topbar-new-btn" onClick={() => setShowCreate(true)}>
-              <div className="ps-topbar-new-inner"><Icon.Plus /> Nueva Orden</div>
+              <div className="ps-topbar-new-inner"><Icons.Plus /> Nueva Orden</div>
               <div className="ps-topbar-new-stripe" />
             </button>
           </div>
@@ -2765,7 +2443,7 @@ export default function PageSeller() {
                     <div className="ps-panel-sub">Las ultimas 5 ordenes ingresadas al sistema</div>
                   </div>
                   <button className="ps-link-btn" onClick={() => setActiveTab("orders")}>
-                    Ver todas <Icon.ArrowRight />
+                    Ver todas <Icons.ArrowRight />
                   </button>
                 </div>
                 <div className="ps-table-wrap">
@@ -2790,21 +2468,21 @@ export default function PageSeller() {
                             <td className="td-pad">
                               <div className="table-actions">
                                 <button className="table-action-btn view" onClick={e => { e.stopPropagation(); setSelectedOrder(o); }} title="Ver detalles">
-                                  <Icon.Eye />
+                                  <Icons.Eye />
                                 </button>
                                 {!o.is_archived && (
                                   <button className="table-action-btn edit" onClick={e => { e.stopPropagation(); setEditingOrder(o); }} title="Editar orden">
-                                    <Icon.Edit />
+                                    <Icons.Edit />
                                   </button>
                                 )}
-                                {["cancelada", "cancelled"].includes(o.status) && (
+                                {isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && (
                                   o.is_archived ? (
                                     <button 
                                       className="table-action-btn archive"
                                       title="Orden archivada"
                                       disabled
                                     >
-                                      <Icon.Check />
+                                      <Icons.Check />
                                     </button>
                                   ) : (
                                     <button 
@@ -2812,7 +2490,7 @@ export default function PageSeller() {
                                       onClick={e => { e.stopPropagation(); handleArchiveOrder(o); }}
                                       title="Archivar orden"
                                     >
-                                      <Icon.Archived />
+                                      <Icons.Archived />
                                     </button>
                                   )
                                 )}
@@ -2833,7 +2511,7 @@ export default function PageSeller() {
             <>
               <div className="ps-filters">
                 <div className="ps-search-wrap">
-                  <span className="ps-search-icon"><Icon.Search /></span>
+                  <span className="ps-search-icon"><Icons.Search /></span>
                   <input className="ps-input with-icon" placeholder="Buscar por cliente, descripcion o ID..."
                     value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
@@ -2842,17 +2520,20 @@ export default function PageSeller() {
                     <select className="ps-input" style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
                       value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                       <option value="all">Todos los estados</option>
-                      {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      {STATUS_OPTIONS.map(status => {
+                        const cfg = getOrderStatusConfig(status);
+                        return <option key={status} value={status}>{cfg.label}</option>;
+                      })}
                     </select>
-                    <span className="ps-select-arrow"><Icon.ChevronDown /></span>
+                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
                   </div>
                   <div className="ps-select-wrap">
                     <select className="ps-input" style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
                       value={filterPayment} onChange={e => setFilterPayment(e.target.value)}>
                       <option value="all">Pago: Todos</option>
-                      {Object.entries(PAYMENT_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      {Object.entries(PAYMENT_COLORS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                     </select>
-                    <span className="ps-select-arrow"><Icon.ChevronDown /></span>
+                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
                   </div>
                   <div className="ps-select-wrap">
                     <select className="ps-input" style={{ minWidth: 140, paddingRight: 32, cursor: "pointer", appearance: "none" }}
@@ -2868,7 +2549,7 @@ export default function PageSeller() {
                       <option value="thismonth">Este mes</option>
                       <option value="thisyear">Este año</option>
                     </select>
-                    <span className="ps-select-arrow"><Icon.ChevronDown /></span>
+                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
                   </div>
                   <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
                     <button 
@@ -2911,7 +2592,7 @@ export default function PageSeller() {
                               <td className="td-pad td-name">
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                                   <span>{o.client_name}</span>
-                                  {(returnedOrders[o.id] || isExternalReturnedOrder(o)) && <ReturnedBadge compact />}
+{isReturnedOrder(o) && <ReturnedBadge compact />}
                                 </div>
                               </td>
                               <td className="td-pad td-desc">{o.description}</td>
@@ -2928,30 +2609,30 @@ export default function PageSeller() {
                               <td className="td-pad td-actions">
                                 <div className="table-actions">
                                   <button className="table-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
-                                    <Icon.Eye />
+                                    <Icons.Eye />
                                   </button>
                                   {!o.is_archived && (
                                     <button className="table-action-btn edit" onClick={() => setEditingOrder(o)} title="Editar orden">
-                                      <Icon.Edit />
+                                      <Icons.Edit />
                                     </button>
                                   )}
-                                  {!["cancelada", "cancelled"].includes(o.status) && !o.is_archived && (
+                                  {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && (
                                     <button 
                                       className="table-action-btn cancel" 
                                       onClick={() => handleCancelOrder(o)} 
                                       title="Cancelar orden"
                                     >
-                                      <Icon.Trash />
+                                      <Icons.Trash />
                                     </button>
                                   )}
-                                  {["cancelada", "cancelled"].includes(o.status) && (
+                                  {isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && (
                                     o.is_archived ? (
                                       <button 
                                         className="table-action-btn archive"
                                         title="Orden archivada"
                                         disabled
                                       >
-                                        <Icon.Check />
+                                        <Icons.Check />
                                       </button>
                                     ) : (
                                       <button 
@@ -2959,7 +2640,7 @@ export default function PageSeller() {
                                         onClick={() => handleArchiveOrder(o)}
                                         title="Archivar orden"
                                       >
-                                        <Icon.Archived />
+                                        <Icons.Archived />
                                       </button>
                                     )
                                   )}
@@ -2984,7 +2665,7 @@ export default function PageSeller() {
                             <span className="ps-order-card-id">#{o.id?.slice(0, 8).toUpperCase() || "---"}</span>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                               <StatusBadge status={o.status} />
-                              {(returnedOrders[o.id] || isExternalReturnedOrder(o)) && <ReturnedBadge compact />}
+                              {isReturnedOrder(o) && <ReturnedBadge compact />}
                             </div>
                           </div>
                           <div className="ps-order-card-client">{o.client_name}</div>
@@ -3007,26 +2688,26 @@ export default function PageSeller() {
                           </div>
                           <div className="ps-order-card-actions">
                             <button className="card-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
-                              <Icon.Eye />
+                              <Icons.Eye />
                             </button>
                             {!o.is_archived && (
                               <button className="card-action-btn edit" onClick={() => setEditingOrder(o)} title="Editar">
-                                <Icon.Edit />
+                                <Icons.Edit />
                               </button>
                             )}
-                            {!["cancelada", "cancelled"].includes(o.status) && !o.is_archived && o.payment_status !== "pagado" && (
+                            {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && o.payment_status !== "pagado" && (
                               <button className="card-action-btn cancel" onClick={() => handleCancelOrder(o)} title="Cancelar">
-                                <Icon.Trash />
+                                <Icons.Trash />
                               </button>
                             )}
-                            {o.payment_status === "pagado" && !o.is_archived && !["cancelada", "cancelled"].includes(o.status) && (
+                            {o.payment_status === "pagado" && !o.is_archived && !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && (
                               <button className="card-action-btn cancel" disabled title="No se puede cancelar: orden pagada" style={{ opacity: 0.5, cursor: "not-allowed" }}>
-                                <Icon.Trash />
+                                <Icons.Trash />
                               </button>
                             )}
-                            {["cancelada", "cancelled"].includes(o.status) && !o.is_archived && (
+                            {isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && (
                               <button className="card-action-btn archive" onClick={() => handleArchiveOrder(o)} title="Archivar">
-                                <Icon.Archived />
+                                <Icons.Archived />
                               </button>
                             )}
                           </div>
@@ -3061,29 +2742,116 @@ export default function PageSeller() {
       <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
       <ArchivedOrderModal open={!!archivedingOrder} onClose={() => setArchivedingOrder(null)} order={archivedingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />
       
-      {/* Toast Notification */}
-      {toast && (
+      {toastMsg && (
         <div className="ps-toast">
           <div className="ps-toast-icon">
-            {toast.type === "success" ? (
+            {toastMsg.type === "success" ? (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
             ) : (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             )}
           </div>
-          <span className="ps-toast-message">{toast.message}</span>
+          <span className="ps-toast-message">{toastMsg.message}</span>
         </div>
       )}
+    </div>
+  );
+}
 
-      <div className="ps-notification-stack">
-        {notifications.map(notification => (
-          <SellerNotificationToast
-            key={notification.id}
-            notification={notification}
-            onClose={removeNotification}
-          />
-        ))}
+function TrackingLinkField({ orderId }) {
+  const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!orderId) return;
+    supabase
+      .from("orders")
+      .select("tracking_token")
+      .eq("id", orderId)
+      .single()
+      .then(({ data }) => {
+        if (data?.tracking_token) setToken(data.tracking_token);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [orderId]);
+
+  const trackingUrl = token ? `${window.location.origin}/track/${token}` : null;
+
+  const handleCopy = async () => {
+    if (!trackingUrl) return;
+    try {
+      await navigator.clipboard.writeText(trackingUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = trackingUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+        <div style={{ width: 14, height: 14, border: "2px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%" }} />
+        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Cargando...</span>
       </div>
+    );
+  }
+
+  return (
+    <div>
+      {trackingUrl ? (
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            readOnly
+            value={trackingUrl}
+            onClick={(e) => e.target.select()}
+            style={{
+              flex: 1,
+              padding: "8px 12px",
+              fontSize: 12,
+              fontFamily: "'SF Mono', 'Fira Code', monospace",
+              border: "1.5px solid var(--border)",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--surface-alt)",
+              color: "var(--text)",
+              outline: "none",
+              cursor: "text",
+            }}
+          />
+          <button
+            onClick={handleCopy}
+            style={{
+              padding: "8px 14px",
+              background: copied ? "#10B981" : "var(--primary)",
+              border: "none",
+              borderRadius: "var(--radius-sm)",
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              transition: "background 0.2s",
+              fontFamily: "'Poppins', sans-serif",
+            }}
+          >
+            {copied ? "✓ Copiado" : "Copiar"}
+          </button>
+        </div>
+      ) : (
+        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, fontStyle: "italic" }}>
+          El link estará disponible cuando la orden tenga un token de seguimiento.
+        </p>
+      )}
     </div>
   );
 }

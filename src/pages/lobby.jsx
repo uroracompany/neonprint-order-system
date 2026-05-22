@@ -99,8 +99,7 @@ export default function Lobby() {
       .single();
 
 
-      // If login successful, you can redirect or show success message
-      console.log("Login Exitoso:", data);
+
 
       // Si el usuario fue desactivado por el admin, cerramos la sesión y bloqueamos el acceso.
       if (profiles?.employment_status === false) {
@@ -120,18 +119,15 @@ export default function Lobby() {
      
       // Redirect to dashboard after successful login
       setTimeout(() =>{
-        if(profiles.role === "admin"){
-          navigate("/dashboard");
+        const roleRoutes = {
+          admin: "/dashboard",
+          seller: "/page-seller",
+          designer: "/designer",
+          quote: "/quote",
+          printer: "/production",
+          delivery: "/delivery",
         };
-        if(profiles.role === "seller"){
-          navigate("/page-seller");
-        }
-        if(profiles.role === "designer"){
-          navigate("/designer");
-        }
-        if(profiles.role === "quote"){
-          navigate("/quote");
-        }
+        navigate(roleRoutes[profiles.role] || "/");
       });
 
       

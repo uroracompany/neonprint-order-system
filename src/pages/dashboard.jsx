@@ -3,60 +3,41 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
 import { validateImage } from "../utils/imageValidation";
-import { uploadOrderAsset, buildPaymentReceiptPath } from "../utils/uploadOrderAsset";
+import {
+  buildPaymentReceiptPath,
+  buildStorageSafeFileName,
+  removeOrderAssetByPublicUrl,
+  uploadOrderAsset,
+} from "../utils/uploadOrderAsset";
+import { Icons } from "../utils/icons";
+import {
+  ORDER_STATUS,
+  STATUS_LABELS,
+  PAYMENT_LABELS,
+  PAYMENT_COLORS,
+  MATERIAL_OPTIONS,
+  QUOTE_ASSIGNMENT_FIELDS,
+  STATUS_OPTIONS,
+  getOrderStatusConfig,
+  getOrderStatusLabel,
+  isOrderStatus,
+  isOrderStatusIn,
+  normalizeOrderStatus,
+  normalizeText,
+  formatDate,
+  parseFileUrls,
+  serializeFileUrls,
+  getFileNameFromUrl,
+  resolveSellerId,
+  isAdminArchivable
+} from "../utils/constants";
+import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
+import useNotifications from "../hooks/useNotifications";
+import NotificationCenter from "../components/NotificationCenter";
 import "../css-components/page-admin.css";
 import "../css-components/page-seller.css";
 
-const Icon = {
-  Dashboard: () => <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>,
-  Orders: () => <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>,
-  Users: () => <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
-  Search: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>,
-  Plus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>,
-  Eye: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" /><circle cx="12" cy="12" r="3" /></svg>,
-  Edit: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>,
-  Trash: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" /></svg>,
-  Clock: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
-  File: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
-  Money: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /></svg>,
-  Menu: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>,
-  Close: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
-  Calendar: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>,
-  Phone: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" /></svg>,
-  Package: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21" /><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>,
-  Paintbrush: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 19l7-7 3 3-7 7-3-3z" /><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" /><path d="M2 2l7.586 7.586" /><circle cx="11" cy="11" r="2" /></svg>,
-  Check: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>,
-  Receipt: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16l3-2 2 2 2-2 2 2 2-2 3 2V4a2 2 0 0 0-2-2z" /><line x1="9" y1="9" x2="15" y2="9" /><line x1="9" y1="13" x2="15" y2="13" /></svg>,
-  FileText: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>,
-  Brush: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 0 1 4.03 4.03l-8.06 8.08" /><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1 1 6.23 1 7 0 .48-.93.49-2.01 0-3.04a3.03 3.03 0 0 0-2-2z" /></svg>,
-  Download: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>,
-  Archive: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" /></svg>,
-};
 
-const STATUS_OPTIONS = ["Pending", "In_Design", "cotizacion", "en produccion", "terminacion", "en entrega", "completada", "cancelled"];
-const PAYMENT_OPTIONS = ["Pending_Payment", "parcial", "pagado"];
-const STATUS_LABELS = { Pending: "Pendiente", In_Design: "En diseño", cotizacion: "Cotización", "en produccion": "En producción", terminacion: "Terminación", "en entrega": "En entrega", completada: "Completada", cancelled: "Cancelada" };
-const PAYMENT_LABELS = { Pending_Payment: "Pendiente", parcial: "Parcial", pagado: "Pagado" };
-const MATERIAL_OPTIONS = ["Vinilo", "Banner", "Lona", "Papel Fotografico", "Carton", "Adhesivo", "PVC", "Acrilico", "Tela", "Foam", "Otro"];
-const QUOTE_ASSIGNMENT_FIELDS = ["quote_id", "quotation_id", "quote_user_id"];
-
-// FlowTracker steps
-const FLOW_STEPS = [
-  { key: "Pending", label: "Pendiente" },
-  { key: "In_Design", label: "Diseño" },
-  { key: "cotizacion", label: "Cotización" },
-  { key: "en produccion", label: "Producción" },
-  { key: "terminacion", label: "Terminación" },
-  { key: "en entrega", label: "Entrega" },
-];
-
-const FLOW_STEPS_EXTERNAL = [
-  { key: "Pending", label: "Pendiente" },
-  { key: "cotizacion", label: "Cotización" },
-  { key: "en produccion", label: "Producción" },
-  { key: "terminacion", label: "Terminación" },
-  { key: "en entrega", label: "Entrega" },
-];
 const DEFAULT_ORDER_FORM = {
   id: "",
   client_name: "",
@@ -67,7 +48,7 @@ const DEFAULT_ORDER_FORM = {
   design_type: "INTERNAL_DESING",
   termination_type: "",
   delivery_date: "",
-  status: "Pending",
+  status: ORDER_STATUS.PENDING,
   payment_status: "Pending_Payment",
   seller_id: "",
   existingFiles: [],
@@ -80,11 +61,7 @@ const DEFAULT_ORDER_FORM = {
 };
 const DEFAULT_USER_FORM = { name: "", email: "", password: "", confirmPassword: "", role: "seller", employment_status: true };
 
-const normalizeText = (value) => String(value || "").trim().toLowerCase();
-const formatDate = (value) => value ? new Date(value).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" }) : "Sin fecha";
-const resolveSellerId = (order) => order?.seller_id || order?.created_by || null;
 const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map((field) => order?.[field]).find(Boolean) || null;
-const isAdminArchivable = (order) => ["cancelada", "cancelled", "completada"].includes(normalizeText(order?.status));
 const resolveAssignmentIdsByRole = (order, role) => {
   const normalizedRole = normalizeText(role);
 
@@ -113,35 +90,9 @@ const getOrderSearchUserIds = (order) => [
   ...QUOTE_ASSIGNMENT_FIELDS.map((field) => order?.[field]),
   order?.printer_id,
 ].filter(Boolean);
-const parseFileUrls = (value) => {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    return String(value).split(/\r?\n|,/).map(item => item.trim()).filter(Boolean);
-  }
-};
-const serializeFileUrls = (value) => JSON.stringify(parseFileUrls(value));
-const getFileNameFromUrl = (value) => {
-  if (!value) return "Archivo";
-  try {
-    return decodeURIComponent(String(value).split("/").pop().split("?")[0]);
-  } catch {
-    return String(value).split("/").pop() || "Archivo";
-  }
-};
+
 
 // Genera nombres únicos y legibles para los archivos que sube el administrador.
-const buildStorageFileName = (file, prefix = "") => {
-  const safeName = String(file?.name || "archivo")
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9._-]/g, "");
-
-  return `${prefix}${Date.now()}-${safeName}`;
-};
-
 // Función uploadOrderAsset importada desde ../utils/uploadOrderAsset.js
 // Para usar: uploadOrderAsset({ bucket, path, file })
 
@@ -171,21 +122,40 @@ const getRoleLabel = (role) => {
     designer: "Diseñador",
     quote: "Cotizador",
     admin: "Administrador",
-    printer: "Producción"
+    printer: "Producción",
+    delivery: "Entregador"
   };
   return map[role] || role;
 };
 
 function StatusBadge({ value }) {
-  const map = { Pending: ["Pendiente", "warning"], In_Design: ["Diseño", "purple"], cotizacion: ["Cotización", "info"], "en produccion": ["Producción", "orange"], terminacion: ["Terminación", "blue"], "en entrega": ["Entrega", "green"], completada: ["Completada", "green"], cancelled: ["Cancelada", "danger"], admin: ["Administrador", "danger"], seller: ["Vendedor", "info"], designer: ["Diseñador", "purple"], quote: ["Cotizador", "blue"], printer: ["Producción", "orange"] };
-  const [label, tone] = map[value] || [value || "Sin estado", "neutral"];
-  return <span className={`pa-badge ${tone}`}>{label}</span>;
+  const roleMap = { admin: ["Administrador", "danger"], seller: ["Vendedor", "info"], designer: ["Diseñador", "purple"], quote: ["Cotizador", "blue"], printer: ["Producción", "orange"], delivery: ["Entregador", "cyan"] };
+  if (roleMap[value]) {
+    const [label, tone] = roleMap[value];
+    return <span className={`pa-badge ${tone}`}>{label}</span>;
+  }
+  const statusConfig = getOrderStatusConfig(value);
+  if (statusConfig) {
+    return (
+      <span className="ps-badge" style={{ background: statusConfig.bg, color: statusConfig.color, border: `1px solid ${statusConfig.color}20` }}>
+        <span className="ps-badge-dot" style={{ background: statusConfig.dot }} />
+        {statusConfig.label}
+      </span>
+    );
+  }
+  return <span className="ps-badge" style={{ background: "#EEF2F7", color: "#475569", border: "1px solid #DDE3EF" }}>{value || "---"}</span>;
 }
 
 function PaymentBadge({ value }) {
-  const map = { Pending_Payment: ["Pendiente", "warning"], parcial: ["Parcial", "info"], pagado: ["Pagado", "green"] };
-  const [label, tone] = map[value] || [value || "Sin pago", "neutral"];
-  return <span className={`pa-badge ${tone}`}>{label}</span>;
+  const cfg = PAYMENT_COLORS[value];
+  if (cfg) {
+    return (
+      <span className="ps-badge" style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}20` }}>
+        {cfg.label}
+      </span>
+    );
+  }
+  return <span className="ps-badge" style={{ background: "#EEF2F7", color: "#475569", border: "1px solid #DDE3EF" }}>{value || "---"}</span>;
 }
 
 function ModalShell({ open, title, onClose, children, size = "default" }) {
@@ -195,7 +165,7 @@ function ModalShell({ open, title, onClose, children, size = "default" }) {
       <div className={`pa-modal ${size}`}>
         <div className="pa-modal-head">
           <div className="pa-modal-copy"><span className="pa-modal-kicker">Administrador</span><h3>{title}</h3></div>
-          <button className="pa-icon-btn pa-modal-close" onClick={onClose} aria-label="Cerrar modal"><Icon.Close /></button>
+          <button className="pa-icon-btn pa-modal-close" onClick={onClose} aria-label="Cerrar modal"><Icons.Close /></button>
         </div>
         <div className="pa-modal-body">{children}</div>
       </div>
@@ -224,66 +194,7 @@ function OrderFormModal({ open, mode, orderForm, setOrderForm, users, onClose, o
   );
 }
 
-// FlowTracker (copiado de pages-seller.jsx)
-function FlowTracker({ status }) {
-  const idx = FLOW_STEPS.findIndex(s => s.key === status);
 
-  return (
-    <div className="ps-flow">
-      {FLOW_STEPS.map((step, i) => {
-        const isCompleted = idx >= 0 && i < idx;
-        const isActive = i === idx;
-        return (
-          <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < FLOW_STEPS.length - 1 ? 1 : "none" }}>
-            <div className="ps-flow-step">
-              <div className={`ps-flow-circle ${isCompleted ? "done" : isActive ? "active" : ""}`}>
-                {isCompleted ? "✓" : i + 1}
-              </div>
-              <span className={`ps-flow-label ${isCompleted ? "done" : isActive ? "active" : ""}`}>{step.label}</span>
-            </div>
-            {i < FLOW_STEPS.length - 1 && <div className={`ps-flow-line ${isCompleted ? "done" : ""}`} />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// FlowTracker para órdenes de Diseño Externo
-function FlowTrackerExternal({ status }) {
-  const statusToIndex = {
-    "Pending": 0,
-    "in_Quotation": 1,
-    "cotizacion": 1,
-    "en produccion": 2,
-    "terminacion": 3,
-    "en entrega": 4,
-    "completada": 4,
-    "cancelada": -1,
-    "cancelled": -1,
-  };
-  const idx = statusToIndex[status] ?? -1;
-
-  return (
-    <div className="ps-flow">
-      {FLOW_STEPS_EXTERNAL.map((step, i) => {
-        const isCompleted = idx >= 0 && i < idx;
-        const isActive = i === idx;
-        return (
-          <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < FLOW_STEPS_EXTERNAL.length - 1 ? 1 : "none" }}>
-            <div className="ps-flow-step">
-              <div className={`ps-flow-circle ${isCompleted ? "done" : isActive ? "active" : ""}`}>
-                {isCompleted ? "✓" : i + 1}
-              </div>
-              <span className={`ps-flow-label ${isCompleted ? "done" : isActive ? "active" : ""}`}>{step.label}</span>
-            </div>
-            {i < FLOW_STEPS_EXTERNAL.length - 1 && <div className={`ps-flow-line ${isCompleted ? "done" : ""}`} />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 // Modal de detalles de orden para admin
 function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel, onAssign, onArchive }) {
@@ -345,7 +256,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
                 </p>
                 {order.client_contact && (
                   <p style={{ fontSize: 12, color: "var(--text-sub)", margin: 0, display: "flex", alignItems: "center", gap: 5 }}>
-                    <Icon.Phone />{order.client_contact}
+                    <Icons.Phone />{order.client_contact}
                   </p>
                 )}
               </div>
@@ -420,7 +331,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
               {existingFiles.length > 0 && (
                 <div>
                   <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                    <Icon.Brush /> Diseño del cliente
+                    <Icons.Brush /> Diseño del cliente
                   </p>
                   {(() => {
                     if (existingFiles.length === 1) {
@@ -456,7 +367,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
                               e.currentTarget.style.color = "var(--primary)";
                             }}
                           >
-                            <Icon.Receipt style={{ fontSize: 24 }} />
+                            <Icons.Receipt style={{ fontSize: 24 }} />
                             Ver PDF
                           </a>
                           <a
@@ -485,7 +396,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
                               e.currentTarget.style.color = "var(--text)";
                             }}
                           >
-                            <Icon.Download style={{ fontSize: 24 }} />
+                            <Icons.Download style={{ fontSize: 24 }} />
                             Descargar
                           </a>
                         </div>
@@ -530,7 +441,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
                               e.currentTarget.style.color = "var(--text)";
                             }}
                           >
-                            <Icon.Download />
+                            <Icons.Download />
                             Descargar imagen
                           </a>
                         </div>
@@ -570,7 +481,7 @@ onMouseEnter={e => {
                                     e.currentTarget.style.color = "var(--primary)";
                                   }}
                                 >
-                                  <Icon.FileText />
+                                  <Icons.FileText />
                                   Ver archivo {index + 1}
                                 </a>
                                 <a
@@ -597,7 +508,7 @@ onMouseEnter={e => {
                                     e.currentTarget.style.color = "var(--text)";
                                   }}
                                 >
-                                  <Icon.Download />
+                                  <Icons.Download />
                                   Descargar
                                 </a>
                               </div>
@@ -650,7 +561,7 @@ onMouseEnter={e => {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 13, color: "var(--text-sub)" }}>Estado:</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--primary)" }}>{STATUS_LABELS[order.status] || order.status}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--primary)" }}>{getOrderStatusLabel(order.status)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 13, color: "var(--text-sub)" }}>Pago:</span>
@@ -709,17 +620,34 @@ onMouseEnter={e => {
             </div>
           )}
 
+          {/* Card: Link de Seguimiento */}
+          <div style={{
+            background: "var(--surface)",
+            border: "1.5px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            padding: 16,
+            marginBottom: 18
+          }}>
+            <p style={{
+              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+              textTransform: "uppercase", letterSpacing: "0.07em",
+              marginBottom: 12
+            }}>🔗 Link de Seguimiento</p>
+
+            <AdminTrackingLinkField orderId={order.id} />
+          </div>
+
           <div style={{ display: "flex", gap: 10 }}>
             <button className="pa-btn primary" style={{ flex: 1 }} onClick={() => { onClose(); onEdit(order); }}>
-              <Icon.Edit />Editar
+              <Icons.Edit />Editar
             </button>
           </div>
           {isAdminArchivable(order) && !order.is_archived_admin && (
             <button className="pa-btn" style={{ width: "100%", marginTop: 8, background: "#F59E0B", color: "#fff", border: "none" }} onClick={() => onArchive(order)}>
-              <Icon.Archive />Archivar orden
+              <Icons.Archive />Archivar orden
             </button>
           )}
-          {order.status !== "cancelled" && order.status !== "completada" && order.status !== "In_Design" && (
+          {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED, ORDER_STATUS.IN_DESIGN]) && (
             <div style={{ marginTop: 8 }}>
               {order.order_design_type === "EXTERNAL_DESING" ? (
                 <button className="pa-btn" style={{ width: "100%", background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => onAssign(order, "quote")}>
@@ -732,9 +660,9 @@ onMouseEnter={e => {
               )}
             </div>
           )}
-          {order.status !== "cancelled" && order.status !== "completada" && (
+          {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED]) && (
             <button className="pa-btn danger" style={{ width: "100%", marginTop: 8 }} onClick={() => onCancel(order)}>
-              <Icon.Trash />Cancelar Orden
+              <Icons.Trash />Cancelar Orden
             </button>
           )}
         </div>
@@ -798,17 +726,7 @@ function AssignOrderModal({ open, onClose, order, role, onConfirm, loading }) {
           <select
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              borderRadius: "var(--radius-md)",
-              border: "1.5px solid var(--border)",
-              background: "var(--surface)",
-              fontSize: 13,
-              cursor: "pointer",
-              marginBottom: 20,
-              outline: "none"
-            }}
+            className="pa-field-select"
           >
             <option value="">-- Seleccionar {roleLabel} --</option>
             {users.map(user => (
@@ -1099,7 +1017,7 @@ function UserCreateModal({ open, userForm, setUserForm, onClose, onSubmit, savin
   return (
     <ModalShell open={open} onClose={onClose} title="Crear usuario" size="compact">
       <div className="pa-user-modal-intro">
-        <div className="pa-user-modal-icon"><Icon.Users /></div>
+        <div className="pa-user-modal-icon"><Icons.Users /></div>
         <div>
           <h4>Nuevo miembro del sistema</h4>
           <p>Organiza primero la identidad del usuario y luego define su rol y estado inicial dentro del equipo.</p>
@@ -1118,14 +1036,25 @@ function UserCreateModal({ open, userForm, setUserForm, onClose, onSubmit, savin
             <label className="pa-field"><span>Confirmar contraseña</span><input type="password" value={userForm.confirmPassword} onChange={(e) => setUserForm(prev => ({ ...prev, confirmPassword: e.target.value }))} placeholder="Repite la contraseña" /></label>
           </div>
         </section>
-
+        
+        {/* Apartado para configurar los permisos y estados del usuario */}
         <section className="pa-form-section">
           <div className="pa-form-section-head">
             <span className="pa-form-section-kicker">Acceso</span>
             <h5>Permisos y estado</h5>
           </div>
           <div className="pa-form-grid single">
-            <label className="pa-field"><span>Rol</span><select value={userForm.role} onChange={(e) => setUserForm(prev => ({ ...prev, role: e.target.value }))}><option value="seller">Vendedor</option><option value="designer">Diseñador</option><option value="quote">Cotizador</option><option value="admin">Administrador</option></select></label>
+            {/* Apartado para elegir el rol de usuario */}
+            <label className="pa-field">
+              <span>Rol</span>
+              <select value={userForm.role} onChange={(e) => setUserForm(prev => ({ ...prev, role: e.target.value }))}>
+                <option value="seller">Vendedor</option>
+                <option value="designer">Diseñador</option>
+                <option value="quote">Cotizador</option>
+                <option value="printer">Impresor</option>
+                <option value="delivery">Entregador</option>
+              </select>
+            </label>
             <div className="pa-static-field">
               <span>Estado laboral</span>
               <div className="pa-static-value">Empleado por defecto</div>
@@ -1173,13 +1102,13 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
             <div><span>Precio</span><strong>{order.price ? `RD$${Number(order.price).toLocaleString("es-DO")}` : "Sin cotizar"}</strong></div>
             <div><span>Preview</span><strong>{order.preview_image ? <a href={order.preview_image} target="_blank" rel="noreferrer">Ver preview</a> : "Sin preview"}</strong></div>
           </div>
-          {files.length > 0 ? <div className="pa-file-list">{files.map((file, index) => <a key={`${file}-${index}`} href={file} target="_blank" rel="noreferrer" className="pa-file-link"><Icon.File /> Diseño {index + 1}</a>)}</div> : <div className="pa-empty-small">No hay diseños cargados.</div>}
+          {files.length > 0 ? <div className="pa-file-list">{files.map((file, index) => <a key={`${file}-${index}`} href={file} target="_blank" rel="noreferrer" className="pa-file-link"><Icons.File /> Diseño {index + 1}</a>)}</div> : <div className="pa-empty-small">No hay diseños cargados.</div>}
         </div>
       </div>
       <div className="pa-modal-actions">
         <button className="pa-btn secondary" onClick={onClose}>Cerrar</button>
         <button className="pa-btn ghost" onClick={() => onEdit(order)}>Editar</button>
-        {order.status !== "cancelled" && <button className="pa-btn danger" onClick={() => onCancel(order)}>Cancelar orden</button>}
+        {!isOrderStatus(order.status, ORDER_STATUS.CANCELLED) && <button className="pa-btn danger" onClick={() => onCancel(order)}>Cancelar orden</button>}
       </div>
     </ModalShell>
   );
@@ -1199,7 +1128,7 @@ function EmploymentStatusConfirmModal({ open, pendingChange, onClose, onConfirm,
     >
       <div className="pa-confirm-modal-body">
         <div className={`pa-confirm-icon ${willActivate ? "activate" : "deactivate"}`}>
-          {willActivate ? <Icon.Users /> : <Icon.Close />}
+          {willActivate ? <Icons.Users /> : <Icons.Close />}
         </div>
 
         <div className="pa-confirm-copy">
@@ -1247,9 +1176,13 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
     const fetchUserEmail = async () => {
       setUserEmail("");
       try {
+        const { data: { session } } = await supabase.auth.getSession();
         const response = await fetch("/api/get-user-email", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
+          },
           body: JSON.stringify({ userId: user.id }),
         });
         const data = await response.json();
@@ -1297,9 +1230,13 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
     setChangingPassword(true);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch("/api/change-user-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ userId: user.id, newPassword }),
       });
 
@@ -1485,6 +1422,14 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
   );
 }
 
+const CARD_ACCENTS = [
+  { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
+  { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
+  { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
+  { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
+  { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
+];
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1515,8 +1460,10 @@ export default function Dashboard() {
   const [dateFilter, setDateFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [archiveFilter, setArchiveFilter] = useState("active");
+  const notif = useNotifications(user?.id);
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [userViewMode, setUserViewMode] = useState("cards");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [orderModalMode, setOrderModalMode] = useState("create");
@@ -1607,7 +1554,7 @@ export default function Dashboard() {
       termination_type: order.termination_type || "",
       delivery_date: order.delivery_date ? order.delivery_date.split("T")[0] : "",
       indefinido: !order.delivery_date,
-      status: order.status || "Pending",
+      status: normalizeOrderStatus(order.status || ORDER_STATUS.PENDING),
       payment_status: order.payment_status || "Pending_Payment",
       seller_id: order.seller_id || order.created_by || "",
       existingFiles: parseFileUrls(order.order_file_url),
@@ -1644,7 +1591,7 @@ export default function Dashboard() {
       order_type: orderForm.order_type,
       order_design_type: orderForm.design_type,
       delivery_date: orderForm.indefinido ? null : (orderForm.delivery_date || null),
-      status: "Pending",
+      status: ORDER_STATUS.PENDING,
       payment_status: orderForm.payment_status,
       seller_id: user?.id || null,
       created_by: user?.id || null,
@@ -1657,10 +1604,10 @@ export default function Dashboard() {
 
     // Subir nuevos archivos de diseño
     for (const file of orderForm.newFiles) {
-      const fileName = buildStorageFileName(file, "design-");
+      const fileName = buildStorageSafeFileName(file, "design-");
       const publicUrl = await uploadOrderAsset({
         bucket: "order-docs",
-        path: `orders/${selectedOrder?.id || "new"}/files/${fileName}`,
+        path: `orders/${orderForm.id || selectedOrder?.id || "new"}/files/${fileName}`,
         file,
       });
       if (publicUrl) finalFileUrls.push(publicUrl);
@@ -1668,10 +1615,10 @@ export default function Dashboard() {
 
     // Subir nuevo preview
     if (orderForm.newPreview) {
-      const fileName = buildStorageFileName(orderForm.newPreview, "preview-");
+      const fileName = buildStorageSafeFileName(orderForm.newPreview, "preview-");
       finalPreviewUrl = await uploadOrderAsset({
         bucket: "order-previews",
-        path: `orders/${selectedOrder?.id || "new"}/preview/${fileName}`,
+        path: `orders/${orderForm.id || selectedOrder?.id || "new"}/preview/${fileName}`,
         file: orderForm.newPreview,
       });
     }
@@ -1704,6 +1651,13 @@ export default function Dashboard() {
 
     if (error) return showFeedback("error", `No se pudo guardar la orden: ${error.message}`);
 
+    await Promise.all([
+      ...orderForm.removedFiles.map((url) => removeOrderAssetByPublicUrl({ bucket: "order-docs", url })),
+      orderForm.removePreview && orderForm.existingPreview
+        ? removeOrderAssetByPublicUrl({ bucket: "order-previews", url: orderForm.existingPreview })
+        : Promise.resolve({ removed: false, error: null }),
+    ]);
+
     setOrderModalOpen(false);
     setSelectedOrder(null);
     resetOrderForm();
@@ -1712,7 +1666,7 @@ export default function Dashboard() {
   };
 
   const openCancelModal = (order) => {
-    if (["pagado", "cancelled", "completada"].includes(order.payment_status)) {
+    if (order.payment_status === "pagado" || isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED])) {
       showFeedback("error", "No se puede cancelar una orden pagada o cancelada.");
       return;
     }
@@ -1726,7 +1680,7 @@ export default function Dashboard() {
 
     const { error } = await supabase
       .from("orders")
-      .update({ status: "cancelled" })
+      .update({ status: ORDER_STATUS.CANCELLED })
       .eq("id", cancelOrderData.id);
 
     setCancelLoading(false);
@@ -1790,8 +1744,8 @@ export default function Dashboard() {
 
     const isDesigner = assigningRole === "designer";
     const payload = isDesigner
-      ? { status: "In_Design", designer_id: userId }
-      : { status: "cotizacion", quote_id: userId, quotation_id: userId };
+      ? { status: ORDER_STATUS.IN_DESIGN, designer_id: userId }
+      : { status: ORDER_STATUS.IN_QUOTE, quote_id: userId };
 
     const { error } = await supabase.from("orders").update(payload).eq("id", assigningOrder.id);
 
@@ -1897,10 +1851,12 @@ export default function Dashboard() {
     let response;
     let result;
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       response = await fetch("/api/admin-create-user", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
         },
         body: JSON.stringify({
           name: trimmedName,
@@ -1992,7 +1948,7 @@ export default function Dashboard() {
       const relatedUserNames = [...new Set(getOrderSearchUserIds(order))]
         .map((userId) => getUserDisplayName(usersById[userId]));
       const matchesSearch = !q || [order.client_name, order.description, order.material, order.id, ...relatedUserNames].some(value => normalizeText(value).includes(q));
-      const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+      const matchesStatus = statusFilter === "all" || isOrderStatus(order.status, statusFilter);
       const matchesOwner = ownerFilter === "all" || orderMatchesProfileFilter(order, selectedProfile);
       const matchesArchive = archiveFilter === "all"
         || (archiveFilter === "active" && !order.is_archived_admin)
@@ -2013,24 +1969,24 @@ export default function Dashboard() {
   }, [profiles, userSearch, roleFilter]);
 
   const metrics = [
-    { label: "Órdenes totales", value: orders.length, icon: <Icon.Orders /> },
-    { label: "Cotización", value: orders.filter(order => order.status === "cotizacion").length, icon: <Icon.Money /> },
-    { label: "En diseño", value: orders.filter(order => order.status === "In_Design").length, icon: <Icon.File /> },
-    { label: "Usuarios", value: profiles.length, icon: <Icon.Users /> },
+    { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders /> },
+    { label: "Cotización", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money /> },
+    { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File /> },
+    { label: "Usuarios", value: profiles.length, icon: <Icons.Users /> },
   ];
 
   const typeMetrics = [
     { label: "Órdenes normales", value: orders.filter(order => order.order_type !== "orden 911").length },
     { label: "Órdenes 911", value: orders.filter(order => order.order_type === "orden 911").length },
-    { label: "Canceladas", value: orders.filter(order => order.status === "cancelled").length },
-    { label: "Completadas", value: orders.filter(order => order.status === "completada").length },
+    { label: "Canceladas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.CANCELLED)).length },
+    { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length },
     { label: "Archivadas", value: orders.filter(order => order.is_archived_admin).length },
   ];
 
   const menuItems = [
-    { id: "overview", label: "Resumen", icon: <Icon.Dashboard /> },
-    { id: "orders", label: "Órdenes", icon: <Icon.Orders />, badge: orders.length },
-    { id: "users", label: "Usuarios", icon: <Icon.Users />, badge: profiles.length },
+    { id: "overview", label: "Resumen", icon: <Icons.Dashboard /> },
+    { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: orders.length },
+    { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: profiles.length },
   ];
 
   return (
@@ -2040,28 +1996,46 @@ export default function Dashboard() {
       <main className="pa-main">
         <header className="pa-header">
           <div className="pa-header-left">
-            <button className="pa-mobile-toggle" onClick={() => setSidebarOpen(prev => !prev)} aria-label="Abrir menú"><Icon.Menu /></button>
+            <button className="pa-mobile-toggle" onClick={() => setSidebarOpen(prev => !prev)} aria-label="Abrir menú"><Icons.Menu /></button>
             <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : "Gestión de usuarios"}</h1></div>
           </div>
-          {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
+            <NotificationCenter
+              notifications={notif.notifications}
+              unreadCount={notif.unreadCount}
+              toasts={notif.toasts}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDismissToast={notif.dismissToast}
+            />
+          </div>
         </header>
 
         {activeTab === "overview" &&
           <section className="pa-section">
             <div className="pa-metrics-grid">
-              {metrics.map(metric =>
-                <article key={metric.label} className="pa-metric-card">
-                  <div className="pa-metric-icon">{
-                    metric.icon}
-                  </div>
-                  <div>
-                    <span>{metric.label}</span>
+              {metrics.map((metric, idx) => {
+                const acc = CARD_ACCENTS[idx % CARD_ACCENTS.length];
+                return (
+                  <article key={metric.label} className="pa-metric-card"
+                    onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
+                    <div className="pa-metric-glow" style={{ background: acc.glow }} />
+                    <div className="pa-metric-icon" style={{ background: acc.bg, color: acc.color }}>
+                      {metric.icon}
+                    </div>
                     <strong>{metric.value}</strong>
-                  </div>
-                </article>)}
+                    <span>{metric.label}</span>
+                  </article>
+                );
+              })}
             </div>
             <div className="pa-two-col">
               <div className="pa-panel pa-overview-panel">
+                <div className="pa-panel-stripe" />
                 <div className="pa-panel-head">
                   <div>
                     <span className="pa-section-kicker">
@@ -2072,18 +2046,21 @@ export default function Dashboard() {
                     </h2>
                   </div>
                 </div>
-                <div className="pa-stats-list">
-                  {typeMetrics.map(item => <div key={item.label} className="pa-stat-row">
-                    <span>
-                      {item.label}
-                    </span>
-                    <strong>
-                      {item.value}
-                    </strong></div>)
-                  }
+                <div className="pa-panel-body">
+                  <div className="pa-stats-list">
+                    {typeMetrics.map(item => <div key={item.label} className="pa-stat-row">
+                      <span>
+                        {item.label}
+                      </span>
+                      <strong>
+                        {item.value}
+                      </strong></div>)
+                    }
+                  </div>
                 </div>
               </div>
               <div className="pa-panel pa-overview-panel">
+                <div className="pa-panel-stripe" />
                 <div className="pa-panel-head">
                   <div>
                     <span className="pa-section-kicker">
@@ -2094,24 +2071,26 @@ export default function Dashboard() {
                     </h2>
                   </div>
                 </div>
-                <div className="pa-recent-list">
-                  {orders.slice(0, 5).map(order =>
-                    <button key={order.id} className="pa-recent-item" onClick={() => setSelectedOrder(order)}>
-                      <div>
-                        <strong>
-                          {order.client_name || "Cliente sin nombre"}
-                        </strong>
-                        <span>
-                          {getUserDisplayName(usersById[order.seller_id || order.created_by])}
-                        </span>
-                      </div>
-                      <div className="pa-recent-meta">
-                        <StatusBadge value={order.status} />
-                        <span>
-                          {formatDate(order.created_at)}
-                        </span>
-                      </div>
-                    </button>)}
+                <div className="pa-panel-body">
+                  <div className="pa-recent-list">
+                    {orders.slice(0, 5).map(order =>
+                      <button key={order.id} className="pa-recent-item" onClick={() => setSelectedOrder(order)}>
+                        <div>
+                          <strong>
+                            {order.client_name || "Cliente sin nombre"}
+                          </strong>
+                          <span>
+                            {getUserDisplayName(usersById[order.seller_id || order.created_by])}
+                          </span>
+                        </div>
+                        <div className="pa-recent-meta">
+                          <StatusBadge value={order.status} />
+                          <span>
+                            {formatDate(order.created_at)}
+                          </span>
+                        </div>
+                      </button>)}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2122,7 +2101,7 @@ export default function Dashboard() {
           <section className="pa-section">
             <div className="pa-toolbar pa-toolbar-orders">
               <div className="pa-search-box pa-toolbar-search">
-                <Icon.Search />
+                <Icons.Search />
                 <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por cliente, descripción, material o usuario..." />
               </div>
               <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -2147,11 +2126,12 @@ export default function Dashboard() {
                 <option value="all">Todas</option>
                 <option value="archived">Archivadas</option>
               </select>
-              <button className="pa-btn primary pa-toolbar-create" onClick={openCreateOrder}><Icon.Plus />
+              <button className="pa-btn primary pa-toolbar-create" onClick={openCreateOrder}><Icons.Plus />
                 Nueva orden
               </button>
             </div>
             <div className="pa-panel">
+              <div className="pa-panel-stripe" />
               <div className="pa-panel-head pa-panel-head-results">
                 <div>
                   <span className="pa-section-kicker">
@@ -2192,28 +2172,28 @@ export default function Dashboard() {
                             <td className="td-pad td-actions">
                               <div className="table-actions">
                                 <button className="table-action-btn view" onClick={() => setSelectedOrder(order)} title="Ver detalles">
-                                  <Icon.Eye />
+                                  <Icons.Eye />
                                 </button>
                                 <button className="table-action-btn edit" onClick={() => openEditOrder(order)} title="Editar orden">
-                                  <Icon.Edit />
+                                  <Icons.Edit />
                                 </button>
-                                {order.status !== "cancelled" && order.status !== "completada" && (
+                                {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED]) && (
                                   <button className="table-action-btn" style={{ background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => openQuotationModal(order)} title="Cotizar">
-                                    <Icon.Money />
+                                    <Icons.Money />
                                   </button>
                                 )}
-                                {order.status !== "cancelled" &&
+                                {!isOrderStatus(order.status, ORDER_STATUS.CANCELLED) &&
                                   <button className="table-action-btn cancel" onClick={() => openCancelModal(order)} title="Cancelar orden">
-                                    <Icon.Trash />
+                                    <Icons.Trash />
                                   </button>}
                                 {isAdminArchivable(order) && (
                                   order.is_archived_admin ? (
                                     <button className="table-action-btn archive" title="Orden archivada" disabled>
-                                      <Icon.Archive />
+                                      <Icons.Archive />
                                     </button>
                                   ) : (
                                     <button className="table-action-btn archive" onClick={() => openArchiveModal(order)} title="Archivar orden">
-                                      <Icon.Archive />
+                                      <Icons.Archive />
                                     </button>
                                   )
                                 )}
@@ -2230,7 +2210,7 @@ export default function Dashboard() {
         {activeTab === "users" &&
           <section className="pa-section">
             <div className="pa-toolbar pa-toolbar-users">
-              <div className="pa-search-box pa-toolbar-search"><Icon.Search />
+              <div className="pa-search-box pa-toolbar-search"><Icons.Search />
                 <input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} placeholder="Buscar por nombre, correo o rol..." />
               </div>
               <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
@@ -2241,11 +2221,20 @@ export default function Dashboard() {
                 <option value="quote">Cotizador</option>
                 <option value="printer">Producción</option>
               </select>
-              <button className="pa-btn primary pa-toolbar-create" onClick={() => setUserModalOpen(true)}><Icon.Plus />
+              <div className="pa-view-toggle-group">
+                <button onClick={() => setUserViewMode("table")} className={`pa-view-toggle ${userViewMode === "table" ? "active" : ""}`} title="Vista de tabla">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+                </button>
+                <button onClick={() => setUserViewMode("cards")} className={`pa-view-toggle ${userViewMode === "cards" ? "active" : ""}`} title="Vista de tarjetas">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+                </button>
+              </div>
+              <button className="pa-btn primary pa-toolbar-create" onClick={() => setUserModalOpen(true)}><Icons.Plus />
                 Crear usuario
               </button>
             </div>
             <div className="pa-panel">
+              <div className="pa-panel-stripe" />
               <div className="pa-panel-head">
                 <div>
                   <span className="pa-section-kicker">Supervisión</span>
@@ -2253,78 +2242,129 @@ export default function Dashboard() {
                 </div>
                 <span className="pa-results-count">{filteredProfiles.length} usuarios</span>
               </div>
-              <div className="pa-users-grid">
-                {loadingUsers ?
-                  <div className="pa-empty-card">
-                    Cargando usuarios...
-                  </div>
-                  : filteredProfiles.length === 0 ?
+              {userViewMode === "cards" ? (
+                <div className="pa-users-grid">
+                  {loadingUsers ?
                     <div className="pa-empty-card">
-                      No hay usuarios para mostrar.
+                      Cargando usuarios...
                     </div>
-                    : filteredProfiles.map(item => {
-                      const isActive = isEmploymentActive(item);
+                    : filteredProfiles.length === 0 ?
+                      <div className="pa-empty-card">
+                        No hay usuarios para mostrar.
+                      </div>
+                      : filteredProfiles.map(item => {
+                        const isActive = isEmploymentActive(item);
 
-                      return <article key={item.id} className="pa-user-card" onClick={() => { setSelectedUser(item); setUserDetailModalOpen(true); }}>
-                        <div className="pa-user-card-content">
-                          <div className="pa-user-card-header">
-                            <div className="pa-user-header-main">
-                              <div className="pa-user-avatar-mini">
-                                {getUserDisplayName(item).charAt(0).toUpperCase()}
+                        return <article key={item.id} className="pa-user-card" onClick={() => { setSelectedUser(item); setUserDetailModalOpen(true); }}>
+                          <div className="pa-user-card-content">
+                            <div className="pa-user-card-header">
+                              <div className="pa-user-header-main">
+                                <div className="pa-user-avatar-mini">
+                                  {getUserDisplayName(item).charAt(0).toUpperCase()}
+                                </div>
+                                <div className="pa-user-info">
+                                  <strong className="pa-user-name">
+                                    {getUserDisplayName(item)}
+                                  </strong>
+                                  <span className="pa-user-email">
+                                    {item.email || "Sin correo"}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="pa-user-info">
-                                <strong className="pa-user-name">
-                                  {getUserDisplayName(item)}
-                                </strong>
-                                <span className="pa-user-email">
-                                  {item.email || "Sin correo"}
+                              <div className="pa-user-role-badge">
+                                <StatusBadge value={item.role} />
+                              </div>
+                            </div>
+                            <div className="pa-user-card-divider"></div>
+                            <div className="pa-user-card-body">
+                              <div className="pa-user-meta-item">
+                                <span className="pa-meta-label">
+                                  Rol
+                                </span>
+                                <span className="pa-meta-value">
+                                  {getRoleLabel(item.role) || "sin rol"}
+                                </span>
+                              </div>
+                              <div className="pa-user-meta-item">
+                                <span className="pa-meta-label">
+                                  Estado
+                                </span>
+                                <span className={`pa-meta-badge ${isActive ? "active" : "inactive"}`}>
+                                  {getEmploymentStatus(item)}
                                 </span>
                               </div>
                             </div>
-                            <div className="pa-user-role-badge">
-                              <StatusBadge value={item.role} />
-                            </div>
                           </div>
-                          <div className="pa-user-card-divider"></div>
-                          <div className="pa-user-card-body">
-                            <div className="pa-user-meta-item">
-                              <span className="pa-meta-label">
-                                Rol
-                              </span>
-                              <span className="pa-meta-value">
-                                {getRoleLabel(item.role) || "sin rol"}
-                              </span>
-                            </div>
-                            <div className="pa-user-meta-item">
-                              <span className="pa-meta-label">
-                                Estado
-                              </span>
-                              <span className={`pa-meta-badge ${isActive ? "active" : "inactive"}`}>
-                                {getEmploymentStatus(item)}
-                              </span>
-                            </div>
+                          <div className="pa-user-card-actions">
+                            <button className="pa-btn secondary pa-btn-sm detail" onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedUser(item);
+                              setUserDetailModalOpen(true);
+                            }}>
+                              Ver detalles
+                            </button>
+                            <button className={`pa-btn pa-btn-sm ${isActive ? "deactivate" : "primary"}`} onClick={(event) => {
+                              event.stopPropagation();
+                              openEmploymentStatusConfirm(item);
+                            }}>
+                              {isActive ? "Desactivar usuario" : "Activar usuario"}
+                            </button>
                           </div>
-                        </div>
-                        <div className="pa-user-card-actions">
-                          <button className="pa-btn secondary pa-btn-sm detail" onClick={(event) => {
-                            // Evita que el click del botón dispare también el click general de la tarjeta.
-                            event.stopPropagation();
-                            setSelectedUser(item);
-                            setUserDetailModalOpen(true);
-                          }}>
-                            Ver detalles
-                          </button>
-                          <button className={`pa-btn pa-btn-sm ${isActive ? "deactivate" : "primary"}`} onClick={(event) => {
-                            // La activación y desactivación siempre pasa primero por un modal de confirmación.
-                            event.stopPropagation();
-                            openEmploymentStatusConfirm(item);
-                          }}>
-                            {isActive ? "Desactivar usuario" : "Activar usuario"}
-                          </button>
-                        </div>
-                      </article>;
-                    })}
-              </div>
+                        </article>;
+                      })}
+                </div>
+              ) : (
+                <div className="ps-table-wrap">
+                  <table className="ps-table">
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Correo</th>
+                        <th>Rol</th>
+                        <th>Estado</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loadingUsers ?
+                        <tr><td colSpan={5} className="ps-table-empty">Cargando usuarios...</td></tr>
+                        : filteredProfiles.length === 0 ?
+                          <tr><td colSpan={5} className="ps-table-empty">No hay usuarios para mostrar.</td></tr>
+                          : filteredProfiles.map(item => {
+                            const isActive = isEmploymentActive(item);
+
+                            return <tr key={item.id} className="row-hover" onClick={() => { setSelectedUser(item); setUserDetailModalOpen(true); }}>
+                              <td className="td-pad td-name">
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                  <div className="pa-user-avatar-mini">
+                                    {getUserDisplayName(item).charAt(0).toUpperCase()}
+                                  </div>
+                                  <strong style={{ fontSize: 13 }}>{getUserDisplayName(item)}</strong>
+                                </div>
+                              </td>
+                              <td className="td-pad">{item.email || "Sin correo"}</td>
+                              <td className="td-pad"><StatusBadge value={item.role} /></td>
+                              <td className="td-pad">
+                                <span className={`pa-meta-badge ${isActive ? "active" : "inactive"}`}>
+                                  {getEmploymentStatus(item)}
+                                </span>
+                              </td>
+                              <td className="td-pad td-actions">
+                                <div className="table-actions">
+                                  <button className="table-action-btn view" onClick={(e) => { e.stopPropagation(); setSelectedUser(item); setUserDetailModalOpen(true); }} title="Ver detalles">
+                                    <Icons.Eye />
+                                  </button>
+                                  <button className={`table-action-btn ${isActive ? "deactivate" : "activate"}`} onClick={(e) => { e.stopPropagation(); openEmploymentStatusConfirm(item); }} title={isActive ? "Desactivar usuario" : "Activar usuario"}>
+                                    {isActive ? <Icons.X /> : <Icons.Check />}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>;
+                          })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </section>
         }
@@ -2359,52 +2399,43 @@ export default function Dashboard() {
       />
       <ModalShell open={quotationModalOpen} onClose={() => setQuotationModalOpen(false)} title="Cotizar Orden" size="compact">
         <div style={{ minWidth: 320 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
             {quotationOrder?.client_name}
           </p>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20, lineHeight: 1.5 }}>
             {quotationOrder?.description?.slice(0, 60)}{quotationOrder?.description?.length > 60 ? "..." : ""}
           </p>
 
-          <label className="ps-label" style={{ marginBottom: 8, display: "block" }}>
-            Estado de Pago
-          </label>
-          <select
-            value={quotationPaymentStatus}
-            onChange={(e) => setQuotationPaymentStatus(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              borderRadius: "var(--radius-md)",
-              border: "1.5px solid var(--border)",
-              background: "var(--surface)",
-              fontSize: 13,
-              cursor: "pointer",
-              marginBottom: 16,
-              outline: "none"
-            }}
-          >
-            <option value="Pending_Payment">Pendiente</option>
-            <option value="parcial">Parcial</option>
-            <option value="pagado">Pagado</option>
-          </select>
+          <div className="pa-field" style={{ marginBottom: 16 }}>
+            <span>Estado de Pago</span>
+            <select
+              value={quotationPaymentStatus}
+              onChange={(e) => setQuotationPaymentStatus(e.target.value)}
+              style={{ width: "100%" }}
+            >
+              <option value="Pending_Payment">Pendiente</option>
+              <option value="parcial">Parcial</option>
+              <option value="pagado">Pagado</option>
+            </select>
+          </div>
 
           {quotationPaymentStatus === "pagado" && (
-            <div style={{ marginBottom: 20 }}>
-              <label className="ps-label" style={{ marginBottom: 8, display: "block" }}>
-                Imagen de Recibo/Factura <span style={{ color: "#ef4444" }}>*</span>
-              </label>
+            <div className="pa-field" style={{ marginBottom: 20 }}>
+              <span>Imagen de Recibo/Factura <span style={{ color: "#ef4444" }}>*</span></span>
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 onChange={(e) => setQuotationInvoice(e.target.files?.[0] || null)}
                 style={{
                   width: "100%",
-                  padding: "12px",
-                  borderRadius: "var(--radius-md)",
+                  padding: "10px 13px",
+                  borderRadius: "var(--radius-sm)",
                   border: "1.5px solid var(--border)",
-                  background: "var(--surface)",
+                  background: "var(--surface-alt)",
                   fontSize: 13,
+                  fontFamily: "'Poppins', sans-serif",
+                  outline: "none",
+                  boxSizing: "border-box"
                 }}
               />
               {quotationInvoice && (
@@ -2415,13 +2446,13 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="pa-btn secondary" style={{ flex: 1 }} onClick={() => setQuotationModalOpen(false)}>
+          <div className="pa-modal-actions">
+            <button className="pa-btn secondary" onClick={() => setQuotationModalOpen(false)}>
               Cancelar
             </button>
             <button
               className="pa-btn primary"
-              style={{ flex: 1, background: "#06B6D4", borderColor: "#06B6D4" }}
+              style={{ background: "#06B6D4", borderColor: "#06B6D4", flex: 2 }}
               onClick={handleQuotationOrder}
               disabled={quotationLoading || (quotationPaymentStatus === "pagado" && !quotationInvoice)}
             >
@@ -2431,69 +2462,41 @@ export default function Dashboard() {
         </div>
       </ModalShell>
       <ModalShell open={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Confirmar Cancelación" size="compact">
-        <div style={{ minWidth: 320, textAlign: "center" }}>
-          <div style={{ 
-            width: 64, height: 64, borderRadius: "50%", 
-            background: "#FEE2E2", color: "#EF4444",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 16px"
-          }}>
-            <Icon.Trash />
+        <div className="pa-confirm-modal-body">
+          <div className="pa-confirm-icon cancel">
+            <Icons.Trash />
           </div>
-          <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
-            ¿Estás seguro de que deseas cancelar esta orden?
-          </p>
-          <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>
-            <strong>{cancelOrderData?.client_name}</strong>
-            <br />
-            <span style={{ fontSize: 12 }}>{cancelOrderData?.description?.slice(0, 50)}{cancelOrderData?.description?.length > 50 ? "..." : ""}</span>
-          </p>
-          <p style={{ fontSize: 12, color: "#EF4444", marginBottom: 20 }}>
-            ⚠️ Esta acción no se puede deshacer
-          </p>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="pa-btn secondary" style={{ flex: 1 }} onClick={() => setCancelModalOpen(false)}>
+          <div className="pa-confirm-copy">
+            <h4>Cancelar orden</h4>
+            <p className="pa-confirm-order-name">{cancelOrderData?.client_name}</p>
+            <p className="pa-confirm-order-desc">{cancelOrderData?.description?.slice(0, 60)}{cancelOrderData?.description?.length > 60 ? "..." : ""}</p>
+            <p className="pa-confirm-warning">⚠️ Esta acción no se puede deshacer</p>
+          </div>
+          <div className="pa-modal-actions">
+            <button className="pa-btn secondary" onClick={() => setCancelModalOpen(false)}>
               Cerrar
             </button>
-            <button
-              className="pa-btn"
-              style={{ flex: 1, background: "#EF4444", color: "#fff", border: "none" }}
-              onClick={handleConfirmCancelOrder}
-              disabled={cancelLoading}
-            >
+            <button className="pa-btn pa-confirm-btn-cancel" onClick={handleConfirmCancelOrder} disabled={cancelLoading}>
               {cancelLoading ? "Cancelando..." : "Sí, cancelar orden"}
             </button>
           </div>
         </div>
       </ModalShell>
       <ModalShell open={!!archivingOrder} onClose={() => setArchivingOrder(null)} title="Archivar Orden" size="compact">
-        <div style={{ minWidth: 320, textAlign: "center" }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: "50%",
-            background: "#FEF3C7", color: "#D97706",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 16px"
-          }}>
-            <Icon.Archive />
+        <div className="pa-confirm-modal-body">
+          <div className="pa-confirm-icon archive">
+            <Icons.Archive />
           </div>
-          <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
-            Deseas archivar esta orden?
-          </p>
-          <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>
-            <strong>{archivingOrder?.client_name}</strong>
-            <br />
-            <span style={{ fontSize: 12 }}>La orden se ocultara de la vista activa, pero seguira disponible en el filtro de archivadas.</span>
-          </p>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="pa-btn secondary" style={{ flex: 1 }} onClick={() => setArchivingOrder(null)} disabled={archiveLoading}>
+          <div className="pa-confirm-copy">
+            <h4>Archivar orden</h4>
+            <p className="pa-confirm-order-name">{archivingOrder?.client_name}</p>
+            <p className="pa-confirm-order-desc">La orden se ocultará de la vista activa, pero seguirá disponible en el filtro de archivadas.</p>
+          </div>
+          <div className="pa-modal-actions">
+            <button className="pa-btn secondary" onClick={() => setArchivingOrder(null)} disabled={archiveLoading}>
               Cancelar
             </button>
-            <button
-              className="pa-btn"
-              style={{ flex: 1, background: "#F59E0B", color: "#fff", border: "none" }}
-              onClick={handleConfirmArchiveOrder}
-              disabled={archiveLoading}
-            >
+            <button className="pa-btn pa-confirm-btn-archive" onClick={handleConfirmArchiveOrder} disabled={archiveLoading}>
               {archiveLoading ? "Archivando..." : "Archivar"}
             </button>
           </div>
@@ -2502,6 +2505,104 @@ export default function Dashboard() {
       <UserCreateModal open={userModalOpen} userForm={userForm} setUserForm={setUserForm} onClose={() => setUserModalOpen(false)} onSubmit={handleCreateUser} saving={savingUser} />
       <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />
+    </div>
+  );
+}
+
+function AdminTrackingLinkField({ orderId }) {
+  const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!orderId) return;
+    supabase
+      .from("orders")
+      .select("tracking_token")
+      .eq("id", orderId)
+      .single()
+      .then(({ data }) => {
+        if (data?.tracking_token) setToken(data.tracking_token);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [orderId]);
+
+  const trackingUrl = token ? `${window.location.origin}/track/${token}` : null;
+
+  const handleCopy = async () => {
+    if (!trackingUrl) return;
+    try {
+      await navigator.clipboard.writeText(trackingUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = trackingUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+        <div style={{ width: 14, height: 14, border: "2px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%" }} />
+        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Cargando...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {trackingUrl ? (
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            readOnly
+            value={trackingUrl}
+            onClick={(e) => e.target.select()}
+            style={{
+              flex: 1,
+              padding: "8px 12px",
+              fontSize: 12,
+              fontFamily: "'SF Mono', 'Fira Code', monospace",
+              border: "1.5px solid var(--border)",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--surface-alt)",
+              color: "var(--text)",
+              outline: "none",
+              cursor: "text",
+            }}
+          />
+          <button
+            onClick={handleCopy}
+            style={{
+              padding: "8px 14px",
+              background: copied ? "#10B981" : "var(--primary)",
+              border: "none",
+              borderRadius: "var(--radius-sm)",
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              transition: "background 0.2s",
+              fontFamily: "'Poppins', sans-serif",
+            }}
+          >
+            {copied ? "✓ Copiado" : "Copiar"}
+          </button>
+        </div>
+      ) : (
+        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, fontStyle: "italic" }}>
+          El link estará disponible cuando la orden tenga un token de seguimiento.
+        </p>
+      )}
     </div>
   );
 }
