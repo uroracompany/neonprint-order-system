@@ -137,10 +137,21 @@ export const PAYMENT_LABELS = {
 // Campos relevantes para asignación de cotizaciones, usados en lógica de negocio y formularios de asignación
 export const QUOTE_ASSIGNMENT_FIELDS = ["quote_id", "quotation_id", "quote_user_id"];
 
-// Flujo de seguimiento para clientes (FlowTrack público)
+// Flujo de seguimiento para clientes (FlowTrack público) — diseño interno
 export const CLIENT_FLOW_STEPS = [
   { key: ORDER_STATUS.PENDING, label: "Pendiente" },
   { key: ORDER_STATUS.IN_DESIGN, label: "Diseño" },
+  { key: ORDER_STATUS.IN_QUOTE, label: "Cotización" },
+  { key: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
+  { key: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
+  { key: ORDER_STATUS.IN_COMPLETED, label: "Lista para entrega" },
+  { key: ORDER_STATUS.IN_DELIVERED, label: "Entregada" },
+];
+
+// Flujo de seguimiento para clientes — diseño externo (salta Diseño)
+export const CLIENT_FLOW_STEPS_EXTERNAL = [
+  { key: ORDER_STATUS.PENDING, label: "Pendiente" },
+  { key: ORDER_STATUS.IN_QUOTE, label: "Cotización" },
   { key: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
   { key: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
   { key: ORDER_STATUS.IN_COMPLETED, label: "Lista para entrega" },
@@ -150,7 +161,7 @@ export const CLIENT_FLOW_STEPS = [
 export const CLIENT_STATUS_MAP = {
   [ORDER_STATUS.PENDING]: ORDER_STATUS.PENDING,
   [ORDER_STATUS.IN_DESIGN]: ORDER_STATUS.IN_DESIGN,
-  [ORDER_STATUS.IN_QUOTE]: ORDER_STATUS.PENDING,
+  [ORDER_STATUS.IN_QUOTE]: ORDER_STATUS.IN_QUOTE,
   [ORDER_STATUS.IN_PRODUCTION]: ORDER_STATUS.IN_PRODUCTION,
   [ORDER_STATUS.IN_TERMINATION]: ORDER_STATUS.IN_TERMINATION,
   [ORDER_STATUS.IN_DELIVERED]: ORDER_STATUS.IN_DELIVERED,
