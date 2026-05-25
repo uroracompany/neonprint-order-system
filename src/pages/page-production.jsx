@@ -7,6 +7,8 @@ import NotificationCenter from "../components/NotificationCenter";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
 import { FlowTracker } from "../components/FlowTracker";
+import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
+import { AssignModal } from "../components/ui/AssignModal";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
@@ -24,25 +26,6 @@ const METRIC_ACCENTS = [
   { color: "#059669", bg: "#ECFDF5", glow: "#ECFDF5" },
   { color: "#14532D", bg: "#DCFCE7", glow: "#DCFCE7" },
 ];
-
-function StatusBadge({ status }) {
-  const cfg = getOrderStatusConfig(status);
-  return (
-    <span className="pp-badge" style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}20` }}>
-      <span className="pp-badge-dot" style={{ background: cfg.dot }} />
-      {cfg.label}
-    </span>
-  );
-}
-
-function PaymentBadge({ status }) {
-  const cfg = PAYMENT_COLORS[status] || PAYMENT_COLORS["Pending_Payment"];
-  return (
-    <span className="pp-payment-badge" style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}20` }}>
-      {cfg.label}
-    </span>
-  );
-}
 
 function MetricCard({ icon, label, value, accentIdx = 0 }) {
   const acc = METRIC_ACCENTS[accentIdx];
@@ -263,11 +246,11 @@ function OrderDetailModal({ open, onClose, order, onUpdateStatus, onCompleteOrde
                 <div className="pp-modal-status-grid">
                   <div className="pp-modal-status-section">
                     <span className="pp-modal-status-label">Estado Actual</span>
-                    <StatusBadge status={order.status} />
+                    <StatusBadge status={order.status} bordered />
                   </div>
                   <div className="pp-modal-status-section">
                     <span className="pp-modal-status-label">Estado de Pago</span>
-                    <PaymentBadge status={order.payment_status} />
+                    <PaymentBadge status={order.payment_status} bordered />
                   </div>
                   {order.price && (
                     <div className="pp-price-box">
@@ -409,6 +392,24 @@ export default function PageProduction() {
   const [viewMode, setViewMode] = useState("table");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [assignDeliveryOrder, setAssignDeliveryOrder] = useState(null);
+  const [assignDeliverySaving, setAssignDeliverySaving] = useState(false);
+
+  const handleConfirmAssignDelivery = async (deliveryUserId) => {
+    if (!assignDeliveryOrder) return;
+    setAssignDeliverySaving(true);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: ORDER_STATUS.IN_COMPLETED, delivery_id: deliveryUserId })
+        .eq("id", assignDeliveryOrder.id);
+      if (error) throw error;
+      setAssignDeliveryOrder(null);
+      await refreshOrders();
+    } catch (err) {
+      console.error("Error assigning delivery:", err);
+    }
+    setAssignDeliverySaving(false);
+  };
   const notif = useNotifications(user?.id);
 
   useEffect(() => {
@@ -614,7 +615,7 @@ export default function PageProduction() {
                             <td className="td-pad td-client">{order.client_name}</td>
                             <td className="td-pad td-desc">{order.description}</td>
                             <td className="td-pad td-material">{order.material}</td>
-                            <td className="td-pad"><StatusBadge status={order.status} /></td>
+                            <td className="td-pad"><StatusBadge status={order.status} bordered /></td>
                             <td className="td-pad td-actions">
                               <div className="table-actions">
                                 <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
@@ -715,8 +716,8 @@ export default function PageProduction() {
                             <td className="td-pad td-desc">{order.description?.substring(0, 40)}</td>
                             <td className="td-pad td-material">{order.material}</td>
                             <td className="td-pad td-qty">{order.quantity || "-"}</td>
-                            <td className="td-pad"><StatusBadge status={order.status} /></td>
-                            <td className="td-pad"><PaymentBadge status={order.payment_status} /></td>
+                            <td className="td-pad"><StatusBadge status={order.status} bordered /></td>
+                            <td className="td-pad"><PaymentBadge status={order.payment_status} bordered /></td>
                             <td className="td-pad">
                               {order.order_type === "orden 911" ? (
                                 <span className="pp-badge-911">911</span>
@@ -756,14 +757,14 @@ export default function PageProduction() {
                         <div className="pp-order-card-header">
                           <span className="pp-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
                           <div className="pp-order-card-badges">
-                            <StatusBadge status={order.status} />
+                            <StatusBadge status={order.status} bordered />
                           </div>
                         </div>
                         <div className="pp-order-card-client">{order.client_name}</div>
                         <div className="pp-order-card-desc">{order.description || "Sin descripción"}</div>
                         <div className="pp-order-card-meta">
                           <span className="pp-order-card-material">{order.material}</span>
-                          <PaymentBadge status={order.payment_status} />
+                          <PaymentBadge status={order.payment_status} bordered />
                         </div>
                         <div className="pp-order-card-footer">
                           <span className="pp-order-card-date">
@@ -801,135 +802,16 @@ export default function PageProduction() {
         onUpdateStatus={refreshOrders}
         onCompleteOrder={(order) => { setSelectedOrder(null); setAssignDeliveryOrder(order); }}
       />
-      <AssignDeliveryModal
+      <AssignModal
         open={!!assignDeliveryOrder}
         onClose={() => setAssignDeliveryOrder(null)}
         order={assignDeliveryOrder}
-        onConfirm={() => { setAssignDeliveryOrder(null); refreshOrders(); }}
+        role="delivery"
+        onConfirm={handleConfirmAssignDelivery}
+        loading={assignDeliverySaving}
       />
     </div>
   );
 }
 
-function AssignDeliveryModal({ open, onClose, order, onConfirm }) {
-  const [deliveryUsers, setDeliveryUsers] = useState([]);
-  const [selectedDeliveryUser, setSelectedDeliveryUser] = useState("");
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      setLoadingUsers(true);
-      setSelectedDeliveryUser("");
-      supabase
-        .from("profiles")
-        .select("id, name, role")
-        .then(({ data, error }) => {
-          setLoadingUsers(false);
-          if (!error && data) {
-            const deliveries = data
-              .filter(profile => profile.role && profile.role.toLowerCase().includes("delivery"))
-              .map(profile => ({ ...profile, displayName: profile.name || "Entregador" }));
-            setDeliveryUsers(deliveries);
-          } else {
-            setDeliveryUsers([]);
-          }
-        });
-    }
-  }, [open]);
-
-  const handleConfirm = async () => {
-    if (!selectedDeliveryUser || !order) return;
-    setSaving(true);
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status: ORDER_STATUS.IN_COMPLETED, delivery_id: selectedDeliveryUser })
-        .eq("id", order.id);
-      if (error) throw error;
-      onConfirm?.();
-      onClose();
-    } catch (err) {
-      console.error("Error assigning delivery:", err);
-    }
-    setSaving(false);
-  };
-
-  if (!open) return null;
-
-  return (
-    <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="pp-modal" style={{ maxWidth: 580 }}>
-        <div className="pp-modal-stripe" />
-        <div className="pp-modal-header">
-          <div><h3 style={{ margin: 0 }}>Asignar Repartidor</h3></div>
-          <button className="pp-modal-close" onClick={onClose}><Icons.Close /></button>
-        </div>
-        <div style={{ padding: "22px 26px 28px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
-            <div style={{ width: 64, height: 64, borderRadius: "50%",
-              background: "linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 4px 12px rgba(5, 150, 105, 0.25)" }}>
-              <Icons.Truck style={{ color: "#059669", width: 28, height: 28 }} />
-            </div>
-          </div>
-
-          <p style={{ fontSize: 15, color: "#374151", marginBottom: 12, lineHeight: 1.5, textAlign: "center", fontWeight: 500 }}>
-            Selecciona el usuario de delivery responsable
-          </p>
-
-          {order && (
-            <div style={{ background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, marginBottom: 16, textAlign: "center" }}>
-              <span style={{ fontSize: 13, color: "#6B7280" }}>Orden </span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#0f1e40" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
-              <span style={{ fontSize: 13, color: "#6B7280" }}> - </span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: "#0f1e40" }}>{order.client_name}</span>
-            </div>
-          )}
-
-          {loadingUsers ? (
-            <div style={{ textAlign: "center", padding: "20px 0", color: "#6B7280" }}>
-              Cargando usuarios de delivery...
-            </div>
-          ) : deliveryUsers.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "20px 0", color: "#EF4444" }}>
-              No hay usuarios de delivery disponibles
-            </div>
-          ) : (
-            <div style={{ marginBottom: 24 }}>
-              <select value={selectedDeliveryUser}
-                onChange={(e) => setSelectedDeliveryUser(e.target.value)}
-                style={{ width: "100%", padding: "12px 16px", borderRadius: 8,
-                  border: "1.5px solid #E5E7EB", fontSize: 14, fontFamily: "'Poppins', sans-serif",
-                  background: "#fff", color: "#374151", cursor: "pointer", outline: "none" }}>
-                <option value="">Seleccionar usuario de delivery...</option>
-                {deliveryUsers.map(u => (
-                  <option key={u.id} value={u.id}>{u.displayName}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {saving && <div style={{ textAlign: "center", padding: "12px 0", color: "#059669", fontSize: 14 }}>Asignando delivery...</div>}
-
-          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-            <button className="ps-btn-cancel" onClick={onClose} disabled={saving}>Cancelar</button>
-            <button onClick={handleConfirm}
-              disabled={saving || !selectedDeliveryUser || deliveryUsers.length === 0}
-              style={{
-                padding: "10px 24px", borderRadius: 8, border: "none",
-                background: !selectedDeliveryUser || saving ? "rgba(5, 150, 105, 0.5)" : "linear-gradient(135deg, #059669 0%, #10B981 100%)",
-                color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer",
-                fontFamily: "'Poppins', sans-serif",
-                boxShadow: !selectedDeliveryUser || saving ? "none" : "0 2px 8px rgba(5, 150, 105, 0.3)",
-                opacity: (!selectedDeliveryUser || saving) ? 0.6 : 1
-              }}>
-              {saving ? "Asignando..." : "Asignar Orden"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}

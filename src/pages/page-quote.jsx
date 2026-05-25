@@ -5,9 +5,10 @@ import Sidebar from "../components/Sidebar";
 import { validateImage } from "../utils/imageValidation";
 import { uploadOrderAsset, buildPaymentReceiptPath } from "../utils/uploadOrderAsset";
 import { Icons } from "../utils/icons";
+import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
+import { AssignModal } from "../components/ui/AssignModal";
 import {
   ORDER_STATUS,
-  PAYMENT_COLORS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   getOrderStatusConfig,
@@ -17,26 +18,6 @@ import {
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import "../css-components/page-quote.css";
-
-// PÁGINA DE COTIZACIÓN - Gestiona el flujo de cotización de órdenes
-// El usuario con rol "quote" visualiza órdenes asignadas a él y gestiona:
-// 1. Revisión de detalles de la orden
-// 2. Confirmación de pagos (con recibo)
-// 3. Devolución de órdenes al diseñador si hay errores
-// 4. Envío de órdenes a producción
-// 5. Archivo de órdenes completadas
-
-// Campo estándar para almacenar la URL del comprobante de pago
-const INVOICE_PAYMENT_FIELD = "invoice_payment";
-
-// FUNCIONES HELPER PARA NORMALIZAR Y RESOLVER DATOS
-// Estas funciones toleran variaciones del backend (campos con nombres alternativos, valores null, etc.)
-// y aseguran que el código no se rompa por cambios menores en la estructura de datos
-
-// Obtiene la configuración de colores y estilos para un estado de orden
-const getStatusConfig = (status) => getOrderStatusConfig(status);
-// Obtiene los colores para mostrar el estado del pago (Pendiente, Parcial, Pagado)
-const getPaymentConfig = (status) => PAYMENT_COLORS[status] || PAYMENT_COLORS.Pending_Payment;
 // Normaliza texto a minúsculas y sin espacios para comparaciones seguras
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
 // Resuelve el ID del usuario asignado a cotización (busca en múltiples campos posibles)
@@ -76,30 +57,7 @@ const getOrderFiles = (order) => {
   }
 };
 
-// COMPONENTES DE BADGE (INSIGNIAS)
-// Muestran visualmente el estado actual de una orden o pago
-// Son pequeños elementos informativos que se repiten en toda la UI
-
-// Badge de estado de orden (Ej: Cotización, Producción, Completada)
-function StatusBadge({ status }) {
-  const cfg = getStatusConfig(status);
-  return (
-    <span className="pq-badge" style={{ background: cfg.bg, color: cfg.color }}>
-      <span className="pq-badge-dot" style={{ background: cfg.dot }} />
-      {cfg.label}
-    </span>
-  );
-}
-
-// Badge de estado de pago (Ej: Pendiente, Parcial, Pagado)
-function PaymentBadge({ status }) {
-  const cfg = getPaymentConfig(status);
-  return (
-    <span className="pq-payment-badge" style={{ background: cfg.bg, color: cfg.color }}>
-      {cfg.label}
-    </span>
-  );
-}
+// Badge que indica que una orden fue devuelta para correcciones
 
 // Badge que indica que una orden fue devuelta para correcciones
 function ReturnedBadge({ compact = false }) {
@@ -204,114 +162,6 @@ function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
 // 1. Carga los usuarios con rol "printer" (impresores) disponibles
 // 2. Permite seleccionar el impresor responsable
 // 3. Asigna la orden al impresor seleccionado
-
-function SendToProductionModal({ open, onClose, onConfirm, order, loading }) {
-  const [productionUsers, setProductionUsers] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState("");
-  const [loadingUsers, setLoadingUsers] = useState(true);
-
-  // Efecto para cargar impresores disponibles cuando se abre el modal
-  // Solo se ejecuta si el modal está abierto
-  // Busca usuarios con rol "printer" y estado de empleo activo (employment_status = true)
-  useEffect(() => {
-    if (open) {
-      setLoadingUsers(true);
-      setSelectedUserId("");
-      supabase
-        .from("profiles")
-        .select("id, name, role, employment_status")
-        .eq("role", "printer")
-        .eq("employment_status", true)
-        .then(({ data, error }) => {
-          setLoadingUsers(false);
-          if (!error && data) {
-            setProductionUsers(
-              data.map(p => ({ ...p, displayName: p.name || "Impresor" }))
-            );
-          } else {
-            if (error) console.error("Error cargando impresores:", error);
-            setProductionUsers([]);
-          }
-        });
-    }
-  }, [open]);
-
-  const handleConfirm = () => {
-    if (selectedUserId) {
-      onConfirm(selectedUserId);
-    }
-  };
-
-  const getUserName = (user) => user.displayName || user.name || "Impresor";
-
-  if (!open || !order) return null;
-
-  return (
-    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-      <div className="pq-dialog">
-        <div className="pq-dialog-icon return" style={{ background: "linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%)", color: "#9A3412" }}>
-          <Icons.Package />
-        </div>
-        <h3 className="pq-dialog-title">Enviar a Producción</h3>
-
-        <p className="pq-dialog-text" style={{ marginBottom: 16 }}>
-          Selecciona el impresor que recibirá esta orden para producción.
-        </p>
-
-        <div className="pq-dialog-order">
-          <span className="pq-dialog-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-          <span className="pq-dialog-order-name">{order.client_name || order.description || "Orden sin título"}</span>
-        </div>
-
-        {loadingUsers ? (
-          <div className="pq-form-group" style={{ textAlign: "center", padding: "16px 0", color: "#6B7280" }}>
-            Cargando impresores...
-          </div>
-        ) : productionUsers.length === 0 ? (
-          <div className="pq-form-group" style={{ textAlign: "center", padding: "16px 0", color: "#EF4444" }}>
-            No hay impresores disponibles
-          </div>
-        ) : (
-          <div className="pq-form-group">
-            <label className="pq-input-label">Impresor responsable</label>
-            <select
-              className="pq-input"
-              value={selectedUserId}
-              onChange={e => setSelectedUserId(e.target.value)}
-            >
-              <option value="">Seleccionar impresor...</option>
-              {productionUsers.map(u => (
-                <option key={u.id} value={u.id}>
-                  {getUserName(u)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {loading && (
-          <div style={{ textAlign: "center", padding: "8px 0", color: "#9A3412", fontSize: 14 }}>
-            Enviando a producción...
-          </div>
-        )}
-
-        <div className="pq-dialog-actions">
-          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>
-            Cancelar
-          </button>
-          <button
-            className="pq-btn pq-btn-primary"
-            onClick={handleConfirm}
-            disabled={loading || !selectedUserId}
-            style={!selectedUserId || loading ? { opacity: 0.6 } : {}}
-          >
-            {loading ? "Enviando..." : "Enviar a Producción"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // MODAL PRINCIPAL DE DETALLE DE COTIZACIÓN
 // Este es el modal más importante de la página
@@ -1372,11 +1222,12 @@ export default function PageQuote() {
         loading={returnLoading}
       />
 
-      <SendToProductionModal
+      <AssignModal
         open={!!forwardToProductionOrder}
         onClose={() => setForwardToProductionOrder(null)}
         onConfirm={handleConfirmSendToProduction}
         order={forwardToProductionOrder}
+        role="printer"
         loading={productionSaving}
       />
 

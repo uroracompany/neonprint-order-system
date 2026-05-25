@@ -10,15 +10,15 @@ import {
   uploadOrderAsset,
 } from "../utils/uploadOrderAsset";
 import { Icons } from "../utils/icons";
+import { StatusBadge, PaymentBadge, RoleBadge } from "../components/ui/Badge";
+import { AssignModal } from "../components/ui/AssignModal";
 import {
   ORDER_STATUS,
   STATUS_LABELS,
   PAYMENT_LABELS,
-  PAYMENT_COLORS,
   MATERIAL_OPTIONS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
-  getOrderStatusConfig,
   getOrderStatusLabel,
   isOrderStatus,
   isOrderStatusIn,
@@ -127,36 +127,6 @@ const getRoleLabel = (role) => {
   };
   return map[role] || role;
 };
-
-function StatusBadge({ value }) {
-  const roleMap = { admin: ["Administrador", "danger"], seller: ["Vendedor", "info"], designer: ["Diseñador", "purple"], quote: ["Cotizador", "blue"], printer: ["Producción", "orange"], delivery: ["Entregador", "cyan"] };
-  if (roleMap[value]) {
-    const [label, tone] = roleMap[value];
-    return <span className={`pa-badge ${tone}`}>{label}</span>;
-  }
-  const statusConfig = getOrderStatusConfig(value);
-  if (statusConfig) {
-    return (
-      <span className="ps-badge" style={{ background: statusConfig.bg, color: statusConfig.color, border: `1px solid ${statusConfig.color}20` }}>
-        <span className="ps-badge-dot" style={{ background: statusConfig.dot }} />
-        {statusConfig.label}
-      </span>
-    );
-  }
-  return <span className="ps-badge" style={{ background: "#EEF2F7", color: "#475569", border: "1px solid #DDE3EF" }}>{value || "---"}</span>;
-}
-
-function PaymentBadge({ value }) {
-  const cfg = PAYMENT_COLORS[value];
-  if (cfg) {
-    return (
-      <span className="ps-badge" style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}20` }}>
-        {cfg.label}
-      </span>
-    );
-  }
-  return <span className="ps-badge" style={{ background: "#EEF2F7", color: "#475569", border: "1px solid #DDE3EF" }}>{value || "---"}</span>;
-}
 
 function ModalShell({ open, title, onClose, children, size = "default" }) {
   if (!open) return null;
@@ -672,85 +642,6 @@ onMouseEnter={e => {
 }
 
 // Modal de asignación de orden a usuario
-function AssignOrderModal({ open, onClose, order, role, onConfirm, loading }) {
-  const [users, setUsers] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState("");
-  const [loadingUsers, setLoadingUsers] = useState(true);
-
-  useEffect(() => {
-    if (open && role) {
-      setLoadingUsers(true);
-      setSelectedUserId("");
-      supabase
-        .from("profiles")
-        .select("id, name, role")
-        .then(({ data, error }) => {
-          setLoadingUsers(false);
-          if (!error && data) {
-            const filtered = data
-              .filter(p => p.role && p.role.toLowerCase().includes(role.toLowerCase()))
-              .map(p => ({ ...p, displayName: p.name || p.role }));
-            setUsers(filtered);
-          }
-        });
-    }
-  }, [open, role]);
-
-  const handleConfirm = () => {
-    if (!selectedUserId) return;
-    onConfirm(selectedUserId);
-  };
-
-  const roleLabel = role === "designer" ? "Diseñador" : "Cotizador";
-  const roleColor = role === "designer" ? "#8B5CF6" : "#06B6D4";
-  const isExternal = order?.order_design_type === "EXTERNAL_DESING";
-
-  return (
-    <ModalShell open={open} onClose={onClose} title={isExternal ? "Enviar a Cotización" : "Asignar Diseñador"} size="compact">
-      <div style={{ minWidth: 320 }}>
-        <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-          {order?.client_name}
-        </p>
-        <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-          {order?.description?.slice(0, 60)}{order?.description?.length > 60 ? "..." : ""}
-        </p>
-
-        <label className="ps-label" style={{ marginBottom: 8, display: "block" }}>
-          Seleccionar {roleLabel}
-        </label>
-        {loadingUsers ? (
-          <p style={{ fontSize: 13, color: "var(--text-muted)", padding: 12, textAlign: "center", background: "var(--surface-alt)", borderRadius: "var(--radius-md)" }}>Cargando...</p>
-        ) : users.length === 0 ? (
-          <p style={{ fontSize: 13, color: "var(--text-muted)", padding: 12, textAlign: "center", background: "var(--surface-alt)", borderRadius: "var(--radius-md)" }}>No hay {roleLabel.toLowerCase()}s disponibles</p>
-        ) : (
-          <select
-            value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
-            className="pa-field-select"
-          >
-            <option value="">-- Seleccionar {roleLabel} --</option>
-            {users.map(user => (
-              <option key={user.id} value={user.id}>{user.displayName}</option>
-            ))}
-          </select>
-        )}
-
-        <div style={{ display: "flex", gap: 10 }}>
-          <button className="pa-btn secondary" style={{ flex: 1 }} onClick={onClose}>Cancelar</button>
-          <button
-            className="pa-btn primary"
-            style={{ flex: 1, background: roleColor, borderColor: roleColor }}
-            onClick={handleConfirm}
-            disabled={!selectedUserId || loading}
-          >
-            {loading ? "Asignando..." : isExternal ? "Enviar a Cotización" : `Asignar a ${roleLabel}`}
-          </button>
-        </div>
-      </div>
-    </ModalShell>
-  );
-}
-
 // Versión enriquecida del formulario de órdenes para admin, con la misma capacidad de carga
 // de archivos y preview que hoy utiliza seller.
 function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit, saving }) {
@@ -1097,8 +988,8 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
         <div className="pa-panel">
           <div className="pa-panel-title">Diseños y cotización</div>
           <div className="pa-detail-list">
-            <div><span>Estado</span><strong><StatusBadge value={order.status} /></strong></div>
-            <div><span>Pago</span><strong><PaymentBadge value={order.payment_status} /></strong></div>
+            <div><span>Estado</span><strong><StatusBadge status={order.status} className="ps-badge" showDot bordered /></strong></div>
+            <div><span>Pago</span><strong><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></strong></div>
             <div><span>Precio</span><strong>{order.price ? `RD$${Number(order.price).toLocaleString("es-DO")}` : "Sin cotizar"}</strong></div>
             <div><span>Preview</span><strong>{order.preview_image ? <a href={order.preview_image} target="_blank" rel="noreferrer">Ver preview</a> : "Sin preview"}</strong></div>
           </div>
@@ -1274,7 +1165,7 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
               <span>{getUserDisplayName(user).charAt(0).toUpperCase()}</span>
             </div>
             <div className="pa-user-detail-badge">
-              <StatusBadge value={user.role} />
+              <RoleBadge role={user.role} />
             </div>
           </div>
 
@@ -2084,7 +1975,7 @@ export default function Dashboard() {
                           </span>
                         </div>
                         <div className="pa-recent-meta">
-                          <StatusBadge value={order.status} />
+                          <StatusBadge status={order.status} className="ps-badge" showDot bordered />
                           <span>
                             {formatDate(order.created_at)}
                           </span>
@@ -2159,8 +2050,8 @@ export default function Dashboard() {
                             <td className="td-pad td-name">{order.client_name || "Sin cliente"}</td>
                             <td className="td-pad td-desc">{order.description || "Sin descripción"}</td>
                             <td className="td-pad td-mat">{order.material || "---"}</td>
-                            <td className="td-pad"><StatusBadge value={order.status} /></td>
-                            <td className="td-pad"><PaymentBadge value={order.payment_status} /></td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="ps-badge" showDot bordered /></td>
+                            <td className="td-pad"><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></td>
                             <td className="td-pad">
                               {order.order_type === "orden 911" ? (
                                 <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B", border: "1px solid #EF444420" }}>911</span>
@@ -2272,7 +2163,7 @@ export default function Dashboard() {
                                 </div>
                               </div>
                               <div className="pa-user-role-badge">
-                                <StatusBadge value={item.role} />
+                                <RoleBadge role={item.role} />
                               </div>
                             </div>
                             <div className="pa-user-card-divider"></div>
@@ -2343,7 +2234,7 @@ export default function Dashboard() {
                                 </div>
                               </td>
                               <td className="td-pad">{item.email || "Sin correo"}</td>
-                              <td className="td-pad"><StatusBadge value={item.role} /></td>
+                              <td className="td-pad"><RoleBadge role={item.role} /></td>
                               <td className="td-pad">
                                 <span className={`pa-meta-badge ${isActive ? "active" : "inactive"}`}>
                                   {getEmploymentStatus(item)}
@@ -2389,10 +2280,11 @@ export default function Dashboard() {
         onAssign={openAssignModal}
         onArchive={openArchiveModal}
       />
-      <AssignOrderModal
+      <AssignModal
         open={!!assigningOrder}
         order={assigningOrder}
         role={assigningRole}
+        title={assigningOrder?.order_design_type === "EXTERNAL_DESING" ? "Enviar a Cotización" : undefined}
         onClose={() => { setAssigningOrder(null); setAssigningRole(null); }}
         onConfirm={handleAssignOrder}
         loading={assigningLoading}

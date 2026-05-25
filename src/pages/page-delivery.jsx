@@ -7,31 +7,14 @@ import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
-import { ORDER_STATUS, PAYMENT_COLORS, DELIVERY_STATUS_OPTIONS, getOrderStatusConfig, isOrderStatus } from "../utils/constants";
+import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isOrderStatus } from "../utils/constants";
+import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 
 const CARD_ACCENTS = [
   { color: "#0284C7", bg: "#E0F2FE", glow: "radial-gradient(circle, rgba(2,132,199,0.25) 0%, transparent 70%)" },
   { color: "#059669", bg: "#ECFDF5", glow: "radial-gradient(circle, rgba(5,150,105,0.25) 0%, transparent 70%)" },
   { color: "#8B5CF6", bg: "#F3E8FF", glow: "radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%)" },
 ];
-
-function StatusBadge({ status }) {
-  const cfg = getOrderStatusConfig(status);
-  return (
-    <span className="pd-badge" style={{ background: cfg.bg, color: cfg.color }}>
-      {cfg.label}
-    </span>
-  );
-}
-
-function PaymentBadge({ status }) {
-  const cfg = PAYMENT_COLORS[status] || PAYMENT_COLORS["Pending_Payment"];
-  return (
-    <span className="pd-payment-badge" style={{ background: cfg.bg, color: cfg.color }}>
-      {cfg.label}
-    </span>
-  );
-}
 
 function OrderDetailModal({ open, onClose, order, onUpdateStatus, onUnarchive }) {
   const [updating, setUpdating] = useState(false);
@@ -160,7 +143,7 @@ function OrderDetailModal({ open, onClose, order, onUpdateStatus, onUnarchive })
           <div className="pd-status-bar">
             <div className="pd-status-item">
               <span className="pd-status-label">Estado</span>
-              <StatusBadge status={order.status} />
+              <StatusBadge status={order.status} showDot={false} />
             </div>
             <div className="pd-status-item">
               <span className="pd-status-label">Pago</span>
@@ -490,7 +473,7 @@ export default function PageDelivery() {
                           <span className="pd-order-desc">{order.description?.substring(0, 50)}...</span>
                         </div>
                         <div className="pd-order-right">
-                          <StatusBadge status={order.status} />
+                          <StatusBadge status={order.status} showDot={false} />
                           {isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && (
                             <button 
                               className="pd-action-btn check"
@@ -579,7 +562,7 @@ export default function PageDelivery() {
                           <td className="td-pad td-name">{order.client_name}</td>
                           <td className="td-pad td-desc">{order.description?.substring(0, 40)}</td>
                           <td className="td-pad td-mat">{order.material}</td>
-                          <td className="td-pad"><StatusBadge status={order.status} /></td>
+                          <td className="td-pad"><StatusBadge status={order.status} showDot={false} /></td>
                           <td className="td-actions">
                             <div className="table-actions">
                               {!order.is_archived_delivery && isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED) && (

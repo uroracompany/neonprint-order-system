@@ -4,29 +4,12 @@ import { useNavigate } from "react-router-dom";
 import "../css-components/page-designer.css";
 import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
-import { ORDER_STATUS, PAYMENT_COLORS, getOrderStatusConfig, isOrderStatus, isOrderStatusIn } from "../utils/constants";
+import { AssignModal } from "../components/ui/AssignModal";
+import { ORDER_STATUS, isOrderStatus, isOrderStatusIn } from "../utils/constants";
+import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
-
-function StatusBadge({ status }) {
-  const cfg = getOrderStatusConfig(status);
-  return (
-    <span className="pd-badge" style={{ background: cfg.bg, color: cfg.color }}>
-      <span className="pd-badge-dot" style={{ background: cfg.dot }} />
-      {cfg.label}
-    </span>
-  );
-}
-
-function PaymentBadge({ status }) {
-  const cfg = PAYMENT_COLORS[status] || PAYMENT_COLORS["Pending_Payment"];
-  return (
-    <span className="pd-payment-badge" style={{ background: cfg.bg, color: cfg.color }}>
-      {cfg.label}
-    </span>
-  );
-}
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const TRACKED_ORDER_FIELDS = [
@@ -609,153 +592,6 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
   );
 }
 
-function SendToQuotationModal({ open, onClose, onConfirm, order, loading, originalQuoterId }) {
-  const [quoteUsers, setQuoteUsers] = useState([]);
-  const [selectedQuoteUser, setSelectedQuoteUser] = useState("");
-  const [loadingQuoteUsers, setLoadingQuoteUsers] = useState(true);
-  const [localError, setLocalError] = useState("");
-
-  const wasReturned = originalQuoterId && isReturnedOrder(order);
-
-  useEffect(() => {
-    if (!open) return;
-
-    setLoadingQuoteUsers(true);
-    setSelectedQuoteUser("");
-    setLocalError("");
-
-    supabase
-      .from("profiles")
-      .select("id, name, role")
-      .then(({ data, error }) => {
-        setLoadingQuoteUsers(false);
-
-        if (error) {
-          setQuoteUsers([]);
-          setLocalError("No se pudieron cargar los usuarios de cotización.");
-          return;
-        }
-
-        let quotes = (data || [])
-          .filter(profile => profile.role && profile.role.toLowerCase().includes("quote"))
-          .map(profile => ({
-            ...profile,
-            displayName: profile.name || "Cotizador",
-          }));
-
-        if (wasReturned && originalQuoterId) {
-          quotes = quotes.sort((a, b) => {
-            if (a.id === originalQuoterId) return -1;
-            if (b.id === originalQuoterId) return 1;
-            return 0;
-          });
-        }
-
-        setQuoteUsers(quotes);
-
-        if (quotes.length === 0) {
-          setLocalError("No hay usuarios con rol Quote disponibles.");
-        }
-
-        if (wasReturned && originalQuoterId) {
-          setSelectedQuoteUser(originalQuoterId);
-        }
-      });
-  }, [open, wasReturned, originalQuoterId]);
-
-  if (!open || !order) return null;
-
-  const handleConfirm = () => {
-    if (!selectedQuoteUser) {
-      setLocalError("Debes seleccionar un usuario de cotización.");
-      return;
-    }
-
-    setLocalError("");
-    onConfirm(selectedQuoteUser);
-  };
-
-  return (
-    <div className="pd-assign-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="pd-assign-modal">
-        <div className="pd-assign-icon">
-          <Icons.Send />
-        </div>
-
-        <h3 className="pd-assign-title">Enviar a cotización</h3>
-        <p className="pd-assign-text">
-          Confirma que agregaste los archivos correctos antes de enviar esta orden al proceso de cotización.
-        </p>
-
-        <div className="pd-assign-order">
-          <span className="pd-assign-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-          <span className="pd-assign-order-name">{order.client_name || order.description || "Orden sin título"}</span>
-        </div>
-
-        {loadingQuoteUsers ? (
-          <div className="pd-assign-loading">Cargando usuarios de cotización...</div>
-        ) : wasReturned && originalQuoterId ? (
-          <>
-            <div className="pd-assign-notice">
-              <span>Esta orden fue devuelta. Solo se puede reenviar al cotizador que la regresó.</span>
-            </div>
-            <select
-              className="pd-assign-select"
-              value={selectedQuoteUser}
-              disabled={true}
-            >
-              {quoteUsers.map((quoteUser) => (
-                <option key={quoteUser.id} value={quoteUser.id}>
-                  {quoteUser.displayName}{quoteUser.id === originalQuoterId ? " (Original)" : ""}
-                </option>
-              ))}
-            </select>
-          </>
-        ) : (
-          <select
-            className="pd-assign-select"
-            value={selectedQuoteUser}
-            onChange={(e) => {
-              setSelectedQuoteUser(e.target.value);
-              setLocalError("");
-            }}
-            disabled={loading || quoteUsers.length === 0}
-          >
-            <option value="">Seleccionar usuario Quote...</option>
-            {quoteUsers.map((quoteUser) => (
-              <option key={quoteUser.id} value={quoteUser.id}>
-                {quoteUser.displayName}
-              </option>
-            ))}
-          </select>
-        )}
-
-        {localError && <div className="pd-assign-error">{localError}</div>}
-
-        <div className="pd-assign-actions">
-          <button className="pd-btn pd-btn-secondary" onClick={onClose} disabled={loading}>
-            Cancelar
-          </button>
-          <button
-            className="pd-btn pd-btn-quotation"
-            onClick={handleConfirm}
-            disabled={loading || !selectedQuoteUser}
-          >
-            {loading ? (
-              <>
-                <span className="pd-btn-spinner"></span>
-                Enviando...
-              </>
-            ) : (
-              "Enviar"
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ArchiveDesignerOrderModal({ open, onClose, onConfirm, order, loading }) {
   if (!open || !order) return null;
 
@@ -841,6 +677,57 @@ export default function PageDesigner() {
 
   viewedOrdersRef.current = viewedOrders;
 
+  const fetchOrders = async () => {
+    if (!userRef.current) return;
+
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("designer_id", userRef.current.id)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      const nextOrderIds = new Set(data.map(order => order.id));
+      const previousOrderIds = knownOrderIdsRef.current;
+      const previousOrders = previousOrdersRef.current;
+
+      if (!ordersInitializedRef.current) {
+        knownOrderIdsRef.current = nextOrderIds;
+        previousOrdersRef.current = data.reduce((acc, order) => {
+          acc[order.id] = order;
+          return acc;
+        }, {});
+        ordersInitializedRef.current = true;
+        ordersRef.current = data;
+        setOrders(data);
+        setLoading(false);
+        return;
+      }
+
+      data.forEach(order => {
+        const previousOrder = previousOrders[order.id];
+
+        if (
+          previousOrder &&
+          !isOrderStatus(order.status, ORDER_STATUS.CANCELLED) &&
+          !hasReturnUpdate(previousOrder, order) &&
+          hasTrackedOrderChanges(previousOrder, order)
+        ) {
+          setEditedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
+        }
+      });
+
+      knownOrderIdsRef.current = nextOrderIds;
+      previousOrdersRef.current = data.reduce((acc, order) => {
+        acc[order.id] = order;
+        return acc;
+      }, {});
+      ordersRef.current = data;
+      setOrders(data);
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     localStorage.setItem("pd_viewed_orders", JSON.stringify(viewedOrders));
   }, [viewedOrders]);
@@ -905,63 +792,26 @@ export default function PageDesigner() {
   }, [navigate]);
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      if (!userRef.current) return;
-
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .eq("designer_id", userRef.current.id)
-        .order("created_at", { ascending: false });
-
-      if (!error && data) {
-        const nextOrderIds = new Set(data.map(order => order.id));
-        const previousOrderIds = knownOrderIdsRef.current;
-        const previousOrders = previousOrdersRef.current;
-
-        if (!ordersInitializedRef.current) {
-          knownOrderIdsRef.current = nextOrderIds;
-          previousOrdersRef.current = data.reduce((acc, order) => {
-            acc[order.id] = order;
-            return acc;
-          }, {});
-          ordersInitializedRef.current = true;
-          ordersRef.current = data;
-          setOrders(data);
-          setLoading(false);
-          return;
-        }
-
-        data.forEach(order => {
-          const previousOrder = previousOrders[order.id];
-
-          if (
-            previousOrder &&
-            !isOrderStatus(order.status, ORDER_STATUS.CANCELLED) &&
-            !hasReturnUpdate(previousOrder, order) &&
-            hasTrackedOrderChanges(previousOrder, order)
-          ) {
-            setEditedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
-          }
-        });
-
-        knownOrderIdsRef.current = nextOrderIds;
-        previousOrdersRef.current = data.reduce((acc, order) => {
-          acc[order.id] = order;
-          return acc;
-        }, {});
-        ordersRef.current = data;
-        setOrders(data);
-        setLoading(false);
-      }
-    };
-
+    if (!user?.id) return;
     fetchOrders();
-    
-    const interval = setInterval(fetchOrders, 1500);
+  }, [user?.id]);
 
-    return () => clearInterval(interval);
-  }, []);
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`designer-orders-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        () => fetchOrders()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     return () => {
@@ -1553,13 +1403,15 @@ export default function PageDesigner() {
           }
         }}
       />
-      <SendToQuotationModal
+      <AssignModal
         open={!!sendingToQuotation}
         onClose={() => { setSendingToQuotation(null); setOriginalQuoterId(null); }}
         onConfirm={handleConfirmSendToQuotation}
         order={sendingToQuotation}
         loading={quotationSending}
-        originalQuoterId={originalQuoterId}
+        role="quote"
+        defaultUserId={originalQuoterId || ""}
+        description="Confirma que agregaste los archivos correctos antes de enviar esta orden al proceso de cotización."
       />
       <ArchiveDesignerOrderModal
         open={!!archivingOrder}

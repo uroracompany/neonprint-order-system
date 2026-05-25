@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import "../css-components/page-seller.css";
 import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
+import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";
+import { AssignModal } from "../components/ui/AssignModal";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
@@ -94,14 +96,10 @@ const CARD_ACCENTS = [
 
 
 function StatusBadge({ status, type = "status" }) {
-  const cfg = type === "status" ? getOrderStatusConfig(status) : PAYMENT_COLORS[status];
-  if (!cfg) return <span style={{ color: "#8899B5", fontSize: 12 }}>{status || "---"}</span>;
-  return (
-    <span className="ps-badge" style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}20` }}>
-      {type === "status" && <span className="ps-badge-dot" style={{ background: cfg.dot }} />}
-      {cfg.label}
-    </span>
-  );
+  if (type === "payment") {
+    return <PaymentBadge status={status} className="ps-badge" bordered />;
+  }
+  return <SharedStatusBadge status={status} className="ps-badge" showDot bordered />;
 }
 
 // CARTA DE METRICA PARA DASHBOARD
@@ -1449,157 +1447,6 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
 }
 
 // ─── ENVIAR A DISEÑO MODAL ───────────────────────────────────────────
-function SendToDesignerModal({ open, onClose, onConfirm, order, loading }) {
-  const [designers, setDesigners] = useState([]);
-  const [selectedDesigner, setSelectedDesigner] = useState("");
-  const [loadingDesigners, setLoadingDesigners] = useState(true);
-
-  useEffect(() => {
-    if (open) {
-      setLoadingDesigners(true);
-      setSelectedDesigner("");
-      supabase
-        .from("profiles")
-        .select("id, name, role, employment_status")
-        .eq("role", "designer")
-        .eq("employment_status", true)
-        .then(({ data, error }) => {
-          setLoadingDesigners(false);
-          if (!error && data) {
-            const designers = data.map(p => ({
-              ...p,
-              displayName: p.name || "Diseñador"
-            }));
-            setDesigners(designers);
-          } else {
-            if (error) console.error("Error cargando diseñadores:", error);
-            setDesigners([]);
-          }
-        });
-    }
-  }, [open]);
-
-  const handleConfirm = () => {
-    if (selectedDesigner) {
-      onConfirm(selectedDesigner);
-    }
-  };
-
-  const getDesignerName = (designer) => {
-    return designer.displayName || designer.name || "Diseñador";
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title="Enviar a Diseño">
-      <div style={{ minWidth: 380, paddingTop: 8 }}>
-        <div style={{ 
-          display: "flex", 
-          alignItems: "center", 
-          justifyContent: "center",
-          marginBottom: 20 
-        }}>
-          <div style={{
-            width: 64, height: 64,
-            borderRadius: "50%",
-            background: "linear-gradient(135deg, #EDE9FE 0%, #C4B5FD 100%)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(139, 92, 246, 0.25)"
-          }}>
-            <Icons.Edit style={{ color: "#7C3AED", width: 28, height: 28 }} />
-          </div>
-        </div>
-        
-        <p style={{ fontSize: 15, color: "#374151", marginBottom: 12, lineHeight: 1.5, textAlign: "center", fontWeight: 500 }}>
-          Selecciona el diseñador responsable
-        </p>
-        
-        {order && (
-          <div style={{ 
-            background: "#F9FAFB", 
-            border: "1px solid #E5E7EB", 
-            borderRadius: 8, 
-            padding: 12, 
-            marginBottom: 16,
-            textAlign: "center"
-          }}>
-            <span style={{ fontSize: 13, color: "#6B7280" }}>Orden </span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#0f1e40" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
-            <span style={{ fontSize: 13, color: "#6B7280" }}> - </span>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#0f1e40" }}>{order.client_name}</span>
-          </div>
-        )}
-        
-        {loadingDesigners ? (
-          <div style={{ textAlign: "center", padding: "20px 0", color: "#6B7280" }}>
-            Cargando diseñadores...
-          </div>
-        ) : designers.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "20px 0", color: "#EF4444" }}>
-            No hay diseñadores disponibles
-          </div>
-        ) : (
-          <div style={{ marginBottom: 24 }}>
-            <select 
-              value={selectedDesigner} 
-              onChange={(e) => {
-                setSelectedDesigner(e.target.value);
-              }}
-              style={{
-                width: "100%",
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "1.5px solid #E5E7EB",
-                fontSize: 14,
-                fontFamily: "'Poppins', sans-serif",
-                background: "#fff",
-                color: "#374151",
-                cursor: "pointer",
-                outline: "none"
-              }}
-            >
-              <option value="">Seleccionar diseñador...</option>
-              {designers.map(d => (
-                <option key={d.id} value={d.id}>
-                  {getDesignerName(d)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        
-        {loading && (
-          <div style={{ textAlign: "center", padding: "12px 0", color: "#8B5CF6", fontSize: 14 }}>
-            Enviando orden...
-          </div>
-        )}
-        
-        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-          <button 
-            className="ps-btn-cancel" 
-            onClick={onClose}
-            disabled={loading}
-          >
-            Cancelar
-          </button>
-          <button 
-            className="ps-btn-submit" 
-            onClick={handleConfirm}
-            disabled={loading || !selectedDesigner}
-            style={{ 
-              background: "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", 
-              border: "1px solid #6D28D9",
-              boxShadow: "0 2px 8px rgba(139, 92, 246, 0.3)",
-              opacity: (!selectedDesigner || loading) ? 0.6 : 1
-            }}
-          >
-            {loading ? "Enviando..." : "Asignar Orden"}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
 function ReturnedBadge({ compact = false }) {
   return (
     <span className={`ps-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta desde cotización">
@@ -1608,206 +1455,6 @@ function ReturnedBadge({ compact = false }) {
   );
 }
 
-// ─── ENVIAR A COTIZACIÓN MODAL ───────────────────────────────────────
-function SendToQuotationModal({ open, onClose, onConfirm, order, loading }) {
-  const [quoteUsers, setQuoteUsers] = useState([]);
-  const [selectedQuoteUser, setSelectedQuoteUser] = useState("");
-  const [loadingQuoteUsers, setLoadingQuoteUsers] = useState(true);
-  const wasReturned = isReturnedOrder(order);
-  const originalQuoterId = wasReturned ? (order?.quote_id || "") : "";
-
-  useEffect(() => {
-    if (open) {
-      setLoadingQuoteUsers(true);
-      setSelectedQuoteUser("");
-
-      supabase
-        .from("profiles")
-        .select("id, name, role")
-        .then(({ data, error }) => {
-          setLoadingQuoteUsers(false);
-
-          if (!error && data) {
-            const quotes = data
-              .filter(profile => profile.role && profile.role.toLowerCase().includes("quote"))
-              .map(profile => ({
-                ...profile,
-                displayName: profile.name || "Cotizador"
-              }));
-
-            setQuoteUsers(quotes);
-            if (wasReturned && originalQuoterId) {
-              setSelectedQuoteUser(originalQuoterId);
-            }
-          } else {
-            setQuoteUsers([]);
-          }
-        });
-    }
-  }, [open, wasReturned, originalQuoterId]);
-
-  const handleConfirm = () => {
-    if (selectedQuoteUser) {
-      onConfirm(selectedQuoteUser);
-    }
-  };
-
-  const getQuoteName = (quoteUser) => {
-    return quoteUser.displayName || quoteUser.name || "Cotizador";
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title="Enviar a Cotización">
-      <div style={{ minWidth: 380, paddingTop: 8 }}>
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          marginBottom: 20
-        }}>
-          <div style={{
-            width: 64, height: 64,
-            borderRadius: "50%",
-            background: "linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(2, 132, 199, 0.25)"
-          }}>
-            <Icons.Package style={{ color: "#0284C7", width: 28, height: 28 }} />
-          </div>
-        </div>
-
-        <p style={{ fontSize: 15, color: "#374151", marginBottom: 12, lineHeight: 1.5, textAlign: "center", fontWeight: 500 }}>
-          Selecciona el usuario responsable de cotización
-        </p>
-
-        {order && (
-          <div style={{
-            background: "#F9FAFB",
-            border: "1px solid #E5E7EB",
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 16,
-            textAlign: "center"
-          }}>
-            <span style={{ fontSize: 13, color: "#6B7280" }}>Orden </span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#0f1e40" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
-            <span style={{ fontSize: 13, color: "#6B7280" }}> - </span>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#0f1e40" }}>{order.client_name}</span>
-          </div>
-        )}
-
-        {loadingQuoteUsers ? (
-          <div style={{ textAlign: "center", padding: "20px 0", color: "#6B7280" }}>
-            Cargando usuarios de cotización...
-          </div>
-        ) : quoteUsers.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "20px 0", color: "#EF4444" }}>
-            No hay usuarios de cotización disponibles
-          </div>
-        ) : wasReturned && originalQuoterId ? (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{
-              marginBottom: 12,
-              padding: "12px 14px",
-              borderRadius: 8,
-              border: "1px solid #FECACA",
-              background: "#FEF2F2",
-              color: "#991B1B",
-              fontSize: 13,
-              fontWeight: 500,
-              lineHeight: 1.5,
-            }}>
-              Esta orden fue devuelta. Solo se puede reenviar al cotizador que la regresó.
-            </div>
-            <select
-              value={selectedQuoteUser}
-              disabled={true}
-              style={{
-                width: "100%",
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "1.5px solid #FECACA",
-                fontSize: 14,
-                fontFamily: "'Poppins', sans-serif",
-                background: "#FFF7F7",
-                color: "#374151",
-                cursor: "not-allowed",
-                outline: "none"
-              }}
-            >
-              {quoteUsers
-                .filter(quoteUser => quoteUser.id === originalQuoterId)
-                .map(quoteUser => (
-                  <option key={quoteUser.id} value={quoteUser.id}>
-                    {getQuoteName(quoteUser)} (Original)
-                  </option>
-                ))}
-            </select>
-          </div>
-        ) : (
-          <div style={{ marginBottom: 24 }}>
-            <select
-              value={selectedQuoteUser}
-              onChange={(e) => {
-                setSelectedQuoteUser(e.target.value);
-              }}
-              style={{
-                width: "100%",
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "1.5px solid #E5E7EB",
-                fontSize: 14,
-                fontFamily: "'Poppins', sans-serif",
-                background: "#fff",
-                color: "#374151",
-                cursor: "pointer",
-                outline: "none"
-              }}
-            >
-              <option value="">Seleccionar usuario de cotización...</option>
-              {quoteUsers.map(quoteUser => (
-                <option key={quoteUser.id} value={quoteUser.id}>
-                  {getQuoteName(quoteUser)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {loading && (
-          <div style={{ textAlign: "center", padding: "12px 0", color: "#0284C7", fontSize: 14 }}>
-            Enviando orden...
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-          <button
-            className="ps-btn-cancel"
-            onClick={onClose}
-            disabled={loading}
-          >
-            Cancelar
-          </button>
-          <button
-            className="ps-btn-submit"
-            onClick={handleConfirm}
-            disabled={loading || !selectedQuoteUser}
-            style={{
-              background: "linear-gradient(135deg, #0369A1 0%, #0284C7 100%)",
-              border: "1px solid #0369A1",
-              boxShadow: "0 2px 8px rgba(2, 132, 199, 0.3)",
-              opacity: (!selectedQuoteUser || loading) ? 0.6 : 1
-            }}
-          >
-            {loading ? "Enviando..." : "Asignar Orden"}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-// ─── CANCELAR ORDEN VENTANA DE COMFIRMACION ───────────────────────────────────────────
 function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
   const [reason, setReason] = useState("");
 
@@ -2725,17 +2372,20 @@ export default function PageSeller() {
       <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} />
       <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} onSendToQuotation={handleSendToQuotation} />
-      <SendToDesignerModal 
-        open={!!sendingToDesigner} 
-        onClose={() => setSendingToDesigner(null)} 
-        order={sendingToDesigner} 
-        onConfirm={handleConfirmSendToDesigner} 
-        loading={sendingLoading} 
+      <AssignModal
+        open={!!sendingToDesigner}
+        onClose={() => setSendingToDesigner(null)}
+        order={sendingToDesigner}
+        role="designer"
+        onConfirm={handleConfirmSendToDesigner}
+        loading={sendingLoading}
       />
-      <SendToQuotationModal
+      <AssignModal
         open={!!sendingToQuotation}
         onClose={() => setSendingToQuotation(null)}
         order={sendingToQuotation}
+        role="quote"
+        defaultUserId={isReturnedOrder(sendingToQuotation) ? (sendingToQuotation?.quote_id || "") : ""}
         onConfirm={handleConfirmSendToQuotation}
         loading={sendingLoading}
       />
