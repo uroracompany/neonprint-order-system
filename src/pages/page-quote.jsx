@@ -20,6 +20,7 @@ import NotificationCenter from "../components/NotificationCenter";
 import "../css-components/page-quote.css";
 // Normaliza texto a minúsculas y sin espacios para comparaciones seguras
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
+const INVOICE_PAYMENT_FIELD = "invoice_payment";
 // Resuelve el ID del usuario asignado a cotización (busca en múltiples campos posibles)
 const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map(field => order?.[field]).find(Boolean) || null;
 // Verifica si una orden está asignada a un usuario específico de cotización
@@ -231,8 +232,8 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
 
         <div className="pq-modal-body">
           <div className="pq-flow-summary">
-            <StatusBadge status={order.status} />
-            <PaymentBadge status={order.payment_status} />
+            <StatusBadge status={order.status} className="pq-badge" />
+            <PaymentBadge status={order.payment_status} className="pq-badge" />
             {isReturnedOrder(order) && <ReturnedBadge />}
             <span className="pq-flow-date"><Icons.Clock /> {createdAt}</span>
           </div>
@@ -1082,8 +1083,8 @@ export default function PageQuote() {
                       <div className="pq-recent-item-footer">
                         <div className="pq-recent-badges">
                           {isReturnedOrder(order) && <ReturnedBadge compact />}
-                          <StatusBadge status={order.status} />
-                          <PaymentBadge status={order.payment_status} />
+                          <StatusBadge status={order.status} className="pq-badge" />
+                          <PaymentBadge status={order.payment_status} className="pq-badge" />
                         </div>
                         <span className="pq-recent-view-btn" aria-hidden="true">
                           <Icons.Eye />
@@ -1153,8 +1154,8 @@ export default function PageQuote() {
                       </div>
                       <div className="pq-order-badges">
                         {isReturnedOrder(order) && <ReturnedBadge compact />}
-                        <StatusBadge status={order.status} />
-                        <PaymentBadge status={order.payment_status} />
+                        <StatusBadge status={order.status} className="pq-badge" />
+                        <PaymentBadge status={order.payment_status} className="pq-badge" />
                       </div>
                     </div>
 

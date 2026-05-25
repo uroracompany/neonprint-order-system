@@ -143,11 +143,11 @@ function OrderDetailModal({ open, onClose, order, onUpdateStatus, onUnarchive })
           <div className="pd-status-bar">
             <div className="pd-status-item">
               <span className="pd-status-label">Estado</span>
-              <StatusBadge status={order.status} showDot={false} />
+              <StatusBadge status={order.status} className="pd-badge" showDot={false} />
             </div>
             <div className="pd-status-item">
               <span className="pd-status-label">Pago</span>
-              <PaymentBadge status={order.payment_status} />
+              <PaymentBadge status={order.payment_status} className="pd-badge" />
             </div>
           </div>
         </div>
@@ -473,7 +473,7 @@ export default function PageDelivery() {
                           <span className="pd-order-desc">{order.description?.substring(0, 50)}...</span>
                         </div>
                         <div className="pd-order-right">
-                          <StatusBadge status={order.status} showDot={false} />
+                          <StatusBadge status={order.status} className="pd-badge" showDot={false} />
                           {isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && (
                             <button 
                               className="pd-action-btn check"
@@ -562,7 +562,7 @@ export default function PageDelivery() {
                           <td className="td-pad td-name">{order.client_name}</td>
                           <td className="td-pad td-desc">{order.description?.substring(0, 40)}</td>
                           <td className="td-pad td-mat">{order.material}</td>
-                          <td className="td-pad"><StatusBadge status={order.status} showDot={false} /></td>
+                          <td className="td-pad"><StatusBadge status={order.status} className="pd-badge" showDot={false} /></td>
                           <td className="td-actions">
                             <div className="table-actions">
                               {!order.is_archived_delivery && isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED) && (

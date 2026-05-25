@@ -537,11 +537,11 @@ function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview
           <div className="pd-status-bar">
             <div className="pd-status-item">
               <span className="pd-status-label">Estado</span>
-              <StatusBadge status={order.status} />
+              <StatusBadge status={order.status} className="pd-badge" />
             </div>
             <div className="pd-status-item">
               <span className="pd-status-label">Pago</span>
-              <PaymentBadge status={order.payment_status} />
+              <PaymentBadge status={order.payment_status} className="pd-badge" />
             </div>
           </div>
         </div>
@@ -1184,8 +1184,8 @@ export default function PageDesigner() {
                           {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
                           {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
                           {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
-                          <StatusBadge status={order.status} />
-                          <PaymentBadge status={order.payment_status} />
+                          <StatusBadge status={order.status} className="pd-badge" />
+                          <PaymentBadge status={order.payment_status} className="pd-badge" />
                           <button className="pd-recent-view-btn" title="Ver detalle" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>
                             <Icons.Eye />
                           </button>
@@ -1309,8 +1309,8 @@ export default function PageDesigner() {
                             <td className="pd-td-type">
                               {order.order_type === "orden 911" ? <span className="pd-card-911">911</span> : <span className="pd-badge-normal-table">Normal</span>}
                             </td>
-                            <td className="pd-td-status"><StatusBadge status={order.status} /></td>
-                            <td className="pd-td-status"><PaymentBadge status={order.payment_status} /></td>
+                            <td className="pd-td-status"><StatusBadge status={order.status} className="pd-badge" /></td>
+                            <td className="pd-td-status"><PaymentBadge status={order.payment_status} className="pd-badge" /></td>
                             <td className="pd-td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
                             <td className="pd-td-actions">
                               <div className="pd-row-actions">
@@ -1346,7 +1346,7 @@ export default function PageDesigner() {
                             {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
                             {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
                             {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
-                            <StatusBadge status={order.status} />
+                            <StatusBadge status={order.status} className="pd-badge" />
                           </div>
                         </div>
                         <div className="pd-card-client">{order.client_name}</div>
@@ -1354,7 +1354,7 @@ export default function PageDesigner() {
                         <div className="pd-card-meta">
                           <span className="pd-card-material">{order.material}</span>
                           {order.order_type === "orden 911" && <span className="pd-card-911">911</span>}
-                          <PaymentBadge status={order.payment_status} />
+                          <PaymentBadge status={order.payment_status} className="pd-badge" />
                         </div>
                         <div className="pd-card-footer">
                           <div className="pd-card-footer-left">

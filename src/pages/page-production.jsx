@@ -246,11 +246,11 @@ function OrderDetailModal({ open, onClose, order, onUpdateStatus, onCompleteOrde
                 <div className="pp-modal-status-grid">
                   <div className="pp-modal-status-section">
                     <span className="pp-modal-status-label">Estado Actual</span>
-                    <StatusBadge status={order.status} bordered />
+                    <StatusBadge status={order.status} className="pp-badge" bordered />
                   </div>
                   <div className="pp-modal-status-section">
                     <span className="pp-modal-status-label">Estado de Pago</span>
-                    <PaymentBadge status={order.payment_status} bordered />
+                    <PaymentBadge status={order.payment_status} className="pp-badge" bordered />
                   </div>
                   {order.price && (
                     <div className="pp-price-box">
@@ -615,7 +615,7 @@ export default function PageProduction() {
                             <td className="td-pad td-client">{order.client_name}</td>
                             <td className="td-pad td-desc">{order.description}</td>
                             <td className="td-pad td-material">{order.material}</td>
-                            <td className="td-pad"><StatusBadge status={order.status} bordered /></td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered /></td>
                             <td className="td-pad td-actions">
                               <div className="table-actions">
                                 <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
@@ -716,8 +716,8 @@ export default function PageProduction() {
                             <td className="td-pad td-desc">{order.description?.substring(0, 40)}</td>
                             <td className="td-pad td-material">{order.material}</td>
                             <td className="td-pad td-qty">{order.quantity || "-"}</td>
-                            <td className="td-pad"><StatusBadge status={order.status} bordered /></td>
-                            <td className="td-pad"><PaymentBadge status={order.payment_status} bordered /></td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered /></td>
+                            <td className="td-pad"><PaymentBadge status={order.payment_status} className="pp-badge" bordered /></td>
                             <td className="td-pad">
                               {order.order_type === "orden 911" ? (
                                 <span className="pp-badge-911">911</span>
@@ -757,14 +757,14 @@ export default function PageProduction() {
                         <div className="pp-order-card-header">
                           <span className="pp-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
                           <div className="pp-order-card-badges">
-                            <StatusBadge status={order.status} bordered />
+                            <StatusBadge status={order.status} className="pp-badge" bordered />
                           </div>
                         </div>
                         <div className="pp-order-card-client">{order.client_name}</div>
                         <div className="pp-order-card-desc">{order.description || "Sin descripción"}</div>
                         <div className="pp-order-card-meta">
                           <span className="pp-order-card-material">{order.material}</span>
-                          <PaymentBadge status={order.payment_status} bordered />
+                          <PaymentBadge status={order.payment_status} className="pp-badge" bordered />
                         </div>
                         <div className="pp-order-card-footer">
                           <span className="pp-order-card-date">
