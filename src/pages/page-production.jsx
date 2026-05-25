@@ -9,6 +9,7 @@ import { Icons } from "../utils/icons";
 import { FlowTracker } from "../components/FlowTracker";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
+import { Pagination } from "../components/ui/Pagination";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
@@ -389,6 +390,8 @@ export default function PageProduction() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [assignDeliveryOrder, setAssignDeliveryOrder] = useState(null);
@@ -476,6 +479,12 @@ export default function PageProduction() {
 
     return matchesSearch && matchesStatus && matchesPayment;
   });
+
+  const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
+  const safePage = Math.min(page, totalPages);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
   const metrics = [
     { icon: <Icons.Package />, label: "Producción", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, accentIdx: 0 },
@@ -709,7 +718,7 @@ export default function PageProduction() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredOrders.map(order => (
+                        {paginatedOrders.map(order => (
                           <tr key={order.id} className="row-hover">
                             <td className="td-pad td-id">#{order.id?.slice(0, 8).toUpperCase()}</td>
                             <td className="td-pad td-client">{order.client_name}</td>
@@ -752,7 +761,7 @@ export default function PageProduction() {
                 <div className="pp-panel">
                   <div className="pp-panel-stripe" />
                   <div className="pp-cards-grid">
-                    {filteredOrders.map(order => (
+                    {paginatedOrders.map(order => (
                       <div key={order.id} className="pp-order-card" onClick={() => handleViewOrder(order)}>
                         <div className="pp-order-card-header">
                           <span className="pp-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
@@ -790,6 +799,7 @@ export default function PageProduction() {
                   </div>
                 </div>
               )}
+              <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
             </>
           )}
         </div>

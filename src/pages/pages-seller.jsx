@@ -6,6 +6,7 @@ import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
 import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
+import { Pagination } from "../components/ui/Pagination";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
@@ -1629,6 +1630,8 @@ export default function PageSeller() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -1991,6 +1994,12 @@ export default function PageSeller() {
     );
   }), [orders, search, filterDate, filterStatus, filterPayment]);
 
+  const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  useEffect(() => { setPage(1); }, [filtered.length]);
+
   const nav = [
     { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
     { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: orders.filter(o => !o.is_archived).length },
@@ -2233,7 +2242,7 @@ export default function PageSeller() {
                             <td colSpan={9} className="ps-table-empty">No hay órdenes disponibles</td>
                           </tr>
                         ) : (
-                          filtered.map(o => (
+                          paginated.map(o => (
                             <tr key={o.id} className="row-hover">
                               <td className="td-pad td-id">{o.id?.slice(0, 8) || "---"}</td>
                               <td className="td-pad td-name">
@@ -2306,7 +2315,7 @@ export default function PageSeller() {
                     ) : filtered.length === 0 ? (
                       <div className="ps-cards-empty">No hay órdenes disponibles</div>
                     ) : (
-                      filtered.map(o => (
+                      paginated.map(o => (
                         <div key={o.id} className="ps-order-card">
                           <div className="ps-order-card-header">
                             <span className="ps-order-card-id">#{o.id?.slice(0, 8).toUpperCase() || "---"}</span>
@@ -2363,6 +2372,7 @@ export default function PageSeller() {
                     )}
                   </div>
                 )}
+                <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
               </div>
             </>
           )}

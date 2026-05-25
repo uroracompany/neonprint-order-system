@@ -7,6 +7,7 @@ import { uploadOrderAsset, buildPaymentReceiptPath } from "../utils/uploadOrderA
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
+import { Pagination } from "../components/ui/Pagination";
 import {
   ORDER_STATUS,
   QUOTE_ASSIGNMENT_FIELDS,
@@ -21,6 +22,7 @@ import "../css-components/page-quote.css";
 // Normaliza texto a minúsculas y sin espacios para comparaciones seguras
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
 const INVOICE_PAYMENT_FIELD = "invoice_payment";
+const PER_PAGE = 15;
 // Resuelve el ID del usuario asignado a cotización (busca en múltiples campos posibles)
 const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map(field => order?.[field]).find(Boolean) || null;
 // Verifica si una orden está asignada a un usuario específico de cotización
@@ -418,6 +420,9 @@ export default function PageQuote() {
   
   // Directorio de vendedores (cache para no hacer múltiples queries)
   const [sellerDirectory, setSellerDirectory] = useState({});
+
+  // Paginación
+  const [page, setPage] = useState(1);
 
   // Hook personalizado para notificaciones y alertas
   const notif = useNotifications(user?.id);
@@ -984,6 +989,12 @@ export default function PageQuote() {
     });
   }, [orders, search, filterStatus, filterArchive, filterDate]);
 
+  const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
+  const safePage = Math.min(page, totalPages);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  useEffect(() => { setPage(1); }, [filteredOrders.length]);
+
   const shouldEnableOrdersScroll = filteredOrders.length > 7;
 
   const metrics = [
@@ -1143,7 +1154,7 @@ export default function PageQuote() {
               <div className="pq-empty-panel">No hay órdenes que coincidan con los filtros.</div>
             ) : (
               <div className={`pq-orders-grid ${shouldEnableOrdersScroll ? "pq-orders-scroll" : ""}`}>
-                {filteredOrders.map(order => (
+                {paginatedOrders.map(order => (
                   <article key={order.id} className="pq-order-card">
                     <div className="pq-order-top">
                       <div className="pq-order-identity">
@@ -1188,9 +1199,10 @@ export default function PageQuote() {
                     </div>
                   </article>
                 ))}
-              </div>
-            )}
-          </section>
+                </div>
+              )}
+              <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+            </section>
         )}
       </main>
 

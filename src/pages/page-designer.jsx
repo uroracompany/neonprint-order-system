@@ -7,11 +7,13 @@ import { Icons } from "../utils/icons";
 import { AssignModal } from "../components/ui/AssignModal";
 import { ORDER_STATUS, isOrderStatus, isOrderStatusIn } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
+import { Pagination } from "../components/ui/Pagination";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
+const PER_PAGE = 15;
 const TRACKED_ORDER_FIELDS = [
   "client_name",
   "seller_name",
@@ -645,6 +647,7 @@ export default function PageDesigner() {
   const [filterDate, setFilterDate] = useState("all");
   const [filterArchive, setFilterArchive] = useState("active");
   const [viewMode, setViewMode] = useState("cards");
+  const [page, setPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [viewedOrders, setViewedOrders] = useState(() => {
     try {
@@ -909,6 +912,12 @@ export default function PageDesigner() {
 
     return matchesSearch && matchesType && matchesStatus && matchesDate && matchesArchive;
   });
+
+  const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
+  const safePage = Math.min(page, totalPages);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
   const shouldEnableOrdersScroll = filteredOrders.length > 7;
 
@@ -1292,7 +1301,7 @@ export default function PageDesigner() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredOrders.map(order => (
+                        {paginatedOrders.map(order => (
                           <tr key={order.id}>
                             <td className="pd-td-id">
                               <div className="pd-td-id-wrap">
@@ -1336,7 +1345,7 @@ export default function PageDesigner() {
                 ) : (
                   <div className={`pd-cards-grid ${shouldEnableOrdersScroll ? "pd-orders-scroll" : ""}`}>
                     {/* Ordenes en formato carta */}
-                    {filteredOrders.map(order => (
+                    {paginatedOrders.map(order => (
                       // Plantilla para mostrar las ordenes en formato carta, se muestra la informacion mas relevante y se pueden agregar etiquetas para resaltar ciertas caracteristicas de la orden */}
                       <div key={order.id} className="pd-order-card" onClick={() => handleViewOrder(order)}>
                         <div className="pd-card-header">
@@ -1381,6 +1390,7 @@ export default function PageDesigner() {
                     ))}
                   </div>
                 )}
+                <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
               </section>
             </>
           )}

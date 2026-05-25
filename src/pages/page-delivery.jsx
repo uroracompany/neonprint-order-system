@@ -9,6 +9,7 @@ import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
 import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isOrderStatus } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
+import { Pagination } from "../components/ui/Pagination";
 
 const CARD_ACCENTS = [
   { color: "#0284C7", bg: "#E0F2FE", glow: "radial-gradient(circle, rgba(2,132,199,0.25) 0%, transparent 70%)" },
@@ -271,6 +272,9 @@ export default function PageDelivery() {
     };
   }, [user?.id]);
 
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 15;
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/");
@@ -289,6 +293,12 @@ export default function PageDelivery() {
     
     return matchesSearch && matchesStatus && matchesArchive;
   });
+
+  const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
+  const safePage = Math.min(page, totalPages);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
   const metrics = [
     { icon: <Icons.Truck />, label: "Para entregar", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length },
@@ -556,7 +566,7 @@ export default function PageDelivery() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredOrders.map(order => (
+                      {paginatedOrders.map(order => (
                         <tr key={order.id} className="row-hover" onClick={() => setSelectedOrder(order)}>
                           <td className="td-pad td-id">#{order.id?.slice(0, 8).toUpperCase()}</td>
                           <td className="td-pad td-name">{order.client_name}</td>
@@ -586,6 +596,7 @@ export default function PageDelivery() {
                   </table>
                 </div>
               )}
+              <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
             </>
           )}
         </div>

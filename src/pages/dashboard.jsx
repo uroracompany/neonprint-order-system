@@ -12,6 +12,7 @@ import {
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge, RoleBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
+import { Pagination } from "../components/ui/Pagination";
 import {
   ORDER_STATUS,
   STATUS_LABELS,
@@ -1348,6 +1349,8 @@ export default function Dashboard() {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 20;
   const [dateFilter, setDateFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [archiveFilter, setArchiveFilter] = useState("active");
@@ -1850,6 +1853,12 @@ export default function Dashboard() {
     });
   }, [orders, search, statusFilter, ownerFilter, archiveFilter, dateFilter, usersById]);
 
+  const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
+  const safePage = Math.min(page, totalPages);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  useEffect(() => { setPage(1); }, [filteredOrders.length]);
+
   const filteredProfiles = useMemo(() => {
     const q = normalizeText(userSearch);
     return profiles.filter(item => {
@@ -2044,7 +2053,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {loadingOrders ? <tr><td colSpan={9} className="ps-table-empty">Cargando órdenes...</td></tr> : filteredOrders.length === 0 ? <tr><td colSpan={9} className="ps-table-empty">No hay órdenes disponibles.</td></tr> : filteredOrders.map(order =>
+                    {loadingOrders ? <tr><td colSpan={9} className="ps-table-empty">Cargando órdenes...</td></tr> : filteredOrders.length === 0 ? <tr><td colSpan={9} className="ps-table-empty">No hay órdenes disponibles.</td></tr> : paginatedOrders.map(order =>
                           <tr key={order.id} className="row-hover">
                             <td className="td-pad td-id">{order.id?.slice(0, 8) || "---"}</td>
                             <td className="td-pad td-name">{order.client_name || "Sin cliente"}</td>
@@ -2094,6 +2103,7 @@ export default function Dashboard() {
                   </tbody>
                 </table>
               </div>
+              <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
             </div>
           </section>
         }
