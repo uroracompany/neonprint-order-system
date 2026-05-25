@@ -7,7 +7,7 @@ import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
-import { ORDER_STATUS, PAYMENT_COLORS, DELIVERY_STATUS_OPTIONS, getOrderStatusConfig, isOrderStatus, isOrderStatusIn } from "../utils/constants";
+import { ORDER_STATUS, PAYMENT_COLORS, DELIVERY_STATUS_OPTIONS, getOrderStatusConfig, isOrderStatus } from "../utils/constants";
 
 const CARD_ACCENTS = [
   { color: "#0284C7", bg: "#E0F2FE", glow: "radial-gradient(circle, rgba(2,132,199,0.25) 0%, transparent 70%)" },
@@ -252,20 +252,24 @@ export default function PageDelivery() {
   }, [navigate]);
 
   useEffect(() => {
+    if (!user?.id) return;
+
     const fetchOrders = async () => {
       const { data, error } = await supabase
         .from("orders")
         .select("*")
+        .in("status", DELIVERY_STATUS_OPTIONS)
+        .eq("delivery_id", user.id)
         .order("created_at", { ascending: false });
 
       if (!error && data) {
-        setOrders(data.filter(order => isOrderStatusIn(order.status, DELIVERY_STATUS_OPTIONS)));
+        setOrders(data);
       }
       setLoading(false);
     };
 
     fetchOrders();
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -310,14 +314,17 @@ export default function PageDelivery() {
   ];
 
   const refreshOrders = async () => {
+    if (!user?.id) return;
     setLoading(true);
     const { data, error } = await supabase
       .from("orders")
       .select("*")
+      .in("status", DELIVERY_STATUS_OPTIONS)
+      .eq("delivery_id", user.id)
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      setOrders(data.filter(order => isOrderStatusIn(order.status, DELIVERY_STATUS_OPTIONS)));
+      setOrders(data);
     }
     setLoading(false);
   };
@@ -333,13 +340,16 @@ export default function PageDelivery() {
       
       if (error) throw error;
       
+      if (!user?.id) return;
       const { data, error: fetchError } = await supabase
         .from("orders")
         .select("*")
+        .in("status", DELIVERY_STATUS_OPTIONS)
+        .eq("delivery_id", user.id)
         .order("created_at", { ascending: false });
 
       if (!fetchError && data) {
-        setOrders(data.filter(order => isOrderStatusIn(order.status, DELIVERY_STATUS_OPTIONS)));
+        setOrders(data);
       }
     } catch (err) {
       console.error("Error marking order as delivered:", err);
