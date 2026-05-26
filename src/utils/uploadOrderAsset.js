@@ -16,6 +16,7 @@
 import { supabase } from "../../supabaseClient";
 
 const MB = 1024 * 1024;
+const DEFAULT_SIGNED_URL_TTL = 60 * 30;
 
 // ============= LÍMITES POR BUCKET =============
 // Estos límites se usan para validación en cliente (antes de subir)
@@ -162,6 +163,25 @@ export const removeOrderAssetByPublicUrl = async ({ bucket, url }) => {
   if (!path) return { removed: false, error: null };
 
   return removeOrderAsset({ bucket, path });
+};
+
+export const createSignedOrderAssetUrl = async ({ bucket, path, expiresIn = DEFAULT_SIGNED_URL_TTL }) => {
+  if (!bucket || !path) return null;
+
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
+  if (error) {
+    console.error(`Error creating signed URL for '${bucket}/${path}':`, error);
+    return null;
+  }
+
+  return data?.signedUrl || null;
+};
+
+export const createSignedOrderAssetUrlFromStoredUrl = async ({ bucket, url, expiresIn = DEFAULT_SIGNED_URL_TTL }) => {
+  const path = getStoragePathFromPublicUrl({ bucket, url });
+  if (!path) return null;
+
+  return createSignedOrderAssetUrl({ bucket, path, expiresIn });
 };
 
 const listAndRemoveOrderAssets = async ({ bucket, prefix }) => {

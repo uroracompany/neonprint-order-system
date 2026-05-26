@@ -1,5 +1,5 @@
 import { handleAdminCreateUser } from "../server/admin-create-user-handler.js";
-import { verifyAdmin, jsonResponse } from "../server/auth-middleware.js";
+import { verifyAdmin } from "../server/auth-middleware.js";
 import { rateLimit } from "../server/rateLimit.js";
 
 export default async function handler(req, res) {

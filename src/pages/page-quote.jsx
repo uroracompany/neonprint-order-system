@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
 import { validateImage } from "../utils/imageValidation";
-import { uploadOrderAsset, buildPaymentReceiptPath } from "../utils/uploadOrderAsset";
+import { uploadOrderAsset, buildPaymentReceiptPath, createSignedOrderAssetUrlFromStoredUrl } from "../utils/uploadOrderAsset";
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
@@ -23,27 +23,18 @@ import "../css-components/page-quote.css";
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
 const INVOICE_PAYMENT_FIELD = "invoice_payment";
 const PER_PAGE = 15;
-// Resuelve el ID del usuario asignado a cotización (busca en múltiples campos posibles)
-const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map(field => order?.[field]).find(Boolean) || null;
 // Verifica si una orden está asignada a un usuario específico de cotización
 const hasQuoteAssignment = (order, quoteUserId) => QUOTE_ASSIGNMENT_FIELDS.some(field => order?.[field] === quoteUserId);
 // Obtiene el ID del vendedor que creó la orden
 const resolveSellerId = (order) => order?.seller_id || order?.created_by || null;
 // Obtiene el nombre del vendedor buscando en el directorio o usando valor por defecto
 const resolveSellerName = (order, sellerDirectory) => order?.seller_name || sellerDirectory?.[resolveSellerId(order)] || "No definido";
-// Obtiene la URL del comprobante de pago guardado
-const resolveReceiptUrl = (order) => order?.[INVOICE_PAYMENT_FIELD] || "";
 // Verifica si una orden puede ser editada en cotización (debe estar en estado IN_QUOTE, no pagada, no archivada)
 const isQuoteEditable = (order) => isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
 // Verifica si una orden está asignada al usuario actual
 const isOrderAssignedToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId);
 // Verifica si una orden completada y pagada puede ser archivada
 const canArchiveQuoteOrder = (order) => order?.payment_status === "pagado" && !order?.is_archived_quote;
-// Formatea una fecha en formato local español (Ej: "21 may 2026")
-const formatQuoteDate = (value) => {
-  if (!value) return "Sin fecha";
-  return new Date(value).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" });
-};
 // Verifica si una orden fue devuelta (tiene estado de diseño/pendiente Y razón de devolución)
 const isReturnedOrder = (order) => isOrderStatusIn(order?.status, [ORDER_STATUS.IN_DESIGN, ORDER_STATUS.PENDING]) && Boolean(String(order?.return_reason || "").trim());
 // FUNCIÓN PARA PARSEAR ARCHIVOS DE ORDEN
@@ -180,19 +171,46 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   const [receiptFile, setReceiptFile] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState("pagado");
   const [localError, setLocalError] = useState("");
+  const [receiptUrl, setReceiptUrl] = useState("");
 
   useEffect(() => {
     if (open) {
       setReceiptFile(null);
       setPaymentStatus(order?.payment_status || "Pending_Payment");
       setLocalError("");
+      setReceiptUrl("");
     }
-  }, [open, order?.id]);
+  }, [open, order?.id, order?.payment_status]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadReceiptUrl = async () => {
+      if (!open || !order?.invoice_payment) {
+        if (active) setReceiptUrl("");
+        return;
+      }
+
+      const signedUrl = await createSignedOrderAssetUrlFromStoredUrl({
+        bucket: "payment-invoice",
+        url: order.invoice_payment,
+      });
+
+      if (active) {
+        setReceiptUrl(signedUrl || "");
+      }
+    };
+
+    loadReceiptUrl();
+
+    return () => {
+      active = false;
+    };
+  }, [open, order?.invoice_payment]);
 
   if (!open || !order) return null;
 
   const orderFiles = getOrderFiles(order);
-  const receiptUrl = resolveReceiptUrl(order);
   const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const canConfirmPayment = isQuoteEditable(order);
   const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
@@ -467,6 +485,13 @@ export default function PageQuote() {
     loadSession();
   }, [navigate]);
 
+  const fetchOrders = async (...args) => fetchOrdersImpl(...args);
+  const fetchOrdersRef = useRef(fetchOrders);
+
+  useEffect(() => {
+    fetchOrdersRef.current = fetchOrders;
+  });
+
 
   // ============= EFECTO 2: SUSCRIPCIÓN EN TIEMPO REAL Y REFRESCO =============
   // Se ejecuta cuando el user cambia
@@ -480,7 +505,7 @@ export default function PageQuote() {
     if (!user?.id) return undefined;
 
     // Carga inicial de órdenes
-    fetchOrders(user.id);
+    fetchOrdersRef.current(user.id);
     
     // SUSCRIPCIÓN EN TIEMPO REAL: escucha cambios en la tabla "orders"
     const channel = supabase
@@ -497,7 +522,7 @@ export default function PageQuote() {
             isOrderAssignedToQuote(nextOrder, user.id)
             || isOrderAssignedToQuote(previousOrder, user.id)
           ) {
-            await fetchOrders(user.id, true); // true = sin mostrar loading spinner
+            await fetchOrdersRef.current(user.id, true); // true = sin mostrar loading spinner
           }
         }
       )
@@ -505,11 +530,11 @@ export default function PageQuote() {
 
     // REFRESCO AL RECUPERAR FOCO: cuando el usuario vuelve a la pestaña
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") fetchOrders(user.id, true);
+      if (document.visibilityState === "visible") fetchOrdersRef.current(user.id, true);
     };
     
     // REFRESCO CUANDO LA VENTANA RECUPERA FOCO
-    const handleFocus = () => fetchOrders(user.id, true);
+    const handleFocus = () => fetchOrdersRef.current(user.id, true);
     
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("focus", handleFocus);
@@ -532,7 +557,7 @@ export default function PageQuote() {
     if (freshOrder) {
       setSelectedOrder(freshOrder); // Actualiza los datos del modal sin cerrarlo
     }
-  }, [orders]);
+  }, [orders, selectedOrder]);
 
   // ============= FUNCIÓN: SINCRONIZAR DIRECTORIO DE VENDEDORES =============
   // Carga los nombres de los vendedores desde la tabla "profiles"
@@ -571,7 +596,7 @@ export default function PageQuote() {
   // Estrategia robusta para obtener órdenes asignadas a este usuario
   // Intenta múltiples campos de asignación (quote_id, quotation_id, quote_user_id)
   // porque el backend puede usar nombres diferentes en distintas versiones
-  const fetchOrders = async (quoteUserId, silent = false) => {
+  async function fetchOrdersImpl(quoteUserId, silent = false) {
     // silent = true evita mostrar el spinner de loading (refresco silencioso)
     if (!silent) setLoading(true);
 
@@ -639,7 +664,7 @@ export default function PageQuote() {
     await syncSellerDirectory(fetchedOrders);
     registerNewAssignments(fetchedOrders);
     if (!silent) setLoading(false);
-  };
+  }
 
   // ============= FUNCIÓN: REGISTRAR NUEVAS ASIGNACIONES =============
   // Mantiene el seguimiento local de qué órdenes se han visto
@@ -987,7 +1012,7 @@ export default function PageQuote() {
 
       return matchesSearch && matchesStatus && matchesArchive && matchesDate;
     });
-  }, [orders, search, filterStatus, filterArchive, filterDate]);
+  }, [orders, search, filterStatus, filterArchive, filterDate, sellerDirectory]);
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);

@@ -1,6 +1,6 @@
 // Supabase client and React imports
-import { useState } from "react";
-import {useNavigate} from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient"
 
 // Styles & Assets
@@ -68,6 +68,14 @@ export default function Lobby() {
 
   const clearMsg = () => { setMessage(null); setFieldErr(false); };
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const loginMessage = location.state?.loginMessage;
+    if (loginMessage) {
+      setMessage({ type: "error", text: loginMessage });
+    }
+  }, [location.state]);
 
 
   const handleLogin = async (e) => {

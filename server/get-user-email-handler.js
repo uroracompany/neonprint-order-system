@@ -4,10 +4,6 @@ function jsonResponse(status, body) {
   return { status, body };
 }
 
-function getEnvValue(env, key, fallback) {
-  return env[key] || (fallback ? env[fallback] : undefined);
-}
-
 export async function handleGetUserEmail(payload, env = {}) {
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
   const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;

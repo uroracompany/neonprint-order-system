@@ -42,11 +42,11 @@ function createApiHandler(path, handler) {
 }
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(() => {
   return {
     plugins: [
-      react(), 
-      tailwindcss(), 
+      react(),
+      tailwindcss(),
       createApiHandler("/api/admin-create-user", handleAdminCreateUser),
       createApiHandler("/api/get-user-email", handleGetUserEmail),
       createApiHandler("/api/change-user-password", handleChangeUserPassword),

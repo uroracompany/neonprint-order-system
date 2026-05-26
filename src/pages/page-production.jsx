@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-production.css";
@@ -48,19 +48,14 @@ function MetricCard({ icon, label, value, accentIdx = 0 }) {
   );
 }
 
-function OrderDetailModal({ open, onClose, order, onUpdateStatus, onCompleteOrder }) {
+function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [orderFiles, setOrderFiles] = useState([]);
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
 
-  useEffect(() => {
-    if (order?.id) {
-      fetchOrderFiles();
-    }
-  }, [order?.id]);
-
-  const fetchOrderFiles = async () => {
+  const fetchOrderFiles = useCallback(async () => {
+    if (!order?.id) return;
     setLoadingFiles(true);
     try {
       const { data, error } = await supabase.storage
@@ -78,7 +73,11 @@ function OrderDetailModal({ open, onClose, order, onUpdateStatus, onCompleteOrde
       console.error("Error fetching files:", err);
     }
     setLoadingFiles(false);
-  };
+  }, [order?.id]);
+
+  useEffect(() => {
+    fetchOrderFiles();
+  }, [fetchOrderFiles]);
 
   const handleUpdateStatus = async (newStatus) => {
     setUpdating(true);
@@ -119,7 +118,7 @@ function OrderDetailModal({ open, onClose, order, onUpdateStatus, onCompleteOrde
 
   const allFiles = [
     ...orderFiles.map(f => ({ name: f.name, url: f.url })),
-    ...getDbFiles().map((url, i) => ({ name: getFileNameFromUrl(url), url }))
+    ...getDbFiles().map((url) => ({ name: getFileNameFromUrl(url), url }))
   ];
 
   const isInProduction = isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION);
@@ -396,6 +395,22 @@ export default function PageProduction() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [assignDeliveryOrder, setAssignDeliveryOrder] = useState(null);
   const [assignDeliverySaving, setAssignDeliverySaving] = useState(false);
+  const notif = useNotifications(user?.id);
+
+  const refreshOrders = useCallback(async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("production_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      setOrders(data.filter(order => isOrderStatusIn(order.status, PRODUCTION_TRACKING_STATUS_OPTIONS)));
+    }
+    setLoading(false);
+  }, [user?.id]);
 
   const handleConfirmAssignDelivery = async (deliveryUserId) => {
     if (!assignDeliveryOrder) return;
@@ -413,7 +428,6 @@ export default function PageProduction() {
     }
     setAssignDeliverySaving(false);
   };
-  const notif = useNotifications(user?.id);
 
   useEffect(() => {
     const getUser = async () => {
@@ -429,21 +443,8 @@ export default function PageProduction() {
 
   useEffect(() => {
     if (!user?.id) return;
-    const fetchOrders = async () => {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .eq("production_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (!error && data) {
-        setOrders(data.filter(order => isOrderStatusIn(order.status, PRODUCTION_TRACKING_STATUS_OPTIONS)));
-      }
-      setLoading(false);
-    };
-
-    fetchOrders();
-  }, [user?.id]);
+    refreshOrders();
+  }, [user?.id, refreshOrders]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -460,7 +461,7 @@ export default function PageProduction() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [user?.id, refreshOrders]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -492,21 +493,6 @@ export default function PageProduction() {
     { icon: <Icons.Truck />, label: "Entregadas", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)).length, accentIdx: 2 },
     { icon: <Icons.Check />, label: "Completadas", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length, accentIdx: 3 },
   ];
-
-  const refreshOrders = async () => {
-    if (!user?.id) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("production_id", user.id)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      setOrders(data.filter(order => isOrderStatusIn(order.status, PRODUCTION_TRACKING_STATUS_OPTIONS)));
-    }
-    setLoading(false);
-  };
 
   const handleViewOrder = (order) => {
     setSelectedOrder(order);

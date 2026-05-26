@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-delivery.css";
@@ -17,7 +17,7 @@ const CARD_ACCENTS = [
   { color: "#8B5CF6", bg: "#F3E8FF", glow: "radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%)" },
 ];
 
-function OrderDetailModal({ open, onClose, order, onUpdateStatus, onUnarchive }) {
+function OrderDetailModal({ onClose, order, onUpdateStatus }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
 
@@ -222,6 +222,24 @@ export default function PageDelivery() {
   const [archivedingOrder, setArchivedingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const notif = useNotifications(user?.id);
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 15;
+
+  const refreshOrders = useCallback(async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .in("status", DELIVERY_STATUS_OPTIONS)
+      .eq("delivery_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      setOrders(data);
+    }
+    setLoading(false);
+  }, [user?.id]);
 
   useEffect(() => {
     const getUser = async () => {
@@ -238,22 +256,8 @@ export default function PageDelivery() {
   useEffect(() => {
     if (!user?.id) return;
 
-    const fetchOrders = async () => {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .in("status", DELIVERY_STATUS_OPTIONS)
-        .eq("delivery_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (!error && data) {
-        setOrders(data);
-      }
-      setLoading(false);
-    };
-
-    fetchOrders();
-  }, [user?.id]);
+    refreshOrders();
+  }, [user?.id, refreshOrders]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -270,10 +274,7 @@ export default function PageDelivery() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id]);
-
-  const [page, setPage] = useState(1);
-  const PER_PAGE = 15;
+  }, [user?.id, refreshOrders]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -305,22 +306,6 @@ export default function PageDelivery() {
     { icon: <Icons.Check />, label: "Entregado", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)).length },
     { icon: <Icons.Package />, label: "Completadas", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length },
   ];
-
-  const refreshOrders = async () => {
-    if (!user?.id) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .in("status", DELIVERY_STATUS_OPTIONS)
-      .eq("delivery_id", user.id)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      setOrders(data);
-    }
-    setLoading(false);
-  };
 
   const handleQuickMarkDelivered = async (e, orderId) => {
     e.stopPropagation();

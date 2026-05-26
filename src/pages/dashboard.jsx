@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
@@ -6,6 +6,7 @@ import { validateImage } from "../utils/imageValidation";
 import {
   buildPaymentReceiptPath,
   buildStorageSafeFileName,
+  createSignedOrderAssetUrlFromStoredUrl,
   removeOrderAssetByPublicUrl,
   uploadOrderAsset,
 } from "../utils/uploadOrderAsset";
@@ -100,11 +101,6 @@ const getOrderSearchUserIds = (order) => [
 // Funciones para obtener información de los perfiles de usuario con lógica de respaldo
 // Funcion para obtener el nombre del usuario
 const getUserDisplayName = (profile) => profile?.name || profile?.email || "Usuario";
-// Funcion para obtener el email del usuario
-const getUserEmail = (profile) => profile?.email || "Sin email";
-const getUserPassword = (profile) => profile?.password || "Sin contraseña";
-// Funcion para obtener el rol del usuario
-const getUserRole = (profile) => profile?.role || "Sin rol";
 // Normaliza el estado laboral a un booleano real para que la UI y la base hablen el mismo idioma.
 const isEmploymentActive = (profile) => {
   const value = profile?.employment_status ?? profile?.employee_status ?? profile?.status;
@@ -144,8 +140,7 @@ function ModalShell({ open, title, onClose, children, size = "default" }) {
   );
 }
 
-function OrderFormModal({ open, mode, orderForm, setOrderForm, users, onClose, onSubmit, saving }) {
-  const sellerOptions = users.filter(user => user.role === "seller" || user.role === "admin");
+function OrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit, saving }) {
   return (
     <ModalShell open={open} onClose={onClose} title={mode === "create" ? "Crear orden" : "Editar orden"} size="large">
       <div className="pa-form-grid">
@@ -169,6 +164,34 @@ function OrderFormModal({ open, mode, orderForm, setOrderForm, users, onClose, o
 
 // Modal de detalles de orden para admin
 function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel, onAssign, onArchive }) {
+  const [paymentInvoiceUrl, setPaymentInvoiceUrl] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    const loadPaymentInvoiceUrl = async () => {
+      if (!open || !order?.invoice_payment) {
+        if (active) setPaymentInvoiceUrl("");
+        return;
+      }
+
+      const signedUrl = await createSignedOrderAssetUrlFromStoredUrl({
+        bucket: "payment-invoice",
+        url: order.invoice_payment,
+      });
+
+      if (active) {
+        setPaymentInvoiceUrl(signedUrl || "");
+      }
+    };
+
+    loadPaymentInvoiceUrl();
+
+    return () => {
+      active = false;
+    };
+  }, [open, order?.invoice_payment]);
+
   if (!open || !order) return null;
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
@@ -180,7 +203,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
   const rawFiles = parseFileUrls(order.order_file_url);
   const existingFiles = rawFiles.map(f => typeof f === "string" ? { url: f, name: getFileNameFromUrl(f) } : { url: f.url || f, name: f.name || getFileNameFromUrl(f.url || f) });
   const preview = order.preview_image;
-  const paymentInvoice = order.invoice_payment;
+  const paymentInvoice = paymentInvoiceUrl;
 
   return (
     <ModalShell open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} size="large">
@@ -1051,9 +1074,6 @@ function EmploymentStatusConfirmModal({ open, pendingChange, onClose, onConfirm,
 
 // Detalles del usuario
 function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onShowFeedback }) {
-  if (!open || !user) return null;
-  const employmentStatus = getEmploymentStatus(user);
-  const isActive = isEmploymentActive(user);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -1065,6 +1085,8 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
   const [errors, setErrors] = useState({ newPassword: "", confirmPassword: "" });
 
   useEffect(() => {
+    if (!open || !user?.id) return;
+
     const fetchUserEmail = async () => {
       setUserEmail("");
       try {
@@ -1085,12 +1107,12 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
         console.error("Error fetching email:", err);
       }
     };
-    if (user.id) {
-      fetchUserEmail();
-    }
-  }, [user.id]);
+    fetchUserEmail();
+  }, [open, user?.id]);
 
   const handleChangePassword = async () => {
+    if (!user?.id) return;
+
     // Validar campos
     const newErrors = { newPassword: "", confirmPassword: "" };
     let hasErrors = false;
@@ -1150,12 +1172,17 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
         setShowSuccessModal(false);
       }, 2000);
 
-    } catch (err) {
+    } catch {
       onShowFeedback?.("error", "Error al conectar con el servidor");
     }
 
     setChangingPassword(false);
   };
+
+  if (!open || !user) return null;
+
+  const employmentStatus = getEmploymentStatus(user);
+  const isActive = isEmploymentActive(user);
 
   return (
     <>
@@ -1381,32 +1408,31 @@ export default function Dashboard() {
     return () => clearTimeout(timeout);
   }, [feedback]);
 
-  const loadSession = async () => {
+  const loadSession = useCallback(async () => {
     const { data } = await supabase.auth.getUser();
     if (!data?.user) return navigate("/");
     const { data: currentProfile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
     if (!currentProfile || currentProfile.role !== "admin") {
-      await supabase.auth.signOut();
-      navigate("/");
+      navigate("/", { replace: true, state: { loginMessage: "Tu usuario no tiene permisos para acceder al panel administrativo." } });
       return;
     }
     setUser(data.user);
     setProfile(currentProfile);
-  };
+  }, [navigate]);
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     setLoadingOrders(true);
     const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
     setOrders(!error && Array.isArray(data) ? data : []);
     setLoadingOrders(false);
-  };
+  }, []);
 
-  const loadProfiles = async () => {
+  const loadProfiles = useCallback(async () => {
     setLoadingUsers(true);
     const { data, error } = await supabase.from("profiles").select("*").order("name", { ascending: true });
     setProfiles(!error && Array.isArray(data) ? data : []);
     setLoadingUsers(false);
-  };
+  }, []);
 
   useEffect(() => {
     loadSession();
@@ -1424,7 +1450,7 @@ export default function Dashboard() {
     return () => {
       supabase.removeChannel(ordersChannel);
     };
-  }, []);
+  }, [loadSession, loadOrders, loadProfiles]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -1534,7 +1560,7 @@ export default function Dashboard() {
 
     let error;
     if (isCreate) {
-      const { data: newOrder, error: insertError } = await supabase.from("orders").insert([payload]).select().single();
+      const { error: insertError } = await supabase.from("orders").insert([payload]).select().single();
       error = insertError;
     } else {
       const { error: updateError } = await supabase.from("orders").update(payload).eq("id", orderId);
@@ -1761,7 +1787,7 @@ export default function Dashboard() {
       });
 
       result = await response.json();
-    } catch (error) {
+    } catch {
       setSavingUser(false);
       return showFeedback("error", "No se pudo conectar con el servicio de creación de usuarios.");
     }

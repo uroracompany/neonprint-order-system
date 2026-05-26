@@ -62,54 +62,47 @@ export default function ProtectedRoute({ children, allowed = [] }) {
 
   const [session, setSession] = useState(undefined); // undefined = cargando, null = sin sesión, user = autenticado
   const [unauthorized, setUnauthorized] = useState(false); // true = autenticado pero sin permisos
+  const [profileInactive, setProfileInactive] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
 
     const checkAccess = async () => {
+      const { data, error } = await supabase.auth.getUser();
 
-      // PASO 1: Obtener usuario autenticado de Supabase
-      const { data } = await supabase.auth.getUser();
+      if (!isMounted) return;
 
-      if (!data.user) {
-        setSession(null); // No hay usuario autenticado
+      if (error || !data.user) {
+        setSession(null);
         return;
       }
 
       setSession(data.user);
 
-      // PASO 2: Obtener rol del usuario desde la tabla "profiles"
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, employment_status")
         .eq("id", data.user.id)
         .single();
 
-      const role = profile?.role;
+      if (!isMounted) return;
 
-      // PASO 3: Verificar si el rol está en la lista de permisos
-      // Si allowed está vacío, permite cualquier rol autenticado
-      if (allowed.length && !allowed.includes(role)) {
-        setUnauthorized(true); // Usuario sin permisos para esta ruta
+      if (profile?.employment_status === false) {
+        setProfileInactive(true);
+        return;
       }
 
+      if (allowed.length && !allowed.includes(profile?.role)) {
+        setUnauthorized(true);
+      }
     };
 
     checkAccess();
 
-  }, [allowed]);
-
-  // cerrar sesión si no tiene permiso
-  useEffect(() => {
-
-    const logout = async () => {
-      if (unauthorized) {
-        await supabase.auth.signOut();
-      }
+    return () => {
+      isMounted = false;
     };
-
-    logout();
-
-  }, [unauthorized]);
+  }, [allowed]);
 
   // Loader mientras verifica
   if (session === undefined) {
@@ -142,8 +135,10 @@ export default function ProtectedRoute({ children, allowed = [] }) {
   // No logeado
   if (!session) return <Navigate to="/" />;
 
+  if (profileInactive) return <Navigate to="/" state={{ loginMessage: "Tu cuenta está desactivada. Contacta al administrador." }} replace />;
+
   // Rol incorrecto
-  if (unauthorized) return <Navigate to="/" />;
+  if (unauthorized) return <Navigate to="/" state={{ loginMessage: "Tu usuario no tiene permisos para entrar a esa sección." }} replace />;
 
   return children;
 }

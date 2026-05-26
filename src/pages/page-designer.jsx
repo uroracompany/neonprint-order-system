@@ -70,10 +70,6 @@ const getFilesCountFromDB = (order) => {
   }
 };
 
-const hasPreview = (order, orderPreviews) => {
-  return order?.preview_image || orderPreviews?.[order?.id];
-};
-
 const hasFiles = (order, orderFiles) => {
   const storageFiles = orderFiles?.[order?.id]?.length || 0;
   const dbFiles = getFilesCountFromDB(order);
@@ -123,7 +119,7 @@ const buildDesignerAssetPath = (orderId, folder, file, prefix = "") => {
 const DESIGNER_FILES_BUCKET = "order-docs";
 const DESIGNER_PREVIEW_BUCKET = "order-previews";
 
-function OrderDetailModal({ open, onClose, order, designerFiles, designerPreview, onRefresh, onSendToQuotation, quotationSending }) {
+function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRefresh, onSendToQuotation, quotationSending }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingPreview, setPendingPreview] = useState(null);
   const [pendingPreviewName, setPendingPreviewName] = useState(null);
@@ -636,6 +632,7 @@ function ArchiveDesignerOrderModal({ open, onClose, onConfirm, order, loading })
 
 export default function PageDesigner() {
   const navigate = useNavigate();
+  const [nowTimestamp] = useState(() => Date.now());
   const [user, setUser] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -678,8 +675,6 @@ export default function PageDesigner() {
   const ordersInitializedRef = useRef(false);
   const mainScrollRef = useRef(null);
 
-  viewedOrdersRef.current = viewedOrders;
-
   const fetchOrders = async () => {
     if (!userRef.current) return;
 
@@ -691,7 +686,6 @@ export default function PageDesigner() {
 
     if (!error && data) {
       const nextOrderIds = new Set(data.map(order => order.id));
-      const previousOrderIds = knownOrderIdsRef.current;
       const previousOrders = previousOrdersRef.current;
 
       if (!ordersInitializedRef.current) {
@@ -733,6 +727,10 @@ export default function PageDesigner() {
 
   useEffect(() => {
     localStorage.setItem("pd_viewed_orders", JSON.stringify(viewedOrders));
+  }, [viewedOrders]);
+
+  useEffect(() => {
+    viewedOrdersRef.current = viewedOrders;
   }, [viewedOrders]);
 
   useEffect(() => {
@@ -825,7 +823,7 @@ export default function PageDesigner() {
   const isNewOrder = (order) => {
     if (viewedOrders[order.id]) return false;
     const createdAt = new Date(order.created_at).getTime();
-    const hoursAgo = (Date.now() - createdAt) < 24 * 60 * 60 * 1000;
+    const hoursAgo = (nowTimestamp - createdAt) < 24 * 60 * 60 * 1000;
     return hoursAgo;
   };
 

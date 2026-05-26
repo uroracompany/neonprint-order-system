@@ -1,2 +1,12 @@
 /* Import Tailwind CSS */
 @import "tailwindcss";
+
+.app-route-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: #475569;
+  font-size: 0.95rem;
+  font-weight: 600;
+  background: #f8fafc;
+}

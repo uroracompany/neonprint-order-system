@@ -16,6 +16,12 @@ export const ORDER_STATUS = {
   CANCELLED: "cancelled",
 };
 
+export const PAYMENT_STATUS = {
+  PENDING: "Pending_Payment",
+  PARTIAL: "parcial",
+  PAID: "pagado",
+};
+
 
 /* Mapeo de alias para estados de orden, 
 permite normalizar entradas de usuario en diferentes idiomas o formatos a los valores estandarizados definidos en ORDER_STATUS.
@@ -116,7 +122,25 @@ export const DELIVERY_STATUS_OPTIONS = [
   ORDER_STATUS.IN_COMPLETED,
 ];
 
-export const PAYMENT_OPTIONS = ["Pending_Payment", "parcial", "pagado"];
+export const PAYMENT_STATUS_ALIASES = {
+  pending_payment: PAYMENT_STATUS.PENDING,
+  "pending payment": PAYMENT_STATUS.PENDING,
+  pendiente: PAYMENT_STATUS.PENDING,
+  parcial: PAYMENT_STATUS.PARTIAL,
+  partial: PAYMENT_STATUS.PARTIAL,
+  pagado: PAYMENT_STATUS.PAID,
+  paid: PAYMENT_STATUS.PAID,
+};
+
+export const normalizePaymentStatus = (value) => {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return "";
+  return PAYMENT_STATUS_ALIASES[rawValue.toLowerCase()] || rawValue;
+};
+
+export const isPaymentStatus = (value, expectedStatus) => normalizePaymentStatus(value) === expectedStatus;
+
+export const PAYMENT_OPTIONS = [PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL, PAYMENT_STATUS.PAID];
 
 export const STATUS_LABELS = {
   [ORDER_STATUS.PENDING]: "Pendiente",
@@ -131,7 +155,9 @@ export const STATUS_LABELS = {
 
 // Etiquetas legibles para estados de pago, mapeados a los valores de PAYMENT_OPTIONS
 export const PAYMENT_LABELS = {
-  Pending_Payment: "Pendiente", parcial: "Parcial", pagado: "Pagado"
+  [PAYMENT_STATUS.PENDING]: "Pendiente",
+  [PAYMENT_STATUS.PARTIAL]: "Parcial",
+  [PAYMENT_STATUS.PAID]: "Pagado",
 };
 
 // Campos relevantes para asignación de cotizaciones, usados en lógica de negocio y formularios de asignación
@@ -211,9 +237,9 @@ export const getOrderStatusConfig = (value) => STATUS_COLORS[normalizeOrderStatu
 // COLORES Y ESTILOS PARA ESTADOS DE PAGO
 // Estos colores se muestran en los badges de pago en toda la aplicación
 export const PAYMENT_COLORS = {
-  "pagado": { label: "Pagado", color: "#14532D", bg: "#DCFCE7" },
-  "Pending_Payment": { label: "Pago Pendiente", color: "#92620A", bg: "#FEF3C7" },
-  "parcial": { label: "Parcial", color: "#0369A1", bg: "#E0F2FE" },
+  [PAYMENT_STATUS.PAID]: { label: "Pagado", color: "#14532D", bg: "#DCFCE7" },
+  [PAYMENT_STATUS.PENDING]: { label: "Pago Pendiente", color: "#92620A", bg: "#FEF3C7" },
+  [PAYMENT_STATUS.PARTIAL]: { label: "Parcial", color: "#0369A1", bg: "#E0F2FE" },
 };
 
 // FUNCIONES UTILIDAD PARA FORMATEO

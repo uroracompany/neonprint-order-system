@@ -818,11 +818,6 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
     return nameParts.join("-") || fileName;
   };
 
-  const isImageFile = (url) => {
-    if (!url) return false;
-    return /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
-  };
-
   return (
     <Modal open={open} onClose={onClose} title={`Editar Orden #${order?.id?.slice(0, 8).toUpperCase()}`}>
       {error && <div className="ps-form-error">{error}</div>}
@@ -978,14 +973,17 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
 
 // ─── ORDER DETAIL MODAL ───────────────────────────────────────────────────────
 function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSendToQuotation }) {
-  if (!order) return null;
-  const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
-  const statusConfig = getOrderStatusConfig(order.status);
-  const paymentConfig = PAYMENT_COLORS[order.payment_status];
-  
+  const hasOrder = Boolean(order);
+  const created = hasOrder ? new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" }) : "";
+  const statusConfig = hasOrder ? getOrderStatusConfig(order.status) : getOrderStatusConfig(ORDER_STATUS.PENDING);
   const [designerName, setDesignerName] = useState("");
   
   useEffect(() => {
+    if (!order?.designer_id) {
+      setDesignerName("");
+      return;
+    }
+
     if (order?.designer_id) {
       supabase
         .from("profiles")
@@ -1001,6 +999,8 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
         });
     }
   }, [order?.designer_id]);
+
+  if (!hasOrder) return null;
 
   return (
     <Modal open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} wide>
@@ -1619,6 +1619,7 @@ function ArchivedOrderModal({ open, onClose, onConfirm, order, loading }) {
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function PageSeller() {
   const navigate = useNavigate();
+  const RELEVANT_COLUMNS = "id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token";
   const [activeTab, setActiveTab] = useState("dashboard");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1640,13 +1641,35 @@ export default function PageSeller() {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [sendingToDesigner, setSendingToDesigner] = useState(null);
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
-  const [designers, setDesigners] = useState([]);
   const [sendingLoading, setSendingLoading] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
   const notif = useNotifications(user?.id);
   const showToast = (message, type = "success") => {
     setToastMsg({ message, type });
     setTimeout(() => setToastMsg(null), 1500);
+  };
+
+  const fetchOrders = async (sellerId) => {
+    if (!sellerId) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("orders")
+      .select(RELEVANT_COLUMNS)
+      .eq("seller_id", sellerId)
+      .is("is_archived", false)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (!error && Array.isArray(data)) {
+      setOrders(data);
+    } else {
+      setOrders([]);
+    }
+    setLoading(false);
   };
 
 
@@ -1676,7 +1699,7 @@ export default function PageSeller() {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [navigate]);
 
   // Sincronización en tiempo real + refresco al volver a la página
   useEffect(() => {
@@ -1714,31 +1737,6 @@ export default function PageSeller() {
       window.removeEventListener("focus", refreshOrders);
     };
   }, [user?.id]);
-
-  const RELEVANT_COLUMNS = "id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token";
-
-  const fetchOrders = async (sellerId) => {
-    if (!sellerId) {
-      setOrders([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("orders")
-      .select(RELEVANT_COLUMNS)
-      .eq("seller_id", sellerId)
-      .is("is_archived", false)
-      .order("created_at", { ascending: false })
-      .limit(100);
-
-    if (!error && Array.isArray(data)) {
-      setOrders(data);
-    } else {
-      setOrders([]);
-    }
-    setLoading(false);
-  };
 
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
 
