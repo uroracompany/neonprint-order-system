@@ -1106,6 +1106,7 @@ export default function PageDesigner() {
           </div>
 
           <div className="pd-topbar-right">
+            {/* Notificaciones */}
             <NotificationCenter
               notifications={notif.notifications}
               unreadCount={notif.unreadCount}
@@ -1116,10 +1117,8 @@ export default function PageDesigner() {
               onDelete={notif.deleteNotification}
               onDismissToast={notif.dismissToast}
             />
-            <div className="pd-topbar-stat">
-              <span>Activas</span>
-              <strong>{activeOrdersCount}</strong>
-            </div>
+
+            {/* Botón para cambiar entre dashboard y órdenes */}
             <button
               className="pd-topbar-switch"
               onClick={() => setActiveTab(activeTab === "dashboard" ? "orders" : "dashboard")}

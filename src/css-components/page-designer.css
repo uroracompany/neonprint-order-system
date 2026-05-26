@@ -208,29 +208,7 @@
   margin-top: 1px;
 }
 
-/* Span para mostrar las ordenes activas */
-.pd-topbar-stat {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 4px;
-  padding: 8px 14px 8px 0;
-  border-right: 1px solid rgba(221, 227, 239, 0.95);
-}
 
-.pd-topbar-stat span {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--pd-text-muted);
-}
-
-.pd-topbar-stat strong {
-  font-size: 17px;
-  line-height: 1;
-  color: var(--pd-text);
-}
 
 .pd-topbar-switch {
   display: flex;
