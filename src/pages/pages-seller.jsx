@@ -336,21 +336,20 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
       created_by: userId,
     };
 
-    const { data: newOrder, error: err } = await supabase.from("orders").insert([payload]).select().single();
-    setLoading(false);
-    if (err) { setError("Error al crear la orden: " + err.message); return; }
+    // ── Subir archivos ANTES de insertar (solo Diseño Externo) ──
+    let fileUrls = [];
+    let previewUrl = null;
 
     if (form.design_files.length > 0 || form.design_preview) {
-      setLoading(true);
-      const fileUrls = [];
-      
+      const orderId = crypto.randomUUID();
+
       try {
         for (let i = 0; i < form.design_files.length; i++) {
           const file = form.design_files[i];
           const fileName = buildStorageSafeFileName(file, `${i}-`);
           const publicUrl = await uploadOrderAsset({
             bucket: "order-docs",
-            path: `orders/${newOrder.id}/files/${fileName}`,
+            path: `orders/${orderId}/files/${fileName}`,
             file,
           });
 
@@ -362,13 +361,12 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
         return;
       }
 
-      let previewUrl = null;
       if (form.design_preview) {
         try {
           const fileName = buildStorageSafeFileName(form.design_preview, "preview-");
           previewUrl = await uploadOrderAsset({
             bucket: "order-previews",
-            path: `orders/${newOrder.id}/preview/${fileName}`,
+            path: `orders/${orderId}/preview/${fileName}`,
             file: form.design_preview,
           });
         } catch (uploadError) {
@@ -377,17 +375,15 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
           return;
         }
       }
-      
-      if (fileUrls.length > 0 || previewUrl) {
-        const updateData = {};
-        if (fileUrls.length > 0) updateData.order_file_url = JSON.stringify(fileUrls);
-        if (previewUrl) updateData.preview_image = previewUrl;
-        
-        await supabase.from("orders").update(updateData).eq("id", newOrder.id);
-      }
-      
-      setLoading(false);
+
+      if (fileUrls.length > 0) payload.order_file_url = JSON.stringify(fileUrls);
+      if (previewUrl) payload.preview_image = previewUrl;
+      payload.id = orderId;
     }
+
+    const { error: err } = await supabase.from("orders").insert([payload]).select().single();
+    setLoading(false);
+    if (err) { setError("Error al crear la orden: " + err.message); return; }
 
     handleClose(); onCreated?.();
   };
