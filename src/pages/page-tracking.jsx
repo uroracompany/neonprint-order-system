@@ -129,6 +129,7 @@ export default function PageTracking() {
       <div className="ft-gradient-stripe" />
       <div className="ft-container">
         <header className="ft-header">
+          {/* Logo del apartado */}
           <div className="ft-brand">
             <span className="ft-brand-icon">
               <img src={NeonLogo} alt="NeonPrint" className="ft-brand-logo" />
@@ -142,7 +143,7 @@ export default function PageTracking() {
               </div>
             </div>
           </div>
-          <span className="ft-brand-flow">FlowTrack</span>
+          <span className="ft-brand-flow">Seguimiento</span>
         </header>
 
         <div className="ft-main">
@@ -277,9 +278,10 @@ export default function PageTracking() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? "ft-spin" : ""}><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
             Actualizar
           </button>
-          <p className="ft-footer-text">FlowTrack by NeonPrint</p>
+          <p className="ft-footer-text">Seguimiento de tu Pedido | NeonPrint</p>
         </footer>
       </div>
     </div>
   );
 }
+n
