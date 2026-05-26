@@ -9,14 +9,8 @@ function getEnvValue(env, key, fallback) {
 }
 
 export async function handleGetUserEmail(payload, env = {}) {
-  // Support both VITE_ prefix in dev and direct key in production
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
-  const serviceRoleKey = env.VITE_SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
-
-  console.log("📧 GetUserEmail handler called");
-  console.log("📋 Payload:", payload);
-  console.log("🔑 Has URL:", !!supabaseUrl);
-  console.log("🔑 Has Key:", !!serviceRoleKey);
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse(500, {
@@ -38,11 +32,7 @@ export async function handleGetUserEmail(payload, env = {}) {
     },
   });
 
-  console.log("🔄 Fetching user:", userId);
-  
   const { data: authData, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
-
-  console.log(" result:", { data: !!authData, error: authError });
 
   if (authError) {
     return jsonResponse(400, {
