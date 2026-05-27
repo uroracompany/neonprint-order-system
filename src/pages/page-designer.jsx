@@ -543,8 +543,9 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
             </div>
           </div>
         </div>
-        
+        {/* Footer Modal */}
         <div className="pd-modal-footer">
+          {/* Boton para cerral el modal */}
           <button className="pd-btn pd-btn-secondary" onClick={handleClose}>
             Cerrar
           </button>
@@ -567,6 +568,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
               )}
             </button>
           )}
+          {/* Boton para guardar cambios   */}
           <button 
             className="pd-btn pd-btn-primary" 
             onClick={handleSave}
@@ -855,12 +857,18 @@ export default function PageDesigner() {
 
   const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
 
+  const CARD_ACCENTS = [
+    { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
+    { color: "#0EA5E9", bg: "#E0F2FE", glow: "#E0F2FE" },
+    { color: "#EF4444", bg: "#FEE2E2", glow: "#FEE2E2" },
+    { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
+  ];
+
   const metrics = [
-    { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", color: "#8B5CF6", icon: <Icons.Package /> },
-    { label: "En diseño", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DESIGN)).length, sub: "Trabajándose ahora", color: "#F59E0B", icon: <Icons.File /> },
-    { label: "En cotización", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length, sub: "Listas para seguir flujo", color: "#0EA5E9", icon: <Icons.Send /> },
-    { label: "Devueltas", value: returnedOrdersCount, sub: "Requieren corrección", color: "#EF4444", icon: <Icons.X /> },
-    { label: "Completadas", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length, sub: "Entregables cerrados", color: "#10B981", icon: <Icons.Check /> },
+    { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", accentIdx: 0, icon: <Icons.Package /> },
+    { label: "En cotización", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length, sub: "Listas para seguir flujo", accentIdx: 1, icon: <Icons.Send /> },
+    { label: "Devueltas", value: returnedOrdersCount, sub: "Requieren corrección", accentIdx: 2, icon: <Icons.X /> },
+    { label: "En producción", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, sub: "Siendo producidas", accentIdx: 3, icon: <Icons.Package /> },
   ];
 
   const filteredOrders = orders.filter((order) => {
@@ -1141,20 +1149,22 @@ export default function PageDesigner() {
               </div>
               
               <div className="pd-metrics">
-                {/* Tarjetas de métricas */}
-                {metrics.map((m, i) => (
-                  // Cada tarjeta muestra una métrica clave del desempeño del diseñador, con un ícono representativo, el valor actual y una breve descripción. El color de fondo del ícono ayuda a diferenciar visualmente cada métrica. Si la métrica tiene un valor secundario (sub), se muestra como una etiqueta adicional para proporcionar contexto extra. Estas tarjetas permiten al diseñador tener una visión rápida de su carga de trabajo y progreso.
-                  <div key={i} className="pd-metric-card">
-                    <div className="pd-metric-icon" style={{ background: m.color }}>
-                      {m.icon}
+                {metrics.map((m, i) => {
+                  const acc = CARD_ACCENTS[m.accentIdx];
+                  return (
+                    <div key={i} className="pd-metric-card"
+                      onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
+                      <div className="pd-metric-glow" style={{ background: acc.glow }} />
+                      <div className="pd-metric-icon" style={{ background: acc.bg, color: acc.color }}>
+                        {m.icon}
+                      </div>
+                      <div className="pd-metric-value">{m.value}</div>
+                      <div className="pd-metric-label">{m.label}</div>
+                      {m.sub && <div className="pd-metric-sub" style={{ color: acc.color }}>{m.sub}</div>}
                     </div>
-                    <div className="pd-metric-info">
-                      <span className="pd-metric-value">{m.value}</span>
-                      <span className="pd-metric-label">{m.label}</span>
-                      {m.sub && <span className="pd-status-label">{m.sub}</span>}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               
             <section className="pd-panel pd-recent-section">
@@ -1359,29 +1369,29 @@ export default function PageDesigner() {
                         <div className="pd-card-desc">{order.description}</div>
                         <div className="pd-card-meta">
                           <span className="pd-card-material">{order.material}</span>
-                          {order.order_type === "orden 911" && <span className="pd-card-911">911</span>}
                           <PaymentBadge status={order.payment_status} className="pd-badge" />
                         </div>
                         <div className="pd-card-footer">
-                          <div className="pd-card-footer-left">
-                            <div className="pd-card-date">
-                              <Icons.Clock />
-                              {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}
-                            </div>
-                          </div>
-                          <div className="pd-card-actions">
-                            <button className="pd-view-btn" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>Detalles</button>
-                            {isDesignerArchivable(order) && !order.is_archived_designer && (
-                              <button className="pd-action-btn archive" onClick={(event) => { event.stopPropagation(); handleOpenArchiveOrder(order); }}>
-                                Archivar
-                              </button>
-                            )}
-                            {isDesignerArchivable(order) && order.is_archived_designer && (
-                              <button className="pd-action-btn archived" disabled>
-                                Archivada
-                              </button>
-                            )}
-                          </div>
+                          <span className="pd-card-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                          {order.order_type === "orden 911"
+                            ? <span className="pd-badge" style={{ background: "#FEF2F2", color: "#991B1B", borderRadius: "4px", fontSize: "10px", padding: "3px 8px" }}>911</span>
+                            : <span className="pd-badge" style={{ background: "#E8EDF8", color: "#0f1e40", borderRadius: "4px", fontSize: "10px", padding: "3px 8px" }}>Normal</span>
+                          }
+                        </div>
+                        <div className="pd-card-actions-bar">
+                          <button className="pd-card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
+                            <Icons.Eye />
+                          </button>
+                          {isDesignerArchivable(order) && !order.is_archived_designer && (
+                            <button className="pd-card-action-btn archive" onClick={(event) => { event.stopPropagation(); handleOpenArchiveOrder(order); }} title="Archivar">
+                              <Icons.Archived />
+                            </button>
+                          )}
+                          {isDesignerArchivable(order) && order.is_archived_designer && (
+                            <button className="pd-card-action-btn archive" disabled title="Orden archivada" style={{ opacity: 0.5, cursor: "not-allowed" }}>
+                              <Icons.Check />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}

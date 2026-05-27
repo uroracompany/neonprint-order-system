@@ -131,7 +131,7 @@
   font-weight: 700;
   letter-spacing: 0.5px;
 }
-.nc-item-msg {
+.nc-item-msg {  
   font-size: 12px; color: var(--text-sub, #8899b5);
   margin: 0 0 4px;
   line-height: 1.4;

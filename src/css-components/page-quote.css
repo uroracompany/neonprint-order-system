@@ -29,6 +29,15 @@
   --pq-shadow-sm: 0 1px 4px rgba(15, 30, 64, 0.06);
   --pq-shadow-md: 0 4px 16px rgba(15, 30, 64, 0.10);
   --pq-shadow-lg: 0 12px 40px rgba(15, 30, 64, 0.14);
+
+  /* Variables base para componentes externos (NotificationCenter, etc.) */
+  --surface:      var(--pq-surface);
+  --border:       var(--pq-border);
+  --text:         var(--pq-text);
+  --text-sub:     var(--pq-text-sub);
+  --text-muted:   var(--pq-text-muted);
+  --primary:      var(--pq-primary);
+  --cyan:         var(--pq-cyan);
 }
 
 /* Layout principal del módulo */

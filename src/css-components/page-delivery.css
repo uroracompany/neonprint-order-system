@@ -24,6 +24,15 @@
   --pd-shadow-sm: 0 1px 4px rgba(15,30,64,0.06);
   --pd-shadow-md: 0 4px 16px rgba(15,30,64,0.10);
   --pd-shadow-lg: 0 12px 40px rgba(15,30,64,0.14);
+
+  /* Variables base para componentes externos (NotificationCenter, etc.) */
+  --surface:      var(--pd-surface);
+  --border:       var(--pd-border);
+  --text:         var(--pd-text);
+  --text-sub:     var(--pd-text-sub);
+  --text-muted:   var(--pd-text-muted);
+  --primary:      var(--pd-primary);
+  --cyan:         var(--pd-cyan);
 }
 
 .pd-root {

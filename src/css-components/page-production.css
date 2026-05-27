@@ -32,6 +32,15 @@
   --pp-shadow-sm:    0 1px 4px rgba(15,30,64,0.06);
   --pp-shadow-md:    0 4px 16px rgba(15,30,64,0.10);
   --pp-shadow-lg:    0 12px 40px rgba(15,30,64,0.14);
+
+  /* Variables base para componentes externos (NotificationCenter, etc.) */
+  --surface:      var(--pp-surface);
+  --border:       var(--pp-border);
+  --text:         var(--pp-text);
+  --text-sub:     var(--pp-text-sub);
+  --text-muted:   var(--pp-text-muted);
+  --primary:      var(--pp-primary);
+  --cyan:         var(--pp-cyan);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
