@@ -267,8 +267,6 @@
 /* Contenedor con Contenido principal */
 .pd-main-content {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
   padding: 28px 26px 26px 26px;
   display: flex;
   flex-direction: column;

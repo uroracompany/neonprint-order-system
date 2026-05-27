@@ -1,13 +1,21 @@
 import { FLOW_STEPS, FLOW_STEPS_EXTERNAL, ORDER_STATUS, normalizeOrderStatus } from "../utils/constants";
 
+function getStepStates(normalizedStatus, steps) {
+  const idx = steps.findIndex(s => s.key === normalizedStatus);
+  const isFinished = normalizedStatus === ORDER_STATUS.IN_COMPLETED || normalizedStatus === ORDER_STATUS.IN_DELIVERED;
+  return steps.map((_, i) => ({
+    isCompleted: idx >= 0 && (i < idx || (i === idx && isFinished)),
+    isActive: idx >= 0 && i === idx && !isFinished,
+  }));
+}
+
 export function FlowTracker({ status }) {
   const normalizedStatus = normalizeOrderStatus(status);
-  const idx = FLOW_STEPS.findIndex(s => s.key === normalizedStatus);
+  const stepStates = getStepStates(normalizedStatus, FLOW_STEPS);
   return (
     <div className="ps-flow">
       {FLOW_STEPS.map((step, i) => {
-        const isCompleted = idx >= 0 && i < idx;
-        const isActive = i === idx;
+        const { isCompleted, isActive } = stepStates[i];
         return (
           <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < FLOW_STEPS.length - 1 ? 1 : "none" }}>
             <div className="ps-flow-step">
@@ -26,21 +34,11 @@ export function FlowTracker({ status }) {
 
 export function FlowTrackerExternal({ status }) {
   const normalizedStatus = normalizeOrderStatus(status);
-  const statusToIndex = {
-    [ORDER_STATUS.PENDING]: 0,
-    [ORDER_STATUS.IN_QUOTE]: 1,
-    [ORDER_STATUS.IN_PRODUCTION]: 2,
-    [ORDER_STATUS.IN_TERMINATION]: 3,
-    [ORDER_STATUS.IN_COMPLETED]: 4,
-    [ORDER_STATUS.IN_DELIVERED]: 5,
-    [ORDER_STATUS.CANCELLED]: -1,
-  };
-  const idx = statusToIndex[normalizedStatus] ?? -1;
+  const stepStates = getStepStates(normalizedStatus, FLOW_STEPS_EXTERNAL);
   return (
     <div className="ps-flow">
       {FLOW_STEPS_EXTERNAL.map((step, i) => {
-        const isCompleted = idx >= 0 && i < idx;
-        const isActive = i === idx;
+        const { isCompleted, isActive } = stepStates[i];
         return (
           <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < FLOW_STEPS_EXTERNAL.length - 1 ? 1 : "none" }}>
             <div className="ps-flow-step">
