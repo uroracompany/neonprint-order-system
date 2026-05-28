@@ -33,7 +33,7 @@ export function FlowTrackClient({ status, events, order, designType }) {
 
   return (
     <div className="ftc-wrap">
-      {isCancelled && (
+      {isCancelled && ( 
         <div className="ftc-cancelled">
           <div className="ftc-cancelled-icon">⚠️</div>
           <div className="ftc-cancelled-text">

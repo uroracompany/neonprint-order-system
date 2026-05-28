@@ -259,7 +259,6 @@ const EMPTY_FORM = {
 };
 
 function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions }) {
-  const formTopRef = useRef(null);
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
 
@@ -316,7 +315,10 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions })
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setError("Por favor, corrige los errores en el formulario.");
-      formTopRef.current?.scrollIntoView({ behavior: "smooth" });
+      requestAnimationFrame(() => {
+        const el = document.querySelector(".ps-field-error");
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
       return;
     }
     
@@ -398,12 +400,13 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions })
 
   const handleClose = () => {
     setForm(EMPTY_FORM);
-    setError(""); onClose();
+    setError("");
+    setFieldErrors({});
+    onClose();
   };
 
   return (
     <Modal open={open} onClose={handleClose} title="Nueva Orden">
-      <div ref={formTopRef} />
       {error && <div className="ps-form-error">{error}</div>}
 
       {/* ─ Sección 1: Datos del cliente ─ */}
@@ -663,6 +666,8 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
       setNewFiles([]);
       setNewPreview(null);
       setRemovedFileUrls([]);
+      setFieldErrors({});
+      setError("");
     }
   }, [order]);
 
@@ -734,9 +739,13 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setError("Por favor, corrige los errores en el formulario.");
+      requestAnimationFrame(() => {
+        const el = document.querySelector(".ps-field-error");
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
       return;
     }
-    
+
     setLoading(true);
     setError("");
     setFieldErrors({});
