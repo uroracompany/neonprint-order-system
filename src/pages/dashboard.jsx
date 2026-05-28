@@ -141,13 +141,22 @@ function ModalShell({ open, title, onClose, children, size = "default" }) {
 }
 
 function OrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit, saving }) {
+  const [simpleMaterials, setSimpleMaterials] = useState([]);
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase.from("materials").select("name").order("name");
+      setSimpleMaterials(data || []);
+    };
+    if (open) load();
+  }, [open]);
+
   return (
     <ModalShell open={open} onClose={onClose} title={mode === "create" ? "Crear orden" : "Editar orden"} size="large">
       <div className="pa-form-grid">
         <label className="pa-field"><span>Cliente</span><input value={orderForm.client_name} onChange={(e) => setOrderForm(prev => ({ ...prev, client_name: e.target.value }))} /></label>
         <label className="pa-field"><span>Teléfono</span><input value={orderForm.client_contact} onChange={(e) => setOrderForm(prev => ({ ...prev, client_contact: e.target.value }))} /></label>
         <label className="pa-field full"><span>Descripción</span><textarea rows={3} value={orderForm.description} onChange={(e) => setOrderForm(prev => ({ ...prev, description: e.target.value }))} /></label>
-        <label className="pa-field"><span>Material</span><select value={orderForm.material} onChange={(e) => setOrderForm(prev => ({ ...prev, material: e.target.value }))}><option value="">Seleccionar material</option>{MATERIAL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}</select></label>
+        <label className="pa-field"><span>Material</span><select value={orderForm.material} onChange={(e) => setOrderForm(prev => ({ ...prev, material: e.target.value }))}><option value="">Seleccionar material</option>{simpleMaterials.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}</select></label>
         <label className="pa-field"><span>Tipo de orden</span><select value={orderForm.order_type} onChange={(e) => setOrderForm(prev => ({ ...prev, order_type: e.target.value }))}><option value="normal">Normal</option><option value="orden 911">Orden 911</option></select></label>
         <label className="pa-field full"><span>Preview / Orden de trabajo</span><input value={orderForm.preview_image} onChange={(e) => setOrderForm(prev => ({ ...prev, preview_image: e.target.value }))} placeholder="https://..." /></label>
         <label className="pa-field full"><span>Archivos de diseño</span><textarea rows={4} value={orderForm.order_file_url} onChange={(e) => setOrderForm(prev => ({ ...prev, order_file_url: e.target.value }))} placeholder="Una URL por línea o separadas por coma" /></label>
@@ -671,6 +680,14 @@ onMouseEnter={e => {
 function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit, saving }) {
   const filesInputRef = useRef(null);
   const previewInputRef = useRef(null);
+  const [adminMaterials, setAdminMaterials] = useState([]);
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase.from("materials").select("name").order("name");
+      setAdminMaterials(data || []);
+    };
+    if (open) load();
+  }, [open]);
 
   const previewSource = useMemo(() => {
     if (orderForm.newPreview) {
@@ -767,17 +784,9 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
               <span>Material</span>
               <select value={orderForm.material} onChange={(event) => setField("material", event.target.value)}>
                 <option value="">Seleccionar material</option>
-                <option value="Vinilo">Vinilo</option>
-                <option value="Banner">Banner</option>
-                <option value="Lona">Lona</option>
-                <option value="Papel Fotografico">Papel Fotográfico</option>
-                <option value="Carton">Cartón</option>
-                <option value="Adhesivo">Adhesivo</option>
-                <option value="PVC">PVC</option>
-                <option value="Acrilico">Acrílico</option>
-                <option value="Tela">Tela</option>
-                <option value="Foam">Foam</option>
-                <option value="Otro">Otro</option>
+                {adminMaterials.map(m => (
+                  <option key={m.name} value={m.name}>{m.name}</option>
+                ))}
               </select>
             </label>
             <label className="pa-field">
@@ -1398,6 +1407,13 @@ export default function Dashboard() {
   const [pendingEmploymentStatusChange, setPendingEmploymentStatusChange] = useState(null);
   const [savingEmploymentStatus, setSavingEmploymentStatus] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [materials, setMaterials] = useState([]);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [showMaterialModal, setShowMaterialModal] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState(null);
+  const [materialFormName, setMaterialFormName] = useState("");
+  const [materialFormError, setMaterialFormError] = useState("");
+  const [deletingMaterialId, setDeletingMaterialId] = useState(null);
 
   const usersById = useMemo(() => Object.fromEntries(profiles.map(item => [item.id, item])), [profiles]);
   const showFeedback = (type, message) => setFeedback({ type, message, id: Date.now() });
@@ -1451,6 +1467,28 @@ export default function Dashboard() {
       supabase.removeChannel(ordersChannel);
     };
   }, [loadSession, loadOrders, loadProfiles]);
+
+  const fetchMaterials = async () => {
+    setMaterialsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("materials")
+        .select("*")
+        .order("name", { ascending: true });
+      if (error) throw error;
+      setMaterials(data || []);
+    } catch (err) {
+      console.error("Error fetching materials:", err);
+    } finally {
+      setMaterialsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "materials") {
+      fetchMaterials();
+    }
+  }, [activeTab]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -1510,7 +1548,7 @@ export default function Dashboard() {
       termination_type: orderForm.termination_type.trim() || null,
       order_type: orderForm.order_type,
       order_design_type: orderForm.design_type,
-      delivery_date: orderForm.indefinido ? null : (orderForm.delivery_date || null),
+      delivery_date: !orderForm.delivery_date ? null : (orderForm.indefinido ? null : orderForm.delivery_date),
       status: ORDER_STATUS.PENDING,
       payment_status: orderForm.payment_status,
       seller_id: user?.id || null,
@@ -1855,6 +1893,67 @@ export default function Dashboard() {
     closeEmploymentStatusConfirm();
   };
 
+  const handleAddMaterial = () => {
+    setEditingMaterial(null);
+    setMaterialFormName("");
+    setMaterialFormError("");
+    setShowMaterialModal(true);
+  };
+
+  const handleEditMaterial = (mat) => {
+    setEditingMaterial(mat);
+    setMaterialFormName(mat.name);
+    setMaterialFormError("");
+    setShowMaterialModal(true);
+  };
+
+  const handleSaveMaterial = async () => {
+    const name = materialFormName.trim();
+    if (!name || name.length < 2) {
+      setMaterialFormError("El nombre debe tener al menos 2 caracteres.");
+      return;
+    }
+    try {
+      if (editingMaterial) {
+        const { error } = await supabase
+          .from("materials")
+          .update({ name, updated_at: new Date().toISOString() })
+          .eq("id", editingMaterial.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("materials")
+          .insert({ name });
+        if (error) {
+          if (error.code === "23505") {
+            setMaterialFormError("Ya existe un material con ese nombre.");
+            return;
+          }
+          throw error;
+        }
+      }
+      setShowMaterialModal(false);
+      fetchMaterials();
+    } catch (err) {
+      setMaterialFormError(err.message || "Error al guardar el material.");
+    }
+  };
+
+  const handleDeleteMaterial = async (id) => {
+    if (deletingMaterialId === id) {
+      try {
+        const { error } = await supabase.from("materials").delete().eq("id", id);
+        if (error) throw error;
+        setDeletingMaterialId(null);
+        fetchMaterials();
+      } catch (err) {
+        console.error("Error deleting material:", err);
+      }
+    } else {
+      setDeletingMaterialId(id);
+    }
+  };
+
   // Funcionalidad de filtros 
   const filteredOrders = useMemo(() => {
     const q = normalizeText(search);
@@ -1912,6 +2011,7 @@ export default function Dashboard() {
   const menuItems = [
     { id: "overview", label: "Resumen", icon: <Icons.Dashboard /> },
     { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: orders.length },
+    { id: "materials", label: "Materiales", icon: <Icons.Package /> },
     { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: profiles.length },
   ];
 
@@ -1923,7 +2023,7 @@ export default function Dashboard() {
         <header className="pa-header">
           <div className="pa-header-left">
             <button className="pa-mobile-toggle" onClick={() => setSidebarOpen(prev => !prev)} aria-label="Abrir menú"><Icons.Menu /></button>
-            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : "Gestión de usuarios"}</h1></div>
+            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
@@ -2133,6 +2233,106 @@ export default function Dashboard() {
             </div>
           </section>
         }
+
+        {activeTab === "materials" && (
+          <section className="pa-section">
+            <div className="pa-section-heading">
+              <div>
+                <span className="pa-kicker">Catálogo</span>
+                <h2>Gestión de Materiales</h2>
+                <p>Administra los materiales disponibles para las órdenes de producción.</p>
+              </div>
+              <button className="pa-btn primary" onClick={handleAddMaterial}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Agregar material
+              </button>
+            </div>
+            <div className="pa-panel">
+              <div className="pa-panel-stripe" />
+              <div className="pa-panel-body" style={{ padding: 0 }}>
+                {materialsLoading ? (
+                  <div className="pa-loading" style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>Cargando materiales...</div>
+                ) : materials.length === 0 ? (
+                  <div className="pa-empty" style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>
+                    <p>No hay materiales registrados.</p>
+                    <p style={{ fontSize: "12px", marginTop: "4px" }}>Haz clic en "Agregar material" para comenzar.</p>
+                  </div>
+                ) : (
+                  <table className="pa-table">
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Fecha de creación</th>
+                        <th style={{ width: 160 }}>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {materials.map((mat) => (
+                        <tr key={mat.id}>
+                          <td style={{ fontWeight: 600 }}>{mat.name}</td>
+                          <td style={{ color: "#64748b", fontSize: "13px" }}>
+                            {new Date(mat.created_at).toLocaleDateString("es-DO", {
+                              day: "2-digit", month: "short", year: "numeric"
+                            })}
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button className="pa-btn secondary small" onClick={() => handleEditMaterial(mat)}>
+                                Editar
+                              </button>
+                              <button
+                                className={`pa-btn ${deletingMaterialId === mat.id ? "danger" : "secondary"} small`}
+                                onClick={() => handleDeleteMaterial(mat.id)}
+                              >
+                                {deletingMaterialId === mat.id ? "¿Eliminar?" : "Eliminar"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {showMaterialModal && (
+          <div className="pa-overlay" onClick={() => setShowMaterialModal(false)}>
+            <div className="pa-modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+              <div className="pa-modal-head">
+                <h3>{editingMaterial ? "Editar material" : "Agregar material"}</h3>
+                <button className="pa-close-btn" onClick={() => setShowMaterialModal(false)}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+              <div className="pa-modal-body">
+                <div className="pa-field">
+                  <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "13px", color: "#0f1e40" }}>Nombre del material</label>
+                  <input
+                    className="pa-input"
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1.5px solid #DDE3EF", fontSize: "14px" }}
+                    value={materialFormName}
+                    onChange={e => { setMaterialFormName(e.target.value); setMaterialFormError(""); }}
+                    placeholder="Ej. Vinilo, Banner, Lona..."
+                    autoFocus
+                    onKeyDown={e => { if (e.key === "Enter") handleSaveMaterial(); }}
+                  />
+                  {materialFormError && (
+                    <p style={{ color: "#EF4444", fontSize: "12px", marginTop: 6 }}>{materialFormError}</p>
+                  )}
+                </div>
+              </div>
+              <div className="pa-modal-actions">
+                <button className="pa-btn secondary" onClick={() => setShowMaterialModal(false)}>Cancelar</button>
+                <button className="pa-btn primary" onClick={handleSaveMaterial}>
+                  {editingMaterial ? "Guardar cambios" : "Agregar material"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeTab === "users" &&
           <section className="pa-section">

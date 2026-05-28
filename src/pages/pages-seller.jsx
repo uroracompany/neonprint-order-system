@@ -162,7 +162,7 @@ function Field({ label, required, optional, hint, error, children }) {
 
 
 // ─── Selector de diferentes materiales ──────────────────────────────────────────────────
-function MultiMaterialSelector({ selected, onChange }) {
+function MultiMaterialSelector({ selected = [], onChange, options = [] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -196,7 +196,7 @@ function MultiMaterialSelector({ selected, onChange }) {
       {/* Dropdown */}
       {open && (
         <div className="ps-multimat-dropdown">
-          {MATERIAL_OPTIONS.map(mat => (
+          {options.map(mat => (
             <div key={mat} className={`ps-multimat-option ${selected.includes(mat) ? "selected" : ""}`} onClick={() => toggle(mat)}>
               <span className="ps-multimat-check">{selected.includes(mat) ? "✓" : ""}</span>
               {mat}
@@ -258,7 +258,7 @@ const EMPTY_FORM = {
   design_preview: null, // imagen preview de diseño externo
 };
 
-function CreateOrderModal({ open, onClose, onCreated, userId }) {
+function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions }) {
   const formTopRef = useRef(null);
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
@@ -302,6 +302,9 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
     if (form.client_phone.trim() && !isValidDominicanPhone(form.client_phone)) {
       errors.client_phone = "El teléfono debe ser un número válido de República Dominicana (809, 829 o 849).";
     }
+    if (!form.indefinido && !form.delivery_date) {
+      errors.delivery_date = "Selecciona una fecha de entrega o marca 'Por definir'.";
+    }
     
     return errors;
   };
@@ -320,6 +323,11 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
     setLoading(true);
     setError("");
     setFieldErrors({});
+
+    // Auto-asignar como indefinido si no hay fecha ni marcación
+    if (!form.delivery_date) {
+      form.indefinido = true;
+    }
 
     const payload = {
       client_name: form.client_name.trim(),
@@ -435,7 +443,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
         {/* Multi-material */}
         <div className="col-full">
           <Field label="Materiales" required hint="Puedes seleccionar más de un material" error={fieldErrors.materials}>
-            <MultiMaterialSelector selected={form.materials} onChange={v => set("materials", v)} />
+            <MultiMaterialSelector selected={form.materials} onChange={v => set("materials", v)} options={materialOptions} />
           </Field>
         </div>
 
@@ -570,7 +578,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId }) {
 
         {/* Fecha de entrega */}
         <div className="col-full">
-          <Field label="Fecha de entrega" optional>
+          <Field label="Fecha de entrega" optional error={fieldErrors.delivery_date}>
             <div className="ps-date-row">
               <div className="ps-input-icon-wrap" style={{ flex: 1 }}>
                 <span className="ps-input-icon"><Icons.Calendar /></span>
@@ -1633,6 +1641,7 @@ export default function PageSeller() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
+  const [materialOptions, setMaterialOptions] = useState([]);
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [cancelingOrder, setCancelingOrder] = useState(null);
@@ -1737,6 +1746,12 @@ export default function PageSeller() {
       window.removeEventListener("focus", refreshOrders);
     };
   }, [user?.id]);
+
+  useEffect(() => {
+    supabase.from("materials").select("name").order("name").then(({ data }) => {
+      setMaterialOptions(data?.map(m => m.name) || []);
+    });
+  }, []);
 
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
 
@@ -2373,7 +2388,7 @@ export default function PageSeller() {
         </main>
       </div>
 
-      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} />
+      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} materialOptions={materialOptions} />
       <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} onSendToQuotation={handleSendToQuotation} />
       <AssignModal
