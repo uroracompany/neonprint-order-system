@@ -126,7 +126,28 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(null);
-  
+  const [sellerName, setSellerName] = useState("");
+
+  useEffect(() => {
+    if (order?.seller_name) {
+      setSellerName(order.seller_name);
+      return;
+    }
+    const sellerId = order?.seller_id || order?.created_by;
+    if (!sellerId) {
+      setSellerName("");
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", sellerId)
+      .single()
+      .then(({ data }) => {
+        setSellerName(data?.name || "");
+      });
+  }, [order?.seller_name, order?.seller_id, order?.created_by]);
+
   if (!order) return null;
   
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
@@ -330,7 +351,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
               </div>
               <div className="pd-modal-item">
                 <span className="pd-modal-label">Vendedor</span>
-                <span className="pd-modal-value highlight">{order.seller_name || "No especificado"}</span>
+                <span className="pd-modal-value highlight">{sellerName || "No especificado"}</span>
               </div>
               <div className="pd-modal-item">
                 <span className="pd-modal-label">Teléfono</span>
@@ -536,10 +557,6 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
             <div className="pd-status-item">
               <span className="pd-status-label">Estado</span>
               <StatusBadge status={order.status} className="pd-badge" />
-            </div>
-            <div className="pd-status-item">
-              <span className="pd-status-label">Pago</span>
-              <PaymentBadge status={order.payment_status} className="pd-badge" />
             </div>
           </div>
         </div>
@@ -1201,7 +1218,6 @@ export default function PageDesigner() {
                           {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
                           {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
                           <StatusBadge status={order.status} className="pd-badge" />
-                          <PaymentBadge status={order.payment_status} className="pd-badge" />
                           <button className="pd-recent-view-btn" title="Ver detalle" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>
                             <Icons.Eye />
                           </button>
@@ -1326,7 +1342,6 @@ export default function PageDesigner() {
                               {order.order_type === "orden 911" ? <span className="pd-card-911">911</span> : <span className="pd-badge-normal-table">Normal</span>}
                             </td>
                             <td className="pd-td-status"><StatusBadge status={order.status} className="pd-badge" /></td>
-                            <td className="pd-td-status"><PaymentBadge status={order.payment_status} className="pd-badge" /></td>
                             <td className="pd-td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
                             <td className="pd-td-actions">
                               <div className="pd-row-actions">
@@ -1369,7 +1384,6 @@ export default function PageDesigner() {
                         <div className="pd-card-desc">{order.description}</div>
                         <div className="pd-card-meta">
                           <span className="pd-card-material">{order.material}</span>
-                          <PaymentBadge status={order.payment_status} className="pd-badge" />
                         </div>
                         <div className="pd-card-footer">
                           <span className="pd-card-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}</span>

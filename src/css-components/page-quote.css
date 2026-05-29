@@ -1150,6 +1150,20 @@
   cursor: not-allowed;
 }
 
+.pq-upload-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 14px;
+  border: 1.5px solid #fde68a;
+  border-radius: 16px;
+  background: #fffbeb;
+  font-size: 13px;
+  font-weight: 600;
+  color: #c2410c;
+}
+
 .pq-readonly-note,
 .pq-inline-error {
   display: flex;
