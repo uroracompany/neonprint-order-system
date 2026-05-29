@@ -50,6 +50,9 @@ function MetricCard({ icon, label, value, accentIdx = 0 }) {
 function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [designerName, setDesignerName] = useState("");
+  const [quoteName, setQuoteName] = useState("");
+  const [sellerName, setSellerName] = useState("");
 
   const handleUpdateStatus = async (newStatus) => {
     setUpdating(true);
@@ -73,6 +76,57 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
     setUpdating(false);
   };
 
+  useEffect(() => {
+    if (!order?.designer_id) {
+      setDesignerName("");
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", order.designer_id)
+      .single()
+      .then(({ data }) => {
+        setDesignerName(data?.name || "");
+      });
+  }, [order?.designer_id]);
+
+  useEffect(() => {
+    const quoteId = order?.quote_id || order?.quotation_id || order?.quote_user_id;
+    if (!quoteId) {
+      setQuoteName("");
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", quoteId)
+      .single()
+      .then(({ data }) => {
+        setQuoteName(data?.name || "");
+      });
+  }, [order?.quote_id, order?.quotation_id, order?.quote_user_id]);
+
+  useEffect(() => {
+    if (order?.seller_name) {
+      setSellerName(order.seller_name);
+      return;
+    }
+    const sellerId = order?.seller_id || order?.created_by;
+    if (!sellerId) {
+      setSellerName("");
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", sellerId)
+      .single()
+      .then(({ data }) => {
+        setSellerName(data?.name || "");
+      });
+  }, [order?.seller_name, order?.seller_id, order?.created_by]);
+
   if (!order) return null;
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
@@ -92,6 +146,7 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
 
   const isInProduction = isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION);
   const isInTermination = isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION);
+  const isExternal = order?.order_design_type === "EXTERNAL_DESING";
 
   return (
     <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -134,7 +189,7 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
                     <span className="pp-modal-row-icon"><Icons.Users /></span>
                     <div>
                       <p className="pp-modal-row-label">Vendedor</p>
-                      <p className="pp-modal-row-value">{order.seller_name || "No especificado"}</p>
+                      <p className="pp-modal-row-value">{sellerName || "No especificado"}</p>
                     </div>
                   </div>
                   <div className="pp-modal-row">
@@ -258,6 +313,22 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
                       </div>
                     </div>
                   )}
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.Edit /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Diseñador</p>
+                      <p className="pp-modal-row-value">
+                        {isExternal ? "La orden es externa" : (designerName || "No asignado")}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.User /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Cotizador</p>
+                      <p className="pp-modal-row-value">{quoteName || "No asignado"}</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
