@@ -17,6 +17,7 @@ import {
   isOrderStatus,
   isOrderStatusIn,
   getFileNameFromUrl,
+  parseFileUrls,
   formatDate,
 } from "../utils/constants";
 
@@ -131,18 +132,6 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const statusCfg = getOrderStatusConfig(order.status);
-
-  const getDbFiles = () => {
-    if (!order.order_file_url) return [];
-    try {
-      const urls = JSON.parse(order.order_file_url);
-      return Array.isArray(urls) ? urls : [urls];
-    } catch {
-      return order.order_file_url ? [order.order_file_url] : [];
-    }
-  };
-
-  const allFiles = getDbFiles().map((url) => ({ name: getFileNameFromUrl(url), url }));
 
   const isInProduction = isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION);
   const isInTermination = isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION);
@@ -334,31 +323,60 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
             </div>
           </div>
 
-          <div className="pp-files-section" style={{ marginTop: 18 }}>
-            <div className="pp-files-title">
-              <Icons.File />
-              Archivos para Impresión
-            </div>
-            {allFiles.length > 0 ? (
-              <div className="pp-files-grid">
-                {allFiles.map((file, i) => (
-                  <div key={i} className="pp-file-item">
-                    <div className="pp-file-icon">
-                      <Icons.File />
-                    </div>
-                    <div className="pp-file-info">
-                      <span className="pp-file-name">{file.name}</span>
-                    </div>
-                    <a href={file.url} target="_blank" rel="noopener noreferrer" className="pp-file-download" title="Descargar">
-                      <Icons.Download />
+          {(order.preview_image || order.order_file_url) && (
+            <div className="pp-files-section" style={{ marginTop: 18 }}>
+              <div className="pp-files-title">
+                <Icons.File />
+                Archivos Adjuntos
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: order.preview_image && order.order_file_url ? "1fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
+                {order.preview_image && (
+                  <div>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                      <Icons.Eye /> Orden de Trabajo
+                    </p>
+                    <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                      <img
+                        src={order.preview_image}
+                        alt="preview"
+                        style={{
+                          width: "100%",
+                          borderRadius: "var(--pp-radius-md)",
+                          border: "1px solid var(--pp-border)",
+                          cursor: "pointer",
+                          transition: "transform 0.2s, box-shadow 0.2s",
+                        }}
+                        onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                        onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                      />
                     </a>
                   </div>
-                ))}
+                )}
+                {order.order_file_url && (
+                  <div>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                      <Icons.Brush /> Diseño del cliente
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {parseFileUrls(order.order_file_url).map((url, i) => (
+                        <div key={i} className="pp-file-item" style={{ margin: 0 }}>
+                          <div className="pp-file-icon">
+                            <Icons.File />
+                          </div>
+                          <div className="pp-file-info">
+                            <span className="pp-file-name">{getFileNameFromUrl(url)}</span>
+                          </div>
+                          <a href={url} target="_blank" rel="noopener noreferrer" className="pp-file-download" title="Descargar">
+                            <Icons.Download />
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="pp-no-files">No hay archivos disponibles</div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="pp-modal-footer">

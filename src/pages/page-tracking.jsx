@@ -60,7 +60,7 @@ export default function PageTracking() {
   }, [order]);
 
   useEffect(() => {
-    const interval = setInterval(fetchData, 30000);
+    const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
