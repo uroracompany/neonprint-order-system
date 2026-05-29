@@ -217,6 +217,7 @@ export default function PageDelivery() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterArchive, setFilterArchive] = useState("active");
+  const [viewMode, setViewMode] = useState("cards");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
   const [archivedingOrder, setArchivedingOrder] = useState(null);
@@ -379,6 +380,90 @@ export default function PageDelivery() {
     }
   };
 
+  const formatOrderDate = (value) => {
+    if (!value) return "Sin fecha";
+    return new Date(value).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const renderDeliveryActions = (order, variant = "card") => (
+    <>
+      {!order.is_archived_delivery && isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && (
+        <button
+          className={variant === "table" ? "table-action-btn deliver" : "pd-card-action-btn deliver"}
+          onClick={event => handleQuickMarkDelivered(event, order.id)}
+          disabled={updatingOrderId === order.id}
+          title="Marcar como entregado"
+        >
+          {updatingOrderId === order.id ? <span className="pd-btn-spinner" /> : <Icons.Check />}
+        </button>
+      )}
+      {!order.is_archived_delivery && isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED) && (
+        <button
+          className={variant === "table" ? "table-action-btn archive" : "pd-card-action-btn archive"}
+          onClick={event => { event.stopPropagation(); handleArchiveOrder(order); }}
+          title="Archivar orden"
+        >
+          <Icons.Archive />
+        </button>
+      )}
+      {order.is_archived_delivery && (
+        <button
+          className={variant === "table" ? "table-action-btn unarchive" : "pd-card-action-btn unarchive"}
+          onClick={event => { event.stopPropagation(); handleUnarchiveOrder(order.id); }}
+          title="Restaurar orden"
+        >
+          <Icons.Refresh />
+        </button>
+      )}
+      <button
+        className={variant === "table" ? "table-action-btn view" : "pd-card-action-btn view"}
+        onClick={event => { event.stopPropagation(); setSelectedOrder(order); }}
+        title="Ver detalles"
+      >
+        <Icons.Eye />
+      </button>
+    </>
+  );
+
+  const renderOrderCard = (order) => (
+    <article key={order.id} className="pd-order-card" onClick={() => setSelectedOrder(order)}>
+      <div className="pd-order-card-header">
+        <div className="pd-order-card-identity">
+          <span className="pd-order-card-id">#{order.id?.slice(0, 8).toUpperCase() || "---"}</span>
+          <span className="pd-order-card-date"><Icons.Clock /> {formatOrderDate(order.created_at)}</span>
+        </div>
+        <div className="pd-order-card-badges">
+          <StatusBadge status={order.status} className="pd-badge" showDot={false} />
+          <PaymentBadge status={order.payment_status} className="pd-badge" />
+        </div>
+      </div>
+
+      <div className="pd-order-card-body">
+        <div className="pd-order-card-client">{order.client_name || "Cliente sin nombre"}</div>
+        <div className="pd-order-card-desc">{order.description || "Sin descripción"}</div>
+      </div>
+
+      <div className="pd-order-card-meta">
+        <span><Icons.User /> {order.seller_name || "Vendedor no definido"}</span>
+        <span><Icons.File /> {order.material || "Material no definido"}</span>
+        <span><Icons.Calendar /> {order.delivery_date ? formatOrderDate(order.delivery_date) : "Entrega por definir"}</span>
+      </div>
+
+      <div className="pd-order-card-footer">
+        <div className="pd-order-card-type">
+          {order.order_type === "orden 911" ? (
+            <span className="pd-badge-911">911</span>
+          ) : (
+            <span className="pd-badge-normal">Normal</span>
+          )}
+        </div>
+        <div className="pd-order-card-actions">
+          {renderDeliveryActions(order)}
+        </div>
+      </div>
+    </article>
+  );
+
   return (
     <div className="pd-root">
       <Sidebar
@@ -457,45 +542,8 @@ export default function PageDelivery() {
                 ) : orders.length === 0 ? (
                   <div className="pd-empty">No hay órdenes</div>
                 ) : (
-                  <div className="pd-orders-list">
-                    {orders.slice(0, 5).map(order => (
-                      <div key={order.id} className="pd-order-item" onClick={() => setSelectedOrder(order)}>
-                        <div className="pd-order-left">
-                          <span className="pd-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-                          <span className="pd-order-client">{order.client_name}</span>
-                        </div>
-                        <div className="pd-order-center">
-                          <span className="pd-order-desc">{order.description?.substring(0, 50)}...</span>
-                        </div>
-                        <div className="pd-order-right">
-                          <StatusBadge status={order.status} className="pd-badge" showDot={false} />
-                          {isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && (
-                            <button 
-                              className="pd-action-btn check"
-                              onClick={(e) => handleQuickMarkDelivered(e, order.id)}
-                              disabled={updatingOrderId === order.id}
-                              title="Marcar como entregado"
-                            >
-                              {updatingOrderId === order.id ? (
-                                <span className="pd-btn-spinner"></span>
-                              ) : (
-                                <Icons.Check />
-                              )}
-                            </button>
-                          )}
-                          {isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED) && (
-                            <button 
-                              className="pd-action-btn check completed"
-                              disabled
-                              title="Entregado"
-                            >
-                              <Icons.Check />
-                            </button>
-                          )}
-                          <button className="pd-view-btn"><Icons.Eye /></button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="pd-orders-grid pd-dashboard-orders">
+                    {orders.slice(0, 5).map(order => renderOrderCard(order))}
                   </div>
                 )}
               </div>
@@ -530,6 +578,26 @@ export default function PageDelivery() {
                   </select>
                   <span className="pd-select-arrow"><Icons.ChevronDown /></span>
                 </div>
+                <div className="pd-view-switch" aria-label="Cambiar vista de órdenes">
+                  <button
+                    type="button"
+                    className={`pd-view-toggle ${viewMode === "table" ? "active" : ""}`}
+                    onClick={() => setViewMode("table")}
+                    title="Vista de tabla"
+                    aria-label="Vista de tabla"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  </button>
+                  <button
+                    type="button"
+                    className={`pd-view-toggle ${viewMode === "cards" ? "active" : ""}`}
+                    onClick={() => setViewMode("cards")}
+                    title="Vista de tarjetas"
+                    aria-label="Vista de tarjetas"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  </button>
+                </div>
                 <span className="pd-filters-count">{filteredOrders.length}</span>
               </div>
 
@@ -537,6 +605,10 @@ export default function PageDelivery() {
                 <div className="pd-loading">Cargando...</div>
               ) : filteredOrders.length === 0 ? (
                 <div className="pd-empty">No hay órdenes</div>
+              ) : viewMode === "cards" ? (
+                <div className="pd-orders-grid">
+                  {paginatedOrders.map(order => renderOrderCard(order))}
+                </div>
               ) : (
                 <div className="pd-orders-table-wrap">
                   <table className="pd-orders-table">
@@ -560,19 +632,7 @@ export default function PageDelivery() {
                           <td className="td-pad"><StatusBadge status={order.status} className="pd-badge" showDot={false} /></td>
                           <td className="td-actions">
                             <div className="table-actions">
-                              {!order.is_archived_delivery && isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED) && (
-                                <button className="table-action-btn archive" onClick={e => { e.stopPropagation(); handleArchiveOrder(order); }} title="Archivar">
-                                  <Icons.Archive />
-                                </button>
-                              )}
-                              {order.is_archived_delivery && (
-                                <button className="table-action-btn archive" disabled onClick={e => e.stopPropagation()} title="Archivada">
-                                  <Icons.Archived />
-                                </button>
-                              )}
-                              <button className="table-action-btn view" onClick={e => { e.stopPropagation(); setSelectedOrder(order); }} title="Ver detalles">
-                                <Icons.Eye />
-                              </button>
+                              {renderDeliveryActions(order, "table")}
                             </div>
                           </td>
                         </tr>

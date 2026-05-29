@@ -91,7 +91,7 @@ export function FlowTrackClient({ status, events, order, designType }) {
                   )}
                 </div>
                 {i < steps.length - 1 && (
-                  <div className={`ftc-h-line ${isCompleted ? "done" : isQuoteConfirmed ? "done" : isQuoteBlocked ? "pending-payment" : ""}`} />
+                  <div className={`ftc-h-line ${isCompleted ? "done" : isQuoteConfirmed ? "confirmed" : isQuoteBlocked ? "pending-payment" : ""}`} />
                 )}
               </div>
             );
@@ -129,7 +129,7 @@ export function FlowTrackClient({ status, events, order, designType }) {
                     {isActive && !isQuoteBlocked && <div className="ftc-v-pulse" />}
                   </div>
                   {i < steps.length - 1 && (
-                    <div className={`ftc-v-line ${isCompleted ? "done" : isQuoteConfirmed ? "done" : isQuoteBlocked ? "pending-payment" : ""}`} />
+                    <div className={`ftc-v-line ${isCompleted ? "done" : isQuoteConfirmed ? "confirmed" : isQuoteBlocked ? "pending-payment" : ""}`} />
                   )}
                 </div>
                 <div className="ftc-v-body">

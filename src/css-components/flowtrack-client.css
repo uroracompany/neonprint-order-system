@@ -566,6 +566,7 @@ html, body {
     align-items: flex-start;
     justify-content: center;
     padding: 12px 0 4px;
+    min-height: 112px;
     position: relative;
   }
 
@@ -584,7 +585,9 @@ html, body {
     flex-direction: column;
     align-items: center;
     gap: 6px;
+    width: 86px;
     min-width: 0;
+    position: relative;
     flex-shrink: 0;
   }
 
@@ -678,6 +681,10 @@ html, body {
     display: inline-flex;
     align-items: center;
     gap: 3px;
+    position: absolute;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
     font-size: 9px;
     font-weight: 600;
     color: #92400E;
@@ -698,6 +705,12 @@ html, body {
   }
 
   .ftc-h-line.done {
+    background: var(--ft-green);
+    opacity: 0.5;
+    margin-top: -10px;
+  }
+
+  .ftc-h-line.confirmed {
     background: var(--ft-green);
     opacity: 0.5;
     margin-top: -10px;
@@ -837,6 +850,11 @@ html, body {
 }
 
 .ftc-v-line.done {
+  background: var(--ft-green);
+  opacity: 0.4;
+}
+
+.ftc-v-line.confirmed {
   background: var(--ft-green);
   opacity: 0.4;
 }

@@ -40,10 +40,57 @@
   --cyan:         var(--pq-cyan);
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   CUSTOM SCROLLBAR - Estético y moderno (mismo estilo que seller)
+═══════════════════════════════════════════════════════════════════ */
+
+/* Firefox */
+.pq-root * {
+  scrollbar-width: thin;
+  scrollbar-color: #CBD5E1 transparent;
+}
+
+/* Chrome, Safari, Edge */
+.pq-root ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.pq-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pq-root ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #94A3B8 0%, #64748B 100%);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.pq-root ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #64748B 0%, #475569 100%);
+  background-clip: padding-box;
+}
+
+.pq-root ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Scrollbar más pequeña para paneles secundarios */
+.pq-root .pq-notification-panel-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.pq-root .pq-notification-panel-body::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #CBD5E1 0%, #94A3B8 100%);
+  border-radius: 3px;
+}
+
 /* Layout principal del módulo */
 .pq-root {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
   background: var(--pq-bg);
   color: var(--pq-text);
   font-family: 'Poppins', sans-serif;
@@ -571,17 +618,32 @@
   overflow-y: auto;
   padding-right: 6px;
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: #CBD5E1 transparent;
 }
 
 .pq-orders-scroll::-webkit-scrollbar {
-  width: 10px;
+  width: 8px;
+  height: 8px;
+}
+
+.pq-orders-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .pq-orders-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 999px;
-  border: 2px solid #ffffff;
+  background: linear-gradient(180deg, #94A3B8 0%, #64748B 100%);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.pq-orders-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #64748B 0%, #475569 100%);
+  background-clip: padding-box;
+}
+
+.pq-orders-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .pq-order-card {
