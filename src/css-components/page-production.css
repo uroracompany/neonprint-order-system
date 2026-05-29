@@ -481,6 +481,7 @@
   letter-spacing: 0.03em;
   white-space: nowrap;
   font-family: 'Poppins', sans-serif;
+  width: fit-content;
 }
 
 .pp-badge-dot {
@@ -1055,7 +1056,6 @@
   background: var(--pp-primary-mid);
 }
 
-.pp-loading-files,
 .pp-no-files {
   text-align: center;
   padding: 24px;

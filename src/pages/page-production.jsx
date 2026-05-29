@@ -6,7 +6,7 @@ import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
-import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
+import { StatusBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
 import {
@@ -48,35 +48,8 @@ function MetricCard({ icon, label, value, accentIdx = 0 }) {
 }
 
 function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
-  const [loadingFiles, setLoadingFiles] = useState(true);
-  const [orderFiles, setOrderFiles] = useState([]);
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
-
-  const fetchOrderFiles = useCallback(async () => {
-    if (!order?.id) return;
-    setLoadingFiles(true);
-    try {
-      const { data, error } = await supabase.storage
-        .from("order-docs")
-        .list(`orders/${order.id}/files/`);
-
-      if (!error && data) {
-        const files = data.map(f => ({
-          name: f.name,
-          url: supabase.storage.from("order-docs").getPublicUrl(`orders/${order.id}/files/${f.name}`).data.publicUrl
-        }));
-        setOrderFiles(files);
-      }
-    } catch (err) {
-      console.error("Error fetching files:", err);
-    }
-    setLoadingFiles(false);
-  }, [order?.id]);
-
-  useEffect(() => {
-    fetchOrderFiles();
-  }, [fetchOrderFiles]);
 
   const handleUpdateStatus = async (newStatus) => {
     setUpdating(true);
@@ -115,10 +88,7 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
     }
   };
 
-  const allFiles = [
-    ...orderFiles.map(f => ({ name: f.name, url: f.url })),
-    ...getDbFiles().map((url) => ({ name: getFileNameFromUrl(url), url }))
-  ];
+  const allFiles = getDbFiles().map((url) => ({ name: getFileNameFromUrl(url), url }));
 
   const isInProduction = isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION);
   const isInTermination = isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION);
@@ -241,15 +211,11 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
             <div>
               <div className="pp-modal-status-card">
                 <div className="pp-modal-status-glow" style={{ background: statusCfg?.bg || "transparent" }} />
-                <p className="pp-modal-status-title">Estado & Pago</p>
+                <p className="pp-modal-status-title">Estado</p>
                 <div className="pp-modal-status-grid">
                   <div className="pp-modal-status-section">
                     <span className="pp-modal-status-label">Estado Actual</span>
                     <StatusBadge status={order.status} className="pp-badge" bordered />
-                  </div>
-                  <div className="pp-modal-status-section">
-                    <span className="pp-modal-status-label">Estado de Pago</span>
-                    <PaymentBadge status={order.payment_status} className="pp-badge" bordered />
                   </div>
                   {order.price && (
                     <div className="pp-price-box">
@@ -302,9 +268,7 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
               <Icons.File />
               Archivos para Impresión
             </div>
-            {loadingFiles ? (
-              <div className="pp-loading-files">Cargando archivos...</div>
-            ) : allFiles.length > 0 ? (
+            {allFiles.length > 0 ? (
               <div className="pp-files-grid">
                 {allFiles.map((file, i) => (
                   <div key={i} className="pp-file-item">
@@ -745,7 +709,6 @@ export default function PageProduction() {
                             <td className="td-pad td-material">{order.material}</td>
                             <td className="td-pad td-qty">{order.quantity || "-"}</td>
                             <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered /></td>
-                            <td className="td-pad"><PaymentBadge status={order.payment_status} className="pp-badge" bordered /></td>
                             <td className="td-pad">
                               {order.order_type === "orden 911" ? (
                                 <span className="pp-badge-911">911</span>
@@ -801,7 +764,6 @@ export default function PageProduction() {
                         <div className="pp-order-card-desc">{order.description || "Sin descripción"}</div>
                         <div className="pp-order-card-meta">
                           <span className="pp-order-card-material">{order.material}</span>
-                          <PaymentBadge status={order.payment_status} className="pp-badge" bordered />
                         </div>
                         <div className="pp-order-card-footer">
                           <span className="pp-order-card-date">
