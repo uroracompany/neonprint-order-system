@@ -395,6 +395,9 @@ export default function PageProduction() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [assignDeliveryOrder, setAssignDeliveryOrder] = useState(null);
   const [assignDeliverySaving, setAssignDeliverySaving] = useState(false);
+  const [archivedingOrder, setArchivedingOrder] = useState(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [filterArchive, setFilterArchive] = useState("active");
   const notif = useNotifications(user?.id);
 
   const refreshOrders = useCallback(async () => {
@@ -427,6 +430,28 @@ export default function PageProduction() {
       console.error("Error assigning delivery:", err);
     }
     setAssignDeliverySaving(false);
+  };
+
+  const handleArchiveOrder = (order) => {
+    if (!isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)) return;
+    setArchivedingOrder(order);
+  };
+
+  const handleConfirmArchiveOrder = async () => {
+    if (!archivedingOrder) return;
+    setArchiveLoading(true);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ is_archived_production: true })
+        .eq("id", archivedingOrder.id);
+      if (error) throw error;
+      setArchivedingOrder(null);
+      refreshOrders();
+    } catch (err) {
+      console.error("Error archiving order:", err);
+    }
+    setArchiveLoading(false);
   };
 
   useEffect(() => {
@@ -477,8 +502,11 @@ export default function PageProduction() {
 
     const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
     const matchesPayment = filterPayment === "all" || order.payment_status === filterPayment;
+    const matchesArchive =
+      (filterArchive === "active" && !order.is_archived_production) ||
+      (filterArchive === "archived" && order.is_archived_production);
 
-    return matchesSearch && matchesStatus && matchesPayment;
+    return matchesSearch && matchesStatus && matchesPayment && matchesArchive;
   });
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
@@ -499,8 +527,10 @@ export default function PageProduction() {
   };
 
   const canAdvance = (order) => {
-    return isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION) ||
-           isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION);
+    return !order.is_archived_production && (
+      isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION) ||
+      isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)
+    );
   };
 
   const getAdvanceIcon = (order) => {
@@ -660,6 +690,13 @@ export default function PageProduction() {
                     </select>
                     <span className="pp-select-arrow"><Icons.ChevronDown /></span>
                   </div>
+                  <div className="pp-select-wrap">
+                    <select className="pp-input" value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>
+                      <option value="active">Activas</option>
+                      <option value="archived">Archivadas</option>
+                    </select>
+                    <span className="pp-select-arrow"><Icons.ChevronDown /></span>
+                  </div>
                   <div style={{ display: "flex", gap: 4 }}>
                     <button
                       onClick={() => setViewMode("table")}
@@ -735,6 +772,15 @@ export default function PageProduction() {
                                     {getAdvanceIcon(order)}
                                   </button>
                                 )}
+                                {isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && !order.is_archived_production && (
+                                  <button
+                                    className="table-action-btn archive"
+                                    onClick={(e) => { e.stopPropagation(); handleArchiveOrder(order); }}
+                                    title="Archivar orden"
+                                  >
+                                    <Icons.Archive />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -778,6 +824,15 @@ export default function PageProduction() {
                                 {getAdvanceIcon(order)}
                               </button>
                             )}
+                            {isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && !order.is_archived_production && (
+                              <button
+                                className="table-action-btn archive"
+                                onClick={e => { e.stopPropagation(); handleArchiveOrder(order); }}
+                                title="Archivar orden"
+                              >
+                                <Icons.Archive />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -806,6 +861,44 @@ export default function PageProduction() {
         onConfirm={handleConfirmAssignDelivery}
         loading={assignDeliverySaving}
       />
+
+      {archivedingOrder && (
+        <div className="pp-modal-overlay" onClick={() => setArchivedingOrder(null)}>
+          <div className="pp-modal" onClick={e => e.stopPropagation()}>
+            <div className="pp-modal-stripe" />
+            <div className="pp-modal-header">
+              <h3>Archivar orden</h3>
+              <button className="pp-modal-close" onClick={() => setArchivedingOrder(null)}>
+                <Icons.Close />
+              </button>
+            </div>
+            <div className="pp-modal-body">
+              <p>¿Deseas archivar la orden <strong>#{archivedingOrder.id?.slice(0, 8).toUpperCase()}</strong>?</p>
+              <p style={{ color: "var(--pp-text-muted)", fontSize: "12px", marginTop: "8px" }}>
+                Las órdenes archivadas no se mostrarán en la vista principal.
+              </p>
+            </div>
+            <div className="pp-modal-footer">
+              <button className="pp-btn pp-btn-secondary" onClick={() => setArchivedingOrder(null)}>
+                Cancelar
+              </button>
+              <button className="pp-btn pp-btn-primary" onClick={handleConfirmArchiveOrder} disabled={archiveLoading}>
+                {archiveLoading ? (
+                  <>
+                    <span className="pp-btn-spinner"></span>
+                    Archivando...
+                  </>
+                ) : (
+                  <>
+                    <Icons.Archive />
+                    Archivar orden
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

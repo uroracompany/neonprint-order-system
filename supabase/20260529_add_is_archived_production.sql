@@ -1,0 +1,1 @@
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_archived_production BOOLEAN DEFAULT FALSE;

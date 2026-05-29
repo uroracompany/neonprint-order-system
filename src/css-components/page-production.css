@@ -594,6 +594,18 @@
   border-color: var(--pp-green);
 }
 
+.table-action-btn.archive {
+  color: #D97706;
+  border-color: #FDE68A;
+  background: #FFFBEB;
+}
+
+.table-action-btn.archive:hover {
+  background: #D97706;
+  color: #fff;
+  border-color: #D97706;
+}
+
 .pp-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
