@@ -6,7 +6,6 @@ import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
-import { FlowTracker } from "../components/FlowTracker";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
@@ -258,9 +257,6 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
                       <p className="pp-price-box-value">RD$ {Number(order.price).toLocaleString("es-DO")}</p>
                     </div>
                   )}
-                </div>
-                <div className="pp-flowtracker-wrap">
-                  <FlowTracker currentStatus={order.status} />
                 </div>
               </div>
 

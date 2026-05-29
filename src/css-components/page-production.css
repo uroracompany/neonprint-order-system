@@ -1063,12 +1063,6 @@
   font-size: 13px;
 }
 
-.pp-flowtracker-wrap {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--pp-border);
-}
-
 .pp-modal-alert {
   display: flex;
   align-items: center;
