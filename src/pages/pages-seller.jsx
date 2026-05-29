@@ -1644,6 +1644,7 @@ export default function PageSeller() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
+  const [filterArchive, setFilterArchive] = useState("active");
   const [page, setPage] = useState(1);
   const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
@@ -1678,7 +1679,6 @@ export default function PageSeller() {
       .from("orders")
       .select(RELEVANT_COLUMNS)
       .eq("seller_id", sellerId)
-      .is("is_archived", false)
       .order("created_at", { ascending: false })
       .limit(100);
 
@@ -1728,7 +1728,6 @@ export default function PageSeller() {
         .from("orders")
         .select(RELEVANT_COLUMNS)
         .eq("seller_id", user.id)
-        .is("is_archived", false)
         .order("created_at", { ascending: false })
         .limit(100);
       if (data) setOrders(data);
@@ -1933,8 +1932,10 @@ export default function PageSeller() {
       return;
     }
 
+    setOrders(prev => prev.map(o =>
+      o.id === archivedingOrder.id ? { ...o, is_archived: true } : o
+    ));
     setArchivedingOrder(null);
-    fetchOrders(user?.id);
   };
 
   // ── Metrics Values ─────────────────────────────────────────────────────────────
@@ -2004,13 +2005,12 @@ export default function PageSeller() {
     return (
       (!q || o.client_name?.toLowerCase().includes(q) || o.description?.toLowerCase().includes(q) || o.id?.toLowerCase().includes(q)) &&
       (isDateFilterActive ? true :
-        (filterStatus === "all" ? !o.is_archived : 
-          (filterStatus === "archivada" ? o.is_archived === true : 
-            isOrderStatus(o.status, filterStatus)))) &&
+        (filterArchive === "active" ? !o.is_archived : o.is_archived === true) &&
+        (filterStatus === "all" || isOrderStatus(o.status, filterStatus))) &&
       (filterPayment === "all" || o.payment_status === filterPayment) &&
       dateMatch
     );
-  }), [orders, search, filterDate, filterStatus, filterPayment]);
+  }), [orders, search, filterDate, filterStatus, filterPayment, filterArchive]);
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
@@ -2149,7 +2149,7 @@ export default function PageSeller() {
                                     <Icons.Edit />
                                   </button>
                                 )}
-                                {isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && (
+                                {(isOrderStatus(o.status, ORDER_STATUS.CANCELLED) || isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)) && (
                                   o.is_archived ? (
                                     <button 
                                       className="table-action-btn archive"
@@ -2206,6 +2206,14 @@ export default function PageSeller() {
                       value={filterPayment} onChange={e => setFilterPayment(e.target.value)}>
                       <option value="all">Pago: Todos</option>
                       {Object.entries(PAYMENT_COLORS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                    </select>
+                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+                  </div>
+                  <div className="ps-select-wrap">
+                    <select className="ps-input" style={{ minWidth: 100, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+                      value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>
+                      <option value="active">Activas</option>
+                      <option value="archived">Archivadas</option>
                     </select>
                     <span className="ps-select-arrow"><Icons.ChevronDown /></span>
                   </div>
@@ -2290,7 +2298,7 @@ export default function PageSeller() {
                                       <Icons.Edit />
                                     </button>
                                   )}
-                                  {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && (
+                                  {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && o.payment_status !== "pagado" && (
                                     <button 
                                       className="table-action-btn cancel" 
                                       onClick={() => handleCancelOrder(o)} 
@@ -2299,7 +2307,7 @@ export default function PageSeller() {
                                       <Icons.Trash />
                                     </button>
                                   )}
-                                  {isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && (
+                                  {(isOrderStatus(o.status, ORDER_STATUS.CANCELLED) || isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)) && (
                                     o.is_archived ? (
                                       <button 
                                         className="table-action-btn archive"
@@ -2379,7 +2387,7 @@ export default function PageSeller() {
                                 <Icons.Trash />
                               </button>
                             )}
-                            {isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && (
+                            {(isOrderStatus(o.status, ORDER_STATUS.CANCELLED) || isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)) && !o.is_archived && (
                               <button className="card-action-btn archive" onClick={() => handleArchiveOrder(o)} title="Archivar">
                                 <Icons.Archived />
                               </button>
