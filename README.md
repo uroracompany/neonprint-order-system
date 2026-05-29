@@ -22,6 +22,7 @@ NeonPrint centraliza el flujo operativo de una orden desde ventas hasta entrega:
 - Storage: buckets de documentos, previews y comprobantes.
 - Migraciones SQL: `supabase/`.
 
+
 ## Variables de entorno
 
 El proyecto espera estas variables en `.env`:
