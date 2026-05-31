@@ -309,7 +309,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   const canSendToQuotation = canEditDesignerAssets && uniqueFiles.length > 0 && !hasChanges;
   
   return (
-    <div className="pd-modal-overlay" onClick={e => e.target === e.currentTarget && handleClose()}>
+    <div className="pd-modal-overlay">
       <div className="pd-modal">
         <div className="pd-modal-stripe"></div>
         <div className="pd-modal-header">
@@ -553,12 +553,12 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
             </div>
           </div>
           
-          <div className="pd-status-bar">
+          {/* <div className="pd-status-bar">
             <div className="pd-status-item">
               <span className="pd-status-label">Estado</span>
               <StatusBadge status={order.status} className="pd-badge" />
             </div>
-          </div>
+          </div> */}
         </div>
         {/* Footer Modal */}
         <div className="pd-modal-footer">
@@ -613,7 +613,7 @@ function ArchiveDesignerOrderModal({ open, onClose, onConfirm, order, loading })
   if (!open || !order) return null;
 
   return (
-    <div className="pd-assign-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="pd-assign-overlay">
       <div className="pd-assign-modal">
         <div className="pd-assign-icon pd-assign-icon-archive">
           <Icons.File />
