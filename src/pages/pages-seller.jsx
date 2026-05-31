@@ -309,9 +309,16 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions })
   };
 
   // ── Submit ─────────────────────────────────────────────────────────────
+  const withTimeout = (promise, ms) => {
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), ms)
+    );
+    return Promise.race([promise, timeout]);
+  };
+
   const handleSubmit = async () => {
     const errors = validateForm();
-    
+
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setError("Por favor, corrige los errores en el formulario.");
@@ -321,81 +328,88 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions })
       });
       return;
     }
-    
+
     setLoading(true);
     setError("");
     setFieldErrors({});
 
-    // Auto-asignar como indefinido si no hay fecha ni marcación
-    if (!form.delivery_date) {
-      form.indefinido = true;
-    }
-
-    const payload = {
-      client_name: form.client_name.trim(),
-      client_contact: form.client_phone.trim() || null,
-      description: form.description.trim(),
-      material: form.materials.join(", "),
-      termination_type: form.termination_type.trim() || null,
-      order_type: form.order_type,
-      order_design_type: form.design_type,
-      delivery_date: form.indefinido ? null : (form.delivery_date || null),
-      status: ORDER_STATUS.PENDING,
-      payment_status: "Pending_Payment",
-      seller_id: userId,
-      created_by: userId,
-    };
-
-    // ── Subir archivos ANTES de insertar (solo Diseño Externo) ──
-    let fileUrls = [];
-    let previewUrl = null;
-
-    if (form.design_files.length > 0 || form.design_preview) {
-      const orderId = crypto.randomUUID();
-
-      try {
-        for (let i = 0; i < form.design_files.length; i++) {
-          const file = form.design_files[i];
-          const fileName = buildStorageSafeFileName(file, `${i}-`);
-          const publicUrl = await uploadOrderAsset({
-            bucket: "order-docs",
-            path: `orders/${orderId}/files/${fileName}`,
-            file,
-          });
-
-          if (publicUrl) fileUrls.push(publicUrl);
+    try {
+      await withTimeout((async () => {
+        // Auto-asignar como indefinido si no hay fecha ni marcación
+        if (!form.delivery_date) {
+          form.indefinido = true;
         }
-      } catch (uploadError) {
-        setLoading(false);
-        setError(uploadError?.message || "Error al subir los archivos de diseño.");
-        return;
-      }
 
-      if (form.design_preview) {
-        try {
-          const fileName = buildStorageSafeFileName(form.design_preview, "preview-");
-          previewUrl = await uploadOrderAsset({
-            bucket: "order-previews",
-            path: `orders/${orderId}/preview/${fileName}`,
-            file: form.design_preview,
-          });
-        } catch (uploadError) {
-          setLoading(false);
-          setError(uploadError?.message || "Error al subir el preview de la orden.");
-          return;
+        const payload = {
+          client_name: form.client_name.trim(),
+          client_contact: form.client_phone.trim() || null,
+          description: form.description.trim(),
+          material: form.materials.join(", "),
+          termination_type: form.termination_type.trim() || null,
+          order_type: form.order_type,
+          order_design_type: form.design_type,
+          delivery_date: form.indefinido ? null : (form.delivery_date || null),
+          status: ORDER_STATUS.PENDING,
+          payment_status: "Pending_Payment",
+          seller_id: userId,
+          created_by: userId,
+        };
+
+        // ── Subir archivos ANTES de insertar (solo Diseño Externo) ──
+        let fileUrls = [];
+        let previewUrl = null;
+
+        if (form.design_files.length > 0 || form.design_preview) {
+          const orderId = crypto.randomUUID();
+
+          try {
+            for (let i = 0; i < form.design_files.length; i++) {
+              const file = form.design_files[i];
+              const fileName = buildStorageSafeFileName(file, `${i}-`);
+              const publicUrl = await uploadOrderAsset({
+                bucket: "order-docs",
+                path: `orders/${orderId}/files/${fileName}`,
+                file,
+              });
+
+              if (publicUrl) fileUrls.push(publicUrl);
+            }
+          } catch {
+            throw new Error("Error al subir los archivos. Verifica que no sean demasiado grandes y que tu conexión esté estable.");
+          }
+
+          if (form.design_preview) {
+            try {
+              const fileName = buildStorageSafeFileName(form.design_preview, "preview-");
+              previewUrl = await uploadOrderAsset({
+                bucket: "order-previews",
+                path: `orders/${orderId}/preview/${fileName}`,
+                file: form.design_preview,
+              });
+            } catch {
+              throw new Error("Error al subir la imagen de previsualización. Intenta con un archivo más pequeño.");
+            }
+          }
+
+          if (fileUrls.length > 0) payload.order_file_url = JSON.stringify(fileUrls);
+          if (previewUrl) payload.preview_image = previewUrl;
+          payload.id = orderId;
         }
+
+        const { error: err } = await supabase.from("orders").insert([payload]).select().single();
+        if (err) throw new Error("No se pudo crear la orden. Intenta nuevamente.");
+      })(), 60000);
+
+      handleClose(); onCreated?.();
+    } catch (err) {
+      if (err.message === "timeout") {
+        setError("La orden está tardando más de lo normal. Verifica tu conexión a internet e intenta de nuevo.");
+      } else {
+        setError(err.message || "No se pudo crear la orden. Intenta nuevamente.");
       }
-
-      if (fileUrls.length > 0) payload.order_file_url = JSON.stringify(fileUrls);
-      if (previewUrl) payload.preview_image = previewUrl;
-      payload.id = orderId;
+    } finally {
+      setLoading(false);
     }
-
-    const { error: err } = await supabase.from("orders").insert([payload]).select().single();
-    setLoading(false);
-    if (err) { setError("Error al crear la orden: " + err.message); return; }
-
-    handleClose(); onCreated?.();
   };
 
   const handleClose = () => {
