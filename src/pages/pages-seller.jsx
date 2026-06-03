@@ -365,6 +365,12 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
     if (!form.indefinido && !form.delivery_date) {
       errors.delivery_date = "Selecciona una fecha de entrega o marca 'Por definir'.";
     }
+    if (form.design_type === "EXTERNAL_DESING" && form.design_files.length === 0) {
+      errors.design_files = "Debe subir al menos un archivo de diseño.";
+    }
+    if (form.design_type === "EXTERNAL_DESING" && !form.design_preview) {
+      errors.design_preview = "Debe agregar una imagen de la orden de trabajo.";
+    }
     
     return errors;
   };
@@ -591,7 +597,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
         {form.design_type === "EXTERNAL_DESING" && (
           <>
             <div className="col-full">
-              <Field label="Archivos de diseño" hint="Sube los archivos de diseño del cliente">
+              <Field label="Archivos de diseño" required error={fieldErrors.design_files} hint="Sube los archivos de diseño del cliente (obligatorio)">
                 <div className="ps-upload-zone" onClick={() => fileInputRef.current?.click()}>
                   <input
                     ref={fileInputRef}
@@ -627,7 +633,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
             </div>
 
             <div className="col-full">
-              <Field label="Imagen de preview" hint="Vista previa del diseño">
+              <Field label="Imagen de la orden de trabajo" required error={fieldErrors.design_preview} hint="Vista previa del diseño (obligatorio)">
                 {!form.design_preview ? (
                   <div className="ps-upload-zone" onClick={() => previewInputRef.current?.click()}>
                     <input

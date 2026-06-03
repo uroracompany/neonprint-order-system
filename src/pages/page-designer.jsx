@@ -308,7 +308,8 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   const allFiles = [...(designerFiles || []), ...dbFiles];
   const uniqueFiles = allFiles.filter((f, i, arr) => arr.findIndex(x => x.url === f.url) === i);
   const displayPreview = pendingPreview ? URL.createObjectURL(pendingPreview) : (designerPreview || order.preview_image);
-  const canSendToQuotation = canEditDesignerAssets && uniqueFiles.length > 0 && !hasChanges;
+  const hasPreview = !!displayPreview;
+  const canSendToQuotation = canEditDesignerAssets && uniqueFiles.length > 0 && hasPreview && !hasChanges;
   
   return (
     <div className="pd-modal-overlay">
@@ -542,7 +543,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
                       style={{ display: "none" }}
                     />
                     <Icons.Image />
-                    <span>Subir orden de trabajo</span>
+                    <span>Subir orden de trabajo (obligatorio)</span>
                     <small>Max. {formatFileSize(getOrderAssetLimit(DESIGNER_PREVIEW_BUCKET))}</small>
                   </label>
                 ) : (
