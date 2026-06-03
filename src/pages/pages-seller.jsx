@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-seller.css";
@@ -7,6 +7,7 @@ import { Icons } from "../utils/icons";
 import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
+import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
@@ -22,6 +23,7 @@ import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { buildStorageSafeFileName, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
+import { formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 
 const isReturnedOrder = (order) => {
   if (!order || !order.return_reason) return false;
@@ -61,26 +63,6 @@ const isValidDominicanPhone = (value) => {
 
   const areaCode = normalized.slice(0, 3);
   return ["809", "829", "849"].includes(areaCode);
-};
-
-// Formattea número de teléfono dominicano: solo permite 10 dígitos y auto-formattea con guiones
-const formatDominicanPhone = (value) => {
-  // Elimina todo excepto números
-  let digits = String(value || "").replace(/\D/g, "");
-  
-  // Limita a 10 dígitos
-  if (digits.length > 10) {
-    digits = digits.slice(0, 10);
-  }
-  
-  // Auto-formattea con guiones: XXX-XXX-XXXX
-  if (digits.length <= 3) {
-    return digits;
-  } else if (digits.length <= 6) {
-    return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-  } else {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
 };
 
 const CARD_ACCENTS = [
@@ -162,12 +144,15 @@ function Field({ label, required, optional, hint, error, children }) {
 
 
 // ─── Selector de diferentes materiales ──────────────────────────────────────────────────
-function MultiMaterialSelector({ selected = [], onChange, options = [] }) {
+export function MultiMaterialSelector({ selected = [], onChange, options = [] }) {
   const [open, setOpen] = useState(false);
+  const [customMode, setCustomMode] = useState(false);
+  const [customValue, setCustomValue] = useState("");
   const ref = useRef(null);
+  const customInputRef = useRef(null);
 
   useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setCustomMode(false); setCustomValue(""); } };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
@@ -177,6 +162,26 @@ function MultiMaterialSelector({ selected = [], onChange, options = [] }) {
   };
   const remove = (mat) => onChange(selected.filter(m => m !== mat));
 
+  const handleAddCustom = () => {
+    const val = customValue.trim();
+    if (val && !selected.includes(val)) {
+      onChange([...selected, val]);
+    }
+    setCustomValue("");
+    setCustomMode(false);
+  };
+
+  const handleCustomKeyDown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); handleAddCustom(); }
+    if (e.key === "Escape") { setCustomMode(false); setCustomValue(""); }
+  };
+
+  useEffect(() => {
+    if (customMode && customInputRef.current) customInputRef.current.focus();
+  }, [customMode]);
+
+  const isCustomMaterial = (mat) => !options.includes(mat);
+
   return (
     <div className="ps-multimat" ref={ref}>
       {/* Chips + trigger */}
@@ -184,7 +189,8 @@ function MultiMaterialSelector({ selected = [], onChange, options = [] }) {
         {selected.length === 0
           ? <span className="ps-multimat-placeholder">Seleccionar materiales...</span>
           : selected.map(m => (
-            <span key={m} className="ps-chip">
+            <span key={m} className={`ps-chip ${isCustomMaterial(m) ? "ps-chip--custom" : ""}`}>
+              {isCustomMaterial(m) && <span className="ps-chip-custom-icon"><Icons.Plus /></span>}
               {m}
               <button className="ps-chip-remove" onClick={e => { e.stopPropagation(); remove(m); }}><Icons.X /></button>
             </span>
@@ -196,6 +202,31 @@ function MultiMaterialSelector({ selected = [], onChange, options = [] }) {
       {/* Dropdown */}
       {open && (
         <div className="ps-multimat-dropdown">
+          {/* Agregar personalizado (primero) */}
+          {!customMode ? (
+            <div className="ps-multimat-option ps-multimat-add" onClick={() => setCustomMode(true)}>
+              <span className="ps-multimat-add-icon"><Icons.Plus /></span>
+              Agregar material personalizado
+            </div>
+          ) : (
+            <div className="ps-multimat-custom-form">
+              <input
+                ref={customInputRef}
+                className="ps-multimat-custom-input"
+                placeholder="Escribe el nombre del material..."
+                value={customValue}
+                onChange={e => setCustomValue(e.target.value)}
+                onKeyDown={handleCustomKeyDown}
+              />
+              <button className="ps-multimat-custom-btn" onClick={handleAddCustom} disabled={!customValue.trim()}>
+                Agregar
+              </button>
+            </div>
+          )}
+
+          {/* Separador */}
+          <div className="ps-multimat-divider" />
+
           {options.map(mat => (
             <div key={mat} className={`ps-multimat-option ${selected.includes(mat) ? "selected" : ""}`} onClick={() => toggle(mat)}>
               <span className="ps-multimat-check">{selected.includes(mat) ? "✓" : ""}</span>
@@ -245,6 +276,7 @@ function UploadField({ fileRef, previewUrl, fileName, onFileChange, onRemove, on
 
 // ─── CREATE ORDER MODAL ───────────────────────────────────────────────────────
 const EMPTY_FORM = {
+  client_id: null,
   client_name: "",
   client_phone: "",
   description: "",
@@ -258,7 +290,7 @@ const EMPTY_FORM = {
   design_preview: null, // imagen preview de diseño externo
 };
 
-function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions }) {
+function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, clients = [], onClientSearch }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
 
@@ -277,6 +309,35 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions })
         return next;
       });
     }
+  };
+
+  const setClientField = (k, v) => {
+    setForm(p => ({ ...p, ...getManualClientEditFields(k, v) }));
+    if (fieldErrors[k]) {
+      setFieldErrors(p => {
+        const next = { ...p };
+        delete next[k];
+        return next;
+      });
+    }
+  };
+
+  const applySelectedClient = (client) => {
+    if (!client) {
+      setForm(p => ({ ...p, ...getSelectedClientOrderFields(null) }));
+      return;
+    }
+
+    const fields = getSelectedClientOrderFields(client, "client_phone");
+    if (fields.client_phone) fields.client_phone = formatDominicanPhone(fields.client_phone);
+
+    setForm(p => ({ ...p, ...fields }));
+    setFieldErrors(p => {
+      const next = { ...p };
+      delete next.client_name;
+      delete next.client_phone;
+      return next;
+    });
   };
 
   // Función de validación que retorna objeto de errores por campo
@@ -341,6 +402,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions })
         }
 
         const payload = {
+          client_id: form.client_id || null,
           client_name: form.client_name.trim(),
           client_contact: form.client_phone.trim() || null,
           description: form.description.trim(),
@@ -429,9 +491,20 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions })
       </div>
       <div className="ps-form-grid">
         <div className="col-full">
+          <Field label="Cliente registrado" optional hint="Busca y selecciona un cliente registrado.">
+            <ClientSelect
+              clients={clients}
+              value={form.client_id}
+              onSelect={applySelectedClient}
+              onSearch={onClientSearch}
+              placeholder="Seleccionar cliente registrado"
+            />
+          </Field>
+        </div>
+        <div className="col-full">
           <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
             <input className="ps-form-input" placeholder="Ej: Empresa ABC"
-              value={form.client_name} onChange={e => set("client_name", e.target.value)} />
+              value={form.client_name} onChange={e => setClientField("client_name", e.target.value)} />
           </Field>
         </div>
         <div className="col-full">
@@ -439,7 +512,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions })
             <div className="ps-input-icon-wrap">
               <span className="ps-input-icon"><Icons.Phone /></span>
               <input className="ps-form-input with-icon" placeholder={PHONE_PLACEHOLDER}
-                value={form.client_phone} onChange={e => set("client_phone", formatDominicanPhone(e.target.value))} maxLength="12" />
+                value={form.client_phone} onChange={e => setClientField("client_phone", formatDominicanPhone(e.target.value))} maxLength="12" />
             </div>
           </Field>
         </div>
@@ -633,7 +706,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions })
 }
 
 // ─── EDIT ORDER MODAL ─────────────────────────────────────────────────────────
-function EditOrderModal({ open, onClose, order, onUpdated }) {
+function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
 
@@ -641,7 +714,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
     client_name: "",
     client_contact: "",
     description: "",
-    material: "",
+    materials: [],
     termination_type: "",
     delivery_date: "",
   });
@@ -660,7 +733,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
         client_name: order.client_name || "",
         client_contact: order.client_contact || "",
         description: order.description || "",
-        material: order.material || "",
+        materials: order.material ? order.material.split(", ").filter(Boolean) : [],
         termination_type: order.termination_type || "",
         delivery_date: order.delivery_date ? order.delivery_date.split("T")[0] : "",
       });
@@ -809,7 +882,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
         client_name: form.client_name.trim(),
         client_contact: form.client_contact.trim() || null,
         description: form.description.trim(),
-        material: form.material.trim(),
+        material: form.materials.join(", "),
         termination_type: form.termination_type.trim() || null,
         delivery_date: form.delivery_date || null,
         order_file_url: JSON.stringify(fileUrls),
@@ -880,7 +953,7 @@ function EditOrderModal({ open, onClose, order, onUpdated }) {
         </div>
         <div className="col-full">
           <Field label="Material" optional>
-            <input className="ps-form-input" value={form.material} onChange={e => set("material", e.target.value)} />
+            <MultiMaterialSelector selected={form.materials} onChange={v => set("materials", v)} options={materialOptions} />
           </Field>
         </div>
         <div className="col-full">
@@ -1650,7 +1723,7 @@ function ArchivedOrderModal({ open, onClose, onConfirm, order, loading }) {
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function PageSeller() {
   const navigate = useNavigate();
-  const RELEVANT_COLUMNS = "id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token";
+  const RELEVANT_COLUMNS = "id,client_id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token";
   const [activeTab, setActiveTab] = useState("dashboard");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1658,6 +1731,7 @@ export default function PageSeller() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
+  const [filterClient, setFilterClient] = useState("all");
   const [filterArchive, setFilterArchive] = useState("active");
   const [page, setPage] = useState(1);
   const PER_PAGE = 15;
@@ -1666,6 +1740,8 @@ export default function PageSeller() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [materialOptions, setMaterialOptions] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [cancelingOrder, setCancelingOrder] = useState(null);
@@ -1773,6 +1849,20 @@ export default function PageSeller() {
     supabase.from("materials").select("name").order("name").then(({ data }) => {
       setMaterialOptions(data?.map(m => m.name) || []);
     });
+    setClientsLoading(true);
+    loadClients(supabase)
+      .then(setClients)
+      .finally(() => setClientsLoading(false));
+  }, []);
+
+  const handleClientSearch = useCallback(async (query) => {
+    const results = await searchClients(supabase, query);
+    setClients((prev) => {
+      const byId = new Map(prev.map((client) => [client.id, client]));
+      results.forEach((client) => byId.set(client.id, client));
+      return [...byId.values()].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    });
+    return results;
   }, []);
 
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
@@ -2021,10 +2111,11 @@ export default function PageSeller() {
       (isDateFilterActive ? true :
         (filterArchive === "active" ? !o.is_archived : o.is_archived === true) &&
         (filterStatus === "all" || isOrderStatus(o.status, filterStatus))) &&
+      orderMatchesClientFilter(o, filterClient) &&
       (filterPayment === "all" || o.payment_status === filterPayment) &&
       dateMatch
     );
-  }), [orders, search, filterDate, filterStatus, filterPayment, filterArchive]);
+  }), [orders, search, filterDate, filterStatus, filterPayment, filterClient, filterArchive]);
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
@@ -2224,6 +2315,16 @@ export default function PageSeller() {
                     <span className="ps-select-arrow"><Icons.ChevronDown /></span>
                   </div>
                   <div className="ps-select-wrap">
+                    <ClientFilterSelect
+                      clients={clients}
+                      value={filterClient}
+                      onChange={setFilterClient}
+                      className="ps-input"
+                      allLabel="Todos los clientes"
+                    />
+                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+                  </div>
+                  <div className="ps-select-wrap">
                     <select className="ps-input" style={{ minWidth: 100, paddingRight: 32, cursor: "pointer", appearance: "none" }}
                       value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>
                       <option value="active">Activas</option>
@@ -2419,8 +2520,8 @@ export default function PageSeller() {
         </main>
       </div>
 
-      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} materialOptions={materialOptions} />
-      <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} />
+      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} materialOptions={materialOptions} clients={clients} onClientSearch={handleClientSearch} />
+      <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} materialOptions={materialOptions} />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} onSendToQuotation={handleSendToQuotation} />
       <AssignModal
         open={!!sendingToDesigner}

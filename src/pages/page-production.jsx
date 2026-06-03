@@ -9,6 +9,7 @@ import { Icons } from "../utils/icons";
 import { StatusBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
+import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
@@ -20,6 +21,7 @@ import {
   parseFileUrls,
   formatDate,
 } from "../utils/constants";
+import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 
 const METRIC_ACCENTS = [
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
@@ -438,6 +440,7 @@ export default function PageProduction() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
+  const [filterClient, setFilterClient] = useState("all");
   const [page, setPage] = useState(1);
   const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
@@ -447,6 +450,7 @@ export default function PageProduction() {
   const [archivedingOrder, setArchivedingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [filterArchive, setFilterArchive] = useState("active");
+  const [clients, setClients] = useState([]);
   const notif = useNotifications(user?.id);
 
   const refreshOrders = useCallback(async () => {
@@ -513,6 +517,7 @@ export default function PageProduction() {
       setUser(user);
     };
     getUser();
+    loadClients(supabase).then(setClients);
   }, [navigate]);
 
   useEffect(() => {
@@ -551,11 +556,12 @@ export default function PageProduction() {
 
     const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
     const matchesPayment = filterPayment === "all" || order.payment_status === filterPayment;
+    const matchesClient = orderMatchesClientFilter(order, filterClient);
     const matchesArchive =
       (filterArchive === "active" && !order.is_archived_production) ||
       (filterArchive === "archived" && order.is_archived_production);
 
-    return matchesSearch && matchesStatus && matchesPayment && matchesArchive;
+    return matchesSearch && matchesStatus && matchesPayment && matchesClient && matchesArchive;
   });
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
@@ -737,6 +743,16 @@ export default function PageProduction() {
                         <option key={k} value={k}>{v.label}</option>
                       ))}
                     </select>
+                    <span className="pp-select-arrow"><Icons.ChevronDown /></span>
+                  </div>
+                  <div className="pp-select-wrap">
+                    <ClientFilterSelect
+                      clients={clients}
+                      value={filterClient}
+                      onChange={setFilterClient}
+                      className="pp-input"
+                      allLabel="Todos los clientes"
+                    />
                     <span className="pp-select-arrow"><Icons.ChevronDown /></span>
                   </div>
                   <div className="pp-select-wrap">

@@ -10,6 +10,8 @@ import { Icons } from "../utils/icons";
 import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isOrderStatus } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
+import { ClientFilterSelect } from "../components/ui/ClientCombobox";
+import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 
 const CARD_ACCENTS = [
   { color: "#0284C7", bg: "#E0F2FE", glow: "radial-gradient(circle, rgba(2,132,199,0.25) 0%, transparent 70%)" },
@@ -216,7 +218,9 @@ export default function PageDelivery() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterClient, setFilterClient] = useState("all");
   const [filterArchive, setFilterArchive] = useState("active");
+  const [clients, setClients] = useState([]);
   const [viewMode, setViewMode] = useState("cards");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
@@ -252,6 +256,7 @@ export default function PageDelivery() {
       setUser(user);
     };
     getUser();
+    loadClients(supabase).then(setClients);
   }, [navigate]);
 
   useEffect(() => {
@@ -288,12 +293,13 @@ export default function PageDelivery() {
       order.id?.toLowerCase().includes(search.toLowerCase());
     
     const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
+    const matchesClient = orderMatchesClientFilter(order, filterClient);
     
     const matchesArchive = 
       (filterArchive === "active" && !order.is_archived_delivery) ||
       (filterArchive === "archived" && order.is_archived_delivery);
     
-    return matchesSearch && matchesStatus && matchesArchive;
+    return matchesSearch && matchesStatus && matchesClient && matchesArchive;
   });
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
@@ -569,6 +575,16 @@ export default function PageDelivery() {
                     <option value={ORDER_STATUS.IN_DELIVERED}>Entregado</option>
                     <option value={ORDER_STATUS.IN_COMPLETED}>Completadas</option>
                   </select>
+                  <span className="pd-select-arrow"><Icons.ChevronDown /></span>
+                </div>
+                <div className="pd-select-wrap">
+                  <ClientFilterSelect
+                    clients={clients}
+                    value={filterClient}
+                    onChange={setFilterClient}
+                    className="pd-input"
+                    allLabel="Todos los clientes"
+                  />
                   <span className="pd-select-arrow"><Icons.ChevronDown /></span>
                 </div>
                 <div className="pd-select-wrap">

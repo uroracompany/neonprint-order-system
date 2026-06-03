@@ -8,6 +8,7 @@ import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
+import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import {
   ORDER_STATUS,
   QUOTE_ASSIGNMENT_FIELDS,
@@ -18,6 +19,7 @@ import {
 } from "../utils/constants";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
+import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import "../css-components/page-quote.css";
 // Normaliza texto a minúsculas y sin espacios para comparaciones seguras
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
@@ -434,7 +436,9 @@ export default function PageQuote() {
   const [search, setSearch] = useState(""); // Texto de búsqueda
   const [filterStatus, setFilterStatus] = useState("all"); // Filtro por estado de orden
   const [filterDate, setFilterDate] = useState("all"); // Filtro por fecha
+  const [filterClient, setFilterClient] = useState("all"); // Filtro por cliente registrado
   const [filterArchive, setFilterArchive] = useState("active"); // Mostrar activas o archivadas
+  const [clients, setClients] = useState([]);
   
   // Directorio de vendedores (cache para no hacer múltiples queries)
   const [sellerDirectory, setSellerDirectory] = useState({});
@@ -484,6 +488,10 @@ export default function PageQuote() {
 
     loadSession();
   }, [navigate]);
+
+  useEffect(() => {
+    loadClients(supabase).then(setClients);
+  }, []);
 
   const fetchOrders = async (...args) => fetchOrdersImpl(...args);
   const fetchOrdersRef = useRef(fetchOrders);
@@ -996,6 +1004,7 @@ export default function PageQuote() {
 
       const matchesSearch = !query || searchableValues.some(value => normalizeText(value).includes(query));
       const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
+      const matchesClient = orderMatchesClientFilter(order, filterClient);
       const matchesArchive =
         filterArchive === "all" ||
         (filterArchive === "active" && !order.is_archived_quote) ||
@@ -1010,9 +1019,9 @@ export default function PageQuote() {
         (filterDate === "7days" && createdAt >= sevenDaysAgo) ||
         (filterDate === "month" && createdAt >= startOfMonth);
 
-      return matchesSearch && matchesStatus && matchesArchive && matchesDate;
+      return matchesSearch && matchesStatus && matchesClient && matchesArchive && matchesDate;
     });
-  }, [orders, search, filterStatus, filterArchive, filterDate, sellerDirectory]);
+  }, [orders, search, filterStatus, filterClient, filterArchive, filterDate, sellerDirectory]);
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
@@ -1163,6 +1172,14 @@ export default function PageQuote() {
                 <option value="7days">Últimos 7 días</option>
                 <option value="month">Este mes</option>
               </select>
+
+              <ClientFilterSelect
+                clients={clients}
+                value={filterClient}
+                onChange={setFilterClient}
+                className="pq-input"
+                allLabel="Todos los clientes"
+              />
 
               <select className="pq-input" value={filterArchive} onChange={event => setFilterArchive(event.target.value)}>
                 <option value="active">Activas</option>

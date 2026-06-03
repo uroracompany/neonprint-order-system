@@ -685,6 +685,12 @@
 .ps-form-input.textarea { min-height: 80px; resize: vertical; }
 .ps-form-input.select   { appearance: none; padding-right: 34px; cursor: pointer; }
 
+@media (max-width: 680px) {
+  .ps-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ps-select-box { position: relative; }
 .ps-select-box .ps-select-arrow {
   position: absolute; right: 11px; top: 50%;
@@ -1349,6 +1355,17 @@ select option { background: var(--surface); color: var(--text); }
 }
 .ps-chip-remove:hover { opacity: 1; }
 
+/* Chip para material personalizado */
+.ps-chip--custom {
+  background: #f0fdf4;
+  border-color: #22c55e;
+  color: #15803d;
+}
+.ps-chip-custom-icon {
+  display: inline-flex; align-items: center;
+  font-size: 10px;
+}
+
 /* Dropdown de opciones */
 .ps-multimat-dropdown {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0;
@@ -1361,7 +1378,7 @@ select option { background: var(--surface); color: var(--text); }
 }
 .ps-multimat-option {
   display: flex; align-items: center; gap: 10px;
-  padding: 9px 14px;
+  padding: 14px 14px;
   font-size: 13px; font-family: 'Poppins', sans-serif;
   cursor: pointer; color: var(--text);
   transition: background 0.1s;
@@ -1382,6 +1399,51 @@ select option { background: var(--surface); color: var(--text); }
 .ps-multimat-option.selected .ps-multimat-check {
   background: var(--primary); color: #fff; border-color: var(--primary);
 }
+
+/* Separador en dropdown */
+.ps-multimat-divider {
+  height: 1px; background: var(--border); margin: 4px 0;
+}
+
+/* Opción agregar material personalizado */
+.ps-multimat-add {
+  color: var(--primary); font-weight: 600;
+}
+.ps-multimat-add:hover {
+  background: var(--primary-light);
+}
+.ps-multimat-add-icon {
+  display: inline-flex; align-items: center;
+  font-size: 14px; color: var(--primary);
+}
+
+/* Formulario inline para material personalizado */
+.ps-multimat-custom-form {
+  display: flex; gap: 6px; padding: 8px 10px;
+}
+.ps-multimat-custom-input {
+  flex: 1; padding: 6px 10px; font-size: 13px;
+  font-family: 'Poppins', sans-serif;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.ps-multimat-custom-input:focus {
+  border-color: var(--primary);
+}
+.ps-multimat-custom-btn {
+  padding: 6px 14px; font-size: 12px; font-weight: 600;
+  font-family: 'Poppins', sans-serif;
+  background: var(--primary); color: #fff;
+  border: none; border-radius: var(--radius-sm);
+  cursor: pointer; white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.ps-multimat-custom-btn:hover { opacity: 0.9; }
+.ps-multimat-custom-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Tipo de orden / diseño — cards radio ─────────────────────── */
 .ps-order-type-group {

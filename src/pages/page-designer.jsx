@@ -8,9 +8,11 @@ import { AssignModal } from "../components/ui/AssignModal";
 import { ORDER_STATUS, isOrderStatus, isOrderStatusIn } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
+import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
+import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const PER_PAGE = 15;
@@ -661,7 +663,9 @@ export default function PageDesigner() {
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
+  const [filterClient, setFilterClient] = useState("all");
   const [filterArchive, setFilterArchive] = useState("active");
+  const [clients, setClients] = useState([]);
   const [viewMode, setViewMode] = useState("cards");
   const [page, setPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -743,6 +747,10 @@ export default function PageDesigner() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadClients(supabase).then(setClients);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("pd_viewed_orders", JSON.stringify(viewedOrders));
@@ -908,6 +916,7 @@ export default function PageDesigner() {
     );
 
     const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
+    const matchesClient = orderMatchesClientFilter(order, filterClient);
 
     const matchesArchive =
       filterArchive === "all" ||
@@ -933,7 +942,7 @@ export default function PageDesigner() {
       (filterDate === "7days" && createdAt >= sevenDaysAgo) ||
       (filterDate === "month" && createdAt >= startOfMonth);
 
-    return matchesSearch && matchesType && matchesStatus && matchesDate && matchesArchive;
+    return matchesSearch && matchesType && matchesStatus && matchesClient && matchesDate && matchesArchive;
   });
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
@@ -1293,6 +1302,15 @@ export default function PageDesigner() {
                       <option value="7days">Últimos 7 días</option>
                       <option value="month">Este mes</option>
                     </select>
+                  </div>
+                  <div className="pd-select-wrap">
+                    <ClientFilterSelect
+                      clients={clients}
+                      value={filterClient}
+                      onChange={setFilterClient}
+                      className="pd-input"
+                      allLabel="Todos los clientes"
+                    />
                   </div>
                   <div className="pd-select-wrap">
                     <select className="pd-input" value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>

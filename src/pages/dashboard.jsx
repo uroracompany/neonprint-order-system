@@ -14,6 +14,7 @@ import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge, RoleBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
+import { ClientFilterSelect, ClientNameAutocomplete, ClientSelect } from "../components/ui/ClientCombobox";
 import {
   ORDER_STATUS,
   STATUS_LABELS,
@@ -33,6 +34,7 @@ import {
   resolveSellerId,
   isAdminArchivable
 } from "../utils/constants";
+import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
@@ -42,6 +44,7 @@ import "../css-components/page-seller.css";
 
 const DEFAULT_ORDER_FORM = {
   id: "",
+  client_id: null,
   client_name: "",
   client_contact: "",
   description: "",
@@ -62,6 +65,7 @@ const DEFAULT_ORDER_FORM = {
   indefinido: false,
 };
 const DEFAULT_USER_FORM = { name: "", email: "", password: "", confirmPassword: "", role: "seller", employment_status: true };
+const DEFAULT_CLIENT_FORM = { name: "", phone: "", email: "", address: "", notes: "" };
 
 const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map((field) => order?.[field]).find(Boolean) || null;
 const resolveAssignmentIdsByRole = (order, role) => {
@@ -677,7 +681,7 @@ onMouseEnter={e => {
 // Modal de asignación de orden a usuario
 // Versión enriquecida del formulario de órdenes para admin, con la misma capacidad de carga
 // de archivos y preview que hoy utiliza seller.
-function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit, saving }) {
+function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit, saving, clients = [], onClientSearch, clientsLoading = false }) {
   const filesInputRef = useRef(null);
   const previewInputRef = useRef(null);
   const [adminMaterials, setAdminMaterials] = useState([]);
@@ -707,6 +711,22 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
 
   const setField = (field, value) => {
     setOrderForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const setClientField = (field, value) => {
+    setOrderForm((prev) => ({ ...prev, ...getManualClientEditFields(field, value) }));
+  };
+
+  const applySelectedClient = (client) => {
+    if (!client) {
+      setOrderForm((prev) => ({ ...prev, ...getSelectedClientOrderFields(null, "client_contact") }));
+      return;
+    }
+
+    setOrderForm((prev) => ({
+      ...prev,
+      ...getSelectedClientOrderFields(client, "client_contact"),
+    }));
   };
 
   const handleAddFiles = (event) => {
@@ -768,13 +788,33 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
           </div>
 
           <div className="pa-form-grid">
+            <div className="pa-field full">
+              <span>Cliente registrado</span>
+              <ClientSelect
+                clients={clients}
+                value={orderForm.client_id}
+                onSelect={applySelectedClient}
+                onSearch={onClientSearch}
+                loading={clientsLoading}
+                placeholder="Seleccionar cliente registrado"
+                emptyLabel="No hay clientes registrados. Puedes escribir el cliente manualmente."
+              />
+            </div>
             <label className="pa-field">
               <span>Cliente</span>
-              <input value={orderForm.client_name} onChange={(event) => setField("client_name", event.target.value)} placeholder="Nombre del cliente" />
+              <ClientNameAutocomplete
+                clients={clients}
+                value={orderForm.client_name}
+                onChange={(value) => setClientField("client_name", value)}
+                onSelect={applySelectedClient}
+                onSearch={onClientSearch}
+                loading={clientsLoading}
+                placeholder="Nombre del cliente"
+              />
             </label>
             <label className="pa-field">
               <span>Teléfono</span>
-              <input value={orderForm.client_contact} onChange={(event) => setField("client_contact", event.target.value)} placeholder="Contacto principal" />
+              <input value={orderForm.client_contact} onChange={(event) => setClientField("client_contact", event.target.value)} placeholder="Contacto principal" />
             </label>
             <label className="pa-field full">
               <span>Descripción</span>
@@ -1389,6 +1429,7 @@ export default function Dashboard() {
   const PER_PAGE = 20;
   const [dateFilter, setDateFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
+  const [clientFilter, setClientFilter] = useState("all");
   const [archiveFilter, setArchiveFilter] = useState("active");
   const notif = useNotifications(user?.id);
   const [userSearch, setUserSearch] = useState("");
@@ -1414,6 +1455,16 @@ export default function Dashboard() {
   const [materialFormName, setMaterialFormName] = useState("");
   const [materialFormError, setMaterialFormError] = useState("");
   const [deletingMaterialId, setDeletingMaterialId] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [editingClient, setEditingClient] = useState(null);
+  const [clientForm, setClientForm] = useState(DEFAULT_CLIENT_FORM);
+  const [clientFormError, setClientFormError] = useState("");
+  const [clientFormErrors, setClientFormErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [deletingClientId, setDeletingClientId] = useState(null);
 
   const usersById = useMemo(() => Object.fromEntries(profiles.map(item => [item.id, item])), [profiles]);
   const showFeedback = (type, message) => setFeedback({ type, message, id: Date.now() });
@@ -1484,9 +1535,32 @@ export default function Dashboard() {
     }
   };
 
+  const fetchClients = async () => {
+    setClientsLoading(true);
+    try {
+      const data = await loadClients(supabase);
+      setClients(data);
+    } finally {
+      setClientsLoading(false);
+    }
+  };
+
+  const handleClientSearch = useCallback(async (query) => {
+    const results = await searchClients(supabase, query);
+    setClients((prev) => {
+      const byId = new Map(prev.map((client) => [client.id, client]));
+      results.forEach((client) => byId.set(client.id, client));
+      return [...byId.values()].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    });
+    return results;
+  }, []);
+
   useEffect(() => {
     if (activeTab === "materials") {
       fetchMaterials();
+    }
+    if (activeTab === "clients" || activeTab === "orders") {
+      fetchClients();
     }
   }, [activeTab]);
 
@@ -1503,6 +1577,7 @@ export default function Dashboard() {
     }
     setOrderForm({
       id: order.id || "",
+      client_id: order.client_id || null,
       client_name: order.client_name || "",
       client_contact: order.client_contact || "",
       description: order.description || "",
@@ -1527,6 +1602,7 @@ export default function Dashboard() {
   const openCreateOrder = () => {
     setOrderModalMode("create");
     resetOrderForm();
+    fetchClients();
     setOrderModalOpen(true);
   };
 
@@ -1534,6 +1610,7 @@ export default function Dashboard() {
     setSelectedOrder(null); // Cerrar detail modal primero
     setOrderModalMode("edit");
     resetOrderForm(order);
+    fetchClients();
     setOrderModalOpen(true);
   };
 
@@ -1541,6 +1618,7 @@ export default function Dashboard() {
     if (!orderForm.client_name.trim() || !orderForm.description.trim()) return showFeedback("error", "Cliente y descripción son obligatorios.");
 
     const payload = {
+      client_id: orderForm.client_id || null,
       client_name: orderForm.client_name.trim(),
       client_contact: orderForm.client_contact.trim() || null,
       description: orderForm.description.trim(),
@@ -1954,6 +2032,105 @@ export default function Dashboard() {
     }
   };
 
+  const handleAddClient = () => {
+    setEditingClient(null);
+    setClientForm(DEFAULT_CLIENT_FORM);
+    setClientFormError("");
+    setClientFormErrors({});
+    setShowClientModal(true);
+  };
+
+  const handleEditClient = (client) => {
+    setEditingClient(client);
+    setClientForm({
+      name: client.name || "",
+      phone: client.phone || "",
+      email: client.email || "",
+      address: client.address || "",
+      notes: client.notes || "",
+    });
+    setClientFormError("");
+    setClientFormErrors({});
+    setShowClientModal(true);
+  };
+
+  const handleSaveClient = async () => {
+    const payload = {
+      name: clientForm.name.trim(),
+      phone: clientForm.phone.trim(),
+      email: clientForm.email.trim() || null,
+      address: clientForm.address.trim() || null,
+      notes: clientForm.notes.trim() || null,
+    };
+
+    const nextErrors = {};
+
+    if (!payload.name) {
+      nextErrors.name = "Escribe el nombre del cliente.";
+    } else if (payload.name.length < 2) {
+      nextErrors.name = "El nombre debe tener al menos 2 caracteres.";
+    }
+
+    if (!payload.phone) {
+      nextErrors.phone = "Escribe el número de teléfono del cliente.";
+    } else if (payload.phone.length < 3) {
+      nextErrors.phone = "El teléfono debe tener al menos 3 caracteres.";
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setClientFormErrors(nextErrors);
+      setClientFormError("Completa los campos obligatorios para guardar el cliente.");
+      return;
+    }
+
+    setClientFormErrors({});
+    setSaving(true);
+
+    try {
+      if (editingClient) {
+        const { error } = await supabase
+          .from("clients")
+          .update(payload)
+          .eq("id", editingClient.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("clients")
+          .insert({ ...payload, created_by: user?.id || null });
+        if (error) throw error;
+      }
+
+      setShowClientModal(false);
+      setEditingClient(null);
+      setClientForm(DEFAULT_CLIENT_FORM);
+      setClientFormErrors({});
+      await fetchClients();
+      showFeedback("success", editingClient ? "Cliente actualizado correctamente." : "Cliente creado correctamente.");
+    } catch (err) {
+      setClientFormError(err.message || "No se pudo guardar el cliente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteClient = async (id) => {
+    if (deletingClientId === id) {
+      try {
+        const { error } = await supabase.from("clients").delete().eq("id", id);
+        if (error) throw error;
+        setDeletingClientId(null);
+        await fetchClients();
+        await loadOrders();
+        showFeedback("success", "Cliente eliminado correctamente.");
+      } catch (err) {
+        setClientFormError(err.message || "No se pudo eliminar el cliente.");
+        showFeedback("error", "No se pudo eliminar el cliente.");
+      }
+    } else {
+      setDeletingClientId(id);
+    }
+  };
+
   // Funcionalidad de filtros 
   const filteredOrders = useMemo(() => {
     const q = normalizeText(search);
@@ -1969,14 +2146,15 @@ export default function Dashboard() {
       const matchesSearch = !q || [order.client_name, order.description, order.material, order.id, ...relatedUserNames].some(value => normalizeText(value).includes(q));
       const matchesStatus = statusFilter === "all" || isOrderStatus(order.status, statusFilter);
       const matchesOwner = ownerFilter === "all" || orderMatchesProfileFilter(order, selectedProfile);
+      const matchesClient = orderMatchesClientFilter(order, clientFilter);
       const matchesArchive = archiveFilter === "all"
         || (archiveFilter === "active" && !order.is_archived_admin)
         || (archiveFilter === "archived" && order.is_archived_admin);
       const createdAt = new Date(order.created_at);
       const matchesDate = dateFilter === "all" || (dateFilter === "today" && createdAt >= startOfToday) || (dateFilter === "week" && createdAt >= startOfWeek);
-      return matchesSearch && matchesStatus && matchesOwner && matchesArchive && matchesDate;
+      return matchesSearch && matchesStatus && matchesOwner && matchesClient && matchesArchive && matchesDate;
     });
-  }, [orders, search, statusFilter, ownerFilter, archiveFilter, dateFilter, usersById]);
+  }, [orders, search, statusFilter, ownerFilter, clientFilter, archiveFilter, dateFilter, usersById]);
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
@@ -1992,6 +2170,10 @@ export default function Dashboard() {
       return matchesSearch && matchesRole;
     });
   }, [profiles, userSearch, roleFilter]);
+
+  const filteredClients = useMemo(() => (
+    clients.filter((client) => clientMatchesQuery(client, clientSearch))
+  ), [clients, clientSearch]);
 
   const metrics = [
     { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders /> },
@@ -2011,6 +2193,7 @@ export default function Dashboard() {
   const menuItems = [
     { id: "overview", label: "Resumen", icon: <Icons.Dashboard /> },
     { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: orders.length },
+    { id: "clients", label: "Clientes", icon: <Icons.User />, badge: clients.length },
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
     { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: profiles.length },
   ];
@@ -2023,7 +2206,7 @@ export default function Dashboard() {
         <header className="pa-header">
           <div className="pa-header-left">
             <button className="pa-mobile-toggle" onClick={() => setSidebarOpen(prev => !prev)} aria-label="Abrir menú"><Icons.Menu /></button>
-            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
+            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
@@ -2147,6 +2330,12 @@ export default function Dashboard() {
                   </option>
                 )}
               </select>
+              <ClientFilterSelect
+                clients={clients}
+                value={clientFilter}
+                onChange={setClientFilter}
+                allLabel="Todos los clientes"
+              />
               <select value={archiveFilter} onChange={(e) => setArchiveFilter(e.target.value)}>
                 <option value="active">Activas</option>
                 <option value="all">Todas</option>
@@ -2234,6 +2423,176 @@ export default function Dashboard() {
           </section>
         }
 
+        {activeTab === "clients" && (
+          <section className="pa-section">
+            <div className="pa-section-heading">
+              <div>
+                <span className="pa-kicker">Catálogo</span>
+                <h2>Gestión de Clientes</h2>
+                <p>Administra los clientes registrados para reutilizarlos al crear órdenes.</p>
+              </div>
+              <button className="pa-btn primary" onClick={handleAddClient}>
+                <Icons.Plus />
+                Agregar cliente
+              </button>
+            </div>
+            <div className="pa-toolbar pa-toolbar-users">
+              <div className="pa-search-box pa-toolbar-search">
+                <Icons.Search />
+                <input
+                  value={clientSearch}
+                  onChange={(event) => setClientSearch(event.target.value)}
+                  placeholder="Buscar por nombre o teléfono..."
+                />
+              </div>
+            </div>
+            <div className="pa-panel">
+              <div className="pa-panel-stripe" />
+              <div className="pa-panel-body" style={{ padding: 0 }}>
+                {clientsLoading ? (
+                  <div className="pa-loading" style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>Cargando clientes...</div>
+                ) : filteredClients.length === 0 ? (
+                  <div className="pa-empty" style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>
+                    <p>No hay clientes que coincidan con la búsqueda.</p>
+                    <p style={{ fontSize: "12px", marginTop: "4px" }}>Agrega clientes para reutilizarlos en nuevas órdenes.</p>
+                  </div>
+                ) : (
+                  <div className="pa-table-wrap" style={{ maxHeight: 520 }}>
+                    <table className="pa-table">
+                      <thead>
+                        <tr>
+                          <th>Nombre</th>
+                          <th>Teléfono</th>
+                          <th>Correo</th>
+                          <th>Fecha de creación</th>
+                          <th style={{ width: 180 }}>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredClients.map((client) => (
+                          <tr key={client.id}>
+                            <td style={{ fontWeight: 700 }}>{client.name}</td>
+                            <td style={{ color: "#64748b", fontSize: "13px" }}>{client.phone || "---"}</td>
+                            <td style={{ color: "#64748b", fontSize: "13px" }}>{client.email || "---"}</td>
+                            <td style={{ color: "#64748b", fontSize: "13px" }}>
+                              {new Date(client.created_at).toLocaleDateString("es-DO", {
+                                day: "2-digit", month: "short", year: "numeric"
+                              })}
+                            </td>
+                            <td>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <button className="pa-btn secondary small" onClick={() => handleEditClient(client)}>
+                                  Editar
+                                </button>
+                                <button
+                                  className={`pa-btn ${deletingClientId === client.id ? "danger" : "secondary"} small`}
+                                  onClick={() => handleDeleteClient(client.id)}
+                                >
+                                  {deletingClientId === client.id ? "¿Eliminar?" : "Eliminar"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {showClientModal && (
+          <div className="pa-overlay" onClick={() => setShowClientModal(false)}>
+            <div className="pa-modal pa-client-modal" style={{ maxWidth: 620 }} onClick={event => event.stopPropagation()}>
+              <div className="pa-modal-head">
+                <div>
+                  <h3>{editingClient ? "Editar cliente" : "Agregar cliente"}</h3>
+                  <p className="pa-client-modal-subtitle">Estos datos se reutilizan al crear ordenes y ayudan a autocompletar el formulario Seller.</p>
+                </div>
+                <button className="pa-close-btn" onClick={() => setShowClientModal(false)}>
+                  <Icons.Close />
+                </button>
+              </div>
+              <div className="pa-modal-body">
+                <div className="pa-client-form-intro">
+                  <span>Cliente registrado</span>
+                  <strong>Nombre y telefono son obligatorios</strong>
+                </div>
+                <div className="pa-form-grid pa-client-form-grid">
+                  <label className="pa-field">
+                    <span>Nombre <strong className="pa-required-mark">*</strong></span>
+                    <input
+                      value={clientForm.name}
+                      onChange={event => {
+                        setClientForm(prev => ({ ...prev, name: event.target.value }));
+                        setClientFormError("");
+                        setClientFormErrors(prev => ({ ...prev, name: "" }));
+                      }}
+                      placeholder="Nombre del cliente"
+                      autoComplete="name"
+                      autoFocus
+                    />
+                    {clientFormErrors.name && <small className="pa-field-help error">{clientFormErrors.name}</small>}
+                  </label>
+                  <label className="pa-field">
+                    <span>Teléfono <strong className="pa-required-mark">*</strong></span>
+                    <input
+                      type="tel"
+                      value={clientForm.phone}
+                      onChange={event => {
+                        setClientForm(prev => ({ ...prev, phone: formatDominicanPhone(event.target.value) }));
+                        setClientFormError("");
+                        setClientFormErrors(prev => ({ ...prev, phone: "" }));
+                      }}
+                      placeholder="809-555-1234"
+                      maxLength="12"
+                      autoComplete="tel"
+                    />
+                    {clientFormErrors.phone && <small className="pa-field-help error">{clientFormErrors.phone}</small>}
+                  </label>
+                  <label className="pa-field">
+                    <span>Correo <small className="pa-optional-pill">Opcional</small></span>
+                    <input
+                      type="email"
+                      value={clientForm.email}
+                      onChange={event => setClientForm(prev => ({ ...prev, email: event.target.value }))}
+                      placeholder="cliente@empresa.com"
+                      autoComplete="email"
+                    />
+                  </label>
+                  <label className="pa-field">
+                    <span>Dirección <small className="pa-optional-pill">Opcional</small></span>
+                    <input
+                      value={clientForm.address}
+                      onChange={event => setClientForm(prev => ({ ...prev, address: event.target.value }))}
+                      placeholder="Dirección opcional"
+                      autoComplete="street-address"
+                    />
+                  </label>
+                  <label className="pa-field full">
+                    <span>Notas <small className="pa-optional-pill">Opcional</small></span>
+                    <textarea
+                      rows={3}
+                      value={clientForm.notes}
+                      onChange={event => setClientForm(prev => ({ ...prev, notes: event.target.value }))}
+                      placeholder="Notas internas opcionales"
+                    />
+                  </label>
+                </div>
+                {clientFormError && <p className="pa-client-form-error">{clientFormError}</p>}
+              </div>
+              <div className="pa-modal-actions">
+                <button className="pa-btn secondary" onClick={() => setShowClientModal(false)}>Cancelar</button>
+                <button className="pa-btn primary" onClick={handleSaveClient} disabled={saving}>
+                  {saving ? "Guardando..." : editingClient ? "Guardar cambios" : "Agregar cliente"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === "materials" && (
           <section className="pa-section">
             <div className="pa-section-heading">
@@ -2258,40 +2617,42 @@ export default function Dashboard() {
                     <p style={{ fontSize: "12px", marginTop: "4px" }}>Haz clic en "Agregar material" para comenzar.</p>
                   </div>
                 ) : (
-                  <table className="pa-table">
-                    <thead>
-                      <tr>
-                        <th>Nombre</th>
-                        <th>Fecha de creación</th>
-                        <th style={{ width: 160 }}>Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {materials.map((mat) => (
-                        <tr key={mat.id}>
-                          <td style={{ fontWeight: 600 }}>{mat.name}</td>
-                          <td style={{ color: "#64748b", fontSize: "13px" }}>
-                            {new Date(mat.created_at).toLocaleDateString("es-DO", {
-                              day: "2-digit", month: "short", year: "numeric"
-                            })}
-                          </td>
-                          <td>
-                            <div style={{ display: "flex", gap: 8 }}>
-                              <button className="pa-btn secondary small" onClick={() => handleEditMaterial(mat)}>
-                                Editar
-                              </button>
-                              <button
-                                className={`pa-btn ${deletingMaterialId === mat.id ? "danger" : "secondary"} small`}
-                                onClick={() => handleDeleteMaterial(mat.id)}
-                              >
-                                {deletingMaterialId === mat.id ? "¿Eliminar?" : "Eliminar"}
-                              </button>
-                            </div>
-                          </td>
+                  <div className="pa-table-wrap" style={{ maxHeight: 520 }}>
+                    <table className="pa-table">
+                      <thead>
+                        <tr>
+                          <th>Nombre</th>
+                          <th>Fecha de creación</th>
+                          <th style={{ width: 160 }}>Acciones</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {materials.map((mat) => (
+                          <tr key={mat.id}>
+                            <td style={{ fontWeight: 600 }}>{mat.name}</td>
+                            <td style={{ color: "#64748b", fontSize: "13px" }}>
+                              {new Date(mat.created_at).toLocaleDateString("es-DO", {
+                                day: "2-digit", month: "short", year: "numeric"
+                              })}
+                            </td>
+                            <td>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <button className="pa-btn secondary small" onClick={() => handleEditMaterial(mat)}>
+                                  Editar
+                                </button>
+                                <button
+                                  className={`pa-btn ${deletingMaterialId === mat.id ? "danger" : "secondary"} small`}
+                                  onClick={() => handleDeleteMaterial(mat.id)}
+                                >
+                                  {deletingMaterialId === mat.id ? "¿Eliminar?" : "Eliminar"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             </div>
@@ -2505,6 +2866,9 @@ export default function Dashboard() {
         onClose={() => { setOrderModalOpen(false); setSelectedOrder(null); resetOrderForm(); }}
         onSubmit={handleSaveOrder}
         saving={savingOrder}
+        clients={clients}
+        onClientSearch={handleClientSearch}
+        clientsLoading={clientsLoading}
       />
       <AdminOrderDetailModal
         open={!!selectedOrder}
