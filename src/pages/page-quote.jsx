@@ -17,6 +17,7 @@ import {
   isOrderStatus,
   isOrderStatusIn,
 } from "../utils/constants";
+import { getReferenceImages } from "../utils/orderAssets";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
@@ -213,6 +214,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   if (!open || !order) return null;
 
   const orderFiles = getOrderFiles(order);
+  const referenceImageUrls = getReferenceImages(order);
   const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const canConfirmPayment = isQuoteEditable(order);
   const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
@@ -301,6 +303,33 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                   <span className="pq-preview-empty">No hay preview cargado.</span>
                 )}
               </div>
+
+              {referenceImageUrls.length > 0 && (
+                <div className="pq-preview-block" style={{ marginTop: 16 }}>
+                  <span className="pq-description-label">Imágenes de referencia</span>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
+                    {referenceImageUrls.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+                        <img
+                          src={url}
+                          alt={`Ref ${i + 1}`}
+                          style={{
+                            width: 120,
+                            height: 120,
+                            objectFit: "cover",
+                            borderRadius: 8,
+                            border: "1px solid var(--pq-border)",
+                            cursor: "pointer",
+                            transition: "transform 0.2s",
+                          }}
+                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; }}
+                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; }}
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

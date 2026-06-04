@@ -34,6 +34,7 @@ import {
   resolveSellerId,
   isAdminArchivable
 } from "../utils/constants";
+import { getReferenceImages } from "../utils/orderAssets";
 import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
@@ -216,6 +217,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
   const rawFiles = parseFileUrls(order.order_file_url);
   const existingFiles = rawFiles.map(f => typeof f === "string" ? { url: f, name: getFileNameFromUrl(f) } : { url: f.url || f, name: f.name || getFileNameFromUrl(f.url || f) });
   const preview = order.preview_image;
+  const referenceImageUrls = getReferenceImages(order);
   const paymentInvoice = paymentInvoiceUrl;
 
   return (
@@ -307,7 +309,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
             </div>
           </div>
 
-          {(preview || existingFiles.length > 0) && (
+          {(preview || existingFiles.length > 0 || referenceImageUrls.length > 0) && (
             <>
               {preview && (
                 <div style={{
@@ -525,6 +527,34 @@ onMouseEnter={e => {
                       );
                     }
                   })()}
+                </div>
+              )}
+              {referenceImageUrls.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icons.Image /> Imágenes de referencia
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                    {referenceImageUrls.map((url, index) => (
+                      <a key={index} href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
+                        <img
+                          src={url}
+                          alt={`Ref ${index + 1}`}
+                          style={{
+                            width: 120,
+                            height: 120,
+                            objectFit: "cover",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--border)",
+                            cursor: "pointer",
+                            transition: "transform 0.2s, box-shadow 0.2s",
+                          }}
+                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
+                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                        />
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
             </>

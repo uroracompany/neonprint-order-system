@@ -13,6 +13,7 @@ import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
+import { getReferenceImages } from "../utils/orderAssets";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const PER_PAGE = 15;
@@ -129,6 +130,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [sellerName, setSellerName] = useState("");
+  const referenceImageUrls = getReferenceImages(order);
 
   useEffect(() => {
     if (order?.seller_name) {
@@ -555,6 +557,36 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
               )}
             </div>
           </div>
+
+          {referenceImageUrls.length > 0 && (
+            <div className="pd-modal-card">
+              <div className="pd-modal-card-title">
+                <Icons.Image />
+                <h4>Imágenes de referencia</h4>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "4px 0" }}>
+                {referenceImageUrls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
+                    <img
+                      src={url}
+                      alt={`Ref ${i + 1}`}
+                      style={{
+                        width: 120,
+                        height: 120,
+                        objectFit: "cover",
+                        borderRadius: 8,
+                        border: "1px solid var(--pd-border)",
+                        cursor: "pointer",
+                        transition: "transform 0.2s",
+                      }}
+                      onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; }}
+                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; }}
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
           
           {/* <div className="pd-status-bar">
             <div className="pd-status-item">

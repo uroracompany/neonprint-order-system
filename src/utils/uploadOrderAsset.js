@@ -212,6 +212,7 @@ export const removeOrderAssetsForOrder = async (orderId) => {
 
   const tasks = [
     { bucket: "order-docs", prefix: `orders/${orderId}/files` },
+    { bucket: "order-docs", prefix: `orders/${orderId}/ref-images` },
     { bucket: "order-previews", prefix: `orders/${orderId}/preview` },
     { bucket: "payment-invoice", prefix: orderId },
   ];

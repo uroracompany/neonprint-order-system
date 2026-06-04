@@ -18,10 +18,10 @@ import {
   isOrderStatus,
   isOrderStatusIn,
   getFileNameFromUrl,
-  parseFileUrls,
   formatDate,
 } from "../utils/constants";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
+import { getOrderFiles, getReferenceImages, hasAnyOrderAsset } from "../utils/orderAssets";
 
 const METRIC_ACCENTS = [
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
@@ -138,6 +138,9 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
   const isInProduction = isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION);
   const isInTermination = isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION);
   const isExternal = order?.order_design_type === "EXTERNAL_DESING";
+  const orderFileUrls = getOrderFiles(order);
+  const referenceImageUrls = getReferenceImages(order);
+  const hasAssets = hasAnyOrderAsset(order);
 
   return (
     <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -325,13 +328,13 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
             </div>
           </div>
 
-          {(order.preview_image || order.order_file_url) && (
+          {hasAssets && (
             <div className="pp-files-section" style={{ marginTop: 18 }}>
               <div className="pp-files-title">
                 <Icons.File />
                 Archivos Adjuntos
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: order.preview_image && order.order_file_url ? "1fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: order.preview_image && orderFileUrls.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
                 {order.preview_image && (
                   <div>
                     <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
@@ -354,13 +357,13 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
                     </a>
                   </div>
                 )}
-                {order.order_file_url && (
+                {orderFileUrls.length > 0 && (
                   <div>
                     <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                       <Icons.Brush /> Diseño del cliente
                     </p>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {parseFileUrls(order.order_file_url).map((url, i) => (
+                      {orderFileUrls.map((url, i) => (
                         <div key={i} className="pp-file-item" style={{ margin: 0 }}>
                           <div className="pp-file-icon">
                             <Icons.File />
@@ -377,6 +380,34 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
                   </div>
                 )}
               </div>
+              {referenceImageUrls.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icons.Image /> Imágenes de referencia
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                    {referenceImageUrls.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
+                        <img
+                          src={url}
+                          alt={`Ref ${i + 1}`}
+                          style={{
+                            width: 120,
+                            height: 120,
+                            objectFit: "cover",
+                            borderRadius: "var(--pp-radius-md)",
+                            border: "1px solid var(--pp-border)",
+                            cursor: "pointer",
+                            transition: "transform 0.2s, box-shadow 0.2s",
+                          }}
+                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
+                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

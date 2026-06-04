@@ -17,8 +17,8 @@ import {
   getOrderStatusConfig,
   isOrderStatus,
   isOrderStatusIn,
-  parseFileUrls,
 } from "../utils/constants";
+import { getOrderFiles, getReferenceImages, hasAnyOrderAsset, normalizeAssetUrls, serializeReferenceImages } from "../utils/orderAssets";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
@@ -288,11 +288,13 @@ const EMPTY_FORM = {
   indefinido: false,    // si true, fecha queda como indefinida
   design_files: [],     // archivos de diseño externo
   design_preview: null, // imagen preview de diseño externo
+  reference_images: [], // imágenes de referencia (opcional)
 };
 
 function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, clients = [], onClientSearch }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
+  const refImagesInputRef = useRef(null);
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
@@ -407,7 +409,9 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
           form.indefinido = true;
         }
 
+        const orderId = crypto.randomUUID();
         const payload = {
+          id: orderId,
           client_id: form.client_id || null,
           client_name: form.client_name.trim(),
           client_contact: form.client_phone.trim() || null,
@@ -423,13 +427,18 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
           created_by: userId,
         };
 
-        // ── Subir archivos ANTES de insertar (solo Diseño Externo) ──
+        const { error: insertError } = await supabase.from("orders").insert([payload]).select().single();
+        if (insertError) throw new Error("No se pudo crear la orden. Intenta nuevamente.");
+
         let fileUrls = [];
         let previewUrl = null;
+        let refImageUrls = [];
+        const uploadedUrls = [];
+        const cleanupUploadedUrls = () => Promise.all(
+          uploadedUrls.map(({ bucket, url }) => removeOrderAssetByPublicUrl({ bucket, url }))
+        );
 
-        if (form.design_files.length > 0 || form.design_preview) {
-          const orderId = crypto.randomUUID();
-
+        if (form.design_files.length > 0 || form.design_preview || form.reference_images.length > 0) {
           try {
             for (let i = 0; i < form.design_files.length; i++) {
               const file = form.design_files[i];
@@ -440,9 +449,13 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                 file,
               });
 
-              if (publicUrl) fileUrls.push(publicUrl);
+              if (publicUrl) {
+                fileUrls.push(publicUrl);
+                uploadedUrls.push({ bucket: "order-docs", url: publicUrl });
+              }
             }
           } catch {
+            await cleanupUploadedUrls();
             throw new Error("Error al subir los archivos. Verifica que no sean demasiado grandes y que tu conexión esté estable.");
           }
 
@@ -454,18 +467,51 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                 path: `orders/${orderId}/preview/${fileName}`,
                 file: form.design_preview,
               });
+              if (previewUrl) uploadedUrls.push({ bucket: "order-previews", url: previewUrl });
             } catch {
+              await cleanupUploadedUrls();
               throw new Error("Error al subir la imagen de previsualización. Intenta con un archivo más pequeño.");
             }
           }
 
-          if (fileUrls.length > 0) payload.order_file_url = JSON.stringify(fileUrls);
-          if (previewUrl) payload.preview_image = previewUrl;
-          payload.id = orderId;
+          if (form.reference_images.length > 0) {
+            try {
+              for (let i = 0; i < form.reference_images.length; i++) {
+                const file = form.reference_images[i];
+                const fileName = buildStorageSafeFileName(file, `ref-${i}-`);
+                const publicUrl = await uploadOrderAsset({
+                  bucket: "order-docs",
+                  path: `orders/${orderId}/ref-images/${fileName}`,
+                  file,
+                });
+                if (publicUrl) {
+                  refImageUrls.push(publicUrl);
+                  uploadedUrls.push({ bucket: "order-docs", url: publicUrl });
+                }
+              }
+            } catch {
+              await cleanupUploadedUrls();
+              throw new Error("Error al subir las imágenes de referencia. Verifica que no sean demasiado grandes.");
+            }
+          }
         }
 
-        const { error: err } = await supabase.from("orders").insert([payload]).select().single();
-        if (err) throw new Error("No se pudo crear la orden. Intenta nuevamente.");
+        const assetPayload = {};
+        if (fileUrls.length > 0) assetPayload.order_file_url = JSON.stringify(fileUrls);
+        if (previewUrl) assetPayload.preview_image = previewUrl;
+        if (refImageUrls.length > 0) assetPayload.reference_images = serializeReferenceImages(refImageUrls);
+
+        if (Object.keys(assetPayload).length > 0) {
+          const { error: updateError } = await supabase
+            .from("orders")
+            .update(assetPayload)
+            .eq("id", orderId);
+
+          if (updateError) {
+            await cleanupUploadedUrls();
+            throw new Error("La orden se creó, pero no se pudieron asociar sus archivos. Intenta editarla y volver a subirlos.");
+          }
+        }
       })(), 60000);
 
       handleClose(); onCreated?.();
@@ -699,6 +745,43 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
             </div>
           </Field>
         </div>
+
+        <div className="col-full">
+          <Field label="Imágenes de referencia" hint="Sube imágenes de referencia para la orden (opcional)">
+            <div className="ps-upload-zone" onClick={() => refImagesInputRef.current?.click()}>
+              <input
+                ref={refImagesInputRef}
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={e => {
+                  const files = Array.from(e.target.files);
+                  set("reference_images", [...form.reference_images, ...files]);
+                  e.target.value = "";
+                }}
+                style={{ display: "none" }}
+              />
+              <div className="ps-upload-icon"><Icons.Image /></div>
+              <div className="ps-upload-btn-wrapper">
+                <span className="ps-upload-btn-text">Subir imágenes</span>
+              </div>
+              <span className="ps-upload-hint">Imágenes de referencia (JPG, PNG...)</span>
+            </div>
+            {form.reference_images.length > 0 && (
+              <div className="ps-files-list">
+                {form.reference_images.map((file, i) => (
+                  <div key={i} className="ps-file-item">
+                    <Icons.File />
+                    <span className="ps-file-name">{file.name}</span>
+                    <button className="ps-file-remove" onClick={(e) => { e.stopPropagation(); set("reference_images", form.reference_images.filter((_, idx) => idx !== i)); }}>
+                      <Icons.X />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Field>
+        </div>
       </div>
 
       <div className="ps-form-actions">
@@ -715,6 +798,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
 function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
+  const refImagesInputRef = useRef(null);
 
   const [form, setForm] = useState({
     client_name: "",
@@ -728,6 +812,9 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
   const [newFiles, setNewFiles] = useState([]);
   const [existingPreview, setExistingPreview] = useState(null);
   const [newPreview, setNewPreview] = useState(null);
+  const [existingRefImages, setExistingRefImages] = useState([]);
+  const [newRefImages, setNewRefImages] = useState([]);
+  const [removedRefImageUrls, setRemovedRefImageUrls] = useState([]);
   const [removedFileUrls, setRemovedFileUrls] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -745,19 +832,16 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       });
 
       const parseFiles = (fileUrl) => {
-        if (!fileUrl) return [];
-        try {
-          const parsed = JSON.parse(fileUrl);
-          return Array.isArray(parsed) ? parsed : [parsed];
-        } catch {
-          return [fileUrl];
-        }
+        return normalizeAssetUrls(fileUrl);
       };
 
       setExistingFiles(parseFiles(order.order_file_url));
       setExistingPreview(order.preview_image || null);
+      setExistingRefImages(parseFiles(order.reference_images));
       setNewFiles([]);
       setNewPreview(null);
+      setNewRefImages([]);
+      setRemovedRefImageUrls([]);
       setRemovedFileUrls([]);
       setFieldErrors({});
       setError("");
@@ -881,6 +965,26 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       previewUrl = null;
     }
 
+    let refImageUrls = [...existingRefImages];
+    if (newRefImages.length > 0) {
+      try {
+        for (let i = 0; i < newRefImages.length; i++) {
+          const file = newRefImages[i];
+          const fileName = buildStorageSafeFileName(file, `ref-${i}-`);
+          const publicUrl = await uploadOrderAsset({
+            bucket: "order-docs",
+            path: `orders/${order.id}/ref-images/${fileName}`,
+            file,
+          });
+          if (publicUrl) refImageUrls.push(publicUrl);
+        }
+      } catch (uploadError) {
+        setLoading(false);
+        setError(uploadError?.message || "Error al subir las imágenes de referencia.");
+        return;
+      }
+    }
+
     // 2. ÚNICO update a orders → 1 sola ejecución del trigger
     const { error: err } = await supabase
       .from("orders")
@@ -893,6 +997,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
         delivery_date: form.delivery_date || null,
         order_file_url: JSON.stringify(fileUrls),
         preview_image: previewUrl,
+        reference_images: refImageUrls.length > 0 ? serializeReferenceImages(refImageUrls) : [],
       })
       .eq("id", order.id);
 
@@ -907,6 +1012,9 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
         removeOrderAssetByPublicUrl({ bucket: "order-docs", url }),
         removeOrderAssetByPublicUrl({ bucket: "order-previews", url }),
       ]),
+      ...removedRefImageUrls.map((url) =>
+        removeOrderAssetByPublicUrl({ bucket: "order-docs", url })
+      ),
       !previewUrl && existingPreview
         ? removeOrderAssetByPublicUrl({ bucket: "order-previews", url: existingPreview })
         : Promise.resolve({ removed: false, error: null }),
@@ -1069,6 +1177,59 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
             )}
           </Field>
         </div>
+
+        <div className="col-full">
+          <Field label="Imágenes de referencia" hint="Sube imágenes de referencia para la orden (opcional)">
+            {existingRefImages.length > 0 && (
+              <div className="ps-files-list" style={{ marginBottom: 12 }}>
+                {existingRefImages.map((url, i) => (
+                  <div key={i} className="ps-file-item">
+                    <Icons.File />
+                    <span className="ps-file-name">{parseFileName(url)}</span>
+                    <button className="ps-file-remove" onClick={() => {
+                      setExistingRefImages(existingRefImages.filter((_, idx) => idx !== i));
+                      setRemovedRefImageUrls([...removedRefImageUrls, url]);
+                    }}>
+                      <Icons.X />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {newRefImages.length > 0 && (
+              <div className="ps-files-list" style={{ marginBottom: 12 }}>
+                {newRefImages.map((file, i) => (
+                  <div key={i} className="ps-file-item" style={{ borderColor: "var(--cyan)", background: "rgba(6, 182, 212, 0.04)" }}>
+                    <Icons.File />
+                    <span className="ps-file-name">{file.name}</span>
+                    <button className="ps-file-remove" onClick={() => setNewRefImages(newRefImages.filter((_, idx) => idx !== i))}>
+                      <Icons.X />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="ps-upload-zone" onClick={() => refImagesInputRef.current?.click()}>
+              <input
+                ref={refImagesInputRef}
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={e => {
+                  const files = Array.from(e.target.files);
+                  setNewRefImages([...newRefImages, ...files]);
+                  e.target.value = "";
+                }}
+                style={{ display: "none" }}
+              />
+              <div className="ps-upload-icon"><Icons.Image /></div>
+              <div className="ps-upload-btn-wrapper">
+                <span className="ps-upload-btn-text">Subir imágenes</span>
+              </div>
+              <span className="ps-upload-hint">Imágenes de referencia (JPG, PNG...)</span>
+            </div>
+          </Field>
+        </div>
       </div>
 
       <div className="ps-form-actions">
@@ -1082,10 +1243,13 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
 }
 
 // ─── ORDER DETAIL MODAL ───────────────────────────────────────────────────────
-function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSendToQuotation }) {
+export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSendToQuotation }) {
   const hasOrder = Boolean(order);
   const created = hasOrder ? new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" }) : "";
   const statusConfig = hasOrder ? getOrderStatusConfig(order.status) : getOrderStatusConfig(ORDER_STATUS.PENDING);
+  const orderFileUrls = getOrderFiles(order);
+  const referenceImageUrls = getReferenceImages(order);
+  const hasAssets = hasAnyOrderAsset(order);
   const [designerName, setDesignerName] = useState("");
   
   useEffect(() => {
@@ -1412,7 +1576,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
       </div>
 
       {/* Archivos Adjuntos — Full Width */}
-      {(order.preview_image || order.order_file_url) && (
+      {hasAssets && (
         <div style={{
           marginTop: 24,
           background: "var(--surface)",
@@ -1426,7 +1590,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
             marginBottom: 16
           }}>Archivos Adjuntos</p>
 
-          <div style={{ display: "grid", gridTemplateColumns: order.preview_image && order.order_file_url ? "1fr 1fr" : "1fr", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: order.preview_image && orderFileUrls.length > 0 ? "1fr 1fr" : "1fr", gap: 16 }}>
             {order.preview_image && (
               <div>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
@@ -1450,15 +1614,14 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
               </div>
             )}
 
-            {order.order_file_url && (
+            {orderFileUrls.length > 0 && (
               <div>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                   <Icons.Brush /> Diseño del cliente
                 </p>
                 {(() => {
-                  const fileUrls = parseFileUrls(order.order_file_url);
-                  if (fileUrls.length === 1) {
-                    const url = fileUrls[0];
+                  if (orderFileUrls.length === 1) {
+                    const url = orderFileUrls[0];
                     return url.toLowerCase().endsWith(".pdf") ? (
                       <a
                         href={url}
@@ -1509,7 +1672,7 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
                   } else {
                     return (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {fileUrls.map((url, index) => (
+                        {orderFileUrls.map((url, index) => (
                           <a
                             key={index}
                             href={url}
@@ -1547,6 +1710,34 @@ function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSend
               </div>
             )}
           </div>
+          {referenceImageUrls.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                <Icons.Image /> Imágenes de referencia
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                {referenceImageUrls.map((url, index) => (
+                  <a key={index} href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
+                    <img
+                      src={url}
+                      alt={`Ref ${index + 1}`}
+                      style={{
+                        width: 120,
+                        height: 120,
+                        objectFit: "cover",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--border)",
+                        cursor: "pointer",
+                        transition: "transform 0.2s, box-shadow 0.2s",
+                      }}
+                      onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
+                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
           </div>
         )}
     </Modal>
@@ -1729,7 +1920,7 @@ function ArchivedOrderModal({ open, onClose, onConfirm, order, loading }) {
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function PageSeller() {
   const navigate = useNavigate();
-  const RELEVANT_COLUMNS = "id,client_id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token";
+  const RELEVANT_COLUMNS = "id,client_id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token,reference_images";
   const [activeTab, setActiveTab] = useState("dashboard");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1747,7 +1938,6 @@ export default function PageSeller() {
   const [editingOrder, setEditingOrder] = useState(null);
   const [materialOptions, setMaterialOptions] = useState([]);
   const [clients, setClients] = useState([]);
-  const [clientsLoading, setClientsLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [cancelingOrder, setCancelingOrder] = useState(null);
@@ -1855,10 +2045,8 @@ export default function PageSeller() {
     supabase.from("materials").select("name").order("name").then(({ data }) => {
       setMaterialOptions(data?.map(m => m.name) || []);
     });
-    setClientsLoading(true);
     loadClients(supabase)
       .then(setClients)
-      .finally(() => setClientsLoading(false));
   }, []);
 
   const handleClientSearch = useCallback(async (query) => {
