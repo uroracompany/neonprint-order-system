@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Icons } from "../utils/icons";
-import { formatDate } from "../utils/constants";
+import { formatDate, formatUiTerms } from "../utils/constants";
 import "./NotificationCenter.css";
 
 const TYPE_CONFIG = {
@@ -48,8 +48,8 @@ function NotificationToast({ notification, onDismiss }) {
           {typeClass === "cancelled" ? <Icons.X /> : <Icons.Bell />}
         </div>
         <div className="nc-toast-content">
-          <span className="nc-toast-title">{notification.title}</span>
-          <span className="nc-toast-text">{notification.message}</span>
+          <span className="nc-toast-title">{formatUiTerms(notification.title)}</span>
+          <span className="nc-toast-text">{formatUiTerms(notification.message)}</span>
         </div>
         <button className="nc-toast-close" onClick={() => onDismiss(notification.id)} aria-label="Cerrar">
           <Icons.X />
@@ -125,10 +125,10 @@ export default function NotificationCenter({
                     <div className="nc-item-dot" />
                     <div className="nc-item-body">
                       <div className="nc-item-head">
-                        <strong>{n.title}</strong>
+                        <strong>{formatUiTerms(n.title)}</strong>
                         {n.order_id && <span className="nc-item-order">#{n.order_id.slice(0, 8).toUpperCase()}</span>}
                       </div>
-                      <p className="nc-item-msg">{n.message}</p>
+                      <p className="nc-item-msg">{formatUiTerms(n.message)}</p>
                       <span className="nc-item-time">{formatDate(n.created_at)}</span>
                     </div>
                     <div className="nc-item-actions">

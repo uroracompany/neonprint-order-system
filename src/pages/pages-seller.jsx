@@ -291,7 +291,7 @@ const EMPTY_FORM = {
   reference_images: [], // imágenes de referencia (opcional)
 };
 
-function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, clients = [], onClientSearch }) {
+function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, clients = [], clientsLoading = false, onClientSearch }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
   const refImagesInputRef = useRef(null);
@@ -546,6 +546,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
           <Field label="Cliente registrado" optional hint="Busca y selecciona un cliente registrado.">
             <ClientSelect
               clients={clients}
+              loading={clientsLoading}
               value={form.client_id}
               onSelect={applySelectedClient}
               onSearch={onClientSearch}
@@ -1440,7 +1441,7 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
                 <p style={{
                   fontSize: 22, fontWeight: 800, color: "var(--primary)", margin: 0
                 }}>
-                  {order.price ? "RD$" + order.price.toLocaleString("es-DO") : "Sin cotizar"}
+                  {order.price ? "RD$" + order.price.toLocaleString("es-DO") : "Precio pendiente"}
                 </p>
               </div>
 
@@ -1487,7 +1488,7 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
                     }}
                   >
                     <Icons.Edit style={{ width: 18, height: 18 }} />
-                    Enviar a Cotización
+                    Enviar a Caja
                   </button>
                 ) : (
                   <button
@@ -1747,7 +1748,7 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
 // ─── ENVIAR A DISEÑO MODAL ───────────────────────────────────────────
 function ReturnedBadge({ compact = false }) {
   return (
-    <span className={`ps-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta desde cotización">
+    <span className={`ps-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta desde caja">
       Devuelta
     </span>
   );
@@ -1938,6 +1939,7 @@ export default function PageSeller() {
   const [editingOrder, setEditingOrder] = useState(null);
   const [materialOptions, setMaterialOptions] = useState([]);
   const [clients, setClients] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [cancelingOrder, setCancelingOrder] = useState(null);
@@ -2045,8 +2047,10 @@ export default function PageSeller() {
     supabase.from("materials").select("name").order("name").then(({ data }) => {
       setMaterialOptions(data?.map(m => m.name) || []);
     });
+    setClientsLoading(true);
     loadClients(supabase)
       .then(setClients)
+      .finally(() => setClientsLoading(false));
   }, []);
 
   const handleClientSearch = useCallback(async (query) => {
@@ -2158,7 +2162,7 @@ export default function PageSeller() {
     setSendingLoading(false);
 
     if (updateError) {
-      showToast("Error al enviar a cotización", "error");
+      showToast("Error al enviar a caja", "error");
       return;
     }
 
@@ -2327,7 +2331,7 @@ export default function PageSeller() {
     { icon: <Icons.Orders />, label: "Ordenes hoy", value: todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
     { icon: <Icons.Package />, label: "Pendientes", value: inQuote, sub: "Ordenes Pendientes", accentIdx: 1 },
     { icon: <Icons.Edit />, label: "En diseño", value: inDesign, sub: "En proceso de diseño", accentIdx: 2 },
-    { icon: <Icons.Package />, label: "En cotización", value: inCotizacion, sub: "Esperando aprobación", accentIdx: 1 },
+    { icon: <Icons.Package />, label: "En caja", value: inCotizacion, sub: "Esperando aprobación", accentIdx: 1 },
     { icon: <Icons.Package />, label: "En producción", value: inProd, sub: "Siendo impresas", accentIdx: 3 },
     { icon: <Icons.Package />, label: "Terminación", value: inTerminacion, sub: "En proceso final", accentIdx: 2 },
     { icon: <Icons.Truck />, label: "Completadas", value: completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
@@ -2714,7 +2718,7 @@ export default function PageSeller() {
         </main>
       </div>
 
-      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} materialOptions={materialOptions} clients={clients} onClientSearch={handleClientSearch} />
+      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} materialOptions={materialOptions} clients={clients} clientsLoading={clientsLoading} onClientSearch={handleClientSearch} />
       <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} materialOptions={materialOptions} />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} onSendToQuotation={handleSendToQuotation} />
       <AssignModal

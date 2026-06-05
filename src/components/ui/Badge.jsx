@@ -1,4 +1,4 @@
-import { getOrderStatusConfig, PAYMENT_COLORS } from "../../utils/constants";
+import { getOrderStatusConfig, PAYMENT_COLORS, UI_TERMS } from "../../utils/constants";
 
 export function StatusBadge({ status, className = "badge", showDot = true, bordered = false }) {
   const cfg = getOrderStatusConfig(status);
@@ -32,9 +32,9 @@ export function RoleBadge({ role }) {
     admin: ["Administrador", "danger"],
     seller: ["Vendedor", "info"],
     designer: ["Diseñador", "purple"],
-    quote: ["Cotizador", "blue"],
+    quote: [UI_TERMS.cotizacion, "blue"],
     printer: ["Producción", "orange"],
-    delivery: ["Entregador", "cyan"],
+    delivery: [UI_TERMS.delivery, "cyan"],
   };
   const entry = roleMap[role];
   if (!entry) return null;

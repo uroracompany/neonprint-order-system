@@ -21,6 +21,7 @@ function useClientLookup({
 }) {
   const deferredQuery = useDeferredValue(query);
   const trimmedQuery = deferredQuery.trim();
+  const currentQuery = query.trim();
   const [asyncClients, setAsyncClients] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -70,6 +71,7 @@ function useClientLookup({
     visibleClients,
     searching,
     searchError,
+    pendingSearch: Boolean(open && onSearch && currentQuery.length >= minSearchLength && currentQuery !== trimmedQuery),
     showPrompt: Boolean(open && !showAllWhenEmpty && trimmedQuery.length < minSearchLength),
   };
 }
@@ -101,6 +103,15 @@ function ClientSuggestionList({
   ));
 }
 
+function ClientLookupState({ loading = false, children }) {
+  return (
+    <div className={`client-lookup-state ${loading ? "loading" : "empty"}`}>
+      {loading && <span className="client-lookup-spinner" aria-hidden="true" />}
+      <span>{children}</span>
+    </div>
+  );
+}
+
 export function ClientSelect({
   clients = [],
   value,
@@ -108,6 +119,9 @@ export function ClientSelect({
   onSearch,
   placeholder = "Seleccionar cliente registrado",
   searchPlaceholder = "Buscar por nombre o telefono...",
+  loading = false,
+  loadingText = "Cargando clientes...",
+  emptyText = "No se encontraron clientes.",
   className = "",
   disabled = false,
   minSearchLength = 1,
@@ -123,7 +137,7 @@ export function ClientSelect({
     [clients, value]
   );
 
-  const { visibleClients } = useClientLookup({
+  const { visibleClients, searching, searchError, pendingSearch } = useClientLookup({
     clients,
     onSearch,
     query,
@@ -131,10 +145,11 @@ export function ClientSelect({
     minSearchLength,
     showAllWhenEmpty: true,
   });
+  const isLoading = loading || searching || pendingSearch;
 
   useEffect(() => {
-    setActiveIndex(visibleClients.length > 0 ? 0 : -1);
-  }, [visibleClients]);
+    setActiveIndex(!isLoading && visibleClients.length > 0 ? 0 : -1);
+  }, [isLoading, visibleClients]);
 
   useEffect(() => {
     const handlePointerDown = (event) => {
@@ -155,7 +170,7 @@ export function ClientSelect({
   };
 
   const handleKeyDown = (event) => {
-    if (!open || visibleClients.length === 0) return;
+    if (!open || isLoading || visibleClients.length === 0) return;
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -203,7 +218,9 @@ export function ClientSelect({
             />
           </div>
 
-          {visibleClients.length > 0 && (
+          {isLoading ? (
+            <ClientLookupState loading>{loadingText}</ClientLookupState>
+          ) : visibleClients.length > 0 ? (
             <ClientSuggestionList
               clients={visibleClients}
               value={value}
@@ -212,6 +229,8 @@ export function ClientSelect({
               onSelect={selectClient}
               listboxId={listboxId}
             />
+          ) : (
+            <ClientLookupState>{searchError || emptyText}</ClientLookupState>
           )}
         </div>
       )}

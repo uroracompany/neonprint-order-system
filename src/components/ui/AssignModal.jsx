@@ -13,12 +13,12 @@ const ROLE_CONFIG = {
     filterRole: "designer",
   },
   quote: {
-    label: "Cotizador",
+    label: "Caja",
     icon: "Package",
     color: "#0284C7",
     gradient: "linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%)",
     iconColor: "#0284C7",
-    description: "Selecciona el usuario responsable de cotización",
+    description: "Selecciona el usuario responsable de caja",
     filterRole: "quote",
   },
   printer: {
@@ -31,12 +31,12 @@ const ROLE_CONFIG = {
     filterRole: "printer",
   },
   delivery: {
-    label: "Repartidor",
+    label: "Entrega",
     icon: "Truck",
     color: "#059669",
     gradient: "linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%)",
     iconColor: "#059669",
-    description: "Selecciona el usuario de delivery responsable",
+    description: "Selecciona el usuario responsable de entrega",
     filterRole: "delivery",
   },
 };

@@ -222,7 +222,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   const returnedReason = String(order?.return_reason || "").trim();
   const readonlyMessage =
     order.is_archived_quote
-      ? "Esta orden está en modo lectura porque fue archivada en cotización."
+      ? "Esta orden está en modo lectura porque fue archivada en caja."
       : order.payment_status === "pagado"
         ? "Esta orden está en modo lectura porque el pago ya fue confirmado."
         : "Esta orden está en modo lectura porque su estado actual no permite confirmar pago.";
@@ -246,7 +246,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
       <div className="pq-modal">
         <div className="pq-modal-header">
           <div>
-            <span className="pq-modal-kicker">Detalle de cotización</span>
+            <span className="pq-modal-kicker">Detalle de caja</span>
             <h2 className="pq-modal-title">Orden #{order.id?.slice(0, 8).toUpperCase()}</h2>
           </div>
           <button className="pq-icon-btn" onClick={onClose} aria-label="Cerrar detalle">
@@ -690,8 +690,8 @@ export default function PageQuote() {
       notif.showActionNotification({
         type: "order_cancelled",
         label: "Error al cargar",
-        orderTitle: "Órdenes de cotización",
-        message: "No se pudieron cargar las órdenes asignadas a cotización.",
+        orderTitle: "Órdenes de caja",
+        message: "No se pudieron cargar las órdenes asignadas a caja.",
       });
       return;
     }
@@ -1082,8 +1082,8 @@ export default function PageQuote() {
         isOpen={sidebarOpen}
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        role="Quote"
-        userName={profile?.name || "Usuario Quote"}
+        role="Caja"
+        userName={profile?.name || "Usuario Caja"}
         menuItems={menuItems}
         onLogout={handleLogout}
       />
@@ -1095,10 +1095,10 @@ export default function PageQuote() {
               <Icons.Menu />
             </button>
             <div>
-              <span className="pq-header-kicker">Cotización</span>
+              <span className="pq-header-kicker">Caja</span>
               {/* Nombre del apartado de la pantalla */}
               <h1 className="pq-header-title">
-                {activeTab === "dashboard" ? "Panel de Quote" : "Mis órdenes de cotización"}
+                {activeTab === "dashboard" ? "Panel de Caja" : "Mis órdenes de caja"}
               </h1>
             </div>
           </div>
@@ -1135,7 +1135,7 @@ export default function PageQuote() {
               <div className="pq-panel-head">
                 <div>
                   <span className="pq-section-kicker">Actividad reciente</span>
-                  <h2>Órdenes para Cotizar <span className="pq-orders-count">({dashboardRecentOrders.length})</span></h2>
+                  <h2>Órdenes para Caja <span className="pq-orders-count">({dashboardRecentOrders.length})</span></h2>
                 </div>
                 <button className="pq-link-btn" onClick={() => setActiveTab("orders")}>Ver todas</button>
               </div>

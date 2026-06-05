@@ -55,7 +55,7 @@ const hasReturnUpdate = (previousOrder, nextOrder) => {
 
 function ReturnedBadge({ compact = false }) {
   return (
-    <span className={`pd-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta por cotización">
+    <span className={`pd-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta por caja">
       Devuelta
     </span>
   );
@@ -161,7 +161,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
     isCancelledReadonly
       ? "Esta orden está en modo lectura porque fue cancelada."
       : isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)
-        ? "Esta orden está en modo lectura mientras permanece en cotización."
+        ? "Esta orden está en modo lectura mientras permanece en caja."
         : "Esta orden está en modo lectura según su estado actual.";
   const returnedReason = String(order.return_reason || "").trim();
   
@@ -463,7 +463,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
             ) : (
               <div className="pd-upload-area pd-upload-area-disabled">
                 <Icons.File />
-                <span className="pd-upload-hint">Los archivos ya no se pueden modificar después de enviarse a cotización.</span>
+                <span className="pd-upload-hint">Los archivos ya no se pueden modificar después de enviarse a caja.</span>
               </div>
             )}
             {/* Contenedor de para ver todos los arhivos seleccionados */}
@@ -615,7 +615,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
               ) : (
                 <>
                   <Icons.Send />
-                  Enviar a cotización
+                  Enviar a caja
                 </>
               )}
             </button>
@@ -924,7 +924,7 @@ export default function PageDesigner() {
 
   const metrics = [
     { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", accentIdx: 0, icon: <Icons.Package /> },
-    { label: "En cotización", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length, sub: "Listas para seguir flujo", accentIdx: 1, icon: <Icons.Send /> },
+    { label: "En caja", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length, sub: "Listas para seguir flujo", accentIdx: 1, icon: <Icons.Send /> },
     { label: "Devueltas", value: returnedOrdersCount, sub: "Requieren corrección", accentIdx: 2, icon: <Icons.X /> },
     { label: "En producción", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, sub: "Siendo producidas", accentIdx: 3, icon: <Icons.Package /> },
   ];
@@ -1085,7 +1085,7 @@ export default function PageDesigner() {
         type: "order_cancelled",
         label: "Error al enviar",
         orderTitle: sendingToQuotation.client_name || sendingToQuotation.description || `Orden #${sendingToQuotation.id?.slice(0, 8).toUpperCase()}`,
-        message: "No se pudo enviar la orden a cotización. Verifica la asignación o el estado.",
+        message: "No se pudo enviar la orden a caja. Verifica la asignación o el estado.",
       });
       return;
     }
@@ -1321,7 +1321,7 @@ export default function PageDesigner() {
                     <select className="pd-input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                       <option value="all">Todos los estados</option>
                       <option value={ORDER_STATUS.IN_DESIGN}>En Diseño</option>
-                      <option value={ORDER_STATUS.IN_QUOTE}>Cotización</option>
+                      <option value={ORDER_STATUS.IN_QUOTE}>Caja</option>
                       <option value={ORDER_STATUS.IN_PRODUCTION}>Producción</option>
                       <option value={ORDER_STATUS.IN_COMPLETED}>Completada</option>
                     </select>
@@ -1493,7 +1493,7 @@ export default function PageDesigner() {
         loading={quotationSending}
         role="quote"
         defaultUserId={originalQuoterId || ""}
-        description="Confirma que agregaste los archivos correctos antes de enviar esta orden al proceso de cotización."
+        description="Confirma que agregaste los archivos correctos antes de enviar esta orden al proceso de caja."
       />
       <ArchiveDesignerOrderModal
         open={!!archivingOrder}

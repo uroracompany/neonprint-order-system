@@ -122,10 +122,10 @@ const getRoleLabel = (role) => {
   const map = {
     seller: "Vendedor",
     designer: "Diseñador",
-    quote: "Cotizador",
+    quote: "Caja",
     admin: "Administrador",
     printer: "Producción",
-    delivery: "Entregador"
+    delivery: "Entrega"
   };
   return map[role] || role;
 };
@@ -588,7 +588,7 @@ onMouseEnter={e => {
               )}
               {quoteAssignedId && (
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 13, color: "var(--text-sub)" }}>Cotizador asignado:</span>
+                  <span style={{ fontSize: 13, color: "var(--text-sub)" }}>Responsable de caja:</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{quoteUserName}</span>
                 </div>
               )}
@@ -688,7 +688,7 @@ onMouseEnter={e => {
             <div style={{ marginTop: 8 }}>
               {order.order_design_type === "EXTERNAL_DESING" ? (
                 <button className="pa-btn" style={{ width: "100%", background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => onAssign(order, "quote")}>
-                  Enviar a Cotización
+                  Enviar a Caja
                 </button>
               ) : (
                 <button className="pa-btn" style={{ width: "100%", background: "#8B5CF6", color: "#fff", border: "none" }} onClick={() => onAssign(order, "designer")}>
@@ -1010,7 +1010,7 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
   const roleDescriptions = {
     seller: "Gestiona y da seguimiento comercial a las órdenes.",
     designer: "Recibe y trabaja los archivos asignados para producción.",
-    quote: "Cotiza las órdenes y valida la información de pago.",
+    quote: "Gestiona caja y valida la información de pago.",
     printer: "Gestiona producción, terminación e impresión.",
     delivery: "Coordina entregas y cierre logístico.",
     admin: "Supervisa módulos, usuarios y el flujo general del sistema.",
@@ -1052,9 +1052,9 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
               <select value={userForm.role} onChange={(e) => setUserForm(prev => ({ ...prev, role: e.target.value }))}>
                 <option value="seller">Vendedor</option>
                 <option value="designer">Diseñador</option>
-                <option value="quote">Cotizador</option>
+                <option value="quote">Caja</option>
                 <option value="printer">Impresor</option>
-                <option value="delivery">Entregador</option>
+                <option value="delivery">Entrega</option>
                 <option value="admin">Administrador</option>
               </select>
             </label>
@@ -1098,11 +1098,11 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
           <div className="pa-detail-description">{order.description || "Sin descripción"}</div>
         </div>
         <div className="pa-panel">
-          <div className="pa-panel-title">Diseños y cotización</div>
+          <div className="pa-panel-title">Diseños y caja</div>
           <div className="pa-detail-list">
             <div><span>Estado</span><strong><StatusBadge status={order.status} className="ps-badge" showDot bordered /></strong></div>
             <div><span>Pago</span><strong><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></strong></div>
-            <div><span>Precio</span><strong>{order.price ? `RD$${Number(order.price).toLocaleString("es-DO")}` : "Sin cotizar"}</strong></div>
+            <div><span>Precio</span><strong>{order.price ? `RD$${Number(order.price).toLocaleString("es-DO")}` : "Precio pendiente"}</strong></div>
             <div><span>Preview</span><strong>{order.preview_image ? <a href={order.preview_image} target="_blank" rel="noreferrer">Ver preview</a> : "Sin preview"}</strong></div>
           </div>
           {files.length > 0 ? <div className="pa-file-list">{files.map((file, index) => <a key={`${file}-${index}`} href={file} target="_blank" rel="noreferrer" className="pa-file-link"><Icons.File /> Diseño {index + 1}</a>)}</div> : <div className="pa-empty-small">No hay diseños cargados.</div>}
@@ -1838,7 +1838,7 @@ export default function Dashboard() {
     setAssigningOrder(null);
     setAssigningRole(null);
     await loadOrders();
-    showFeedback("success", `Orden asignada a ${isDesigner ? "diseñador" : "cotizador"} correctamente.`);
+    showFeedback("success", `Orden asignada a ${isDesigner ? "diseñador" : "caja"} correctamente.`);
   };
 
   const openQuotationModal = (order) => {
@@ -2318,7 +2318,7 @@ export default function Dashboard() {
 
   const metrics = [
     { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders /> },
-    { label: "Cotización", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money /> },
+    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money /> },
     { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File /> },
     { label: "Usuarios", value: profiles.length, icon: <Icons.Users /> },
   ];
@@ -2534,7 +2534,7 @@ export default function Dashboard() {
                                   <Icons.Edit />
                                 </button>
                                 {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED]) && (
-                                  <button className="table-action-btn" style={{ background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => openQuotationModal(order)} title="Cotizar">
+                                  <button className="table-action-btn" style={{ background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => openQuotationModal(order)} title="Caja">
                                     <Icons.Money />
                                   </button>
                                 )}
@@ -2847,7 +2847,7 @@ export default function Dashboard() {
                 <option value="admin">Administrador</option>
                 <option value="seller">Vendedor</option>
                 <option value="designer">Diseñador</option>
-                <option value="quote">Cotizador</option>
+                <option value="quote">Caja</option>
                 <option value="printer">Producción</option>
                 <option value="delivery">Entrega</option>
               </select>
@@ -3035,12 +3035,12 @@ export default function Dashboard() {
         open={!!assigningOrder}
         order={assigningOrder}
         role={assigningRole}
-        title={assigningOrder?.order_design_type === "EXTERNAL_DESING" ? "Enviar a Cotización" : undefined}
+        title={assigningOrder?.order_design_type === "EXTERNAL_DESING" ? "Enviar a Caja" : undefined}
         onClose={() => { setAssigningOrder(null); setAssigningRole(null); }}
         onConfirm={handleAssignOrder}
         loading={assigningLoading}
       />
-      <ModalShell open={quotationModalOpen} onClose={() => setQuotationModalOpen(false)} title="Cotizar Orden" size="compact">
+      <ModalShell open={quotationModalOpen} onClose={() => setQuotationModalOpen(false)} title="Caja de orden" size="compact">
         <div style={{ minWidth: 320 }}>
           <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
             {quotationOrder?.client_name}

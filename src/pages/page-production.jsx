@@ -319,7 +319,7 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
                   <div className="pp-modal-row">
                     <span className="pp-modal-row-icon"><Icons.User /></span>
                     <div>
-                      <p className="pp-modal-row-label">Cotizador</p>
+                      <p className="pp-modal-row-label">Responsable de caja</p>
                       <p className="pp-modal-row-value">{quoteName || "No asignado"}</p>
                     </div>
                   </div>

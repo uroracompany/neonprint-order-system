@@ -27,6 +27,71 @@ describe("client order controls", () => {
     expect(onSelect).toHaveBeenCalledWith(client);
   });
 
+  it("muestra loading en el select superior mientras cargan los clientes", () => {
+    render(
+      <ClientSelect
+        clients={[]}
+        value=""
+        onSelect={() => {}}
+        loading
+        placeholder="Seleccionar cliente registrado"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /seleccionar cliente registrado/i }));
+
+    expect(screen.getByText("Cargando clientes...")).toBeInTheDocument();
+    expect(screen.queryByText("No se encontraron clientes.")).not.toBeInTheDocument();
+  });
+
+  it("muestra empty state solo cuando el select superior termina sin clientes", () => {
+    render(
+      <ClientSelect
+        clients={[]}
+        value=""
+        onSelect={() => {}}
+        loading={false}
+        placeholder="Seleccionar cliente registrado"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /seleccionar cliente registrado/i }));
+
+    expect(screen.getByText("No se encontraron clientes.")).toBeInTheDocument();
+    expect(screen.queryByText("Cargando clientes...")).not.toBeInTheDocument();
+  });
+
+  it("muestra loading durante búsqueda async del select superior y luego resultados", async () => {
+    let resolveSearch;
+    const onSearch = vi.fn(() => new Promise((resolve) => {
+      resolveSearch = resolve;
+    }));
+
+    render(
+      <ClientSelect
+        clients={[]}
+        value=""
+        onSelect={() => {}}
+        onSearch={onSearch}
+        placeholder="Seleccionar cliente registrado"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /seleccionar cliente registrado/i }));
+    fireEvent.change(screen.getByPlaceholderText("Buscar por nombre o telefono..."), { target: { value: "JP" } });
+
+    expect(screen.getByText("Cargando clientes...")).toBeInTheDocument();
+    expect(screen.queryByText("No se encontraron clientes.")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(onSearch).toHaveBeenLastCalledWith("JP"));
+    expect(screen.getByText("Cargando clientes...")).toBeInTheDocument();
+
+    resolveSearch([client]);
+
+    expect(await screen.findByText("JP MORGAN")).toBeInTheDocument();
+    expect(screen.queryByText("Cargando clientes...")).not.toBeInTheDocument();
+  });
+
   it("no muestra el dropdown hasta que haya resultados", async () => {
     const onSearch = vi.fn().mockResolvedValue([]);
 

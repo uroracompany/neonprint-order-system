@@ -142,10 +142,40 @@ export const isPaymentStatus = (value, expectedStatus) => normalizePaymentStatus
 
 export const PAYMENT_OPTIONS = [PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL, PAYMENT_STATUS.PAID];
 
+export const UI_TERMS = {
+  cotizacion: "Caja",
+  delivery: "Entrega",
+};
+
+const UI_TERM_REPLACEMENTS = [
+  [/\bCotización\b/g, UI_TERMS.cotizacion],
+  [/\bCotizacion\b/g, UI_TERMS.cotizacion],
+  [/\bcotización\b/g, UI_TERMS.cotizacion],
+  [/\bcotizacion\b/g, UI_TERMS.cotizacion],
+  [/\bCotizador(?:a|es|as)?\b/g, "Responsable de caja"],
+  [/\bcotizador(?:a|es|as)?\b/g, "responsable de caja"],
+  [/\bQuote\b/g, UI_TERMS.cotizacion],
+  [/\bquote\b/g, UI_TERMS.cotizacion],
+  [/\bDelivery\b/g, UI_TERMS.delivery],
+  [/\bdelivery\b/g, UI_TERMS.delivery],
+  [/\bEntregador(?:a|es|as)?\b/g, UI_TERMS.delivery],
+  [/\bentregador(?:a|es|as)?\b/g, UI_TERMS.delivery.toLowerCase()],
+  [/\bRepartidor(?:a|es|as)?\b/g, UI_TERMS.delivery],
+  [/\brepartidor(?:a|es|as)?\b/g, UI_TERMS.delivery.toLowerCase()],
+];
+
+export const formatUiTerms = (value) => {
+  if (typeof value !== "string") return value;
+  return UI_TERM_REPLACEMENTS.reduce(
+    (text, [pattern, replacement]) => text.replace(pattern, replacement),
+    value
+  );
+};
+
 export const STATUS_LABELS = {
   [ORDER_STATUS.PENDING]: "Pendiente",
   [ORDER_STATUS.IN_DESIGN]: "Diseño",
-  [ORDER_STATUS.IN_QUOTE]: "Cotización",
+  [ORDER_STATUS.IN_QUOTE]: UI_TERMS.cotizacion,
   [ORDER_STATUS.IN_PRODUCTION]: "Producción",
   [ORDER_STATUS.IN_TERMINATION]: "Terminación",
   [ORDER_STATUS.IN_DELIVERED]: "Entregado",
@@ -167,7 +197,7 @@ export const QUOTE_ASSIGNMENT_FIELDS = ["quote_id", "quotation_id", "quote_user_
 export const CLIENT_FLOW_STEPS = [
   { key: ORDER_STATUS.PENDING, label: "Pendiente" },
   { key: ORDER_STATUS.IN_DESIGN, label: "Diseño" },
-  { key: ORDER_STATUS.IN_QUOTE, label: "Cotización" },
+  { key: ORDER_STATUS.IN_QUOTE, label: UI_TERMS.cotizacion },
   { key: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
   { key: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
   { key: ORDER_STATUS.IN_COMPLETED, label: "Lista para entrega" },
@@ -177,7 +207,7 @@ export const CLIENT_FLOW_STEPS = [
 // Flujo de seguimiento para clientes — diseño externo (salta Diseño)
 export const CLIENT_FLOW_STEPS_EXTERNAL = [
   { key: ORDER_STATUS.PENDING, label: "Pendiente" },
-  { key: ORDER_STATUS.IN_QUOTE, label: "Cotización" },
+  { key: ORDER_STATUS.IN_QUOTE, label: UI_TERMS.cotizacion },
   { key: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
   { key: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
   { key: ORDER_STATUS.IN_COMPLETED, label: "Lista para entrega" },
@@ -199,7 +229,7 @@ export const CLIENT_STATUS_MAP = {
 export const FLOW_STEPS = [
   { key: ORDER_STATUS.PENDING, label: "Pendiente" },
   { key: ORDER_STATUS.IN_DESIGN, label: "Diseño" },
-  { key: ORDER_STATUS.IN_QUOTE, label: "Cotización" },
+  { key: ORDER_STATUS.IN_QUOTE, label: UI_TERMS.cotizacion },
   { key: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
   { key: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
   { key: ORDER_STATUS.IN_COMPLETED, label: "Completada" },
@@ -209,7 +239,7 @@ export const FLOW_STEPS = [
 // Flujo simplificado para vistas externas (sin diseño, solo etapas clave)
 export const FLOW_STEPS_EXTERNAL = [
   { key: ORDER_STATUS.PENDING, label: "Pendiente" },
-  { key: ORDER_STATUS.IN_QUOTE, label: "Cotización" },
+  { key: ORDER_STATUS.IN_QUOTE, label: UI_TERMS.cotizacion },
   { key: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
   { key: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
   { key: ORDER_STATUS.IN_COMPLETED, label: "Completada" },
@@ -221,7 +251,7 @@ export const FLOW_STEPS_EXTERNAL = [
 export const STATUS_COLORS = {
   [ORDER_STATUS.PENDING]: { label: "Pendiente", color: "#92620A", bg: "#FEF3C7", dot: "#F59E0B" },
   [ORDER_STATUS.IN_DESIGN]: { label: "Diseño", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
-  [ORDER_STATUS.IN_QUOTE]: { label: "Cotización", color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
+  [ORDER_STATUS.IN_QUOTE]: { label: UI_TERMS.cotizacion, color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
   [ORDER_STATUS.IN_PRODUCTION]: { label: "Producción", color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
   [ORDER_STATUS.IN_TERMINATION]: { label: "Terminación", color: "#0369A1", bg: "#E0F2FE", dot: "#0284C7" },
   [ORDER_STATUS.IN_DELIVERED]: { label: "Entregado", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
