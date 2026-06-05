@@ -74,6 +74,7 @@ export async function handleAdminCreateUser(payload, env = process.env) {
   const profilePayload = {
     id: authUserId,
     name,
+    email,
     role,
     employment_status: true,
   };

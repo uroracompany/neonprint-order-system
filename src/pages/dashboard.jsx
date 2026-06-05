@@ -994,27 +994,35 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
 }
 
 // Formulario para crea usuarios en el apartado de admin
-function UserCreateModal({ open, userForm, setUserForm, onClose, onSubmit, saving }) {
+function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, onSubmit, saving }) {
+  const isEdit = mode === "edit";
+  const passwordValue = userForm.password.trim();
+  const confirmPasswordValue = userForm.confirmPassword.trim();
+  const isPasswordReady = isEdit
+    ? (!passwordValue && !confirmPasswordValue) || (passwordValue.length >= 6 && passwordValue === confirmPasswordValue)
+    : passwordValue.length >= 6 && passwordValue === confirmPasswordValue;
   const isSubmitReady =
     userForm.name.trim() &&
     userForm.email.trim() &&
-    userForm.password.trim().length >= 6 &&
-    userForm.password === userForm.confirmPassword;
+    userForm.role &&
+    isPasswordReady;
 
   const roleDescriptions = {
     seller: "Gestiona y da seguimiento comercial a las órdenes.",
     designer: "Recibe y trabaja los archivos asignados para producción.",
     quote: "Cotiza las órdenes y valida la información de pago.",
+    printer: "Gestiona producción, terminación e impresión.",
+    delivery: "Coordina entregas y cierre logístico.",
     admin: "Supervisa módulos, usuarios y el flujo general del sistema.",
   };
 
   return (
-    <ModalShell open={open} onClose={onClose} title="Crear usuario" size="compact">
+    <ModalShell open={open} onClose={onClose} title={isEdit ? "Editar empleado" : "Crear usuario"} size="compact">
       <div className="pa-user-modal-intro">
         <div className="pa-user-modal-icon"><Icons.Users /></div>
         <div>
-          <h4>Nuevo miembro del sistema</h4>
-          <p>Organiza primero la identidad del usuario y luego define su rol y estado inicial dentro del equipo.</p>
+          <h4>{isEdit ? "Actualizar acceso del empleado" : "Nuevo miembro del sistema"}</h4>
+          <p>{isEdit ? "Modifica la identidad, correo y permisos sin cambiar el estado laboral actual." : "Organiza primero la identidad del usuario y luego define su rol y estado inicial dentro del equipo."}</p>
         </div>
       </div>
       <div className="pa-user-modal-layout">
@@ -1026,8 +1034,8 @@ function UserCreateModal({ open, userForm, setUserForm, onClose, onSubmit, savin
           <div className="pa-form-grid single">
             <label className="pa-field"><span>Nombre</span><input value={userForm.name} onChange={(e) => setUserForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Ej. Maria Fernanda" autoComplete="name" /><small className="pa-field-help">Este nombre será visible en el sistema y se guardará también en autenticación.</small></label>
             <label className="pa-field"><span>Email</span><input type="email" value={userForm.email} onChange={(e) => setUserForm(prev => ({ ...prev, email: e.target.value }))} placeholder="usuario@empresa.com" autoComplete="email" /><small className="pa-field-help">Usa un correo único para evitar conflictos de acceso.</small></label>
-            <label className="pa-field"><span>Contraseña</span><input type="password" value={userForm.password} onChange={(e) => setUserForm(prev => ({ ...prev, password: e.target.value }))} placeholder="Mínimo 6 caracteres" /></label>
-            <label className="pa-field"><span>Confirmar contraseña</span><input type="password" value={userForm.confirmPassword} onChange={(e) => setUserForm(prev => ({ ...prev, confirmPassword: e.target.value }))} placeholder="Repite la contraseña" /></label>
+            <label className="pa-field"><span>{isEdit ? "Nueva contraseña" : "Contraseña"}</span><input type="password" value={userForm.password} onChange={(e) => setUserForm(prev => ({ ...prev, password: e.target.value }))} placeholder={isEdit ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"} autoComplete="new-password" /></label>
+            <label className="pa-field"><span>Confirmar contraseña</span><input type="password" value={userForm.confirmPassword} onChange={(e) => setUserForm(prev => ({ ...prev, confirmPassword: e.target.value }))} placeholder={isEdit ? "Confirma solo si cambias contraseña" : "Repite la contraseña"} autoComplete="new-password" /></label>
           </div>
         </section>
         
@@ -1047,23 +1055,24 @@ function UserCreateModal({ open, userForm, setUserForm, onClose, onSubmit, savin
                 <option value="quote">Cotizador</option>
                 <option value="printer">Impresor</option>
                 <option value="delivery">Entregador</option>
+                <option value="admin">Administrador</option>
               </select>
             </label>
             <div className="pa-static-field">
               <span>Estado laboral</span>
-              <div className="pa-static-value">Empleado por defecto</div>
+              <div className="pa-static-value">{isEdit ? getEmploymentStatus(userForm) : "Empleado por defecto"}</div>
               <small className="pa-field-help">Acceso actual: {roleDescriptions[userForm.role]}</small>
             </div>
           </div>
           <div className="pa-user-modal-pills">
             <span className="pa-user-pill neutral">El rol define el acceso dentro del sistema.</span>
-            <span className="pa-user-pill info">Se guardará como empleado activo (`employment_status = true`).</span>
+            <span className="pa-user-pill info">{isEdit ? "El estado laboral se administra con Activar/Desactivar." : "Se guardará como empleado activo (`employment_status = true`)."}</span>
           </div>
         </section>
       </div>
       <div className="pa-modal-actions">
         <button className="pa-btn secondary" onClick={onClose}>Cancelar</button>
-        <button className="pa-btn primary" onClick={onSubmit} disabled={saving || !isSubmitReady}>{saving ? "Creando..." : "Crear usuario"}</button>
+        <button className="pa-btn primary" onClick={onSubmit} disabled={saving || !isSubmitReady}>{saving ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear usuario"}</button>
       </div>
     </ModalShell>
   );
@@ -1152,7 +1161,7 @@ function EmploymentStatusConfirmModal({ open, pendingChange, onClose, onConfirm,
 }
 
 // Detalles del usuario
-function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onShowFeedback }) {
+function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggle, onShowFeedback }) {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -1167,7 +1176,7 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
     if (!open || !user?.id) return;
 
     const fetchUserEmail = async () => {
-      setUserEmail("");
+      setUserEmail(user.email || "");
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const response = await fetch("/api/get-user-email", {
@@ -1187,7 +1196,7 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
       }
     };
     fetchUserEmail();
-  }, [open, user?.id]);
+  }, [open, user?.id, user?.email]);
 
   const handleChangePassword = async () => {
     if (!user?.id) return;
@@ -1392,6 +1401,9 @@ function UserDetailModal({ open, user, onClose, onRequestEmploymentToggle, onSho
 
           <div className="pa-modal-actions">
             <button className="pa-btn secondary" onClick={onClose}>Cerrar</button>
+            <button className="pa-btn primary" onClick={() => onEdit(user)}>
+              Editar empleado
+            </button>
             <button
               className={`pa-btn ${isActive ? "danger" : "primary"}`}
               onClick={() => onRequestEmploymentToggle(user)}
@@ -1470,6 +1482,7 @@ export default function Dashboard() {
   const [orderModalMode, setOrderModalMode] = useState("create");
   const [orderForm, setOrderForm] = useState(DEFAULT_ORDER_FORM);
   const [userModalOpen, setUserModalOpen] = useState(false);
+  const [userModalMode, setUserModalMode] = useState("create");
   const [userForm, setUserForm] = useState(DEFAULT_USER_FORM);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userDetailModalOpen, setUserDetailModalOpen] = useState(false);
@@ -1894,6 +1907,34 @@ export default function Dashboard() {
     showFeedback("success", "Orden cotizada correctamente.");
   };
 
+  const openCreateUserModal = () => {
+    setUserModalMode("create");
+    setSelectedUser(null);
+    setUserForm(DEFAULT_USER_FORM);
+    setUserModalOpen(true);
+  };
+
+  const openEditUserModal = (profileItem) => {
+    setUserModalMode("edit");
+    setSelectedUser(profileItem);
+    setUserDetailModalOpen(false);
+    setUserForm({
+      name: getUserDisplayName(profileItem),
+      email: profileItem?.email || "",
+      password: "",
+      confirmPassword: "",
+      role: profileItem?.role || "seller",
+      employment_status: isEmploymentActive(profileItem),
+    });
+    setUserModalOpen(true);
+  };
+
+  const closeUserModal = () => {
+    setUserModalOpen(false);
+    setUserModalMode("create");
+    setUserForm(DEFAULT_USER_FORM);
+  };
+
   // Funcionalidad para registrar usuarios
   const handleCreateUser = async () => {
     const trimmedName = userForm.name.trim();
@@ -1944,12 +1985,82 @@ export default function Dashboard() {
       return showFeedback("error", result?.error || "No se pudo crear el usuario.");
     }
 
-    setUserModalOpen(false);
-    setUserForm(DEFAULT_USER_FORM);
+    closeUserModal();
     await loadProfiles();
     showFeedback("success", result?.message || "Usuario creado correctamente en autenticación y profiles.");
 
   };
+
+  const handleUpdateUser = async () => {
+    if (!selectedUser?.id) {
+      return showFeedback("error", "Selecciona un empleado para editar.");
+    }
+
+    const trimmedName = userForm.name.trim();
+    const trimmedEmail = userForm.email.trim().toLowerCase();
+    const trimmedPassword = userForm.password.trim();
+    const trimmedConfirmPassword = userForm.confirmPassword.trim();
+
+    if (!trimmedName || !trimmedEmail || !userForm.role) {
+      return showFeedback("error", "Nombre, email y rol son obligatorios.");
+    }
+
+    if ((trimmedPassword || trimmedConfirmPassword) && trimmedPassword.length < 6) {
+      return showFeedback("error", "La contraseña debe tener al menos 6 caracteres.");
+    }
+
+    if (trimmedPassword !== trimmedConfirmPassword) {
+      return showFeedback("error", "Las contraseñas no coinciden.");
+    }
+
+    setSavingUser(true);
+    let response;
+    let result;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      response = await fetch("/api/admin-update-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          userId: selectedUser.id,
+          name: trimmedName,
+          email: trimmedEmail,
+          password: trimmedPassword || undefined,
+          role: userForm.role,
+        }),
+      });
+
+      result = await response.json();
+    } catch {
+      setSavingUser(false);
+      return showFeedback("error", "No se pudo conectar con el servicio de edición de empleados.");
+    }
+
+    setSavingUser(false);
+
+    if (!response.ok) {
+      return showFeedback("error", result?.error || "No se pudo actualizar el empleado.");
+    }
+
+    const updatedUser = result?.user ? { ...selectedUser, ...result.user } : {
+      ...selectedUser,
+      name: trimmedName,
+      email: trimmedEmail,
+      role: userForm.role,
+    };
+
+    closeUserModal();
+    setSelectedUser(updatedUser);
+    await loadProfiles();
+    showFeedback("success", result?.message || "Empleado actualizado correctamente.");
+  };
+
+  const handleSaveUser = () => (
+    userModalMode === "edit" ? handleUpdateUser() : handleCreateUser()
+  );
 
   // Prepara el cambio de estado, pero no actualiza la base hasta que el admin confirme.
   const openEmploymentStatusConfirm = (profile) => {
@@ -2738,6 +2849,7 @@ export default function Dashboard() {
                 <option value="designer">Diseñador</option>
                 <option value="quote">Cotizador</option>
                 <option value="printer">Producción</option>
+                <option value="delivery">Entrega</option>
               </select>
               <div className="pa-view-toggle-group">
                 <button onClick={() => setUserViewMode("table")} className={`pa-view-toggle ${userViewMode === "table" ? "active" : ""}`} title="Vista de tabla">
@@ -2747,7 +2859,7 @@ export default function Dashboard() {
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
                 </button>
               </div>
-              <button className="pa-btn primary pa-toolbar-create" onClick={() => setUserModalOpen(true)}><Icons.Plus />
+              <button className="pa-btn primary pa-toolbar-create" onClick={openCreateUserModal}><Icons.Plus />
                 Crear usuario
               </button>
             </div>
@@ -2821,6 +2933,12 @@ export default function Dashboard() {
                             }}>
                               Ver detalles
                             </button>
+                            <button className="pa-btn secondary pa-btn-sm" onClick={(event) => {
+                              event.stopPropagation();
+                              openEditUserModal(item);
+                            }}>
+                              Editar empleado
+                            </button>
                             <button className={`pa-btn pa-btn-sm ${isActive ? "deactivate" : "primary"}`} onClick={(event) => {
                               event.stopPropagation();
                               openEmploymentStatusConfirm(item);
@@ -2871,6 +2989,9 @@ export default function Dashboard() {
                                 <div className="table-actions">
                                   <button className="table-action-btn view" onClick={(e) => { e.stopPropagation(); setSelectedUser(item); setUserDetailModalOpen(true); }} title="Ver detalles">
                                     <Icons.Eye />
+                                  </button>
+                                  <button className="table-action-btn edit" onClick={(e) => { e.stopPropagation(); openEditUserModal(item); }} title="Editar empleado">
+                                    <Icons.Edit />
                                   </button>
                                   <button className={`table-action-btn ${isActive ? "deactivate" : "activate"}`} onClick={(e) => { e.stopPropagation(); openEmploymentStatusConfirm(item); }} title={isActive ? "Desactivar usuario" : "Activar usuario"}>
                                     {isActive ? <Icons.X /> : <Icons.Check />}
@@ -3024,8 +3145,8 @@ export default function Dashboard() {
           </div>
         </div>
       </ModalShell>
-      <UserCreateModal open={userModalOpen} userForm={userForm} setUserForm={setUserForm} onClose={() => setUserModalOpen(false)} onSubmit={handleCreateUser} saving={savingUser} />
-      <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} />
+      <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} />
+      <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />
     </div>
   );

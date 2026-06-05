@@ -9,7 +9,7 @@
 
 // Import React Dependencies
 import { Navigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
 
 // Import Components and Assets
@@ -63,46 +63,65 @@ export default function ProtectedRoute({ children, allowed = [] }) {
   const [session, setSession] = useState(undefined); // undefined = cargando, null = sin sesión, user = autenticado
   const [unauthorized, setUnauthorized] = useState(false); // true = autenticado pero sin permisos
   const [profileInactive, setProfileInactive] = useState(false);
+  const allowedKey = useMemo(() => allowed.join("|"), [allowed]);
+
+  const evaluateProfileAccess = useCallback((profile) => {
+    const allowedRoles = allowedKey ? allowedKey.split("|") : [];
+    setProfileInactive(profile?.employment_status === false);
+    setUnauthorized(Boolean(allowedRoles.length && !allowedRoles.includes(profile?.role)));
+  }, [allowedKey]);
+
+  const checkAccess = useCallback(async () => {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+      setSession(null);
+      return null;
+    }
+
+    setSession(data.user);
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role, employment_status")
+      .eq("id", data.user.id)
+      .single();
+
+    evaluateProfileAccess(profile);
+    return data.user;
+  }, [evaluateProfileAccess]);
 
   useEffect(() => {
     let isMounted = true;
+    let profileChannel = null;
 
-    const checkAccess = async () => {
-      const { data, error } = await supabase.auth.getUser();
+    const start = async () => {
+      const currentUser = await checkAccess();
+      if (!isMounted || !currentUser?.id) return;
 
-      if (!isMounted) return;
-
-      if (error || !data.user) {
-        setSession(null);
-        return;
-      }
-
-      setSession(data.user);
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, employment_status")
-        .eq("id", data.user.id)
-        .single();
-
-      if (!isMounted) return;
-
-      if (profile?.employment_status === false) {
-        setProfileInactive(true);
-        return;
-      }
-
-      if (allowed.length && !allowed.includes(profile?.role)) {
-        setUnauthorized(true);
-      }
+      profileChannel = supabase
+        .channel(`protected-profile-${currentUser.id}`)
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${currentUser.id}` },
+          (payload) => evaluateProfileAccess(payload.new)
+        )
+        .subscribe();
     };
 
-    checkAccess();
+    const handleFocus = () => {
+      checkAccess();
+    };
+
+    start();
+    window.addEventListener("focus", handleFocus);
 
     return () => {
       isMounted = false;
+      window.removeEventListener("focus", handleFocus);
+      if (profileChannel) supabase.removeChannel(profileChannel);
     };
-  }, [allowed]);
+  }, [checkAccess, evaluateProfileAccess]);
 
   // Loader mientras verifica
   if (session === undefined) {

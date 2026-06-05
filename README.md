@@ -32,12 +32,14 @@ VITE_SUPABASE_URL="https://your-project.supabase.co"
 VITE_SUPABASE_ANON_KEY="your_publishable_or_anon_key"
 SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="your_service_role_key"
+ORDER_PURGE_CRON_SECRET="optional_long_random_token"
 ```
 
 Reglas importantes:
 
 - `SUPABASE_SERVICE_ROLE_KEY` solo debe usarse del lado servidor.
 - Nunca crear una variable `VITE_SUPABASE_SERVICE_ROLE_KEY`.
+- `ORDER_PURGE_CRON_SECRET` es opcional si el cron invoca la Edge Function con `SUPABASE_SERVICE_ROLE_KEY` como Bearer token.
 - La autorizacion debe venir de `public.profiles.role`, no de `user_metadata`.
 
 ## Scripts
@@ -97,6 +99,7 @@ Los enums y normalizadores del frontend viven en `src/utils/constants.js`. Las m
 ## Endpoints administrativos
 
 - `POST /api/admin-create-user`
+- `POST /api/admin-update-user`
 - `POST /api/change-user-password`
 - `POST /api/get-user-email`
 
@@ -123,11 +126,23 @@ La politica esperada para `payment-invoice` es privada con signed URLs. La migra
 - No muestra descripcion completa, preview interno, materiales ni historial tecnico completo.
 - Las RPC publicas esperadas son `get_order_tracking(text)` y `get_order_tracking_events(text)`.
 
+## Purga automatica de ordenes antiguas
+
+La migracion `supabase/20260604_add_old_order_purge_job.sql` crea una auditoria minima en `order_purge_audit`, funciones internas para purgar ordenes con mas de 3 meses y un job diario `purge-old-orders-daily`.
+
+Antes de activar en produccion:
+
+- Ejecutar la consulta de inventario de FKs incluida en la migracion para confirmar dependencias reales de `public.orders`.
+- Desplegar la Edge Function `supabase/functions/purge-old-orders`.
+- Crear secretos de Vault: `project_url` con la URL del proyecto y `order_purge_cron_token` con `SUPABASE_SERVICE_ROLE_KEY` o con `ORDER_PURGE_CRON_SECRET` si la funcion se publica sin verificacion JWT.
+- Probar manualmente con `POST /functions/v1/purge-old-orders` y body `{"dry_run": true}` antes de permitir borrado real.
+
 ## Migraciones relevantes
 
 - `supabase/20260521_standardize_order_status_codes.sql`: normaliza estados de orden y reglas del flujo.
 - `supabase/20260522_flowtrack_tracking_system.sql`: agrega tracking publico y eventos.
 - `supabase/20260526_harden_tracking_and_payment_assets.sql`: normaliza pagos, endurece tracking y protege comprobantes.
+- `supabase/20260604_add_old_order_purge_job.sql`: agrega purga automatica diaria de ordenes antiguas con auditoria.
 
 ## Verificacion minima antes de produccion
 

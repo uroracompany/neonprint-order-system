@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { handleAdminCreateUser } from './server/admin-create-user-handler.js'
+import { handleAdminUpdateUser } from './server/admin-update-user-handler.js'
 import { handleGetUserEmail } from './server/get-user-email-handler.js'
 import { handleChangeUserPassword } from './server/change-user-password-handler.js'
 
@@ -48,6 +49,7 @@ export default defineConfig(() => {
       react(),
       tailwindcss(),
       createApiHandler("/api/admin-create-user", handleAdminCreateUser),
+      createApiHandler("/api/admin-update-user", handleAdminUpdateUser),
       createApiHandler("/api/get-user-email", handleGetUserEmail),
       createApiHandler("/api/change-user-password", handleChangeUserPassword),
     ],
