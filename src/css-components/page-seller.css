@@ -846,6 +846,7 @@
 }
 .ps-file-name {
   flex: 1;
+  max-width: 220px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
@@ -853,24 +854,30 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ps-file-remove {
+.ps-file-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(244, 63, 94, 0.08);
-  color: var(--pink);
+  gap: 8px;
+}
+
+.ps-file-action {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.15s ease;
   flex-shrink: 0;
 }
-.ps-file-remove:hover {
-  background: var(--pink);
-  color: #fff;
-  transform: scale(1.1);
+
+.ps-file-action:hover {
+  background: var(--surface-alt);
+  color: var(--text);
 }
 
 /* ── Preview Upload — Imagen de Preview ───────────────────────── */

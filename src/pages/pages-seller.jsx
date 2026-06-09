@@ -69,6 +69,14 @@ function ProductionAreaSelect({ value, onChange, className = "ps-form-input" }) 
   );
 }
 
+const MAX_VISIBLE_CHARS = 22;
+
+const truncateFileName = (name) => {
+  if (!name) return '';
+  if (name.length <= MAX_VISIBLE_CHARS) return name;
+  return name.slice(0, MAX_VISIBLE_CHARS) + '...';
+};
+
 const isValidDominicanPhone = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
   const normalized = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
@@ -709,18 +717,22 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                     {form.design_files.map((file, i) => (
                       <div key={i} className="ps-file-item">
                         <Icons.File />
-                        <span className="ps-file-name">{file.name}</span>
-                        <ProductionAreaSelect
-                          value={form.design_file_areas[i]}
-                          onChange={(value) => set("design_file_areas", form.design_file_areas.map((area, idx) => idx === i ? value : area))}
-                        />
-                        <button className="ps-file-remove" onClick={(e) => {
-                          e.stopPropagation();
-                          set("design_files", form.design_files.filter((_, idx) => idx !== i));
-                          set("design_file_areas", form.design_file_areas.filter((_, idx) => idx !== i));
-                        }}>
-                          <Icons.X />
-                        </button>
+                        <span className="ps-file-name">{truncateFileName(file.name)}</span>
+                        <div style={{ maxWidth: '210px', marginLeft: 'auto' }}>
+                          <ProductionAreaSelect
+                            value={form.design_file_areas[i]}
+                            onChange={(value) => set("design_file_areas", form.design_file_areas.map((area, idx) => idx === i ? value : area))}
+                          />
+                        </div>
+                        <div className="ps-file-actions">
+                          <button className="ps-file-action" onClick={(e) => {
+                            e.stopPropagation();
+                            set("design_files", form.design_files.filter((_, idx) => idx !== i));
+                            set("design_file_areas", form.design_file_areas.filter((_, idx) => idx !== i));
+                          }}>
+                            <Icons.X />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1204,14 +1216,18 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
                 {newFiles.map((file, i) => (
                   <div key={i} className="ps-file-item" style={{ borderColor: "var(--cyan)", background: "rgba(6, 182, 212, 0.04)" }}>
                     <Icons.File />
-                    <span className="ps-file-name">{file.name}</span>
-                    <ProductionAreaSelect
-                      value={newFileAreas[i]}
-                      onChange={(value) => setNewFileAreas(newFileAreas.map((area, idx) => idx === i ? value : area))}
-                    />
-                    <button className="ps-file-remove" onClick={() => handleRemoveNewFile(i)}>
-                      <Icons.X />
-                    </button>
+                    <span className="ps-file-name">{truncateFileName(file.name)}</span>
+                    <div style={{ maxWidth: '210px', marginLeft: 'auto' }}>
+                      <ProductionAreaSelect
+                        value={newFileAreas[i]}
+                        onChange={(value) => setNewFileAreas(newFileAreas.map((area, idx) => idx === i ? value : area))}
+                      />
+                    </div>
+                    <div className="ps-file-actions">
+                      <button className="ps-file-action" onClick={() => handleRemoveNewFile(i)}>
+                        <Icons.X />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
