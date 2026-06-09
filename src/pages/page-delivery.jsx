@@ -5,6 +5,7 @@ import "../css-components/page-delivery.css";
 import "../css-components/page-seller.css";
 import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
+import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
 import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isOrderStatus } from "../utils/constants";
@@ -211,6 +212,7 @@ function OrderDetailModal({ onClose, order, onUpdateStatus }) {
 
 export default function PageDelivery() {
   const navigate = useNavigate();
+  const { user: authUser, signOut } = useAuth();
   const [user, setUser] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -237,7 +239,6 @@ export default function PageDelivery() {
       .from("orders")
       .select("*")
       .in("status", DELIVERY_STATUS_OPTIONS)
-      .eq("delivery_id", user.id)
       .order("created_at", { ascending: false });
 
     if (!error && data) {
@@ -247,17 +248,12 @@ export default function PageDelivery() {
   }, [user?.id]);
 
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/");
-        return;
-      }
-      setUser(user);
-    };
-    getUser();
+    setUser(authUser || null);
+  }, [authUser]);
+
+  useEffect(() => {
     loadClients(supabase).then(setClients);
-  }, [navigate]);
+  }, []);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -283,7 +279,7 @@ export default function PageDelivery() {
   }, [user?.id, refreshOrders]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate("/");
   };
 
@@ -330,7 +326,6 @@ export default function PageDelivery() {
         .from("orders")
         .select("*")
         .in("status", DELIVERY_STATUS_OPTIONS)
-        .eq("delivery_id", user.id)
         .order("created_at", { ascending: false });
 
       if (!fetchError && data) {

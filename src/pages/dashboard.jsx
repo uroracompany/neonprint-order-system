@@ -36,6 +36,8 @@ import {
 } from "../utils/constants";
 import { getReferenceImages } from "../utils/orderAssets";
 import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
+import { adminApiFetch } from "../utils/adminApi";
+import { useAuth } from "../hooks/useAuth";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
@@ -125,6 +127,9 @@ const getRoleLabel = (role) => {
     quote: "Caja",
     admin: "Administrador",
     printer: "Producción",
+    digital_producer: "Produccion Digital",
+    dtf_producer: "Produccion DTF",
+    ploteo_producer: "Produccion Ploteo",
     delivery: "Entrega"
   };
   return map[role] || role;
@@ -1008,6 +1013,9 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
     isPasswordReady;
 
   const roleDescriptions = {
+    digital_producer: "Gestiona archivos de produccion digital.",
+    dtf_producer: "Gestiona archivos de produccion DTF.",
+    ploteo_producer: "Gestiona archivos de produccion ploteo.",
     seller: "Gestiona y da seguimiento comercial a las órdenes.",
     designer: "Recibe y trabaja los archivos asignados para producción.",
     quote: "Gestiona caja y valida la información de pago.",
@@ -1053,7 +1061,10 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
                 <option value="seller">Vendedor</option>
                 <option value="designer">Diseñador</option>
                 <option value="quote">Caja</option>
-                <option value="printer">Impresor</option>
+                <option value="printer">Produccion legacy</option>
+                <option value="digital_producer">Produccion Digital</option>
+                <option value="dtf_producer">Produccion DTF</option>
+                <option value="ploteo_producer">Produccion Ploteo</option>
                 <option value="delivery">Entrega</option>
                 <option value="admin">Administrador</option>
               </select>
@@ -1178,16 +1189,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
     const fetchUserEmail = async () => {
       setUserEmail(user.email || "");
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const response = await fetch("/api/get-user-email", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
-          },
-          body: JSON.stringify({ userId: user.id }),
-        });
-        const data = await response.json();
+        const { result: data } = await adminApiFetch("/api/get-user-email", { userId: user.id });
         if (data.email) {
           setUserEmail(data.email);
         }
@@ -1232,17 +1234,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
     setChangingPassword(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch("/api/change-user-password", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({ userId: user.id, newPassword }),
-      });
-
-      const result = await response.json();
+      const { response, result } = await adminApiFetch("/api/change-user-password", { userId: user.id, newPassword });
 
       if (!response.ok) {
         onShowFeedback?.("error", `Error al cambiar la contraseña: ${result.error}`);
@@ -1442,6 +1434,7 @@ const CARD_ACCENTS = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user: authUser, profile: authProfile, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
   const [user, setUser] = useState(null);
@@ -1450,6 +1443,8 @@ export default function Dashboard() {
   const [profiles, setProfiles] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadOrdersError, setLoadOrdersError] = useState(null);
+  const [loadUsersError, setLoadUsersError] = useState(null);
   const [savingOrder, setSavingOrder] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
   const [assigningOrder, setAssigningOrder] = useState(null);
@@ -1518,34 +1513,61 @@ export default function Dashboard() {
     return () => clearTimeout(timeout);
   }, [feedback]);
 
-  const loadSession = useCallback(async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data?.user) return navigate("/");
-    const { data: currentProfile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
-    if (!currentProfile || currentProfile.role !== "admin") {
-      navigate("/", { replace: true, state: { loginMessage: "Tu usuario no tiene permisos para acceder al panel administrativo." } });
-      return;
-    }
-    setUser(data.user);
-    setProfile(currentProfile);
-  }, [navigate]);
+  useEffect(() => {
+    setUser(authUser || null);
+    setProfile(authProfile || null);
+  }, [authProfile, authUser]);
 
   const loadOrders = useCallback(async () => {
     setLoadingOrders(true);
-    const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
-    setOrders(!error && Array.isArray(data) ? data : []);
-    setLoadingOrders(false);
+    setLoadOrdersError(null);
+
+    try {
+      const { response, result } = await adminApiFetch("/api/admin-list-orders", { page: 1, pageSize: 1000 });
+
+      if (!response.ok) {
+        throw new Error(result?.error || "No se pudieron cargar ordenes.");
+      }
+
+      setOrders(Array.isArray(result?.orders) ? result.orders : []);
+      setLoadingOrders(false);
+      return;
+    } catch (error) {
+      console.error("Error loading orders:", error);
+      setLoadOrdersError(error?.message || "No se pudieron cargar ordenes.");
+      setOrders([]);
+      setLoadingOrders(false);
+      return;
+    }
   }, []);
 
   const loadProfiles = useCallback(async () => {
     setLoadingUsers(true);
-    const { data, error } = await supabase.from("profiles").select("*").order("name", { ascending: true });
-    setProfiles(!error && Array.isArray(data) ? data : []);
-    setLoadingUsers(false);
+    setLoadUsersError(null);
+
+    try {
+      const { response, result } = await adminApiFetch("/api/admin-list-users", { page: 1, pageSize: 500 });
+
+      if (!response.ok) {
+        throw new Error(result?.error || "No se pudieron cargar usuarios.");
+      }
+
+      setProfiles(Array.isArray(result?.users) ? result.users : []);
+      setLoadingUsers(false);
+      return;
+    } catch (error) {
+      console.error("Error loading profiles:", error);
+      setLoadUsersError(error?.message || "No se pudieron cargar usuarios.");
+      setProfiles([]);
+      setLoadingUsers(false);
+      return;
+    }
+
   }, []);
 
   useEffect(() => {
-    loadSession();
+    if (!authUser?.id) return undefined;
+
     loadOrders();
     loadProfiles();
 
@@ -1560,7 +1582,7 @@ export default function Dashboard() {
     return () => {
       supabase.removeChannel(ordersChannel);
     };
-  }, [loadSession, loadOrders, loadProfiles]);
+  }, [authUser?.id, loadOrders, loadProfiles]);
 
   const fetchMaterials = async () => {
     setMaterialsLoading(true);
@@ -1608,7 +1630,7 @@ export default function Dashboard() {
   }, [activeTab]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate("/");
   };
 
@@ -1958,22 +1980,12 @@ export default function Dashboard() {
     let response;
     let result;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      response = await fetch("/api/admin-create-user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({
+      ({ response, result } = await adminApiFetch("/api/admin-create-user", {
           name: trimmedName,
           email: trimmedEmail,
           password: trimmedPassword,
           role: userForm.role,
-        }),
-      });
-
-      result = await response.json();
+        }));
     } catch {
       setSavingUser(false);
       return showFeedback("error", "No se pudo conectar con el servicio de creación de usuarios.");
@@ -2017,23 +2029,13 @@ export default function Dashboard() {
     let response;
     let result;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      response = await fetch("/api/admin-update-user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({
+      ({ response, result } = await adminApiFetch("/api/admin-update-user", {
           userId: selectedUser.id,
           name: trimmedName,
           email: trimmedEmail,
           password: trimmedPassword || undefined,
           role: userForm.role,
-        }),
-      });
-
-      result = await response.json();
+        }));
     } catch {
       setSavingUser(false);
       return showFeedback("error", "No se pudo conectar con el servicio de edición de empleados.");
@@ -2081,16 +2083,23 @@ export default function Dashboard() {
   // Aplica el cambio real en la base usando el campo booleano employment_status.
   const handleEmploymentStatusChange = async (profileId, nextStatus) => {
     setSavingEmploymentStatus(true);
+    let response;
+    let result;
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({ employment_status: nextStatus })
-      .eq("id", profileId);
+    try {
+      ({ response, result } = await adminApiFetch("/api/admin-set-user-status", {
+          userId: profileId,
+          employment_status: nextStatus,
+        }));
+    } catch {
+      setSavingEmploymentStatus(false);
+      return showFeedback("error", "No se pudo conectar con el servicio de usuarios.");
+    }
 
     setSavingEmploymentStatus(false);
 
-    if (error) {
-      return showFeedback("error", "No se pudo actualizar el estado del usuario.");
+    if (!response.ok) {
+      return showFeedback("error", result?.error || "No se pudo actualizar el estado del usuario.");
     }
 
     await loadProfiles();
@@ -2509,7 +2518,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {loadingOrders ? <tr><td colSpan={9} className="ps-table-empty">Cargando órdenes...</td></tr> : filteredOrders.length === 0 ? <tr><td colSpan={9} className="ps-table-empty">No hay órdenes disponibles.</td></tr> : paginatedOrders.map(order =>
+                    {loadingOrders ? <tr><td colSpan={9} className="ps-table-empty">Cargando órdenes...</td></tr> : loadOrdersError ? <tr><td colSpan={9} className="ps-table-empty">{loadOrdersError}</td></tr> : filteredOrders.length === 0 ? <tr><td colSpan={9} className="ps-table-empty">No hay órdenes disponibles.</td></tr> : paginatedOrders.map(order =>
                           <tr key={order.id} className="row-hover">
                             <td className="td-pad td-id">{order.id?.slice(0, 8) || "---"}</td>
                             <td className="td-pad td-name">{order.client_name || "Sin cliente"}</td>
@@ -2848,7 +2857,10 @@ export default function Dashboard() {
                 <option value="seller">Vendedor</option>
                 <option value="designer">Diseñador</option>
                 <option value="quote">Caja</option>
-                <option value="printer">Producción</option>
+                <option value="printer">Produccion legacy</option>
+                <option value="digital_producer">Produccion Digital</option>
+                <option value="dtf_producer">Produccion DTF</option>
+                <option value="ploteo_producer">Produccion Ploteo</option>
                 <option value="delivery">Entrega</option>
               </select>
               <div className="pa-view-toggle-group">
@@ -2880,7 +2892,11 @@ export default function Dashboard() {
                     </div>
                     : filteredProfiles.length === 0 ?
                       <div className="pa-empty-card">
-                        No hay usuarios para mostrar.
+                        {loadUsersError ? (
+                          <span style={{ color: "#EF4444" }}>{loadUsersError}</span>
+                        ) : (
+                          "No hay usuarios para mostrar."
+                        )}
                       </div>
                       : filteredProfiles.map(item => {
                         const isActive = isEmploymentActive(item);
@@ -2965,7 +2981,7 @@ export default function Dashboard() {
                       {loadingUsers ?
                         <tr><td colSpan={5} className="ps-table-empty">Cargando usuarios...</td></tr>
                         : filteredProfiles.length === 0 ?
-                          <tr><td colSpan={5} className="ps-table-empty">No hay usuarios para mostrar.</td></tr>
+                          <tr><td colSpan={5} className="ps-table-empty">{loadUsersError || "No hay usuarios para mostrar."}</td></tr>
                           : filteredProfiles.map(item => {
                             const isActive = isEmploymentActive(item);
 

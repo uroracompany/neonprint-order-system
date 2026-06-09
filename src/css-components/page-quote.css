@@ -879,6 +879,10 @@
   padding: 28px;
 }
 
+.pq-production-dialog {
+  width: min(680px, 100%);
+}
+
 .pq-dialog-icon {
   width: 68px;
   height: 68px;
@@ -937,6 +941,63 @@
 .pq-dialog-order-name {
   font-size: 18px;
   font-weight: 700;
+}
+
+.pq-production-loading {
+  padding: 18px;
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.pq-production-assignment-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.pq-production-assignment-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.pq-production-area-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: #0f172a;
+}
+
+.pq-production-area-copy strong {
+  font-size: 13px;
+}
+
+.pq-production-area-copy small,
+.pq-production-row-error {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.pq-production-row-error {
+  grid-column: 2;
+  color: #dc2626;
+}
+
+.pq-production-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .pq-form-group {
@@ -1570,6 +1631,14 @@
   .pq-dialog-actions,
   .pq-modal-actions {
     flex-direction: column;
+  }
+
+  .pq-production-assignment-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pq-production-row-error {
+    grid-column: 1;
   }
 
   .pq-toast-stack {

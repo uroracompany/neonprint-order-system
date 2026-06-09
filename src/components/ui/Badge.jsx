@@ -34,6 +34,9 @@ export function RoleBadge({ role }) {
     designer: ["Diseñador", "purple"],
     quote: [UI_TERMS.cotizacion, "blue"],
     printer: ["Producción", "orange"],
+    digital_producer: ["Produccion Digital", "orange"],
+    dtf_producer: ["Produccion DTF", "orange"],
+    ploteo_producer: ["Produccion Ploteo", "orange"],
     delivery: [UI_TERMS.delivery, "cyan"],
   };
   const entry = roleMap[role];

@@ -1,26 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
-
-function jsonResponse(status, body) {
-  return { status, body };
-}
-
-function getEnvValue(env, key, fallback) {
-  return env[key] || (fallback ? env[fallback] : undefined);
-}
+import { requireAdmin } from "./auth-middleware.js";
+import { ADMIN_USER_ROLE_SET, getSupabaseAdminEnv, jsonResponse, normalizeUserProfile } from "./admin-user-utils.js";
 
 export async function handleAdminCreateUser(payload, env = process.env) {
-  const supabaseUrl = getEnvValue(env, "SUPABASE_URL", "VITE_SUPABASE_URL");
-  const serviceRoleKey = getEnvValue(env, "SUPABASE_SERVICE_ROLE_KEY");
+  const envResult = getSupabaseAdminEnv(env);
+  if (envResult.error) return envResult.error;
+  const { supabaseUrl, serviceRoleKey } = envResult;
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    const missing = [
-      !supabaseUrl ? "SUPABASE_URL" : null,
-      !serviceRoleKey ? "SUPABASE_SERVICE_ROLE_KEY" : null,
-    ].filter(Boolean);
-
-    return jsonResponse(500, {
-      error: `Falta configurar ${missing.join(" y ")} en el entorno del servidor.`,
-    });
+  const auth = await requireAdmin(env.authHeader, env);
+  if (!auth.authorized) {
+    return jsonResponse(auth.status || 403, { error: auth.error });
   }
 
   const name = String(payload?.name || "").trim();
@@ -31,6 +20,12 @@ export async function handleAdminCreateUser(payload, env = process.env) {
   if (!name || !email || !password || !role) {
     return jsonResponse(400, {
       error: "Nombre, email, contraseña y rol son obligatorios.",
+    });
+  }
+
+  if (!ADMIN_USER_ROLE_SET.has(role)) {
+    return jsonResponse(400, {
+      error: "El rol seleccionado no es valido.",
     });
   }
 
@@ -90,12 +85,6 @@ export async function handleAdminCreateUser(payload, env = process.env) {
 
   return jsonResponse(200, {
     message: "Usuario creado correctamente.",
-    user: {
-      id: authUserId,
-      name,
-      email,
-      role,
-      employment_status: true,
-    },
+    user: normalizeUserProfile(null, { id: authUserId, name, email, role, employment_status: true }),
   });
 }

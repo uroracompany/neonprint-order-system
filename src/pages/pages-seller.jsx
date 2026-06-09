@@ -11,6 +11,7 @@ import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobo
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
+  PRODUCTION_AREAS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   MATERIAL_OPTIONS,
@@ -19,7 +20,9 @@ import {
   isOrderStatusIn,
 } from "../utils/constants";
 import { getOrderFiles, getReferenceImages, hasAnyOrderAsset, normalizeAssetUrls, serializeReferenceImages } from "../utils/orderAssets";
+import { buildProductionFileRows } from "../utils/production";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
+import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { buildStorageSafeFileName, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
@@ -54,6 +57,17 @@ const isSellerVisibleNotification = (notification) => {
 };
 
 const PHONE_PLACEHOLDER = "Ej: 809-555-1234";
+
+function ProductionAreaSelect({ value, onChange, className = "ps-form-input" }) {
+  return (
+    <select className={className} value={value || ""} onChange={(event) => onChange(event.target.value)}>
+      <option value="">Tipo de produccion</option>
+      {PRODUCTION_AREAS.map((area) => (
+        <option key={area.code} value={area.code}>{area.label}</option>
+      ))}
+    </select>
+  );
+}
 
 const isValidDominicanPhone = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
@@ -276,6 +290,7 @@ function UploadField({ fileRef, previewUrl, fileName, onFileChange, onRemove, on
 
 // ─── CREATE ORDER MODAL ───────────────────────────────────────────────────────
 const EMPTY_FORM = {
+  design_file_areas: [],
   client_id: null,
   client_name: "",
   client_phone: "",
@@ -369,6 +384,12 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
     }
     if (form.design_type === "EXTERNAL_DESING" && form.design_files.length === 0) {
       errors.design_files = "Debe subir al menos un archivo de diseño.";
+    }
+    if (
+      form.design_type === "EXTERNAL_DESING" &&
+      form.design_files.some((_, index) => !form.design_file_areas[index])
+    ) {
+      errors.design_files = "Cada archivo debe tener un tipo de produccion.";
     }
     if (form.design_type === "EXTERNAL_DESING" && !form.design_preview) {
       errors.design_preview = "Debe agregar una imagen de la orden de trabajo.";
@@ -493,6 +514,25 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
               await cleanupUploadedUrls();
               throw new Error("Error al subir las imágenes de referencia. Verifica que no sean demasiado grandes.");
             }
+          }
+        }
+
+        if (fileUrls.length > 0) {
+          const productionRows = buildProductionFileRows({
+            orderId,
+            urls: fileUrls,
+            files: form.design_files,
+            areaCodes: form.design_file_areas,
+            userId,
+          });
+
+          const { error: productionFilesError } = await supabase
+            .from("order_production_files")
+            .insert(productionRows);
+
+          if (productionFilesError) {
+            await cleanupUploadedUrls();
+            throw new Error("No se pudo guardar la clasificacion de produccion de los archivos.");
           }
         }
 
@@ -653,6 +693,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                     onChange={e => {
                       const files = Array.from(e.target.files);
                       set("design_files", [...form.design_files, ...files]);
+                      set("design_file_areas", [...form.design_file_areas, ...files.map(() => "")]);
                       e.target.value = "";
                     }}
                     style={{ display: "none" }}
@@ -669,7 +710,15 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                       <div key={i} className="ps-file-item">
                         <Icons.File />
                         <span className="ps-file-name">{file.name}</span>
-                        <button className="ps-file-remove" onClick={(e) => { e.stopPropagation(); set("design_files", form.design_files.filter((_, idx) => idx !== i)); }}>
+                        <ProductionAreaSelect
+                          value={form.design_file_areas[i]}
+                          onChange={(value) => set("design_file_areas", form.design_file_areas.map((area, idx) => idx === i ? value : area))}
+                        />
+                        <button className="ps-file-remove" onClick={(e) => {
+                          e.stopPropagation();
+                          set("design_files", form.design_files.filter((_, idx) => idx !== i));
+                          set("design_file_areas", form.design_file_areas.filter((_, idx) => idx !== i));
+                        }}>
                           <Icons.X />
                         </button>
                       </div>
@@ -811,6 +860,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
   });
   const [existingFiles, setExistingFiles] = useState([]);
   const [newFiles, setNewFiles] = useState([]);
+  const [newFileAreas, setNewFileAreas] = useState([]);
   const [existingPreview, setExistingPreview] = useState(null);
   const [newPreview, setNewPreview] = useState(null);
   const [existingRefImages, setExistingRefImages] = useState([]);
@@ -840,6 +890,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       setExistingPreview(order.preview_image || null);
       setExistingRefImages(parseFiles(order.reference_images));
       setNewFiles([]);
+      setNewFileAreas([]);
       setNewPreview(null);
       setNewRefImages([]);
       setRemovedRefImageUrls([]);
@@ -871,6 +922,9 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
     if (!form.description.trim()) {
       errors.description = "La descripción es requerida.";
     }
+    if (newFiles.some((_, index) => !newFileAreas[index])) {
+      errors.order_files = "Cada archivo nuevo debe tener un tipo de produccion.";
+    }
     if (form.client_contact.trim() && !isValidDominicanPhone(form.client_contact)) {
       errors.client_contact = "El teléfono debe ser un número válido de República Dominicana (809, 829 o 849).";
     }
@@ -886,11 +940,13 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
   const handleAddNewFiles = (e) => {
     const files = Array.from(e.target.files);
     setNewFiles(prev => [...prev, ...files]);
+    setNewFileAreas(prev => [...prev, ...files.map(() => "")]);
     e.target.value = "";
   };
 
   const handleRemoveNewFile = (index) => {
     setNewFiles(prev => prev.filter((_, i) => i !== index));
+    setNewFileAreas(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleRemoveExistingPreview = () => {
@@ -930,6 +986,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
 
     // 1. Upload files first (no disparan el trigger de orders)
     let fileUrls = [...existingFiles];
+    const newFileUrls = [];
     try {
       for (let i = 0; i < newFiles.length; i++) {
         const file = newFiles[i];
@@ -940,12 +997,35 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
           file,
         });
 
-        if (publicUrl) fileUrls.push(publicUrl);
+        if (publicUrl) {
+          fileUrls.push(publicUrl);
+          newFileUrls.push(publicUrl);
+        }
       }
     } catch (uploadError) {
       setLoading(false);
       setError(uploadError?.message || "Error al subir los archivos de diseño.");
       return;
+    }
+
+    if (newFileUrls.length > 0) {
+      const productionRows = buildProductionFileRows({
+        orderId: order.id,
+        urls: newFileUrls,
+        files: newFiles,
+        areaCodes: newFileAreas,
+        userId: order.seller_id || order.created_by,
+      });
+
+      const { error: productionFilesError } = await supabase
+        .from("order_production_files")
+        .insert(productionRows);
+
+      if (productionFilesError) {
+        setLoading(false);
+        setError("No se pudo guardar la clasificacion de produccion de los archivos.");
+        return;
+      }
     }
 
     let previewUrl = existingPreview;
@@ -1006,6 +1086,20 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       setLoading(false);
       setError("Error al actualizar: " + err.message);
       return;
+    }
+
+    if (removedFileUrls.length > 0) {
+      const { error: removeProductionFilesError } = await supabase
+        .from("order_production_files")
+        .delete()
+        .eq("order_id", order.id)
+        .in("url", removedFileUrls);
+
+      if (removeProductionFilesError) {
+        setLoading(false);
+        setError("La orden se actualizo, pero no se pudieron retirar archivos de produccion.");
+        return;
+      }
     }
 
     await Promise.all([
@@ -1111,6 +1205,10 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
                   <div key={i} className="ps-file-item" style={{ borderColor: "var(--cyan)", background: "rgba(6, 182, 212, 0.04)" }}>
                     <Icons.File />
                     <span className="ps-file-name">{file.name}</span>
+                    <ProductionAreaSelect
+                      value={newFileAreas[i]}
+                      onChange={(value) => setNewFileAreas(newFileAreas.map((area, idx) => idx === i ? value : area))}
+                    />
                     <button className="ps-file-remove" onClick={() => handleRemoveNewFile(i)}>
                       <Icons.X />
                     </button>
@@ -1921,6 +2019,7 @@ function ArchivedOrderModal({ open, onClose, onConfirm, order, loading }) {
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function PageSeller() {
   const navigate = useNavigate();
+  const { user: authUser, signOut } = useAuth();
   const RELEVANT_COLUMNS = "id,client_id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token,reference_images";
   const [activeTab, setActiveTab] = useState("dashboard");
   const [orders, setOrders] = useState([]);
@@ -1983,29 +2082,21 @@ export default function PageSeller() {
 
   // Carga inicial + listener de sesión
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) {
-        const displayName = 
-          data.user.user_metadata?.display_name ||
-          data.user.user_metadata?.full_name || 
-          data.user.user_metadata?.name || 
-          data.user.user_metadata?.first_name || 
-          data.user.email?.split("@")[0];
-        
-        setUser({ ...data.user, displayName });
-        fetchOrders(data.user.id);
-      }
-    })();
+    if (!authUser) {
+      setUser(null);
+      return;
+    }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') navigate("/");
-    });
+    const displayName =
+      authUser.user_metadata?.display_name ||
+      authUser.user_metadata?.full_name ||
+      authUser.user_metadata?.name ||
+      authUser.user_metadata?.first_name ||
+      authUser.email?.split("@")[0];
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [navigate]);
+    setUser({ ...authUser, displayName });
+    fetchOrders(authUser.id);
+  }, [authUser]);
 
   // Sincronización en tiempo real + refresco al volver a la página
   useEffect(() => {
@@ -2063,7 +2154,7 @@ export default function PageSeller() {
     return results;
   }, []);
 
-  const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
+  const handleLogout = async () => { await signOut(); navigate("/"); };
 
   // ── Funcion para cancelar orden ───────────────────────────────────────────────────────
   const handleCancelOrder = (order) => {

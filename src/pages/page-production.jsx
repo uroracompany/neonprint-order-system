@@ -4,24 +4,33 @@ import { useNavigate } from "react-router-dom";
 import "../css-components/page-production.css";
 import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
+import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
 import { StatusBadge } from "../components/ui/Badge";
-import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
   PRODUCTION_TRACKING_STATUS_OPTIONS,
+  PRODUCTION_FILE_STATUS,
+  getProductionAreaForRole,
+  getProductionAreaLabel,
   getOrderStatusConfig,
   isOrderStatus,
-  isOrderStatusIn,
-  getFileNameFromUrl,
   formatDate,
 } from "../utils/constants";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
-import { getOrderFiles, getReferenceImages, hasAnyOrderAsset } from "../utils/orderAssets";
+import { getReferenceImages } from "../utils/orderAssets";
+import {
+  filterProductionOrdersByArchiveState,
+  filterProductionFilesForRole,
+  getNextProductionFileStatus,
+  getProductionFileStatusLabel,
+  getProductionSummary,
+  isProductionOrderArchivedForUser,
+} from "../utils/production";
 
 const METRIC_ACCENTS = [
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
@@ -50,20 +59,18 @@ function MetricCard({ icon, label, value, accentIdx = 0 }) {
   );
 }
 
-function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
+function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [designerName, setDesignerName] = useState("");
   const [quoteName, setQuoteName] = useState("");
   const [sellerName, setSellerName] = useState("");
 
-  const handleUpdateStatus = async (newStatus) => {
+  const handleUpdateFileStatus = async (fileId, nextStatus) => {
     setUpdating(true);
     try {
       const { error } = await supabase
-        .from("orders")
-        .update({ status: newStatus })
-        .eq("id", order.id);
+        .rpc("update_production_file_status", { p_file_id: fileId, p_next_status: nextStatus });
 
       if (error) throw error;
 
@@ -78,6 +85,8 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
     }
     setUpdating(false);
   };
+  const handleUpdateStatus = () => {};
+  const onCompleteOrder = null;
 
   useEffect(() => {
     if (!order?.designer_id) {
@@ -134,13 +143,15 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const statusCfg = getOrderStatusConfig(order.status);
+  const isInProduction = false;
+  const isInTermination = false;
 
-  const isInProduction = isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION);
-  const isInTermination = isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION);
   const isExternal = order?.order_design_type === "EXTERNAL_DESING";
-  const orderFileUrls = getOrderFiles(order);
+  const areaCode = getProductionAreaForRole(producerRole);
+  const areaFiles = filterProductionFilesForRole(order, producerRole);
+  const areaSummary = getProductionSummary(areaFiles);
   const referenceImageUrls = getReferenceImages(order);
-  const hasAssets = hasAnyOrderAsset(order);
+  const hasAreaFiles = areaFiles.length > 0;
 
   return (
     <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -207,6 +218,9 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
                     </div>
                   </div>
                 </div>
+                <p style={{ marginTop: 10, fontSize: 12, color: "var(--pp-text-muted)" }}>
+                  Area {getProductionAreaLabel(areaCode)}: {areaSummary.completed}/{areaSummary.total} completados
+                </p>
               </div>
 
               <div className="pp-modal-card" style={{ marginTop: 16 }}>
@@ -328,13 +342,13 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
             </div>
           </div>
 
-          {hasAssets && (
+          {hasAreaFiles ? (
             <div className="pp-files-section" style={{ marginTop: 18 }}>
               <div className="pp-files-title">
                 <Icons.File />
                 Archivos Adjuntos
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: order.preview_image && orderFileUrls.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: order.preview_image && areaFiles.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
                 {order.preview_image && (
                   <div>
                     <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
@@ -357,25 +371,38 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
                     </a>
                   </div>
                 )}
-                {orderFileUrls.length > 0 && (
+                {areaFiles.length > 0 && (
                   <div>
                     <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                       <Icons.Brush /> Diseño del cliente
                     </p>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {orderFileUrls.map((url, i) => (
-                        <div key={i} className="pp-file-item" style={{ margin: 0 }}>
+                      {areaFiles.map((file) => {
+                        const nextStatus = getNextProductionFileStatus(file.status);
+                        return (
+                        <div key={file.id} className="pp-file-item" style={{ margin: 0 }}>
                           <div className="pp-file-icon">
                             <Icons.File />
                           </div>
                           <div className="pp-file-info">
-                            <span className="pp-file-name">{getFileNameFromUrl(url)}</span>
+                            <span className="pp-file-name">{file.filename}</span>
+                            <span style={{ fontSize: 11, color: "var(--pp-text-muted)" }}>{getProductionFileStatusLabel(file.status)}</span>
                           </div>
-                          <a href={url} target="_blank" rel="noopener noreferrer" className="pp-file-download" title="Descargar">
+                          <a href={file.url} target="_blank" rel="noopener noreferrer" className="pp-file-download" title="Descargar">
                             <Icons.Download />
                           </a>
+                          {nextStatus && (
+                            <button
+                              className="pp-file-download"
+                              onClick={() => handleUpdateFileStatus(file.id, nextStatus)}
+                              disabled={updating}
+                              title={nextStatus === PRODUCTION_FILE_STATUS.COMPLETED ? "Marcar completado" : "Marcar en terminacion"}
+                            >
+                              {nextStatus === PRODUCTION_FILE_STATUS.COMPLETED ? <Icons.Check /> : <Icons.Play />}
+                            </button>
+                          )}
                         </div>
-                      ))}
+                      );})}
                     </div>
                   </div>
                 )}
@@ -408,6 +435,10 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
                   </div>
                 </div>
               )}
+            </div>
+          ) : (
+            <div className="pp-modal-card" style={{ marginTop: 18 }}>
+              Esta orden no contiene archivos relacionados con tu area. No se requiere tu participacion en este proceso.
             </div>
           )}
         </div>
@@ -463,7 +494,9 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onCompleteOrder }) {
 
 export default function PageProduction() {
   const navigate = useNavigate();
+  const { user: authUser, profile: authProfile, signOut } = useAuth();
   const [user, setUser] = useState(null);
+  const [profileRole, setProfileRole] = useState("");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -476,8 +509,6 @@ export default function PageProduction() {
   const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [assignDeliveryOrder, setAssignDeliveryOrder] = useState(null);
-  const [assignDeliverySaving, setAssignDeliverySaving] = useState(false);
   const [archivedingOrder, setArchivedingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [filterArchive, setFilterArchive] = useState("active");
@@ -489,32 +520,15 @@ export default function PageProduction() {
     setLoading(true);
     const { data, error } = await supabase
       .from("orders")
-      .select("*")
-      .eq("production_id", user.id)
+      .select("*, order_production_files(*), order_production_assignments(*), order_production_user_archives(*)")
+      .in("status", PRODUCTION_TRACKING_STATUS_OPTIONS)
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      setOrders(data.filter(order => isOrderStatusIn(order.status, PRODUCTION_TRACKING_STATUS_OPTIONS)));
+      setOrders(data);
     }
     setLoading(false);
   }, [user?.id]);
-
-  const handleConfirmAssignDelivery = async (deliveryUserId) => {
-    if (!assignDeliveryOrder) return;
-    setAssignDeliverySaving(true);
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status: ORDER_STATUS.IN_COMPLETED, delivery_id: deliveryUserId })
-        .eq("id", assignDeliveryOrder.id);
-      if (error) throw error;
-      setAssignDeliveryOrder(null);
-      await refreshOrders();
-    } catch (err) {
-      console.error("Error assigning delivery:", err);
-    }
-    setAssignDeliverySaving(false);
-  };
 
   const handleArchiveOrder = (order) => {
     if (!isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)) return;
@@ -526,35 +540,43 @@ export default function PageProduction() {
     setArchiveLoading(true);
     try {
       const { error } = await supabase
-        .from("orders")
-        .update({ is_archived_production: true })
-        .eq("id", archivedingOrder.id);
+        .rpc("set_production_order_archive", { p_order_id: archivedingOrder.id, p_archived: true });
       if (error) throw error;
       setArchivedingOrder(null);
-      refreshOrders();
+      await refreshOrders();
     } catch (err) {
       console.error("Error archiving order:", err);
     }
     setArchiveLoading(false);
   };
 
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/");
-        return;
-      }
-      setUser(user);
-    };
-    getUser();
-    loadClients(supabase).then(setClients);
-  }, [navigate]);
+  const handleRestoreOrder = async (order) => {
+    if (!order?.id) return;
+    setArchiveLoading(true);
+    try {
+      const { error } = await supabase
+        .rpc("set_production_order_archive", { p_order_id: order.id, p_archived: false });
+      if (error) throw error;
+      await refreshOrders();
+    } catch (err) {
+      console.error("Error restoring order:", err);
+    }
+    setArchiveLoading(false);
+  };
 
   useEffect(() => {
-    if (!user?.id) return;
+    setUser(authUser || null);
+    setProfileRole(authProfile?.role || "");
+  }, [authProfile?.role, authUser]);
+
+  useEffect(() => {
+    loadClients(supabase).then(setClients);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id || !profileRole) return;
     refreshOrders();
-  }, [user?.id, refreshOrders]);
+  }, [user?.id, profileRole, refreshOrders]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -566,6 +588,16 @@ export default function PageProduction() {
         { event: "*", schema: "public", table: "orders" },
         () => refreshOrders()
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "order_production_files" },
+        () => refreshOrders()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "order_production_user_archives" },
+        () => refreshOrders()
+      )
       .subscribe();
 
     return () => {
@@ -574,11 +606,14 @@ export default function PageProduction() {
   }, [user?.id, refreshOrders]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate("/");
   };
 
-  const filteredOrders = orders.filter(order => {
+  const activeOrders = filterProductionOrdersByArchiveState(orders, user?.id, "active");
+  const archiveScopedOrders = filterProductionOrdersByArchiveState(orders, user?.id, filterArchive);
+
+  const filteredOrders = archiveScopedOrders.filter(order => {
     const q = search.toLowerCase();
     const matchesSearch = !q ||
       order.client_name?.toLowerCase().includes(q) ||
@@ -588,11 +623,8 @@ export default function PageProduction() {
     const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
     const matchesPayment = filterPayment === "all" || order.payment_status === filterPayment;
     const matchesClient = orderMatchesClientFilter(order, filterClient);
-    const matchesArchive =
-      (filterArchive === "active" && !order.is_archived_production) ||
-      (filterArchive === "archived" && order.is_archived_production);
 
-    return matchesSearch && matchesStatus && matchesPayment && matchesClient && matchesArchive;
+    return matchesSearch && matchesStatus && matchesPayment && matchesClient;
   });
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
@@ -602,21 +634,31 @@ export default function PageProduction() {
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
   const metrics = [
-    { icon: <Icons.Package />, label: "Producción", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, accentIdx: 0 },
-    { icon: <Icons.Package />, label: "Terminación", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length, accentIdx: 1 },
-    { icon: <Icons.Truck />, label: "Entregadas", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)).length, accentIdx: 2 },
-    { icon: <Icons.Check />, label: "Completadas", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length, accentIdx: 3 },
+    { icon: <Icons.Package />, label: "Producción", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, accentIdx: 0 },
+    { icon: <Icons.Package />, label: "Terminación", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length, accentIdx: 1 },
+    { icon: <Icons.Truck />, label: "Entregadas", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)).length, accentIdx: 2 },
+    { icon: <Icons.Check />, label: "Completadas", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length, accentIdx: 3 },
   ];
 
   const handleViewOrder = (order) => {
     setSelectedOrder(order);
   };
 
+  const isArchivedByCurrentUser = (order) => (
+    isProductionOrderArchivedForUser(order, user?.id)
+  );
+
+  const canArchiveOrder = (order) => (
+    isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && !isArchivedByCurrentUser(order)
+  );
+
+  const canRestoreOrder = (order) => (
+    filterArchive === "archived" && isArchivedByCurrentUser(order)
+  );
+
   const canAdvance = (order) => {
-    return !order.is_archived_production && (
-      isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION) ||
-      isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)
-    );
+    void order;
+    return false;
   };
 
   const getAdvanceIcon = (order) => {
@@ -715,12 +757,12 @@ export default function PageProduction() {
                         <tr>
                           <td colSpan={6} className="pp-table-empty">Cargando órdenes...</td>
                         </tr>
-                      ) : orders.length === 0 ? (
+                      ) : activeOrders.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="pp-table-empty">No hay órdenes para producción</td>
                         </tr>
                       ) : (
-                        orders.slice(0, 5).map(order => (
+                        activeOrders.slice(0, 5).map(order => (
                           <tr key={order.id} className="row-hover" onClick={() => handleViewOrder(order)}>
                             <td className="td-pad td-id">#{order.id?.slice(0, 8).toUpperCase()}</td>
                             <td className="td-pad td-client">{order.client_name}</td>
@@ -867,13 +909,23 @@ export default function PageProduction() {
                                     {getAdvanceIcon(order)}
                                   </button>
                                 )}
-                                {isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && !order.is_archived_production && (
+                                {canArchiveOrder(order) && (
                                   <button
                                     className="table-action-btn archive"
                                     onClick={(e) => { e.stopPropagation(); handleArchiveOrder(order); }}
                                     title="Archivar orden"
                                   >
                                     <Icons.Archive />
+                                  </button>
+                                )}
+                                {canRestoreOrder(order) && (
+                                  <button
+                                    className="table-action-btn unarchive"
+                                    onClick={(e) => { e.stopPropagation(); handleRestoreOrder(order); }}
+                                    disabled={archiveLoading}
+                                    title="Restaurar orden"
+                                  >
+                                    <Icons.Refresh />
                                   </button>
                                 )}
                               </div>
@@ -918,13 +970,23 @@ export default function PageProduction() {
                                 {getAdvanceIcon(order)}
                               </button>
                             )}
-                            {isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && !order.is_archived_production && (
+                            {canArchiveOrder(order) && (
                               <button
                                 className="table-action-btn archive"
                                 onClick={e => { e.stopPropagation(); handleArchiveOrder(order); }}
                                 title="Archivar orden"
                               >
                                 <Icons.Archive />
+                              </button>
+                            )}
+                            {canRestoreOrder(order) && (
+                              <button
+                                className="table-action-btn unarchive"
+                                onClick={e => { e.stopPropagation(); handleRestoreOrder(order); }}
+                                disabled={archiveLoading}
+                                title="Restaurar orden"
+                              >
+                                <Icons.Refresh />
                               </button>
                             )}
                           </div>
@@ -944,16 +1006,8 @@ export default function PageProduction() {
         open={!!selectedOrder}
         onClose={() => setSelectedOrder(null)}
         order={selectedOrder}
+        producerRole={profileRole}
         onUpdateStatus={refreshOrders}
-        onCompleteOrder={(order) => { setSelectedOrder(null); setAssignDeliveryOrder(order); }}
-      />
-      <AssignModal
-        open={!!assignDeliveryOrder}
-        onClose={() => setAssignDeliveryOrder(null)}
-        order={assignDeliveryOrder}
-        role="delivery"
-        onConfirm={handleConfirmAssignDelivery}
-        loading={assignDeliverySaving}
       />
 
       {archivedingOrder && (

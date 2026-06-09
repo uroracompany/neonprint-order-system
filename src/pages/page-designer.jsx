@@ -5,15 +5,17 @@ import "../css-components/page-designer.css";
 import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
 import { AssignModal } from "../components/ui/AssignModal";
-import { ORDER_STATUS, isOrderStatus, isOrderStatusIn } from "../utils/constants";
+import { ORDER_STATUS, PRODUCTION_AREAS, isOrderStatus, isOrderStatusIn } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
+import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { getReferenceImages } from "../utils/orderAssets";
+import { buildProductionFileRows } from "../utils/production";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const PER_PAGE = 15;
@@ -122,8 +124,20 @@ const buildDesignerAssetPath = (orderId, folder, file, prefix = "") => {
 const DESIGNER_FILES_BUCKET = "order-docs";
 const DESIGNER_PREVIEW_BUCKET = "order-previews";
 
+function ProductionAreaSelect({ value, onChange }) {
+  return (
+    <select className="pd-input" value={value || ""} onChange={(event) => onChange(event.target.value)}>
+      <option value="">Tipo de produccion</option>
+      {PRODUCTION_AREAS.map((area) => (
+        <option key={area.code} value={area.code}>{area.label}</option>
+      ))}
+    </select>
+  );
+}
+
 function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRefresh, onSendToQuotation, quotationSending }) {
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [pendingFileAreas, setPendingFileAreas] = useState([]);
   const [pendingPreview, setPendingPreview] = useState(null);
   const [pendingPreviewName, setPendingPreviewName] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -182,6 +196,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
 
     if (acceptedFiles.length > 0) {
       setPendingFiles(prev => [...prev, ...acceptedFiles]);
+      setPendingFileAreas(prev => [...prev, ...acceptedFiles.map(() => "")]);
     }
 
     setSaveError(rejectedFiles.length > 0 ? rejectedFiles.join(" ") : null);
@@ -212,11 +227,16 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   const removePendingFile = (index) => {
     if (!canEditDesignerAssets) return;
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
+    setPendingFileAreas(prev => prev.filter((_, i) => i !== index));
     setSaveSuccess(false);
   };
   
   const handleSave = async () => {
     if (!canEditDesignerAssets) return;
+    if (pendingFiles.some((_, index) => !pendingFileAreas[index])) {
+      setSaveError("Cada archivo debe tener un tipo de produccion.");
+      return;
+    }
     setSaving(true);
     setSaveSuccess(false);
     setSaveError(null);
@@ -249,6 +269,22 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
             .single();
           
           const existingUrls = parseOrderFileUrls(orderData?.order_file_url);
+
+          const productionRows = buildProductionFileRows({
+            orderId: order.id,
+            urls: fileUrls,
+            files: pendingFiles,
+            areaCodes: pendingFileAreas,
+            userId: order.designer_id,
+          });
+
+          const { error: productionFilesError } = await supabase
+            .from("order_production_files")
+            .insert(productionRows);
+
+          if (productionFilesError) {
+            throw new Error("No se pudo guardar la clasificacion de produccion de los archivos.");
+          }
           
           updateData.order_file_url = JSON.stringify([...existingUrls, ...fileUrls]);
         }
@@ -280,6 +316,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
       if (onRefresh) await onRefresh();
       
       setPendingFiles([]);
+      setPendingFileAreas([]);
       setPendingPreview(null);
       setPendingPreviewName(null);
       setSaveSuccess(true);
@@ -294,6 +331,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   
   const handleClose = () => {
     setPendingFiles([]);
+    setPendingFileAreas([]);
     setPendingPreview(null);
     setSaveSuccess(false);
     setSaveError(null);
@@ -478,6 +516,10 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
                     <div className="pd-file-info">
                       <span className="pd-file-name">{file.name}</span>
                       <span className="pd-file-size">{formatFileSize(file.size)}</span>
+                      <ProductionAreaSelect
+                        value={pendingFileAreas[i]}
+                        onChange={(value) => setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area))}
+                      />
                     </div>
                     <div className="pd-file-actions">
                       <button className="pd-file-action remove" onClick={() => removePendingFile(i)}>
@@ -686,6 +728,7 @@ function ArchiveDesignerOrderModal({ open, onClose, onConfirm, order, loading })
 
 export default function PageDesigner() {
   const navigate = useNavigate();
+  const { user: authUser, signOut } = useAuth();
   const [nowTimestamp] = useState(() => Date.now());
   const [user, setUser] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -840,17 +883,9 @@ export default function PageDesigner() {
   };
 
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/");
-        return;
-      }
-      setUser(user);
-      userRef.current = user;
-    };
-    getUser();
-  }, [navigate]);
+    setUser(authUser || null);
+    userRef.current = authUser || null;
+  }, [authUser]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -1036,7 +1071,7 @@ export default function PageDesigner() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate("/");
   };
 

@@ -1,29 +1,28 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireAdmin } from "./auth-middleware.js";
+import {
+  ADMIN_USER_ROLE_SET,
+  EMAIL_PATTERN,
+  getSupabaseAdminEnv,
+  isMissingEmailColumnError,
+  jsonResponse,
+  normalizeUserProfile,
+} from "./admin-user-utils.js";
 
-const ALLOWED_ROLES = new Set(["admin", "seller", "designer", "quote", "printer", "delivery"]);
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PROFILES_EMAIL_MIGRATION = "supabase/20260604_add_profiles_email_for_admin_edit.sql";
 
-function jsonResponse(status, body) {
-  return { status, body };
-}
-
-function getEnvValue(env, key, fallback) {
-  return env[key] || (fallback ? env[fallback] : undefined);
-}
+const missingProfilesEmailResponse = () => jsonResponse(500, {
+  error: `La columna profiles.email no existe. Aplica la migracion ${PROFILES_EMAIL_MIGRATION} antes de editar usuarios.`,
+});
 
 export async function handleAdminUpdateUser(payload, env = process.env) {
-  const supabaseUrl = getEnvValue(env, "SUPABASE_URL", "VITE_SUPABASE_URL");
-  const serviceRoleKey = getEnvValue(env, "SUPABASE_SERVICE_ROLE_KEY");
+  const envResult = getSupabaseAdminEnv(env);
+  if (envResult.error) return envResult.error;
+  const { supabaseUrl, serviceRoleKey } = envResult;
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    const missing = [
-      !supabaseUrl ? "SUPABASE_URL" : null,
-      !serviceRoleKey ? "SUPABASE_SERVICE_ROLE_KEY" : null,
-    ].filter(Boolean);
-
-    return jsonResponse(500, {
-      error: `Falta configurar ${missing.join(" y ")} en el entorno del servidor.`,
-    });
+  const auth = await requireAdmin(env.authHeader, env);
+  if (!auth.authorized) {
+    return jsonResponse(auth.status || 403, { error: auth.error });
   }
 
   const userId = String(payload?.userId || "").trim();
@@ -44,7 +43,7 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
     });
   }
 
-  if (!ALLOWED_ROLES.has(role)) {
+  if (!ADMIN_USER_ROLE_SET.has(role)) {
     return jsonResponse(400, {
       error: "El rol seleccionado no es válido.",
     });
@@ -72,15 +71,35 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
 
   const { data: duplicateProfiles, error: duplicateError } = await duplicateQuery;
 
+  if (isMissingEmailColumnError(duplicateError)) {
+    return missingProfilesEmailResponse();
+  }
+
   if (duplicateError) {
     return jsonResponse(400, {
       error: `No se pudo validar el correo: ${duplicateError.message}`,
     });
   }
 
-  if (Array.isArray(duplicateProfiles) && duplicateProfiles.length > 0) {
+  if (!duplicateError && Array.isArray(duplicateProfiles) && duplicateProfiles.length > 0) {
     return jsonResponse(409, {
       error: "Ya existe otro usuario con ese correo electrónico.",
+    });
+  }
+
+  const { data: previousProfile, error: previousProfileError } = await supabaseAdmin
+    .from("profiles")
+    .select("id,name,email,role,employment_status")
+    .eq("id", userId)
+    .single();
+
+  if (isMissingEmailColumnError(previousProfileError)) {
+    return missingProfilesEmailResponse();
+  }
+
+  if (previousProfileError || !previousProfile) {
+    return jsonResponse(404, {
+      error: previousProfileError?.message || "No se encontro el perfil del usuario.",
     });
   }
 
@@ -100,18 +119,6 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
     },
   };
 
-  if (password) {
-    authPayload.password = password;
-  }
-
-  const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, authPayload);
-
-  if (authError) {
-    return jsonResponse(400, {
-      error: authError.message,
-    });
-  }
-
   const profilePayload = {
     name,
     email,
@@ -125,20 +132,43 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
     .select("id,name,email,role,employment_status")
     .single();
 
+  if (isMissingEmailColumnError(profileError)) {
+    return missingProfilesEmailResponse();
+  }
+
   if (profileError) {
     return jsonResponse(400, {
-      error: `Auth fue actualizado, pero no se pudo actualizar el perfil: ${profileError.message}`,
+      error: `No se pudo actualizar el perfil: ${profileError.message}`,
+    });
+  }
+
+  if (password) {
+    authPayload.password = password;
+  }
+
+  const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, authPayload);
+
+  if (authError) {
+    const rollbackPayload = {
+      name: previousProfile.name,
+      email: previousProfile.email,
+      role: previousProfile.role,
+    };
+
+    const { error: rollbackError } = await supabaseAdmin
+      .from("profiles")
+      .update(rollbackPayload)
+      .eq("id", userId);
+
+    return jsonResponse(400, {
+      error: rollbackError
+        ? `No se pudo actualizar el usuario en autenticacion: ${authError.message}. Ademas no se pudo restaurar el perfil: ${rollbackError.message}`
+        : `No se pudo actualizar el usuario en autenticacion: ${authError.message}. El perfil fue restaurado a sus valores anteriores.`,
     });
   }
 
   return jsonResponse(200, {
     message: "Empleado actualizado correctamente.",
-    user: {
-      id: userId,
-      name: profileData?.name || name,
-      email: profileData?.email || email,
-      role: profileData?.role || role,
-      employment_status: profileData?.employment_status,
-    },
+    user: normalizeUserProfile(profileData, { id: userId, name, email, role }),
   });
 }

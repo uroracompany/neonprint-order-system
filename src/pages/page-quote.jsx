@@ -6,11 +6,11 @@ import { validateImage } from "../utils/imageValidation";
 import { uploadOrderAsset, buildPaymentReceiptPath, createSignedOrderAssetUrlFromStoredUrl } from "../utils/uploadOrderAsset";
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
-import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import {
   ORDER_STATUS,
+  PRODUCTION_AREAS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   getOrderStatusConfig,
@@ -18,6 +18,8 @@ import {
   isOrderStatusIn,
 } from "../utils/constants";
 import { getReferenceImages } from "../utils/orderAssets";
+import { getProductionFiles } from "../utils/production";
+import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
@@ -170,6 +172,163 @@ function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
 // 5. Enviar la orden a producción cuando está lista
 // 6. Archivar órdenes completadas
 
+function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading }) {
+  const [areas, setAreas] = useState(PRODUCTION_AREAS);
+  const [users, setUsers] = useState([]);
+  const [assignments, setAssignments] = useState({});
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [error, setError] = useState("");
+
+  const productionFiles = useMemo(() => getProductionFiles(order), [order]);
+  const areaCounts = useMemo(() => (
+    productionFiles.reduce((acc, file) => {
+      if (file.production_area_code) {
+        acc[file.production_area_code] = (acc[file.production_area_code] || 0) + 1;
+      }
+      return acc;
+    }, {})
+  ), [productionFiles]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let active = true;
+    setAssignments({});
+    setError("");
+    setLoadingOptions(true);
+
+    const loadOptions = async () => {
+      const [{ data: areaData, error: areaError }, { data: userData, error: userError }] = await Promise.all([
+        supabase
+          .from("production_areas")
+          .select("code, label, producer_role, is_active")
+          .eq("is_active", true),
+        supabase
+          .from("profiles")
+          .select("id, name, role, employment_status")
+          .in("role", PRODUCTION_AREAS.map((area) => area.role))
+          .eq("employment_status", true),
+      ]);
+
+      if (!active) return;
+
+      const nextAreas = areaError || !Array.isArray(areaData) || areaData.length === 0
+        ? PRODUCTION_AREAS
+        : areaData
+            .map((area) => ({
+              code: area.code,
+              label: area.label,
+              role: area.producer_role,
+            }))
+            .sort((a, b) => {
+              const aIndex = PRODUCTION_AREAS.findIndex((item) => item.code === a.code);
+              const bIndex = PRODUCTION_AREAS.findIndex((item) => item.code === b.code);
+              return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex);
+            });
+
+      setAreas(nextAreas);
+      setUsers(Array.isArray(userData) && !userError ? userData : []);
+      setLoadingOptions(false);
+
+      if (userError) {
+        setError("No se pudieron cargar los usuarios de produccion.");
+      }
+    };
+
+    loadOptions();
+
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
+  if (!open || !order) return null;
+
+  const usersByRole = users.reduce((acc, userItem) => {
+    acc[userItem.role] = [...(acc[userItem.role] || []), userItem];
+    return acc;
+  }, {});
+  const allAreasAssigned = areas.every((area) => Boolean(assignments[area.code]));
+
+  const handleConfirm = () => {
+    if (!allAreasAssigned) {
+      setError("Debes seleccionar un responsable para cada area.");
+      return;
+    }
+    setError("");
+    onConfirm(assignments);
+  };
+
+  return (
+    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className="pq-dialog pq-production-dialog">
+        <div className="pq-dialog-icon return">
+          <Icons.Users />
+        </div>
+        <h3 className="pq-dialog-title">Asignar produccion</h3>
+        <p className="pq-dialog-text">
+          Selecciona un responsable por area antes de enviar la orden a produccion.
+        </p>
+        <div className="pq-dialog-order">
+          <span className="pq-dialog-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+          <span className="pq-dialog-order-name">{order.client_name || order.description || "Orden sin titulo"}</span>
+        </div>
+
+        {loadingOptions ? (
+          <div className="pq-production-loading">Cargando responsables...</div>
+        ) : (
+          <div className="pq-production-assignment-list">
+            {areas.map((area) => {
+              const options = usersByRole[area.role] || [];
+              const count = areaCounts[area.code] || 0;
+              return (
+                <label className="pq-production-assignment-row" key={area.code}>
+                  <span className="pq-production-area-copy">
+                    <strong>{area.label}</strong>
+                    <small>{count} archivo{count === 1 ? "" : "s"} relacionado{count === 1 ? "" : "s"}</small>
+                  </span>
+                  <select
+                    className="pq-input"
+                    value={assignments[area.code] || ""}
+                    onChange={(event) => {
+                      setAssignments(prev => ({ ...prev, [area.code]: event.target.value }));
+                      setError("");
+                    }}
+                    disabled={loading || options.length === 0}
+                  >
+                    <option value="">Seleccionar responsable</option>
+                    {options.map((userItem) => (
+                      <option key={userItem.id} value={userItem.id}>
+                        {userItem.name || "Usuario de produccion"}
+                      </option>
+                    ))}
+                  </select>
+                  {options.length === 0 && (
+                    <span className="pq-production-row-error">No hay usuarios activos para esta area.</span>
+                  )}
+                </label>
+              );
+            })}
+          </div>
+        )}
+
+        {error && <div className="pq-production-error">{error}</div>}
+
+        <div className="pq-dialog-actions">
+          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button
+            className="pq-btn pq-btn-return"
+            onClick={handleConfirm}
+            disabled={loading || loadingOptions || !allAreasAssigned}
+          >
+            {loading ? "Enviando..." : "Enviar a produccion"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory, onOpenReturnModal, onOpenArchiveModal, onValidationError, onOpenProductionModal }) {
   const [receiptFile, setReceiptFile] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState("pagado");
@@ -214,6 +373,8 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   if (!open || !order) return null;
 
   const orderFiles = getOrderFiles(order);
+  const productionFiles = getProductionFiles(order);
+  const unclassifiedProductionFiles = productionFiles.filter((file) => !file.production_area_code).length;
   const referenceImageUrls = getReferenceImages(order);
   const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const canConfirmPayment = isQuoteEditable(order);
@@ -330,6 +491,14 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                   </div>
                 </div>
               )}
+              {productionFiles.length > 0 && (
+                <div className="pq-preview-block" style={{ marginTop: 16 }}>
+                  <span className="pq-description-label">Clasificacion de produccion</span>
+                  <span className="pq-upload-hint">
+                    {productionFiles.length - unclassifiedProductionFiles} clasificados / {productionFiles.length} archivos
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -431,6 +600,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
 
 export default function PageQuote() {
   const navigate = useNavigate();
+  const { user: authUser, profile: authProfile, signOut } = useAuth();
 
   // ============= ESTADOS GLOBALES DEL COMPONENTE =============
   // Estados de UI
@@ -490,33 +660,9 @@ export default function PageQuote() {
   // 2. El usuario tenga el rol "quote"
   // Si no cumple, lo redirige al login
   useEffect(() => {
-    const loadSession = async () => {
-      const { data } = await supabase.auth.getUser();
-      const currentUser = data?.user;
-
-      if (!currentUser) {
-        navigate("/");
-        return;
-      }
-
-      const { data: currentProfile } = await supabase
-        .from("profiles")
-        .select("id, name, role")
-        .eq("id", currentUser.id)
-        .single();
-
-      if (!currentProfile || currentProfile.role !== "quote") {
-        await supabase.auth.signOut();
-        navigate("/");
-        return;
-      }
-
-      setUser(currentUser);
-      setProfile(currentProfile);
-    };
-
-    loadSession();
-  }, [navigate]);
+    setUser(authUser || null);
+    setProfile(authProfile || null);
+  }, [authProfile, authUser]);
 
   useEffect(() => {
     loadClients(supabase).then(setClients);
@@ -630,60 +776,33 @@ export default function PageQuote() {
   };
 
   // ============= FUNCIÓN: CARGAR ÓRDENES DEL USUARIO =============
-  // Estrategia robusta para obtener órdenes asignadas a este usuario
-  // Intenta múltiples campos de asignación (quote_id, quotation_id, quote_user_id)
-  // porque el backend puede usar nombres diferentes en distintas versiones
   async function fetchOrdersImpl(quoteUserId, silent = false) {
-    // silent = true evita mostrar el spinner de loading (refresco silencioso)
     if (!silent) setLoading(true);
 
     let fetchedOrders = [];
     let fetchError = null;
-    let successfulAssignmentFetch = false;
 
-    // INTENTO 1: Buscar en cada uno de los posibles campos de asignación
-    for (const field of QUOTE_ASSIGNMENT_FIELDS) {
-      const { data, error } = await supabase
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*, order_production_files(*)")
+      .eq("quote_id", quoteUserId)
+      .order("created_at", { ascending: false });
+
+    if (!error) {
+      fetchedOrders = (data || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
+    } else {
+      fetchError = error;
+      const { data: fallbackData, error: fallbackError } = await supabase
         .from("orders")
-        .select("*")
-        .eq(field, quoteUserId)
+        .select("*, order_production_files(*)")
         .order("created_at", { ascending: false });
 
-      if (!error) {
-        successfulAssignmentFetch = true;
-        // Filtra para evitar duplicados y ordenes no asignadas
-        fetchedOrders = [
-          ...fetchedOrders,
-          ...(data || []).filter(order => isOrderAssignedToQuote(order, quoteUserId)),
-        ];
-        fetchError = null;
-        continue;
-      }
-
-      if (!successfulAssignmentFetch) fetchError = error;
-    }
-
-    // Elimina duplicados combinando por ID y ordena por fecha
-    if (successfulAssignmentFetch) {
-      fetchedOrders = [...new Map(fetchedOrders.map(order => [order.id, order])).values()]
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    }
-
-    // FALLBACK: Si los filtros directos fallan, obtiene todas y filtra localmente
-    // Esto es un plan B para esquemas no estándares
-    if (!successfulAssignmentFetch && fetchError && fetchedOrders.length === 0) {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (!error) {
-        fetchedOrders = (data || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
+      if (!fallbackError) {
+        fetchedOrders = (fallbackData || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
         fetchError = null;
       }
     }
 
-    // Si todo falla, muestra error
     if (fetchError) {
       setOrders([]);
       if (!silent) setLoading(false);
@@ -696,7 +815,6 @@ export default function PageQuote() {
       return;
     }
 
-    // Actualiza estado y sincroniza directorio de vendedores
     setOrders(fetchedOrders);
     await syncSellerDirectory(fetchedOrders);
     registerNewAssignments(fetchedOrders);
@@ -737,7 +855,7 @@ export default function PageQuote() {
   const handleViewOrder = async (order) => {
     const { data } = await supabase
       .from("orders")
-      .select("*")
+      .select("*, order_production_files(*)")
       .eq("id", order.id)
       .single();
 
@@ -834,7 +952,7 @@ export default function PageQuote() {
       .from("orders")
       .update(updatePayload)
       .eq("id", order.id)
-      .select("*")
+      .select("*, order_production_files(*)")
       .single();
 
     setPaymentSaving(false);
@@ -875,20 +993,16 @@ export default function PageQuote() {
   };
 
   // Envía la orden a producción asignándola al impresor seleccionado.
-  const handleConfirmSendToProduction = async (productionUserId) => {
+  const handleConfirmSendToProduction = async (areaAssignments) => {
     if (!forwardToProductionOrder) return;
 
     setProductionSaving(true);
 
     const { data: updatedOrder, error } = await supabase
-      .from("orders")
-      .update({
-        status: ORDER_STATUS.IN_PRODUCTION,
-        production_id: productionUserId,
-      })
-      .eq("id", forwardToProductionOrder.id)
-      .select("*")
-      .single();
+      .rpc("send_order_to_production", {
+        p_order_id: forwardToProductionOrder.id,
+        p_area_assignments: areaAssignments,
+      });
 
     setProductionSaving(false);
 
@@ -1005,7 +1119,7 @@ export default function PageQuote() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate("/");
   };
 
@@ -1306,12 +1420,11 @@ export default function PageQuote() {
         loading={returnLoading}
       />
 
-      <AssignModal
+      <ProductionAssignmentModal
         open={!!forwardToProductionOrder}
         onClose={() => setForwardToProductionOrder(null)}
         onConfirm={handleConfirmSendToProduction}
         order={forwardToProductionOrder}
-        role="printer"
         loading={productionSaving}
       />
 

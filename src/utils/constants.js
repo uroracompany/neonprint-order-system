@@ -22,6 +22,40 @@ export const PAYMENT_STATUS = {
   PAID: "pagado",
 };
 
+export const PRODUCTION_AREAS = [
+  { code: "digital", label: "Digital", role: "digital_producer" },
+  { code: "dtf", label: "DTF", role: "dtf_producer" },
+  { code: "ploteo", label: "Ploteo", role: "ploteo_producer" },
+];
+
+export const PRODUCTION_AREA_ROLES = PRODUCTION_AREAS.reduce((acc, area) => {
+  acc[area.role] = area.code;
+  return acc;
+}, {});
+
+export const PRODUCTION_AREA_LABELS = PRODUCTION_AREAS.reduce((acc, area) => {
+  acc[area.code] = area.label;
+  return acc;
+}, {});
+
+export const PRODUCTION_FILE_STATUS = {
+  PENDING: "pending",
+  IN_PRODUCTION: "in_production",
+  IN_TERMINATION: "in_termination",
+  COMPLETED: "completed",
+};
+
+export const PRODUCTION_FILE_STATUS_LABELS = {
+  [PRODUCTION_FILE_STATUS.PENDING]: "Pendiente",
+  [PRODUCTION_FILE_STATUS.IN_PRODUCTION]: "En produccion",
+  [PRODUCTION_FILE_STATUS.IN_TERMINATION]: "En terminacion",
+  [PRODUCTION_FILE_STATUS.COMPLETED]: "Completado",
+};
+
+export const getProductionAreaForRole = (role) => PRODUCTION_AREA_ROLES[String(role || "").trim()] || null;
+export const isProductionRole = (role) => Boolean(getProductionAreaForRole(role));
+export const getProductionAreaLabel = (code) => PRODUCTION_AREA_LABELS[code] || "Sin clasificar";
+
 
 /* Mapeo de alias para estados de orden, 
 permite normalizar entradas de usuario en diferentes idiomas o formatos a los valores estandarizados definidos en ORDER_STATUS.

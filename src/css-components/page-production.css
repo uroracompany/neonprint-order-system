@@ -607,6 +607,18 @@
   border-color: #D97706;
 }
 
+.table-action-btn.unarchive {
+  color: var(--pp-green);
+  border-color: #D1FAE5;
+  background: #ECFDF5;
+}
+
+.table-action-btn.unarchive:hover {
+  background: var(--pp-green);
+  color: #fff;
+  border-color: var(--pp-green);
+}
+
 .pp-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

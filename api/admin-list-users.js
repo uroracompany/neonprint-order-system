@@ -1,4 +1,4 @@
-import { handleAdminUpdateUser } from "../server/admin-update-user-handler.js";
+import { handleAdminListUsers } from "../server/admin-list-users-handler.js";
 import { rateLimit } from "../server/rateLimit.js";
 
 export default async function handler(req, res) {
@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: `Demasiadas solicitudes. Intente de nuevo en ${retryAfter} segundos.` });
   }
 
-  const result = await handleAdminUpdateUser(req.body, {
+  const result = await handleAdminListUsers(req.body, {
     ...process.env,
     authHeader: req.headers.authorization || "",
   });

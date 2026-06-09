@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient"
+import { signOutAuth } from "../utils/authManager";
 
 // Styles & Assets
 import "../css-components/lobby.css"
@@ -111,7 +112,7 @@ export default function Lobby() {
 
       // Si el usuario fue desactivado por el admin, cerramos la sesión y bloqueamos el acceso.
       if (profiles?.employment_status === false) {
-        await supabase.auth.signOut();
+        await signOutAuth();
         setMessage({
           type: "error",
           text: "Tu cuenta está desactivada. Contacta al administrador.",
@@ -132,7 +133,9 @@ export default function Lobby() {
           seller: "/page-seller",
           designer: "/designer",
           quote: "/quote",
-          printer: "/production",
+          digital_producer: "/production",
+          dtf_producer: "/production",
+          ploteo_producer: "/production",
           delivery: "/delivery",
         };
         navigate(roleRoutes[profiles.role] || "/");
