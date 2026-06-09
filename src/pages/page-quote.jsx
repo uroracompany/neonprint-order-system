@@ -334,6 +334,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   const [paymentStatus, setPaymentStatus] = useState("pagado");
   const [localError, setLocalError] = useState("");
   const [receiptUrl, setReceiptUrl] = useState("");
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (open) {
@@ -537,22 +538,60 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
               <div className="pq-payment-field">
                 <label>Recibo o factura</label>
                 {paymentStatus === "pagado" ? (
-                  <label className={`pq-upload-box ${!canConfirmPayment ? "disabled" : ""}`}>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      disabled={!canConfirmPayment || paymentSaving}
-                      onChange={event => {
-                        const nextFile = event.target.files?.[0] || null;
-                        setReceiptFile(nextFile);
-                        setLocalError("");
+                  receiptFile ? (
+                    <div className="pq-receipt-preview-card">
+                      <a href={URL.createObjectURL(receiptFile)} target="_blank" rel="noreferrer">
+                        <img
+                          src={URL.createObjectURL(receiptFile)}
+                          alt="Vista previa del recibo"
+                          className="pq-receipt-preview-img"
+                        />
+                      </a>
+                      <div className="pq-receipt-preview-footer">
+                        <span className="pq-receipt-preview-name">{receiptFile.name}</span>
+                        <button
+                          type="button"
+                          className="pq-receipt-preview-change"
+                          disabled={!canConfirmPayment || paymentSaving}
+                          onClick={() => {
+                            if (fileInputRef.current) {
+                              fileInputRef.current.value = "";
+                              fileInputRef.current.click();
+                            }
+                          }}
+                        >
+                          <Icons.Edit /> Cambiar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className={`pq-upload-box ${!canConfirmPayment ? "disabled" : ""}`}
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.value = "";
+                          fileInputRef.current.click();
+                        }
                       }}
-                    />
-                    <span><Icons.Upload /> {receiptFile ? receiptFile.name : "Subir imagen del recibo"}</span>
-                  </label>
+                    >
+                      <span><Icons.Upload /> Subir imagen del recibo</span>
+                    </div>
+                  )
                 ) : (
                   <span className="pq-upload-hint">El campo de recibo solo se muestra cuando el estado es "Pagado"</span>
                 )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  disabled={!canConfirmPayment || paymentSaving}
+                  onChange={event => {
+                    const nextFile = event.target.files?.[0] || null;
+                    setReceiptFile(nextFile);
+                    setLocalError("");
+                  }}
+                  style={{ display: "none" }}
+                />
               </div>
             </div>
 
