@@ -439,25 +439,6 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
         }
 
         const orderId = crypto.randomUUID();
-        const payload = {
-          id: orderId,
-          client_id: form.client_id || null,
-          client_name: form.client_name.trim(),
-          client_contact: form.client_phone.trim() || null,
-          description: form.description.trim(),
-          material: form.materials.join(", "),
-          termination_type: form.termination_type.trim() || null,
-          order_type: form.order_type,
-          order_design_type: form.design_type,
-          delivery_date: form.indefinido ? null : (form.delivery_date || null),
-          status: ORDER_STATUS.PENDING,
-          payment_status: "Pending_Payment",
-          seller_id: userId,
-          created_by: userId,
-        };
-
-        const { error: insertError } = await supabase.from("orders").insert([payload]).select().single();
-        if (insertError) throw new Error("No se pudo crear la orden. Intenta nuevamente.");
 
         let fileUrls = [];
         let previewUrl = null;
@@ -467,6 +448,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
           uploadedUrls.map(({ bucket, url }) => removeOrderAssetByPublicUrl({ bucket, url }))
         );
 
+        // Upload files BEFORE inserting the order
         if (form.design_files.length > 0 || form.design_preview || form.reference_images.length > 0) {
           try {
             for (let i = 0; i < form.design_files.length; i++) {
@@ -525,6 +507,33 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
           }
         }
 
+        // Now insert the order with URLs already included
+        const payload = {
+          id: orderId,
+          client_id: form.client_id || null,
+          client_name: form.client_name.trim(),
+          client_contact: form.client_phone.trim() || null,
+          description: form.description.trim(),
+          material: form.materials.join(", "),
+          termination_type: form.termination_type.trim() || null,
+          order_type: form.order_type,
+          order_design_type: form.design_type,
+          delivery_date: form.indefinido ? null : (form.delivery_date || null),
+          status: ORDER_STATUS.PENDING,
+          payment_status: "Pending_Payment",
+          seller_id: userId,
+          created_by: userId,
+        };
+
+        if (previewUrl) payload.preview_image = previewUrl;
+        if (refImageUrls.length > 0) payload.reference_images = serializeReferenceImages(refImageUrls);
+
+        const { error: insertError } = await supabase.from("orders").insert([payload]).select().single();
+        if (insertError) {
+          await cleanupUploadedUrls();
+          throw new Error("No se pudo crear la orden. Intenta nuevamente.");
+        }
+
         if (fileUrls.length > 0) {
           const productionRows = buildProductionFileRows({
             orderId,
@@ -542,22 +551,16 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
             await cleanupUploadedUrls();
             throw new Error("No se pudo guardar la clasificacion de produccion de los archivos.");
           }
-        }
 
-        const assetPayload = {};
-        if (fileUrls.length > 0) assetPayload.order_file_url = JSON.stringify(fileUrls);
-        if (previewUrl) assetPayload.preview_image = previewUrl;
-        if (refImageUrls.length > 0) assetPayload.reference_images = serializeReferenceImages(refImageUrls);
-
-        if (Object.keys(assetPayload).length > 0) {
-          const { error: updateError } = await supabase
+          // Update legacy field for backward compatibility
+          const { error: updateLegacyError } = await supabase
             .from("orders")
-            .update(assetPayload)
+            .update({ order_file_url: JSON.stringify(fileUrls) })
             .eq("id", orderId);
 
-          if (updateError) {
+          if (updateLegacyError) {
             await cleanupUploadedUrls();
-            throw new Error("La orden se creó, pero no se pudieron asociar sus archivos. Intenta editarla y volver a subirlos.");
+            throw new Error("No se pudieron asociar los archivos a la orden.");
           }
         }
       })(), 60000);
