@@ -516,10 +516,12 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
                     <div className="pd-file-info">
                       <span className="pd-file-name">{file.name}</span>
                       <span className="pd-file-size">{formatFileSize(file.size)}</span>
-                      <ProductionAreaSelect
-                        value={pendingFileAreas[i]}
-                        onChange={(value) => setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area))}
-                      />
+                      <div style={{ maxWidth: '290px' }}>
+                        <ProductionAreaSelect
+                          value={pendingFileAreas[i]}
+                          onChange={(value) => setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area))}
+                        />
+                      </div>
                     </div>
                     <div className="pd-file-actions">
                       <button className="pd-file-action remove" onClick={() => removePendingFile(i)}>
