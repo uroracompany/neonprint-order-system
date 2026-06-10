@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-designer.css";
@@ -130,6 +130,30 @@ const buildDesignerAssetPath = (orderId, folder, file, prefix = "") => {
 
 const DESIGNER_FILES_BUCKET = "order-docs";
 const DESIGNER_PREVIEW_BUCKET = "order-previews";
+
+const CARD_ACCENTS = [
+  { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
+  { color: "#0EA5E9", bg: "#E0F2FE", glow: "#E0F2FE" },
+  { color: "#EF4444", bg: "#FEE2E2", glow: "#FEE2E2" },
+  { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
+];
+
+function MetricCard({ icon, label, value, sub, accentIdx = 0 }) {
+  const acc = CARD_ACCENTS[accentIdx];
+  return (
+    <div className="pd-metric-card"
+      onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
+      onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
+      <div className="pd-metric-glow" style={{ background: acc.glow }} />
+      <div className="pd-metric-icon" style={{ background: acc.bg, color: acc.color }}>
+        {icon}
+      </div>
+      <div className="pd-metric-value">{value}</div>
+      <div className="pd-metric-label">{label}</div>
+      {sub && <div className="pd-metric-sub" style={{ color: acc.color }}>{sub}</div>}
+    </div>
+  );
+}
 
 function ProductionAreaSelect({ value, onChange }) {
   return (
@@ -904,19 +928,12 @@ export default function PageDesigner() {
 
   const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
 
-  const CARD_ACCENTS = [
-    { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
-    { color: "#0EA5E9", bg: "#E0F2FE", glow: "#E0F2FE" },
-    { color: "#EF4444", bg: "#FEE2E2", glow: "#FEE2E2" },
-    { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
-  ];
-
-  const metrics = [
+  const metrics = useMemo(() => [
     { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", accentIdx: 0, icon: <Icons.Package /> },
     { label: "En caja", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length, sub: "Listas para seguir flujo", accentIdx: 1, icon: <Icons.Send /> },
     { label: "Devueltas", value: returnedOrdersCount, sub: "Requieren corrección", accentIdx: 2, icon: <Icons.X /> },
     { label: "En producción", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, sub: "Siendo producidas", accentIdx: 3, icon: <Icons.Package /> },
-  ];
+  ], [activeOrdersCount, returnedOrdersCount, orders]);
 
   const filteredOrders = orders.filter((order) => {
     const query = search.trim().toLowerCase();
@@ -1188,22 +1205,9 @@ export default function PageDesigner() {
               </div>
               
               <div className="pd-metrics">
-                {metrics.map((m, i) => {
-                  const acc = CARD_ACCENTS[m.accentIdx];
-                  return (
-                    <div key={i} className="pd-metric-card"
-                      onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
-                      onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
-                      <div className="pd-metric-glow" style={{ background: acc.glow }} />
-                      <div className="pd-metric-icon" style={{ background: acc.bg, color: acc.color }}>
-                        {m.icon}
-                      </div>
-                      <div className="pd-metric-value">{m.value}</div>
-                      <div className="pd-metric-label">{m.label}</div>
-                      {m.sub && <div className="pd-metric-sub" style={{ color: acc.color }}>{m.sub}</div>}
-                    </div>
-                  );
-                })}
+                {metrics.map((m, i) => (
+                  <MetricCard key={i} {...m} />
+                ))}
               </div>
               
             <section className="pd-panel pd-recent-section">
