@@ -13,6 +13,7 @@ import {
   PRODUCTION_AREAS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
+  ARCHIVE_MODULES,
   getOrderStatusConfig,
   isOrderStatus,
   isOrderStatusIn,
@@ -26,6 +27,11 @@ import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import "../css-components/page-quote.css";
+import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import {
+  canArchiveOrder,
+  archiveOrder,
+} from "../utils/archive";
 // Normaliza texto a minúsculas y sin espacios para comparaciones seguras
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
 const INVOICE_PAYMENT_FIELD = "invoice_payment";
@@ -40,8 +46,8 @@ const resolveSellerName = (order, sellerDirectory) => order?.seller_name || sell
 const isQuoteEditable = (order) => isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
 // Verifica si una orden está asignada al usuario actual
 const isOrderAssignedToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId);
-// Verifica si una orden completada y pagada puede ser archivada
-const canArchiveQuoteOrder = (order) => order?.payment_status === "pagado" && !order?.is_archived_quote;
+// Verifica si una orden puede ser archivada (recibe userId explícitamente)
+const canArchiveQuoteOrder = (order, userId) => canArchiveOrder(order, ARCHIVE_MODULES.QUOTE, userId);
 // Verifica si una orden fue devuelta (tiene estado de diseño/pendiente Y razón de devolución)
 const isReturnedOrder = (order) => isOrderStatusIn(order?.status, [ORDER_STATUS.IN_DESIGN, ORDER_STATUS.PENDING]) && Boolean(String(order?.return_reason || "").trim());
 // FUNCIÓN PARA PARSEAR ARCHIVOS DE ORDEN
@@ -66,35 +72,6 @@ function ReturnedBadge({ compact = false }) {
     <span className={`pq-returned-badge${compact ? " compact" : ""}`}>
       Devuelta
     </span>
-  );
-}
-
-// MODAL PARA ARCHIVAR ÓRDENES DE COTIZACIÓN
-// Cuando una orden está pagada y completada, se puede archivar
-// El archivo mueve la orden del flujo activo al histórico
-function ArchiveQuoteOrderModal({ open, onClose, onConfirm, order, loading }) {
-  if (!open || !order) return null;
-
-  return (
-    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-      <div className="pq-dialog">
-        <div className="pq-dialog-icon archive">
-          <Icons.Archive />
-        </div>
-        <h3 className="pq-dialog-title">Archivar orden</h3>
-        <p className="pq-dialog-text">¿Estás seguro de que deseas archivar esta orden?</p>
-        <div className="pq-dialog-order">
-          <span className="pq-dialog-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-          <span className="pq-dialog-order-name">{order.client_name || order.description || "Orden sin título"}</span>
-        </div>
-        <div className="pq-dialog-actions">
-          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
-          <button className="pq-btn pq-btn-archive" onClick={onConfirm} disabled={loading}>
-            {loading ? "Archivando..." : "Archivar"}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -331,7 +308,7 @@ function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading })
   );
 }
 
-function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory, onOpenReturnModal, onOpenArchiveModal, onValidationError, onOpenProductionModal }) {
+function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory, onOpenReturnModal, onValidationError, onOpenProductionModal }) {
   const [receiptFile, setReceiptFile] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState("pagado");
   const [localError, setLocalError] = useState("");
@@ -657,12 +634,6 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                 <button className="pq-btn pq-btn-return" onClick={() => onOpenProductionModal(order)}>
                   <Icons.Package />
                   Dar paso a producción
-                </button>
-              )}
-              {canArchiveQuoteOrder(order) && (
-                <button className="pq-btn pq-btn-secondary" onClick={() => onOpenArchiveModal(order)}>
-                  <Icons.Archive />
-                  Archivar
                 </button>
               )}
               <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
@@ -1111,7 +1082,7 @@ export default function PageQuote() {
   // Archiva órdenes en el campo específico del rol Quote.
   const handleConfirmArchive = async () => {
     if (!archivingOrder) return;
-    if (!canArchiveQuoteOrder(archivingOrder)) {
+    if (!canArchiveQuoteOrder(archivingOrder, user?.id)) {
       notif.showActionNotification({
         type: "order_cancelled",
         label: "Archivado no permitido",
@@ -1122,10 +1093,7 @@ export default function PageQuote() {
     }
 
     setArchiveLoading(true);
-    const { error } = await supabase
-      .from("orders")
-      .update({ is_archived_quote: true })
-      .eq("id", archivingOrder.id);
+    const { error } = await archiveOrder(archivingOrder, ARCHIVE_MODULES.QUOTE);
     setArchiveLoading(false);
 
     if (error) {
@@ -1451,7 +1419,7 @@ export default function PageQuote() {
                         Ver detalles
                       </button>
                       {/* Botón para archivar la orden */}
-                      {canArchiveQuoteOrder(order) && (
+                      {canArchiveQuoteOrder(order, user?.id) && (
                         <button
                           className="pq-btn pq-btn-inline-archive"
                           onClick={() => setArchivingOrder(order)}
@@ -1478,12 +1446,11 @@ export default function PageQuote() {
         paymentSaving={paymentSaving}
         sellerDirectory={sellerDirectory}
         onOpenReturnModal={setReturningOrder}
-        onOpenArchiveModal={setArchivingOrder}
         onValidationError={handlePaymentValidationError}
         onOpenProductionModal={handleOpenProductionModal}
       />
 
-      <ArchiveQuoteOrderModal
+      <ArchiveOrderModal
         open={!!archivingOrder}
         onClose={() => setArchivingOrder(null)}
         onConfirm={handleConfirmArchive}

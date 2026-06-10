@@ -1125,11 +1125,11 @@
 }
 
 .pd-card-action-btn.archive {
-  background: #ECFDF5;
-  color: #065F46;
+  background: #FFFBEB;
+  color: #B45309;
 }
 .pd-card-action-btn.archive:hover {
-  background: #065F46;
+  background: #F59E0B;
   color: #fff;
 }
 
@@ -1157,14 +1157,16 @@
 
 .pd-action-btn.archive,
 .pd-btn-archive {
-  background: #fff7ed;
-  color: #c2410c;
-  border-color: rgba(194, 65, 12, 0.18);
+  color: #D97706;
+  border-color: #FDE68A;
+  background: #FFFBEB;
 }
 
 .pd-action-btn.archive:hover,
 .pd-btn-archive:hover {
-  background: #ffedd5;
+  background: #D97706;
+  color: #fff;
+  border-color: #D97706;
 }
 
 .pd-action-btn.archived {

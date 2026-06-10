@@ -333,3 +333,53 @@ export const getFileNameFromUrl = (value) => {
 export const resolveSellerId = (order) => order?.seller_id || order?.created_by || null;
 // Determina si una orden puede ser archivada por el admin (debe estar completada o cancelada)
 export const isAdminArchivable = (order) => isOrderStatusIn(order?.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED]);
+
+export const ARCHIVE_MODULES = {
+  PRODUCTION: "production",
+  ADMIN: "admin",
+  DESIGNER: "designer",
+  SELLER: "seller",
+  QUOTE: "quote",
+  DELIVERY: "delivery",
+};
+
+export const ARCHIVE_MODULE_CONFIG = {
+  [ARCHIVE_MODULES.PRODUCTION]: {
+    archivableStatuses: [ORDER_STATUS.IN_COMPLETED, ORDER_STATUS.IN_DELIVERED],
+    dbField: null,
+    usesRpc: true,
+    rpcName: "set_production_order_archive",
+    isPerUser: true,
+  },
+  [ARCHIVE_MODULES.ADMIN]: {
+    archivableStatuses: [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED, ORDER_STATUS.IN_DELIVERED],
+    dbField: "is_archived_admin",
+    usesRpc: false,
+    isPerUser: false,
+  },
+  [ARCHIVE_MODULES.DESIGNER]: {
+    archivableStatuses: [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED, ORDER_STATUS.IN_DELIVERED],
+    dbField: "is_archived_designer",
+    usesRpc: false,
+    isPerUser: false,
+  },
+  [ARCHIVE_MODULES.SELLER]: {
+    archivableStatuses: [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_DELIVERED, ORDER_STATUS.IN_COMPLETED],
+    dbField: "is_archived",
+    usesRpc: false,
+    isPerUser: false,
+  },
+  [ARCHIVE_MODULES.QUOTE]: {
+    archivableStatuses: null,
+    requiresPaymentPaid: true,
+    dbField: "is_archived_quote",
+    usesRpc: false,
+    isPerUser: false,
+  },
+  [ARCHIVE_MODULES.DELIVERY]: {
+    archivableStatuses: [ORDER_STATUS.IN_DELIVERED],
+    dbField: "is_archived_delivery",
+    usesRpc: false,
+    isPerUser: false,
+  },
+};

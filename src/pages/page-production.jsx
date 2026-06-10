@@ -10,6 +10,7 @@ import { Icons } from "../utils/icons";
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
+import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
@@ -20,6 +21,7 @@ import {
   getOrderStatusConfig,
   isOrderStatus,
   formatDate,
+  ARCHIVE_MODULES,
 } from "../utils/constants";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { getReferenceImages } from "../utils/orderAssets";
@@ -29,8 +31,13 @@ import {
   getNextProductionFileStatus,
   getProductionFileStatusLabel,
   getProductionSummary,
-  isProductionOrderArchivedForUser,
 } from "../utils/production";
+import {
+  canArchiveOrder,
+  canRestoreOrder,
+  archiveOrder,
+  restoreOrder,
+} from "../utils/archive";
 
 const METRIC_ACCENTS = [
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
@@ -509,7 +516,7 @@ export default function PageProduction() {
   const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [archivedingOrder, setArchivedingOrder] = useState(null);
+  const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [filterArchive, setFilterArchive] = useState("active");
   const [clients, setClients] = useState([]);
@@ -531,37 +538,49 @@ export default function PageProduction() {
   }, [user?.id]);
 
   const handleArchiveOrder = (order) => {
-    if (!isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)) return;
-    setArchivedingOrder(order);
+    if (!canArchiveOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id)) return;
+    setArchivingOrder(order);
   };
 
   const handleConfirmArchiveOrder = async () => {
-    if (!archivedingOrder) return;
+    if (!archivingOrder) return;
     setArchiveLoading(true);
-    try {
-      const { error } = await supabase
-        .rpc("set_production_order_archive", { p_order_id: archivedingOrder.id, p_archived: true });
-      if (error) throw error;
-      setArchivedingOrder(null);
-      await refreshOrders();
-    } catch (err) {
-      console.error("Error archiving order:", err);
-    }
+    const { error } = await archiveOrder(archivingOrder, ARCHIVE_MODULES.PRODUCTION);
     setArchiveLoading(false);
+    if (!error) {
+      notif.showActionNotification({
+        type: "order_archived",
+        label: "Orden archivada",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "La orden fue archivada correctamente.",
+      });
+      setArchivingOrder(null);
+      await refreshOrders();
+    } else {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al archivar",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo archivar la orden.",
+      });
+    }
   };
 
   const handleRestoreOrder = async (order) => {
     if (!order?.id) return;
     setArchiveLoading(true);
-    try {
-      const { error } = await supabase
-        .rpc("set_production_order_archive", { p_order_id: order.id, p_archived: false });
-      if (error) throw error;
-      await refreshOrders();
-    } catch (err) {
-      console.error("Error restoring order:", err);
-    }
+    const { error } = await restoreOrder(order, ARCHIVE_MODULES.PRODUCTION);
     setArchiveLoading(false);
+    if (error) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al restaurar",
+        orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo restaurar la orden.",
+      });
+    } else {
+      await refreshOrders();
+    }
   };
 
   useEffect(() => {
@@ -644,17 +663,7 @@ export default function PageProduction() {
     setSelectedOrder(order);
   };
 
-  const isArchivedByCurrentUser = (order) => (
-    isProductionOrderArchivedForUser(order, user?.id)
-  );
 
-  const canArchiveOrder = (order) => (
-    isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED) && !isArchivedByCurrentUser(order)
-  );
-
-  const canRestoreOrder = (order) => (
-    filterArchive === "archived" && isArchivedByCurrentUser(order)
-  );
 
   const canAdvance = (order) => {
     void order;
@@ -909,7 +918,7 @@ export default function PageProduction() {
                                     {getAdvanceIcon(order)}
                                   </button>
                                 )}
-                                {canArchiveOrder(order) && (
+                                {canArchiveOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id) && (
                                   <button
                                     className="table-action-btn archive"
                                     onClick={(e) => { e.stopPropagation(); handleArchiveOrder(order); }}
@@ -918,7 +927,7 @@ export default function PageProduction() {
                                     <Icons.Archive />
                                   </button>
                                 )}
-                                {canRestoreOrder(order) && (
+                                {filterArchive === "archived" && canRestoreOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id) && (
                                   <button
                                     className="table-action-btn unarchive"
                                     onClick={(e) => { e.stopPropagation(); handleRestoreOrder(order); }}
@@ -970,7 +979,7 @@ export default function PageProduction() {
                                 {getAdvanceIcon(order)}
                               </button>
                             )}
-                            {canArchiveOrder(order) && (
+                            {canArchiveOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id) && (
                               <button
                                 className="table-action-btn archive"
                                 onClick={e => { e.stopPropagation(); handleArchiveOrder(order); }}
@@ -979,7 +988,7 @@ export default function PageProduction() {
                                 <Icons.Archive />
                               </button>
                             )}
-                            {canRestoreOrder(order) && (
+                            {filterArchive === "archived" && canRestoreOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id) && (
                               <button
                                 className="table-action-btn unarchive"
                                 onClick={e => { e.stopPropagation(); handleRestoreOrder(order); }}
@@ -1010,43 +1019,13 @@ export default function PageProduction() {
         onUpdateStatus={refreshOrders}
       />
 
-      {archivedingOrder && (
-        <div className="pp-modal-overlay" onClick={() => setArchivedingOrder(null)}>
-          <div className="pp-modal" onClick={e => e.stopPropagation()}>
-            <div className="pp-modal-stripe" />
-            <div className="pp-modal-header">
-              <h3>Archivar orden</h3>
-              <button className="pp-modal-close" onClick={() => setArchivedingOrder(null)}>
-                <Icons.Close />
-              </button>
-            </div>
-            <div className="pp-modal-body">
-              <p>¿Deseas archivar la orden <strong>#{archivedingOrder.id?.slice(0, 8).toUpperCase()}</strong>?</p>
-              <p style={{ color: "var(--pp-text-muted)", fontSize: "12px", marginTop: "8px" }}>
-                Las órdenes archivadas no se mostrarán en la vista principal.
-              </p>
-            </div>
-            <div className="pp-modal-footer">
-              <button className="pp-btn pp-btn-secondary" onClick={() => setArchivedingOrder(null)}>
-                Cancelar
-              </button>
-              <button className="pp-btn pp-btn-primary" onClick={handleConfirmArchiveOrder} disabled={archiveLoading}>
-                {archiveLoading ? (
-                  <>
-                    <span className="pp-btn-spinner"></span>
-                    Archivando...
-                  </>
-                ) : (
-                  <>
-                    <Icons.Archive />
-                    Archivar orden
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ArchiveOrderModal
+        open={!!archivingOrder}
+        onClose={() => setArchivingOrder(null)}
+        onConfirm={handleConfirmArchiveOrder}
+        order={archivingOrder}
+        loading={archiveLoading}
+      />
     </div>
   );
 }

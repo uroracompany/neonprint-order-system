@@ -5,7 +5,13 @@ import "../css-components/page-designer.css";
 import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
 import { AssignModal } from "../components/ui/AssignModal";
-import { ORDER_STATUS, PRODUCTION_AREAS, isOrderStatus, isOrderStatusIn } from "../utils/constants";
+import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import {
+  canArchiveOrder,
+  canRestoreOrder,
+  archiveOrder,
+} from "../utils/archive";
+import { ORDER_STATUS, PRODUCTION_AREAS, isOrderStatus, isOrderStatusIn, ARCHIVE_MODULES } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
@@ -674,46 +680,6 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   );
 }
 
-function ArchiveDesignerOrderModal({ open, onClose, onConfirm, order, loading }) {
-  if (!open || !order) return null;
-
-  return (
-    <div className="pd-assign-overlay">
-      <div className="pd-assign-modal">
-        <div className="pd-assign-icon pd-assign-icon-archive">
-          <Icons.File />
-        </div>
-
-        <h3 className="pd-assign-title">Archivar orden</h3>
-        <p className="pd-assign-text">
-          ¿Estás seguro de que deseas archivar esta orden?
-        </p>
-
-        <div className="pd-assign-order">
-          <span className="pd-assign-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-          <span className="pd-assign-order-name">{order.client_name || order.description || "Orden sin título"}</span>
-        </div>
-
-        <div className="pd-assign-actions">
-          <button className="pd-btn pd-btn-secondary" onClick={onClose} disabled={loading}>
-            Cancelar
-          </button>
-          <button className="pd-btn pd-btn-archive" onClick={onConfirm} disabled={loading}>
-            {loading ? (
-              <>
-                <span className="pd-btn-spinner"></span>
-                Archivando...
-              </>
-            ) : (
-              "Archivar"
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function PageDesigner() {
   const navigate = useNavigate();
   const { user: authUser, signOut } = useAuth();
@@ -914,9 +880,9 @@ export default function PageDesigner() {
     return !!editedOrders[order.id];
   };
 
-  const isDesignerArchivable = (order) => {
-    return isOrderStatus(order.status, ORDER_STATUS.CANCELLED);
-  };
+  const _canArchiveDesignerOrder = (order) => (
+    canArchiveOrder(order, ARCHIVE_MODULES.DESIGNER, user?.id)
+  );
 
   const displayName =
     user?.user_metadata?.display_name ||
@@ -1073,7 +1039,33 @@ export default function PageDesigner() {
   };
 
   const handleOpenArchiveOrder = (order) => {
+    if (!canArchiveOrder(order, ARCHIVE_MODULES.DESIGNER, user?.id)) return;
     setArchivingOrder(order);
+  };
+
+  const handleConfirmArchiveDesignerOrder = async () => {
+    if (!archivingOrder) return;
+    setArchiveLoading(true);
+    const { error } = await archiveOrder(archivingOrder, ARCHIVE_MODULES.DESIGNER);
+    setArchiveLoading(false);
+    if (error) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al archivar",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo archivar la orden.",
+      });
+      return;
+    }
+    setOrders(prev => prev.map(order => (
+      order.id === archivingOrder.id
+        ? { ...order, is_archived_designer: true }
+        : order
+    )));
+    if (selectedOrder?.id === archivingOrder.id) {
+      setSelectedOrder(prev => prev ? { ...prev, is_archived_designer: true } : prev);
+    }
+    setArchivingOrder(null);
   };
 
   const handleConfirmSendToQuotation = async (quoteUserId) => {
@@ -1128,41 +1120,6 @@ export default function PageDesigner() {
     setSelectedOrder(updatedOrder);
     setSendingToQuotation(null);
 
-  };
-
-  const handleConfirmArchiveDesignerOrder = async () => {
-    if (!archivingOrder) return;
-
-    setArchiveLoading(true);
-
-    const { error } = await supabase
-      .from("orders")
-      .update({ is_archived_designer: true })
-      .eq("id", archivingOrder.id);
-
-    setArchiveLoading(false);
-
-    if (error) {
-      notif.showActionNotification({
-        type: "order_cancelled",
-        label: "Error al archivar",
-        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
-        message: "No se pudo archivar la orden.",
-      });
-      return;
-    }
-
-    setOrders(prev => prev.map(order => (
-      order.id === archivingOrder.id
-        ? { ...order, is_archived_designer: true }
-        : order
-    )));
-
-    if (selectedOrder?.id === archivingOrder.id) {
-      setSelectedOrder(prev => prev ? { ...prev, is_archived_designer: true } : prev);
-    }
-
-    setArchivingOrder(null);
   };
 
   return (
@@ -1421,16 +1378,15 @@ export default function PageDesigner() {
                               <div className="pd-row-actions">
                                 {/* Boton para ver detalles de la orden */}
                                 <button className="pd-action-btn view" onClick={() => handleViewOrder(order)}>Ver detalle</button>
-                                {isDesignerArchivable(order) && !order.is_archived_designer && (
+                                {_canArchiveDesignerOrder(order) ? (
                                   <button className="pd-action-btn archive" onClick={() => handleOpenArchiveOrder(order)}>
                                     Archivar
                                   </button>
-                                )}
-                                {isDesignerArchivable(order) && order.is_archived_designer && (
+                                ) : order.is_archived_designer ? (
                                   <button className="pd-action-btn archived" disabled>
                                     Archivada
                                   </button>
-                                )}
+                                ) : null}
                               </div>
                             </td>
                           </tr>
@@ -1440,9 +1396,7 @@ export default function PageDesigner() {
                   </div>
                 ) : (
                   <div className={`pd-cards-grid ${shouldEnableOrdersScroll ? "pd-orders-scroll" : ""}`}>
-                    {/* Ordenes en formato carta */}
                     {paginatedOrders.map(order => (
-                      // Plantilla para mostrar las ordenes en formato carta, se muestra la informacion mas relevante y se pueden agregar etiquetas para resaltar ciertas caracteristicas de la orden */}
                       <div key={order.id} className="pd-order-card" onClick={() => handleViewOrder(order)}>
                         <div className="pd-card-header">
                           <span className="pd-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
@@ -1470,16 +1424,15 @@ export default function PageDesigner() {
                           <button className="pd-card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                             <Icons.Eye />
                           </button>
-                          {isDesignerArchivable(order) && !order.is_archived_designer && (
+                          {_canArchiveDesignerOrder(order) ? (
                             <button className="pd-card-action-btn archive" onClick={(event) => { event.stopPropagation(); handleOpenArchiveOrder(order); }} title="Archivar">
                               <Icons.Archived />
                             </button>
-                          )}
-                          {isDesignerArchivable(order) && order.is_archived_designer && (
+                          ) : order.is_archived_designer ? (
                             <button className="pd-card-action-btn archive" disabled title="Orden archivada" style={{ opacity: 0.5, cursor: "not-allowed" }}>
                               <Icons.Check />
                             </button>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -1518,7 +1471,7 @@ export default function PageDesigner() {
         defaultUserId={originalQuoterId || ""}
         description="Confirma que agregaste los archivos correctos antes de enviar esta orden al proceso de caja."
       />
-      <ArchiveDesignerOrderModal
+      <ArchiveOrderModal
         open={!!archivingOrder}
         onClose={() => setArchivingOrder(null)}
         onConfirm={handleConfirmArchiveDesignerOrder}

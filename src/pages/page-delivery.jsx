@@ -8,11 +8,18 @@ import NotificationCenter from "../components/NotificationCenter";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
-import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isOrderStatus } from "../utils/constants";
+import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isOrderStatus, ARCHIVE_MODULES } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
+import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import {
+  canArchiveOrder,
+  canRestoreOrder,
+  archiveOrder,
+  restoreOrder,
+} from "../utils/archive";
 
 const CARD_ACCENTS = [
   { color: "#0284C7", bg: "#E0F2FE", glow: "radial-gradient(circle, rgba(2,132,199,0.25) 0%, transparent 70%)" },
@@ -253,7 +260,7 @@ export default function PageDelivery() {
   const [viewMode, setViewMode] = useState("cards");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
-  const [archivedingOrder, setArchivedingOrder] = useState(null);
+  const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const notif = useNotifications(user?.id);
   const [page, setPage] = useState(1);
@@ -365,46 +372,39 @@ export default function PageDelivery() {
   };
 
   const handleArchiveOrder = (order) => {
-    // Solo permitir archivar si está entregado
-    if (!isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)) {
-      console.warn("Solo se pueden archivar órdenes entregadas");
-      return;
-    }
-    setArchivedingOrder(order);
+    if (!canArchiveOrder(order, ARCHIVE_MODULES.DELIVERY, user?.id)) return;
+    setArchivingOrder(order);
   };
 
   const handleConfirmArchiveOrder = async () => {
-    if (!archivedingOrder) return;
-
+    if (!archivingOrder) return;
     setArchiveLoading(true);
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ is_archived_delivery: true })
-        .eq("id", archivedingOrder.id);
-
-      if (error) throw error;
-
-      setArchivedingOrder(null);
-      refreshOrders();
-    } catch (err) {
-      console.error("Error archiving order:", err);
-    }
+    const { error } = await archiveOrder(archivingOrder, ARCHIVE_MODULES.DELIVERY);
     setArchiveLoading(false);
+    if (!error) {
+      setArchivingOrder(null);
+      refreshOrders();
+    } else {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al archivar",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo archivar la orden.",
+      });
+    }
   };
 
   const handleUnarchiveOrder = async (orderId) => {
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ is_archived_delivery: false })
-        .eq("id", orderId);
-
-      if (error) throw error;
-
+    const { error } = await restoreOrder({ id: orderId }, ARCHIVE_MODULES.DELIVERY);
+    if (!error) {
       refreshOrders();
-    } catch (err) {
-      console.error("Error unarchiving order:", err);
+    } else {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al restaurar",
+        orderTitle: `Orden #${orderId?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo restaurar la orden.",
+      });
     }
   };
 
@@ -425,7 +425,7 @@ export default function PageDelivery() {
           {updatingOrderId === order.id ? <span className="pd-btn-spinner" /> : <Icons.Check />}
         </button>
       )}
-      {!order.is_archived_delivery && isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED) && (
+      {canArchiveOrder(order, ARCHIVE_MODULES.DELIVERY, user?.id) && (
         <button
           className={variant === "table" ? "table-action-btn archive" : "pd-card-action-btn archive"}
           onClick={event => { event.stopPropagation(); handleArchiveOrder(order); }}
@@ -434,7 +434,7 @@ export default function PageDelivery() {
           <Icons.Archive />
         </button>
       )}
-      {order.is_archived_delivery && (
+      {filterArchive === "archived" && canRestoreOrder(order, ARCHIVE_MODULES.DELIVERY, user?.id) && (
         <button
           className={variant === "table" ? "table-action-btn unarchive" : "pd-card-action-btn unarchive"}
           onClick={event => { event.stopPropagation(); handleUnarchiveOrder(order.id); }}
@@ -685,47 +685,13 @@ export default function PageDelivery() {
         </div>
       </main>
 
-      {archivedingOrder && (
-        <div className="pd-modal-overlay" onClick={() => setArchivedingOrder(null)}>
-          <div className="pd-modal" onClick={e => e.stopPropagation()}>
-            <div className="pd-modal-stripe" />
-            <div className="pd-modal-header">
-              <h3>Confirmar archivado</h3>
-              <button className="pd-modal-close" onClick={() => setArchivedingOrder(null)}>
-                <Icons.Close />
-              </button>
-            </div>
-            <div className="pd-modal-body">
-              <p>¿Deseas archivar la orden <strong>#{archivedingOrder.id?.slice(0, 8).toUpperCase()}</strong>?</p>
-              <p style={{ color: "var(--pd-text-muted)", fontSize: "12px", marginTop: "8px" }}>
-                Las órdenes archivadas no se mostrarán en la vista principal y no podrán cambiar de estado.
-              </p>
-            </div>
-            <div className="pd-modal-footer">
-              <button className="pd-btn pd-btn-secondary" onClick={() => setArchivedingOrder(null)}>
-                Cancelar
-              </button>
-              <button 
-                className="pd-btn pd-btn-primary" 
-                onClick={handleConfirmArchiveOrder}
-                disabled={archiveLoading}
-              >
-                {archiveLoading ? (
-                  <>
-                    <span className="pd-btn-spinner"></span>
-                    Archivando...
-                  </>
-                ) : (
-                  <>
-                    <Icons.Archive />
-                    Archivar orden
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ArchiveOrderModal
+        open={!!archivingOrder}
+        onClose={() => setArchivingOrder(null)}
+        onConfirm={handleConfirmArchiveOrder}
+        order={archivingOrder}
+        loading={archiveLoading}
+      />
 
       <OrderDetailModal 
         open={!!selectedOrder} 

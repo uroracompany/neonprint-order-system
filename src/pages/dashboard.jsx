@@ -13,6 +13,7 @@ import {
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge, RoleBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
+import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect, ClientNameAutocomplete, ClientSelect } from "../components/ui/ClientCombobox";
 import {
@@ -32,8 +33,15 @@ import {
   serializeFileUrls,
   getFileNameFromUrl,
   resolveSellerId,
-  isAdminArchivable
+  isAdminArchivable,
+  ARCHIVE_MODULES,
 } from "../utils/constants";
+import {
+  canArchiveOrder,
+  canRestoreOrder,
+  archiveOrder,
+  restoreOrder,
+} from "../utils/archive";
 import { getReferenceImages } from "../utils/orderAssets";
 import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { adminApiFetch } from "../utils/adminApi";
@@ -685,7 +693,7 @@ onMouseEnter={e => {
               <Icons.Edit />Editar
             </button>
           </div>
-          {isAdminArchivable(order) && !order.is_archived_admin && (
+          {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, user?.id) && (
             <button className="pa-btn" style={{ width: "100%", marginTop: 8, background: "#F59E0B", color: "#fff", border: "none" }} onClick={() => onArchive(order)}>
               <Icons.Archive />Archivar orden
             </button>
@@ -1425,6 +1433,7 @@ const CARD_ACCENTS = [
   { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
   { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
+  { color: "#06B6D4", bg: "#CFFAFE", glow: "#CFFAFE" },
 ];
 
 export default function Dashboard() {
@@ -1798,37 +1807,24 @@ export default function Dashboard() {
   };
 
   const openArchiveModal = (order) => {
-    if (order?.is_archived_admin) {
-      showFeedback("error", "La orden ya está archivada en administración.");
+    if (!canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, user?.id)) {
+      showFeedback("error", "Solo se pueden archivar órdenes canceladas, completadas o entregadas.");
       return;
     }
-
-    if (!isAdminArchivable(order)) {
-      showFeedback("error", "Solo se pueden archivar órdenes canceladas o completadas.");
-      return;
-    }
-
     setArchivingOrder(order);
   };
 
   const handleConfirmArchiveOrder = async () => {
     if (!archivingOrder) return;
-
     setArchiveLoading(true);
-    const { error } = await supabase
-      .from("orders")
-      .update({ is_archived_admin: true })
-      .eq("id", archivingOrder.id);
+    const { error } = await archiveOrder(archivingOrder, ARCHIVE_MODULES.ADMIN);
     setArchiveLoading(false);
-
     if (error) {
       return showFeedback("error", "No se pudo archivar la orden.");
     }
-
     if (selectedOrder?.id === archivingOrder.id) {
       setSelectedOrder((prev) => prev ? { ...prev, is_archived_admin: true } : prev);
     }
-
     setArchivingOrder(null);
     await loadOrders();
     showFeedback("success", "La orden fue archivada correctamente.");
@@ -2321,10 +2317,10 @@ export default function Dashboard() {
   ), [clients, clientSearch]);
 
   const metrics = [
-    { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders /> },
-    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money /> },
-    { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File /> },
-    { label: "Usuarios", value: profiles.length, icon: <Icons.Users /> },
+    { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders />, accentIdx: 0 },
+    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money />, accentIdx: 5 },
+    { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, accentIdx: 2 },
+    { label: "Usuarios", value: profiles.length, icon: <Icons.Users />, accentIdx: 3 },
   ];
 
   const typeMetrics = [
@@ -2371,8 +2367,8 @@ export default function Dashboard() {
         {activeTab === "overview" &&
           <section className="pa-section">
             <div className="pa-metrics-grid">
-              {metrics.map((metric, idx) => {
-                const acc = CARD_ACCENTS[idx % CARD_ACCENTS.length];
+              {metrics.map((metric) => {
+                const acc = CARD_ACCENTS[metric.accentIdx];
                 return (
                   <article key={metric.label} className="pa-metric-card"
                     onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
@@ -2546,17 +2542,15 @@ export default function Dashboard() {
                                   <button className="table-action-btn cancel" onClick={() => openCancelModal(order)} title="Cancelar orden">
                                     <Icons.Trash />
                                   </button>}
-                                {isAdminArchivable(order) && (
-                                  order.is_archived_admin ? (
-                                    <button className="table-action-btn archive" title="Orden archivada" disabled>
-                                      <Icons.Archive />
-                                    </button>
-                                  ) : (
-                                    <button className="table-action-btn archive" onClick={() => openArchiveModal(order)} title="Archivar orden">
-                                      <Icons.Archive />
-                                    </button>
-                                  )
-                                )}
+                                {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, user?.id) ? (
+                                  <button className="table-action-btn archive" onClick={() => openArchiveModal(order)} title="Archivar orden">
+                                    <Icons.Archive />
+                                  </button>
+                                ) : order.is_archived_admin ? (
+                                  <button className="table-action-btn archive" title="Orden archivada" disabled>
+                                    <Icons.Archive />
+                                  </button>
+                                ) : null}
                               </div>
                             </td>
                           </tr>)}
@@ -3136,26 +3130,13 @@ export default function Dashboard() {
           </div>
         </div>
       </ModalShell>
-      <ModalShell open={!!archivingOrder} onClose={() => setArchivingOrder(null)} title="Archivar Orden" size="compact">
-        <div className="pa-confirm-modal-body">
-          <div className="pa-confirm-icon archive">
-            <Icons.Archive />
-          </div>
-          <div className="pa-confirm-copy">
-            <h4>Archivar orden</h4>
-            <p className="pa-confirm-order-name">{archivingOrder?.client_name}</p>
-            <p className="pa-confirm-order-desc">La orden se ocultará de la vista activa, pero seguirá disponible en el filtro de archivadas.</p>
-          </div>
-          <div className="pa-modal-actions">
-            <button className="pa-btn secondary" onClick={() => setArchivingOrder(null)} disabled={archiveLoading}>
-              Cancelar
-            </button>
-            <button className="pa-btn pa-confirm-btn-archive" onClick={handleConfirmArchiveOrder} disabled={archiveLoading}>
-              {archiveLoading ? "Archivando..." : "Archivar"}
-            </button>
-          </div>
-        </div>
-      </ModalShell>
+      <ArchiveOrderModal
+        open={!!archivingOrder}
+        onClose={() => setArchivingOrder(null)}
+        onConfirm={handleConfirmArchiveOrder}
+        order={archivingOrder}
+        loading={archiveLoading}
+      />
       <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} />
       <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />

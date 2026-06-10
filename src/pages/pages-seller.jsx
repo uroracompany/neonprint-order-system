@@ -4,6 +4,12 @@ import { useNavigate } from "react-router-dom";
 import "../css-components/page-seller.css";
 import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
+import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import {
+  canArchiveOrder,
+  canRestoreOrder,
+  archiveOrder,
+} from "../utils/archive";
 import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
@@ -15,6 +21,7 @@ import {
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   MATERIAL_OPTIONS,
+  ARCHIVE_MODULES,
   getOrderStatusConfig,
   isOrderStatus,
   isOrderStatusIn,
@@ -87,6 +94,7 @@ const CARD_ACCENTS = [
   { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
   { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
+  { color: "#06B6D4", bg: "#CFFAFE", glow: "#CFFAFE" },
 ];
 
 
@@ -1418,8 +1426,8 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
             <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
               <div style={{
                 width: 50, height: 50,
-                borderRadius: "var(--radius-md)",
-                background: "linear-gradient(135deg, #06B6D4, #0f1e40)",
+                borderRadius: "50%",
+                background: "var(--pink)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#fff", fontSize: 22, fontWeight: 700,
                 flexShrink: 0
@@ -1514,7 +1522,7 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
               fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
               textTransform: "uppercase", letterSpacing: "0.07em",
               marginBottom: 14
-            }}>📊 Estado & Pago</p>
+            }}>Estado & Pago</p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
@@ -1532,22 +1540,6 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
                   ESTADO DE PAGO
                 </p>
                 <StatusBadge status={order.payment_status} type="payment" />
-              </div>
-
-              <div style={{
-                background: "var(--primary-light)",
-                border: `1.5px solid ${statusConfig?.color || "var(--primary)"}20`,
-                borderRadius: "var(--radius-md)",
-                padding: 14,
-              }}>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 5px 0", fontWeight: 600 }}>
-                  PRECIO
-                </p>
-                <p style={{
-                  fontSize: 22, fontWeight: 800, color: "var(--primary)", margin: 0
-                }}>
-                  {order.price ? "RD$" + order.price.toLocaleString("es-DO") : "Precio pendiente"}
-                </p>
               </div>
 
               {isReturnedOrder(order) && (
@@ -1867,80 +1859,7 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
 }
 
 // ─── ARCHIVAR ORDEN VENTANA DE CONFIRMACION ───────────────────────────────────────────
-function ArchivedOrderModal({ open, onClose, onConfirm, order, loading }) {
-  return (
-    <Modal open={open} onClose={onClose} title="Archivar Orden">
-      <div style={{ minWidth: 380, paddingTop: 8 }}>
-        <div style={{ 
-          display: "flex", 
-          alignItems: "center", 
-          justifyContent: "center",
-          marginBottom: 20 
-        }}>
-          <div style={{
-            width: 64, height: 64,
-            borderRadius: "50%",
-            background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(245, 158, 11, 0.25)"
-          }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="21 8 21 21 3 21 3 8" />
-              <rect x="1" y="3" width="22" height="5" />
-              <line x1="10" y1="12" x2="14" y2="12" />
-            </svg>
-          </div>
-        </div>
-        
-        <p style={{ fontSize: 15, color: "#374151", marginBottom: 12, lineHeight: 1.5, textAlign: "center", fontWeight: 500 }}>
-          ¿Estás seguro de que deseas archivar esta orden?
-        </p>
-        
-        {order && (
-          <div style={{ 
-            background: "#F9FAFB", 
-            border: "1px solid #E5E7EB", 
-            borderRadius: 8, 
-            padding: 12, 
-            marginBottom: 16,
-            textAlign: "center"
-          }}>
-            <span style={{ fontSize: 13, color: "#6B7280" }}>Orden </span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#0f1e40" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
-            <span style={{ fontSize: 13, color: "#6B7280" }}> - </span>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#0f1e40" }}>{order.client_name}</span>
-          </div>
-        )}
-        
-        <p style={{ fontSize: 13, color: "#6B7280", marginBottom: 24, lineHeight: 1.5, textAlign: "center" }}>
-          La orden se ocultará de la vista principal pero permanecerá archivada en el sistema.
-        </p>
-        
-        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-          <button 
-            className="ps-btn-cancel" 
-            onClick={onClose}
-            disabled={loading}
-          >
-            Cancelar
-          </button>
-          <button 
-            className="ps-btn-submit" 
-            onClick={onConfirm}
-            disabled={loading}
-            style={{ 
-              background: "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)", 
-              border: "1px solid #B45309",
-              boxShadow: "0 2px 8px rgba(245, 158, 11, 0.3)"
-            }}
-          >
-            {loading ? "Archivando..." : "Si, archivar orden"}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
+
 
 
 
@@ -1971,7 +1890,7 @@ export default function PageSeller() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [cancelingOrder, setCancelingOrder] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
-  const [archivedingOrder , setArchivedingOrder] = useState(null);
+  const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [sendingToDesigner, setSendingToDesigner] = useState(null);
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
@@ -2237,15 +2156,16 @@ export default function PageSeller() {
 
   // ── Funcion para archivar orden ───────────────────────────────────────────────────────
   const handleArchiveOrder = (order) => {
-    setArchivedingOrder(order);
+    if (!canArchiveOrder(order, ARCHIVE_MODULES.SELLER, user?.id)) return;
+    setArchivingOrder(order);
   }
  
   // Funcion por si el usuario confirma el archivado
   const handleConfirmArchiveOrder = async () => {
-    if (!archivedingOrder) return;
+    if (!archivingOrder) return;
 
     setArchiveLoading(true);
-    const { error } = await supabase.from("orders").update({ is_archived: true }).eq("id", archivedingOrder.id);
+    const { error } = await archiveOrder(archivingOrder, ARCHIVE_MODULES.SELLER);
     setArchiveLoading(false);
 
     if (error) {
@@ -2254,9 +2174,9 @@ export default function PageSeller() {
     }
 
     setOrders(prev => prev.map(o =>
-      o.id === archivedingOrder.id ? { ...o, is_archived: true } : o
+      o.id === archivingOrder.id ? { ...o, is_archived: true } : o
     ));
-    setArchivedingOrder(null);
+    setArchivingOrder(null);
   };
 
   // ── Metrics Values ─────────────────────────────────────────────────────────────
@@ -2350,7 +2270,7 @@ export default function PageSeller() {
     { icon: <Icons.Orders />, label: "Ordenes hoy", value: todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
     { icon: <Icons.Package />, label: "Pendientes", value: inQuote, sub: "Ordenes Pendientes", accentIdx: 1 },
     { icon: <Icons.Edit />, label: "En diseño", value: inDesign, sub: "En proceso de diseño", accentIdx: 2 },
-    { icon: <Icons.Package />, label: "En caja", value: inCotizacion, sub: "Esperando aprobación", accentIdx: 1 },
+    { icon: <Icons.Package />, label: "En caja", value: inCotizacion, sub: "Esperando aprobación", accentIdx: 5 },
     { icon: <Icons.Package />, label: "En producción", value: inProd, sub: "Siendo impresas", accentIdx: 3 },
     { icon: <Icons.Package />, label: "Terminación", value: inTerminacion, sub: "En proceso final", accentIdx: 2 },
     { icon: <Icons.Truck />, label: "Completadas", value: completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
@@ -2471,25 +2391,23 @@ export default function PageSeller() {
                                     <Icons.Edit />
                                   </button>
                                 )}
-                                {(isOrderStatus(o.status, ORDER_STATUS.CANCELLED) || isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)) && (
-                                  o.is_archived ? (
-                                    <button 
-                                      className="table-action-btn archive"
-                                      title="Orden archivada"
-                                      disabled
-                                    >
-                                      <Icons.Check />
-                                    </button>
-                                  ) : (
-                                    <button 
-                                      className="table-action-btn archive"
-                                      onClick={e => { e.stopPropagation(); handleArchiveOrder(o); }}
-                                      title="Archivar orden"
-                                    >
-                                      <Icons.Archived />
-                                    </button>
-                                  )
-                                )}
+{canArchiveOrder(o, ARCHIVE_MODULES.SELLER, user?.id) ? (
+                  <button 
+                    className="table-action-btn archive"
+                    onClick={e => { e.stopPropagation(); handleArchiveOrder(o); }}
+                    title="Archivar orden"
+                  >
+                    <Icons.Archived />
+                  </button>
+                ) : o.is_archived ? (
+                  <button 
+                    className="table-action-btn archive"
+                    title="Orden archivada"
+                    disabled
+                  >
+                    <Icons.Check />
+                  </button>
+                ) : null}
                               </div>
                             </td>
                           </tr>
@@ -2639,25 +2557,23 @@ export default function PageSeller() {
                                       <Icons.Trash />
                                     </button>
                                   )}
-                                  {(isOrderStatus(o.status, ORDER_STATUS.CANCELLED) || isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)) && (
-                                    o.is_archived ? (
-                                      <button 
-                                        className="table-action-btn archive"
-                                        title="Orden archivada"
-                                        disabled
-                                      >
-                                        <Icons.Check />
-                                      </button>
-                                    ) : (
-                                      <button 
-                                        className="table-action-btn archive"
-                                        onClick={() => handleArchiveOrder(o)}
-                                        title="Archivar orden"
-                                      >
-                                        <Icons.Archived />
-                                      </button>
-                                    )
-                                  )}
+                                  {canArchiveOrder(o, ARCHIVE_MODULES.SELLER, user?.id) ? (
+                                    <button 
+                                      className="table-action-btn archive"
+                                      onClick={() => handleArchiveOrder(o)}
+                                      title="Archivar orden"
+                                    >
+                                      <Icons.Archived />
+                                    </button>
+                                  ) : o.is_archived ? (
+                                    <button 
+                                      className="table-action-btn archive"
+                                      title="Orden archivada"
+                                      disabled
+                                    >
+                                      <Icons.Check />
+                                    </button>
+                                  ) : null}
                                 </div>
                               </td>
                             </tr>
@@ -2719,11 +2635,11 @@ export default function PageSeller() {
                                 <Icons.Trash />
                               </button>
                             )}
-                            {(isOrderStatus(o.status, ORDER_STATUS.CANCELLED) || isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)) && !o.is_archived && (
+                            {canArchiveOrder(o, ARCHIVE_MODULES.SELLER, user?.id) ? (
                               <button className="card-action-btn archive" onClick={() => handleArchiveOrder(o)} title="Archivar">
                                 <Icons.Archived />
                               </button>
-                            )}
+                            ) : o.is_archived ? null : null}
                           </div>
                         </div>
                       ))
@@ -2758,7 +2674,7 @@ export default function PageSeller() {
         loading={sendingLoading}
       />
       <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
-      <ArchivedOrderModal open={!!archivedingOrder} onClose={() => setArchivedingOrder(null)} order={archivedingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />
+      <ArchiveOrderModal open={!!archivingOrder} onClose={() => setArchivingOrder(null)} order={archivingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />
       
       {toastMsg && (
         <div className="ps-toast">
