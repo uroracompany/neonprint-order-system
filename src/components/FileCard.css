@@ -1,0 +1,81 @@
+.fc-file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-alt, #f5f7fb);
+  border: 1px solid var(--border, #dde3ef);
+  border-radius: 8px;
+  transition: border-color 0.15s;
+}
+
+.fc-file-item:hover {
+  border-color: var(--primary, #091127);
+}
+
+.fc-file-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #dde3ef);
+  border-radius: 6px;
+  color: var(--text-muted, #8899b5);
+  flex-shrink: 0;
+}
+
+.fc-file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.fc-file-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, #0f1e40);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-file-secondary {
+  font-size: 10px;
+  color: var(--text-muted, #8899b5);
+  display: block;
+  margin-top: 1px;
+}
+
+.fc-file-action {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary, #091127);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  text-decoration: none;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.fc-file-action:hover {
+  opacity: 0.85;
+  background: var(--primary-mid, #1a3060);
+}
+
+.fc-file-action-remove {
+  background: rgba(244, 63, 94, 0.12);
+  color: #f43f5e;
+}
+
+.fc-file-action-remove:hover {
+  background: #f43f5e;
+  color: #fff;
+  opacity: 1;
+}

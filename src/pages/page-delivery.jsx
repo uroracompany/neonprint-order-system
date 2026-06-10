@@ -144,6 +144,33 @@ function OrderDetailModal({ onClose, order, onUpdateStatus }) {
             </div>
           </div>
 
+          {order.preview_image && (
+            <div className="pd-modal-card" style={{ marginTop: 16 }}>
+              <div className="pd-modal-card-title">
+                <Icons.Eye /><h4>Orden de Trabajo</h4>
+              </div>
+              <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                <img
+                  src={order.preview_image}
+                  alt="Orden de Trabajo"
+                  style={{
+                    width: "100%",
+                    maxHeight: 200,
+                    objectFit: "contain",
+                    objectPosition: "left",
+                    background: "var(--pd-surface-alt, #f5f7fb)",
+                    borderRadius: "var(--pd-radius-md)",
+                    border: "1px solid var(--pd-border)",
+                    cursor: "pointer",
+                    transition: "transform 0.2s, box-shadow 0.2s",
+                  }}
+                  onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                  onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                />
+              </a>
+            </div>
+          )}
+
           <div className="pd-status-bar">
             <div className="pd-status-item">
               <span className="pd-status-label">Estado</span>

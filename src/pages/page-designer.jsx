@@ -12,6 +12,7 @@ import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
+import FileCard from "../components/FileCard";
 import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { getReferenceImages } from "../utils/orderAssets";
@@ -509,26 +510,19 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
               <div className="pd-files-container">
                 <span className="pd-files-label">Archivos pendientes ({pendingFiles.length})</span>
                 {pendingFiles.map((file, i) => (
-                  <div key={i} className="pd-file-card pending">
-                    <div className="pd-file-icon">
-                      <Icons.File />
+                  <FileCard
+                    key={i}
+                    name={file.name}
+                    secondaryText={formatFileSize(file.size)}
+                    onRemove={() => removePendingFile(i)}
+                  >
+                    <div style={{ minWidth: '180px' }}>
+                      <ProductionAreaSelect
+                        value={pendingFileAreas[i]}
+                        onChange={(value) => setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area))}
+                      />
                     </div>
-                    <div className="pd-file-info">
-                      <span className="pd-file-name">{file.name}</span>
-                      <span className="pd-file-size">{formatFileSize(file.size)}</span>
-                      <div style={{ maxWidth: '290px' }}>
-                        <ProductionAreaSelect
-                          value={pendingFileAreas[i]}
-                          onChange={(value) => setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area))}
-                        />
-                      </div>
-                    </div>
-                    <div className="pd-file-actions">
-                      <button className="pd-file-action remove" onClick={() => removePendingFile(i)}>
-                        <Icons.X />
-                      </button>
-                    </div>
-                  </div>
+                  </FileCard>
                 ))}
               </div>
             )}
@@ -537,19 +531,11 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
               <div className="pd-files-container" style={{ marginTop: pendingFiles.length > 0 ? '12px' : '0' }}>
                 <span className="pd-files-label">Archivos guardados ({uniqueFiles.length})</span>
                 {uniqueFiles.map((file, i) => (
-                  <div key={i} className="pd-file-card">
-                    <div className="pd-file-icon">
-                      <Icons.File />
-                    </div>
-                    <div className="pd-file-info">
-                      <span className="pd-file-name">{file.name}</span>
-                    </div>
-                    <div className="pd-file-actions">
-                      <a href={file.url} target="_blank" rel="noopener noreferrer" className="pd-file-action">
-                        <Icons.Download />
-                      </a>
-                    </div>
-                  </div>
+                  <FileCard
+                    key={i}
+                    name={file.name}
+                    url={file.url}
+                  />
                 ))}
               </div>
             )}

@@ -844,6 +844,33 @@
   color: var(--cyan);
   flex-shrink: 0;
 }
+.ps-ref-thumb {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ps-file-remove {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.ps-file-remove:hover {
+  background: var(--surface-alt);
+  color: var(--primary);
+}
 .ps-file-name {
   flex: 1;
   max-width: 220px;

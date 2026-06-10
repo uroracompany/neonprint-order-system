@@ -41,6 +41,7 @@ import { useAuth } from "../hooks/useAuth";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
+import FileCard from "../components/FileCard";
 import "../css-components/page-admin.css";
 import "../css-components/page-seller.css";
 
@@ -919,26 +920,20 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
                 {[...orderForm.existingFiles, ...orderForm.newFiles].length > 0 ? (
                   <div className="pa-upload-files">
                     {orderForm.existingFiles.map((fileUrl) => (
-                      <div key={fileUrl} className="pa-upload-file-chip">
-                        <div>
-                          <strong>{getFileNameFromUrl(fileUrl)}</strong>
-                          <small>Archivo guardado</small>
-                        </div>
-                        <div className="pa-upload-chip-actions">
-                          <a href={fileUrl} target="_blank" rel="noreferrer" className="pa-inline-link">Ver</a>
-                          <button type="button" className="pa-chip-remove" onClick={() => handleRemoveExistingFile(fileUrl)}>Quitar</button>
-                        </div>
-                      </div>
+                      <FileCard
+                        key={fileUrl}
+                        name={getFileNameFromUrl(fileUrl)}
+                        url={fileUrl}
+                        onRemove={() => handleRemoveExistingFile(fileUrl)}
+                      />
                     ))}
 
                     {orderForm.newFiles.map((file, index) => (
-                      <div key={`${file.name}-${index}`} className="pa-upload-file-chip is-new">
-                        <div>
-                          <strong>{file.name}</strong>
-                          <small>Se subirá al guardar</small>
-                        </div>
-                        <button type="button" className="pa-chip-remove" onClick={() => handleRemoveNewFile(index)}>Quitar</button>
-                      </div>
+                      <FileCard
+                        key={`${file.name}-${index}`}
+                        name={file.name}
+                        onRemove={() => handleRemoveNewFile(index)}
+                      />
                     ))}
                   </div>
                 ) : (

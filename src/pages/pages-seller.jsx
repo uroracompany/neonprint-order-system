@@ -18,14 +18,16 @@ import {
   getOrderStatusConfig,
   isOrderStatus,
   isOrderStatusIn,
+  getFileNameFromUrl,
 } from "../utils/constants";
 import { getOrderFiles, getReferenceImages, hasAnyOrderAsset, normalizeAssetUrls, serializeReferenceImages } from "../utils/orderAssets";
 import { buildProductionFileRows } from "../utils/production";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
+import FileCard from "../components/FileCard";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
-import { buildStorageSafeFileName, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
+import { buildStorageSafeFileName, formatFileSize, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
 import { formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 
 const isReturnedOrder = (order) => {
@@ -68,14 +70,6 @@ function ProductionAreaSelect({ value, onChange, className = "ps-form-input" }) 
     </select>
   );
 }
-
-const MAX_VISIBLE_CHARS = 22;
-
-const truncateFileName = (name) => {
-  if (!name) return '';
-  if (name.length <= MAX_VISIBLE_CHARS) return name;
-  return name.slice(0, MAX_VISIBLE_CHARS) + '...';
-};
 
 const isValidDominicanPhone = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
@@ -718,25 +712,22 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                 {form.design_files.length > 0 && (
                   <div className="ps-files-list">
                     {form.design_files.map((file, i) => (
-                      <div key={i} className="ps-file-item">
-                        <Icons.File />
-                        <span className="ps-file-name">{truncateFileName(file.name)}</span>
-                        <div style={{ maxWidth: '210px', marginLeft: 'auto' }}>
+                      <FileCard
+                        key={i}
+                        name={file.name}
+                        secondaryText={formatFileSize(file.size)}
+                        onRemove={() => {
+                          set("design_files", form.design_files.filter((_, idx) => idx !== i));
+                          set("design_file_areas", form.design_file_areas.filter((_, idx) => idx !== i));
+                        }}
+                      >
+                        <div style={{ maxWidth: '210px' }}>
                           <ProductionAreaSelect
                             value={form.design_file_areas[i]}
                             onChange={(value) => set("design_file_areas", form.design_file_areas.map((area, idx) => idx === i ? value : area))}
                           />
                         </div>
-                        <div className="ps-file-actions">
-                          <button className="ps-file-action" onClick={(e) => {
-                            e.stopPropagation();
-                            set("design_files", form.design_files.filter((_, idx) => idx !== i));
-                            set("design_file_areas", form.design_file_areas.filter((_, idx) => idx !== i));
-                          }}>
-                            <Icons.X />
-                          </button>
-                        </div>
-                      </div>
+                      </FileCard>
                     ))}
                   </div>
                 )}
@@ -836,7 +827,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
               <div className="ps-files-list">
                 {form.reference_images.map((file, i) => (
                   <div key={i} className="ps-file-item">
-                    <Icons.File />
+                    <img src={URL.createObjectURL(file)} alt={file.name} className="ps-ref-thumb" />
                     <span className="ps-file-name">{file.name}</span>
                     <button className="ps-file-remove" onClick={(e) => { e.stopPropagation(); set("reference_images", form.reference_images.filter((_, idx) => idx !== i)); }}>
                       <Icons.X />
@@ -1201,37 +1192,34 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       <div className="ps-form-grid">
         <div className="col-full">
           <Field label="Archivos adjuntos" hint="Archivos de diseño existentes y nuevos">
-            {existingFiles.length > 0 && (
+                {existingFiles.length > 0 && (
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {existingFiles.map((url, i) => (
-                  <div key={i} className="ps-file-item">
-                    <Icons.File />
-                    <span className="ps-file-name">{parseFileName(url)}</span>
-                    <button className="ps-file-remove" onClick={() => handleRemoveExistingFile(url)}>
-                      <Icons.X />
-                    </button>
-                  </div>
+                  <FileCard
+                    key={i}
+                    name={parseFileName(url)}
+                    url={url}
+                    onRemove={() => handleRemoveExistingFile(url)}
+                  />
                 ))}
               </div>
             )}
             {newFiles.length > 0 && (
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {newFiles.map((file, i) => (
-                  <div key={i} className="ps-file-item" style={{ borderColor: "var(--cyan)", background: "rgba(6, 182, 212, 0.04)" }}>
-                    <Icons.File />
-                    <span className="ps-file-name">{truncateFileName(file.name)}</span>
-                    <div style={{ maxWidth: '210px', marginLeft: 'auto' }}>
+                  <FileCard
+                    key={i}
+                    name={file.name}
+                    secondaryText={formatFileSize(file.size)}
+                    onRemove={() => handleRemoveNewFile(i)}
+                  >
+                    <div style={{ maxWidth: '210px' }}>
                       <ProductionAreaSelect
                         value={newFileAreas[i]}
                         onChange={(value) => setNewFileAreas(newFileAreas.map((area, idx) => idx === i ? value : area))}
                       />
                     </div>
-                    <div className="ps-file-actions">
-                      <button className="ps-file-action" onClick={() => handleRemoveNewFile(i)}>
-                        <Icons.X />
-                      </button>
-                    </div>
-                  </div>
+                  </FileCard>
                 ))}
               </div>
             )}
@@ -1302,7 +1290,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {existingRefImages.map((url, i) => (
                   <div key={i} className="ps-file-item">
-                    <Icons.File />
+                    <img src={url} alt={parseFileName(url)} className="ps-ref-thumb" />
                     <span className="ps-file-name">{parseFileName(url)}</span>
                     <button className="ps-file-remove" onClick={() => {
                       setExistingRefImages(existingRefImages.filter((_, idx) => idx !== i));
@@ -1318,7 +1306,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {newRefImages.map((file, i) => (
                   <div key={i} className="ps-file-item" style={{ borderColor: "var(--cyan)", background: "rgba(6, 182, 212, 0.04)" }}>
-                    <Icons.File />
+                    <img src={URL.createObjectURL(file)} alt={file.name} className="ps-ref-thumb" style={{ borderColor: "var(--cyan)" }} />
                     <span className="ps-file-name">{file.name}</span>
                     <button className="ps-file-remove" onClick={() => setNewRefImages(newRefImages.filter((_, idx) => idx !== i))}>
                       <Icons.X />
@@ -1737,94 +1725,15 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                   <Icons.Brush /> Diseño del cliente
                 </p>
-                {(() => {
-                  if (orderFileUrls.length === 1) {
-                    const url = orderFileUrls[0];
-                    return url.toLowerCase().endsWith(".pdf") ? (
-                      <a
-                        href={url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: "flex", flexDirection: "column",
-                          alignItems: "center", justifyContent: "center",
-                          gap: 10, padding: "24px 16px",
-                          borderRadius: "var(--radius-md)",
-                          background: "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)",
-                          border: "1.5px dashed var(--primary)",
-                          color: "var(--primary)", fontSize: 13,
-                          textDecoration: "none",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          transition: "all 0.2s"
-                        }}
-                        onMouseEnter={e => {
-                          e.currentTarget.style.background = "linear-gradient(135deg, var(--primary) 0%, rgba(6,182,212,0.8) 100%)";
-                          e.currentTarget.style.color = "#fff";
-                        }}
-                        onMouseLeave={e => {
-                          e.currentTarget.style.background = "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)";
-                          e.currentTarget.style.color = "var(--primary)";
-                        }}
-                      >
-                        <Icons.Receipt style={{ fontSize: 24 }} />
-                        Ver archivo PDF
-                      </a>
-                    ) : (
-                      <a href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                        <img 
-                          src={url} 
-                          alt="diseno" 
-                          style={{
-                            width: "100%",
-                            borderRadius: "var(--radius-md)",
-                            border: "1px solid var(--border)",
-                            cursor: "pointer",
-                            transition: "transform 0.2s, box-shadow 0.2s",
-                          }}
-                          onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
-                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
-                        />
-                      </a>
-                    );
-                  } else {
-                    return (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {orderFileUrls.map((url, index) => (
-                          <a
-                            key={index}
-                            href={url}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{
-                              display: "flex", alignItems: "center", gap: 8,
-                              padding: "12px 16px",
-                              borderRadius: "var(--radius-md)",
-                              background: "var(--surface-alt)",
-                              border: "1px solid var(--border)",
-                              color: "var(--primary)",
-                              textDecoration: "none",
-                              fontSize: 13,
-                              fontWeight: 500,
-                              transition: "all 0.2s"
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.background = "var(--primary)";
-                              e.currentTarget.style.color = "#fff";
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.background = "var(--surface-alt)";
-                              e.currentTarget.style.color = "var(--primary)";
-                            }}
-                          >
-                            <Icons.FileText />
-                            Ver archivo {index + 1}
-                          </a>
-                        ))}
-                      </div>
-                    );
-                  }
-                })()}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {orderFileUrls.map((url, index) => (
+                    <FileCard
+                      key={index}
+                      name={getFileNameFromUrl(url)}
+                      url={url}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -1833,15 +1742,15 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
               <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                 <Icons.Image /> Imágenes de referencia
               </p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
                 {referenceImageUrls.map((url, index) => (
                   <a key={index} href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
                     <img
                       src={url}
                       alt={`Ref ${index + 1}`}
                       style={{
-                        width: 120,
-                        height: 120,
+                        width: 130,
+                        height: 130,
                         objectFit: "cover",
                         borderRadius: "var(--radius-md)",
                         border: "1px solid var(--border)",

@@ -16,12 +16,14 @@ import {
   getOrderStatusConfig,
   isOrderStatus,
   isOrderStatusIn,
+  getFileNameFromUrl,
 } from "../utils/constants";
 import { getReferenceImages } from "../utils/orderAssets";
 import { getProductionFiles } from "../utils/production";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
+import FileCard from "../components/FileCard";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import "../css-components/page-quote.css";
 // Normaliza texto a minúsculas y sin espacios para comparaciones seguras
@@ -443,12 +445,13 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
             <div className="pq-panel">
               <div className="pq-panel-title">Archivos entregados</div>
               {orderFiles.length > 0 ? (
-                <div className="pq-file-list">
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {orderFiles.map((fileUrl, index) => (
-                    <a key={`${fileUrl}-${index}`} className="pq-file-link" href={fileUrl} target="_blank" rel="noreferrer">
-                      <Icons.File />
-                      Archivo {index + 1}
-                    </a>
+                    <FileCard
+                      key={`${fileUrl}-${index}`}
+                      name={getFileNameFromUrl(fileUrl)}
+                      url={fileUrl}
+                    />
                   ))}
                 </div>
               ) : (
@@ -456,10 +459,28 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
               )}
 
               <div className="pq-preview-block">
-                <span className="pq-description-label">Orden de trabajo</span>
+                <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icons.Eye /> Orden de trabajo
+                </span>
                 {order.preview_image ? (
-                  <a href={order.preview_image} target="_blank" rel="noreferrer" className="pq-preview-link">
-                    Ver orden de trabajo
+                  <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                    <img
+                      src={order.preview_image}
+                      alt="preview"
+                      style={{
+                        width: "100%",
+                        maxHeight: 200,
+                        objectFit: "contain",
+                        objectPosition: "left",
+                        background: "var(--pq-surface-alt, #f5f7fb)",
+                        borderRadius: "var(--pq-radius-md)",
+                        border: "1px solid var(--pq-border)",
+                        cursor: "pointer",
+                        transition: "transform 0.2s, box-shadow 0.2s",
+                      }}
+                      onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                    />
                   </a>
                 ) : (
                   <span className="pq-preview-empty">No hay preview cargado.</span>
@@ -596,10 +617,29 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
             </div>
 
             {receiptUrl && (
-              <a href={receiptUrl} target="_blank" rel="noreferrer" className="pq-receipt-link">
-                <Icons.Eye />
-                Ver comprobante guardado
-              </a>
+              <div className="pq-preview-block" style={{ marginTop: 16 }}>
+                <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icons.Eye /> Comprobante de pago
+                </span>
+                <a href={receiptUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                  <img
+                    src={receiptUrl}
+                    alt="Comprobante de pago"
+                    style={{
+                      width: "100%",
+                      maxHeight: 200,
+                      objectFit: "contain",
+                      background: "var(--pq-surface-alt, #f5f7fb)",
+                      borderRadius: "var(--pq-radius-md)",
+                      border: "1px solid var(--pq-border)",
+                      cursor: "pointer",
+                      transition: "transform 0.2s, box-shadow 0.2s",
+                    }}
+                    onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                    onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                  />
+                </a>
+              </div>
             )}
 
             {/* Contenedor de errores */}
