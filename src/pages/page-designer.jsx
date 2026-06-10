@@ -1126,7 +1126,7 @@ export default function PageDesigner() {
     <div className="pd-root">
       <Sidebar
         isOpen={sidebarOpen}
-        userName={user?.user_metadata?.display_name || user?.email}
+        userName={displayName}
         role="Diseñador"
         activeTab={activeTab}
         onTabChange={setActiveTab}
