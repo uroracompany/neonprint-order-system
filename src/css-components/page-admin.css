@@ -757,6 +757,7 @@
   font-family: 'Poppins', sans-serif;
   box-shadow: var(--shadow-lg);
   animation: slideUp 0.25s ease;
+  padding: 15px;
 }
 
 .pa-modal.default { max-width: 760px; }
@@ -814,6 +815,7 @@
   display: flex;
   gap: 10px;
   margin-top: 10px;
+  margin-bottom: 20px;
 }
 
 .pa-modal-actions .pa-btn {

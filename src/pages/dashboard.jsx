@@ -2915,7 +2915,7 @@ export default function Dashboard() {
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
-              <div className="pa-modal-body">
+              <div className="pa-modal-body" style={{ paddingBottom: 44 }}>
                 <div className="pa-field">
                   <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "13px", color: "#0f1e40" }}>Nombre del material</label>
                   <input
