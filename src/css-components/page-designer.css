@@ -876,6 +876,22 @@
   background: #f4f8ff;
 }
 
+.pd-table tbody tr.row-hover {
+  cursor: pointer;
+}
+
+.pd-table tbody tr.row-hover:hover td {
+  background: #eef6ff;
+}
+
+.pd-td-pad {
+  padding: 12px 16px !important;
+}
+
+.pd-td-payment {
+  white-space: nowrap;
+}
+
 .pd-td-id {
   font-family: monospace;
   font-size: 11px;
@@ -922,6 +938,70 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.pd-table-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.pd-table-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--pd-border);
+  background: var(--pd-surface);
+  color: var(--pd-text-sub);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.pd-table-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 30, 64, 0.10);
+}
+
+.pd-table-action-btn.view:hover {
+  background: var(--pd-text);
+  color: #fff;
+  border-color: var(--pd-text);
+}
+
+.pd-table-action-btn.archive:hover {
+  background: #D97706;
+  color: #fff;
+  border-color: #D97706;
+}
+
+.pd-table-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.pd-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--pd-primary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Poppins', sans-serif;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.15s;
+}
+
+.pd-link-btn:hover {
+  color: #0891b2;
 }
 
 .pd-action-btn {

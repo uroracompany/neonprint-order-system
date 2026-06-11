@@ -1217,39 +1217,58 @@ export default function PageDesigner() {
                     <div className="pd-panel-title">Órdenes recientes</div>
                     <div className="pd-panel-sub">Las últimas asignaciones del área de diseño.</div>
                   </div>
-                  <span className="pd-recent-count">{orders.length} orden{orders.length !== 1 ? "es" : ""}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span className="pd-recent-count">{orders.length} orden{orders.length !== 1 ? "es" : ""}</span>
+                    <button className="pd-link-btn" onClick={() => setActiveTab("orders")}>
+                      Ver todas <Icons.ArrowRight />
+                    </button>
+                  </div>
                 </div>
                 {loading ? (
                   <div className="pd-loading">Cargando órdenes...</div>
                 ) : orders.length === 0 ? (
                   <div className="pd-empty">No tienes órdenes asignadas.</div>
                 ) : (
-                  <div className="pd-recent-list">
-                    {orders.slice(0, 5).map(order => (
-                      <div key={order.id} className="pd-recent-item" onClick={() => handleViewOrder(order)}>
-                        <div className="pd-recent-item-left">
-                          <span className="pd-recent-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-                          <span className="pd-recent-client">{order.client_name}</span>
-                        </div>
-                        <div className="pd-recent-item-center">
-                          <span className="pd-recent-desc">
-                            {order.description?.length > 60 
-                              ? order.description.substring(0, 60) + '...' 
-                              : order.description || 'Sin descripción'}
-                          </span>
-                        </div>
-                        <div className="pd-recent-item-right">
-                          {isReturnedOrder(order) && <ReturnedBadge compact />}
-                          {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
-                          {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
-                          {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
-                          <StatusBadge status={order.status} className="pd-badge" />
-                          <button className="pd-recent-view-btn" title="Ver detalle" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>
-                            <Icons.Eye />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="pd-table-wrap" style={{ padding: "12px 16px 16px" }}>
+                    <table className="pd-table" style={{ border: "none", background: "none" }}>
+                      <thead>
+                        <tr>
+                          <th>Cliente</th>
+                          <th>Descripción</th>
+                          <th>Estado</th>
+                          <th style={{ width: 40 }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {orders.slice(0, 5).map(order => (
+                          <tr key={order.id} className="row-hover" onClick={() => handleViewOrder(order)}>
+                            <td className="pd-td-pad pd-td-client">
+                              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                <span style={{ fontSize: 10, color: "var(--pd-text-muted)", letterSpacing: "0.06em", fontFamily: "'SF Mono','Monaco',monospace" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
+                                <span style={{ fontWeight: 600, color: "var(--pd-text)", fontSize: 13 }}>{order.client_name}</span>
+                              </div>
+                            </td>
+                            <td className="pd-td-pad" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--pd-text-sub)", fontSize: 13 }}>
+                              {order.description?.length > 20 ? order.description.substring(0, 20) + "..." : order.description || "Sin descripción"}
+                            </td>
+                            <td className="pd-td-pad">
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                {isReturnedOrder(order) && <ReturnedBadge compact />}
+                                {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
+                                {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
+                                {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
+                                <StatusBadge status={order.status} className="pd-badge" />
+                              </div>
+                            </td>
+                            <td className="pd-td-pad">
+                              <button className="pd-table-action-btn view" title="Ver detalle" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>
+                                <Icons.Eye />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </section>
@@ -1360,35 +1379,39 @@ export default function PageDesigner() {
                       </thead>
                       <tbody>
                         {paginatedOrders.map(order => (
-                          <tr key={order.id}>
-                            <td className="pd-td-id">
-                              <div className="pd-td-id-wrap">
+                          <tr key={order.id} className="row-hover">
+                            <td className="pd-td-pad pd-td-id">
+                              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                                 <span>#{order.id?.slice(0, 8).toUpperCase()}</span>
-                                {isReturnedOrder(order) && <ReturnedBadge compact />}
-                                {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
-                                {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
-                                {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
+                                <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                                  {isReturnedOrder(order) && <ReturnedBadge compact />}
+                                  {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
+                                  {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
+                                  {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
+                                </div>
                               </div>
                             </td>
-                            <td className="pd-td-client">{order.client_name}</td>
-                            <td className="pd-td-desc">{order.description}</td>
-                            <td className="pd-td-material">{order.material}</td>
-                            <td className="pd-td-type">
+                            <td className="pd-td-pad pd-td-client">{order.client_name}</td>
+                            <td className="pd-td-pad pd-td-desc">{order.description}</td>
+                            <td className="pd-td-pad pd-td-material">{order.material}</td>
+                            <td className="pd-td-pad pd-td-type">
                               {order.order_type === "orden 911" ? <span className="pd-card-911">911</span> : <span className="pd-badge-normal-table">Normal</span>}
                             </td>
-                            <td className="pd-td-status"><StatusBadge status={order.status} className="pd-badge" /></td>
-                            <td className="pd-td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
-                            <td className="pd-td-actions">
-                              <div className="pd-row-actions">
-                                {/* Boton para ver detalles de la orden */}
-                                <button className="pd-action-btn view" onClick={() => handleViewOrder(order)}>Ver detalle</button>
+                            <td className="pd-td-pad"><StatusBadge status={order.status} className="pd-badge" /></td>
+                            <td className="pd-td-pad pd-td-payment"><StatusBadge status={order.payment_status} type="payment" /></td>
+                            <td className="pd-td-pad pd-td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
+                            <td className="pd-td-pad pd-td-actions">
+                              <div className="pd-table-actions">
+                                <button className="pd-table-action-btn view" title="Ver detalle" onClick={() => handleViewOrder(order)}>
+                                  <Icons.Eye />
+                                </button>
                                 {_canArchiveDesignerOrder(order) ? (
-                                  <button className="pd-action-btn archive" onClick={() => handleOpenArchiveOrder(order)}>
-                                    Archivar
+                                  <button className="pd-table-action-btn archive" title="Archivar" onClick={() => handleOpenArchiveOrder(order)}>
+                                    <Icons.Archived />
                                   </button>
                                 ) : order.is_archived_designer ? (
-                                  <button className="pd-action-btn archived" disabled>
-                                    Archivada
+                                  <button className="pd-table-action-btn archive" disabled title="Orden archivada">
+                                    <Icons.Check />
                                   </button>
                                 ) : null}
                               </div>
@@ -1416,6 +1439,7 @@ export default function PageDesigner() {
                         <div className="pd-card-desc">{order.description}</div>
                         <div className="pd-card-meta">
                           <span className="pd-card-material">{order.material}</span>
+                          <StatusBadge status={order.payment_status} type="payment" />
                         </div>
                         <div className="pd-card-footer">
                           <span className="pd-card-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}</span>
