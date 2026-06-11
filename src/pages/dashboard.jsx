@@ -1434,6 +1434,10 @@ const CARD_ACCENTS = [
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
   { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
   { color: "#06B6D4", bg: "#CFFAFE", glow: "#CFFAFE" },
+  { color: "#EF4444", bg: "#FEE2E2", glow: "#FEE2E2" },
+  { color: "#EC4899", bg: "#FCE7F3", glow: "#FCE7F3" },
+  { color: "#6366F1", bg: "#E0E7FF", glow: "#E0E7FF" },
+  { color: "#14B8A6", bg: "#CCFBF1", glow: "#CCFBF1" },
 ];
 
 export default function Dashboard() {
@@ -1507,6 +1511,7 @@ export default function Dashboard() {
   const [clientFormErrors, setClientFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deletingClientId, setDeletingClientId] = useState(null);
+  const [clientPage, setClientPage] = useState(1);
 
   const usersById = useMemo(() => Object.fromEntries(profiles.map(item => [item.id, item])), [profiles]);
   const showFeedback = (type, message) => setFeedback({ type, message, id: Date.now() });
@@ -2181,6 +2186,11 @@ export default function Dashboard() {
     setShowClientModal(true);
   };
 
+  const handleClientClick = (client) => {
+    setClientFilter(client.id);
+    setActiveTab("orders");
+  };
+
   const handleEditClient = (client) => {
     setEditingClient(client);
     setClientForm({
@@ -2316,18 +2326,37 @@ export default function Dashboard() {
     clients.filter((client) => clientMatchesQuery(client, clientSearch))
   ), [clients, clientSearch]);
 
+  const CLIENT_PER_PAGE = 20;
+  const totalClientPages = Math.ceil(filteredClients.length / CLIENT_PER_PAGE) || 1;
+  const safeClientPage = Math.min(clientPage, totalClientPages);
+  const paginatedClients = filteredClients.slice((safeClientPage - 1) * CLIENT_PER_PAGE, safeClientPage * CLIENT_PER_PAGE);
+
+  useEffect(() => { setClientPage(1); }, [filteredClients.length]);
+
   const metrics = [
     { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders />, accentIdx: 0 },
     { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money />, accentIdx: 5 },
     { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, accentIdx: 2 },
     { label: "Usuarios", value: profiles.length, icon: <Icons.Users />, accentIdx: 3 },
+    { label: "Pendientes", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, accentIdx: 1 },
+    { label: "En producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length, icon: <Icons.Brush />, accentIdx: 6 },
+    { label: "En terminación", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)).length, icon: <Icons.Paintbrush />, accentIdx: 7 },
+    { label: "En entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length, icon: <Icons.Truck />, accentIdx: 8 },
+    { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length, icon: <Icons.Check />, accentIdx: 4 },
+    { label: "Clientes Registrados", value: clients.length, icon: <Icons.User />, accentIdx: 9 },
   ];
 
   const typeMetrics = [
     { label: "Órdenes normales", value: orders.filter(order => order.order_type !== "orden 911").length },
     { label: "Órdenes 911", value: orders.filter(order => order.order_type === "orden 911").length },
-    { label: "Canceladas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.CANCELLED)).length },
+    { label: "Pendientes (Ventas)", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length },
+    { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length },
+    { label: "En caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length },
+    { label: "En producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length },
+    { label: "En terminación", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)).length },
+    { label: "En entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length },
     { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length },
+    { label: "Canceladas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.CANCELLED)).length },
     { label: "Archivadas", value: orders.filter(order => order.is_archived_admin).length },
   ];
 
@@ -2587,57 +2616,97 @@ export default function Dashboard() {
             </div>
             <div className="pa-panel">
               <div className="pa-panel-stripe" />
-              <div className="pa-panel-body" style={{ padding: 0 }}>
-                {clientsLoading ? (
-                  <div className="pa-loading" style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>Cargando clientes...</div>
-                ) : filteredClients.length === 0 ? (
-                  <div className="pa-empty" style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>
-                    <p>No hay clientes que coincidan con la búsqueda.</p>
-                    <p style={{ fontSize: "12px", marginTop: "4px" }}>Agrega clientes para reutilizarlos en nuevas órdenes.</p>
-                  </div>
-                ) : (
-                  <div className="pa-table-wrap" style={{ maxHeight: 520 }}>
-                    <table className="pa-table">
-                      <thead>
-                        <tr>
-                          <th>Nombre</th>
-                          <th>Teléfono</th>
-                          <th>Correo</th>
-                          <th>Fecha de creación</th>
-                          <th style={{ width: 180 }}>Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredClients.map((client) => (
-                          <tr key={client.id}>
-                            <td style={{ fontWeight: 700 }}>{client.name}</td>
-                            <td style={{ color: "#64748b", fontSize: "13px" }}>{client.phone || "---"}</td>
-                            <td style={{ color: "#64748b", fontSize: "13px" }}>{client.email || "---"}</td>
-                            <td style={{ color: "#64748b", fontSize: "13px" }}>
+              <div className="pa-panel-head pa-panel-head-results">
+                <div>
+                  <span className="pa-section-kicker">Registro</span>
+                  <h2>Clientes registrados</h2>
+                </div>
+                <span className="pa-results-count">
+                  {filteredClients.length} resultados
+                </span>
+              </div>
+              <div className="ps-table-wrap">
+                <table className="ps-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Cliente</th>
+                      <th>Contacto</th>
+                      <th>Registro</th>
+                      <th>Estado</th>
+                      <th style={{ width: 120 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientsLoading ? (
+                      <tr>
+                        <td colSpan={6} className="ps-table-empty">Cargando clientes...</td>
+                      </tr>
+                    ) : filteredClients.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="ps-table-empty">
+                          No hay clientes que coincidan con la búsqueda.
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedClients.map((client) => {
+                        const activeOrdersCount = orders.filter(o =>
+                          o.client_id === client.id &&
+                          !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) &&
+                          !isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)
+                        ).length;
+                        return (
+                          <tr key={client.id} className="row-hover" onClick={() => handleClientClick(client)}>
+                            <td className="td-pad td-id">{client.id?.slice(0, 8) || "---"}</td>
+                            <td className="td-pad td-name">{client.name}</td>
+                            <td className="td-pad" style={{ lineHeight: 1.6 }}>
+                              <div style={{ color: "var(--text)", fontSize: 13 }}>{client.phone || "---"}</div>
+                              {client.email && <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{client.email}</div>}
+                            </td>
+                            <td className="td-pad td-date">
                               {new Date(client.created_at).toLocaleDateString("es-DO", {
                                 day: "2-digit", month: "short", year: "numeric"
                               })}
                             </td>
-                            <td>
-                              <div style={{ display: "flex", gap: 8 }}>
-                                <button className="pa-btn secondary small" onClick={() => handleEditClient(client)}>
-                                  Editar
+                            <td className="td-pad">
+                              {activeOrdersCount > 0 ? (
+                                <span className="ps-badge" style={{ background: "#DCFCE7", color: "#166534", border: "1px solid #22C55E40" }}>
+                                  {activeOrdersCount} activa{activeOrdersCount !== 1 ? "s" : ""}
+                                </span>
+                              ) : (
+                                <span className="ps-badge" style={{ background: "#F1F5F9", color: "#64748B", border: "1px solid #E2E8F040" }}>
+                                  Sin órdenes
+                                </span>
+                              )}
+                            </td>
+                            <td className="td-pad td-actions" onClick={(e) => e.stopPropagation()}>
+                              <div className="table-actions">
+                                <button className="table-action-btn view" onClick={() => handleEditClient(client)} title="Ver detalle">
+                                  <Icons.Eye />
+                                </button>
+                                <button className="table-action-btn edit" onClick={() => { handleEditClient(client); }} title="Editar cliente">
+                                  <Icons.Edit />
                                 </button>
                                 <button
-                                  className={`pa-btn ${deletingClientId === client.id ? "danger" : "secondary"} small`}
+                                  className={`table-action-btn ${deletingClientId === client.id ? "" : "cancel"}`}
                                   onClick={() => handleDeleteClient(client.id)}
+                                  title={deletingClientId === client.id ? "Confirmar eliminación" : "Eliminar cliente"}
+                                  style={deletingClientId === client.id ? { background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA" } : undefined}
                                 >
-                                  {deletingClientId === client.id ? "¿Eliminar?" : "Eliminar"}
+                                  {deletingClientId === client.id ? <Icons.Check /> : <Icons.Trash />}
                                 </button>
                               </div>
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
+              {filteredClients.length > CLIENT_PER_PAGE && (
+                <Pagination currentPage={safeClientPage} totalPages={totalClientPages} onPageChange={setClientPage} />
+              )}
             </div>
           </section>
         )}
@@ -2955,8 +3024,8 @@ export default function Dashboard() {
                       })}
                 </div>
               ) : (
-                <div className="ps-table-wrap">
-                  <table className="ps-table">
+              <div className="ps-table-wrap" style={{ maxHeight: 520 }}>
+                <table className="ps-table">
                     <thead>
                       <tr>
                         <th>Nombre</th>
