@@ -8,7 +8,7 @@ import NotificationCenter from "../components/NotificationCenter";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
-import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isOrderStatus, ARCHIVE_MODULES } from "../utils/constants";
+import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isOrderStatus, ARCHIVE_MODULES, PRODUCTION_AREAS, PRODUCTION_AREA_LABELS, resolveSellerId } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
@@ -30,6 +30,84 @@ const CARD_ACCENTS = [
 function OrderDetailModal({ onClose, order, onUpdateStatus }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [sellerName, setSellerName] = useState("");
+  const [designerName, setDesignerName] = useState("");
+  const [quoteName, setQuoteName] = useState("");
+  const [prodAssignments, setProdAssignments] = useState([]);
+
+  useEffect(() => {
+    if (order?.seller_name) {
+      setSellerName(order.seller_name);
+      return;
+    }
+    const sellerId = order?.seller_id || order?.created_by;
+    if (!sellerId) {
+      setSellerName("");
+      return;
+    }
+    supabase.from("profiles").select("name").eq("id", sellerId).single()
+      .then(({ data }) => setSellerName(data?.name || ""));
+  }, [order?.seller_name, order?.seller_id, order?.created_by]);
+
+  useEffect(() => {
+    if (!order?.designer_id) {
+      setDesignerName("");
+      return;
+    }
+    supabase.from("profiles").select("name").eq("id", order.designer_id).single()
+      .then(({ data }) => setDesignerName(data?.name || ""));
+  }, [order?.designer_id]);
+
+  useEffect(() => {
+    const quoteId = order?.quote_id || order?.quotation_id || order?.quote_user_id;
+    if (!quoteId) {
+      setQuoteName("");
+      return;
+    }
+    supabase.from("profiles").select("name").eq("id", quoteId).single()
+      .then(({ data }) => setQuoteName(data?.name || ""));
+  }, [order?.quote_id, order?.quotation_id, order?.quote_user_id]);
+
+  useEffect(() => {
+    if (!order?.id) return;
+    Promise.all([
+      supabase.from("order_production_assignments")
+        .select("assigned_to, production_area_code")
+        .eq("order_id", order.id),
+      supabase.from("order_production_files")
+        .select("production_area_code, status, assigned_to")
+        .eq("order_id", order.id),
+    ]).then(async ([assignRes, filesRes]) => {
+      const assignments = assignRes.data || [];
+      const files = filesRes.data || [];
+      if (assignments.length === 0) {
+        setProdAssignments([]);
+        return;
+      }
+      const assignedUserIds = [...new Set(assignments.map(a => a.assigned_to))];
+      const fileUserIds = [...new Set(files.map(f => f.assigned_to).filter(Boolean))];
+      const allUserIds = [...new Set([...assignedUserIds, ...fileUserIds])];
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, name")
+        .in("id", allUserIds);
+      const nameMap = Object.fromEntries((profiles || []).map(p => [p.id, p.name]));
+      const filesByArea = {};
+      files.forEach(f => {
+        const area = f.production_area_code;
+        if (!filesByArea[area]) filesByArea[area] = { total: 0, byStatus: {} };
+        filesByArea[area].total++;
+        filesByArea[area].byStatus[f.status] = (filesByArea[area].byStatus[f.status] || 0) + 1;
+      });
+      setProdAssignments(assignments.map(a => ({
+        area: a.production_area_code,
+        name: nameMap[a.assigned_to] || "Asignado",
+        hasFiles: (filesByArea[a.production_area_code]?.total || 0) > 0,
+        fileCount: filesByArea[a.production_area_code]?.total || 0,
+        fileStatuses: filesByArea[a.production_area_code]?.byStatus || {},
+      })));
+    });
+  }, [order?.id]);
 
   const handleUpdateStatus = async (newStatus) => {
     // Validar que no esté archivada
@@ -103,7 +181,7 @@ function OrderDetailModal({ onClose, order, onUpdateStatus }) {
               </div>
               <div className="pd-modal-item">
                 <span className="pd-modal-label">Vendedor</span>
-                <span className="pd-modal-value">{order.seller_name || "No especificado"}</span>
+                <span className="pd-modal-value">{sellerName || "No especificado"}</span>
               </div>
               <div className="pd-modal-item">
                 <span className="pd-modal-label">Tipo de Orden</span>
@@ -119,6 +197,55 @@ function OrderDetailModal({ onClose, order, onUpdateStatus }) {
                 <span className="pd-modal-label">Fecha de Creación</span>
                 <span className="pd-modal-value">{created}</span>
               </div>
+            </div>
+          </div>
+
+          <div className="pd-modal-card">
+            <div className="pd-modal-card-title">
+              <Icons.Users />
+              <h4>Usuarios del sistema</h4>
+            </div>
+            <div className="pd-modal-rows">
+              <div className="pd-modal-row">
+                <span className="pd-modal-row-icon"><Icons.User /></span>
+                <div>
+                  <p className="pd-modal-row-label">Vendedor</p>
+                  <p className="pd-modal-row-value">{sellerName || "No especificado"}</p>
+                </div>
+              </div>
+              <div className="pd-modal-row">
+                <span className="pd-modal-row-icon"><Icons.Edit /></span>
+                <div>
+                  <p className="pd-modal-row-label">Diseñador</p>
+                  <p className="pd-modal-row-value">
+                    {order?.designer_id ? (designerName || "Asignado") : "La orden no pasó por diseño"}
+                  </p>
+                </div>
+              </div>
+              <div className="pd-modal-row">
+                <span className="pd-modal-row-icon"><Icons.Money /></span>
+                <div>
+                  <p className="pd-modal-row-label">Cotizador</p>
+                  <p className="pd-modal-row-value">{quoteName || "No asignado"}</p>
+                </div>
+              </div>
+              {prodAssignments.length > 0 && (
+                <div className="pd-modal-row-divider" />
+              )}
+              {prodAssignments.map((pa, i) => (
+                <div key={i} className="pd-modal-row">
+                  <span className="pd-modal-row-icon"><Icons.Package /></span>
+                  <div>
+                    <p className="pd-modal-row-label">{PRODUCTION_AREA_LABELS[pa.area] || pa.area}</p>
+                    <p className="pd-modal-row-value">{pa.name}</p>
+                    <p className={`pd-modal-row-files ${pa.hasFiles ? "" : "pd-modal-row-files-empty"}`}>
+                      {pa.hasFiles
+                        ? `${pa.fileCount} archivo${pa.fileCount !== 1 ? "s" : ""}`
+                        : "Sin archivos asociados"}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -250,7 +377,7 @@ export default function PageDelivery() {
   const [user, setUser] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -264,7 +391,16 @@ export default function PageDelivery() {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const notif = useNotifications(user?.id);
   const [page, setPage] = useState(1);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [sellerDirectory, setSellerDirectory] = useState({});
   const PER_PAGE = 15;
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const refreshOrders = useCallback(async () => {
     if (!user?.id) return;
@@ -294,6 +430,26 @@ export default function PageDelivery() {
 
     refreshOrders();
   }, [user?.id, refreshOrders]);
+
+  useEffect(() => {
+    const sellerIds = [...new Set(
+      orders.map(order => resolveSellerId(order)).filter(Boolean)
+    )];
+    if (sellerIds.length === 0) return;
+    const missingIds = sellerIds.filter(id => !sellerDirectory[id]);
+    if (missingIds.length === 0) return;
+    supabase
+      .from("profiles")
+      .select("id, name")
+      .in("id", missingIds)
+      .then(({ data }) => {
+        if (!data) return;
+        setSellerDirectory(prev => ({
+          ...prev,
+          ...Object.fromEntries(data.map(p => [p.id, p.name || "Vendedor"]))
+        }));
+      });
+  }, [orders]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -462,7 +618,6 @@ export default function PageDelivery() {
         </div>
         <div className="pd-order-card-badges">
           <StatusBadge status={order.status} className="pd-badge" showDot={false} />
-          <PaymentBadge status={order.payment_status} className="pd-badge" />
         </div>
       </div>
 
@@ -472,9 +627,8 @@ export default function PageDelivery() {
       </div>
 
       <div className="pd-order-card-meta">
-        <span><Icons.User /> {order.seller_name || "Vendedor no definido"}</span>
-        <span><Icons.File /> {order.material || "Material no definido"}</span>
-        <span><Icons.Calendar /> {order.delivery_date ? formatOrderDate(order.delivery_date) : "Entrega por definir"}</span>
+        <span className="pd-meta-seller"><Icons.User /> {sellerDirectory[resolveSellerId(order)] || order.seller_name || "Vendedor no definido"}</span>
+        <span className="pd-meta-date"><Icons.Calendar /> {order.delivery_date ? formatOrderDate(order.delivery_date) : "Por definir"}</span>
       </div>
 
       <div className="pd-order-card-footer">
@@ -515,6 +669,9 @@ export default function PageDelivery() {
             </button>
             <div className="pd-header-title">
               <h2>{activeTab === "dashboard" ? "Dashboard" : "Órdenes"}</h2>
+              {activeTab === "dashboard" && user?.displayName && (
+                <span className="pd-header-sub">{user.displayName}</span>
+              )}
             </div>
           </div>
           <div className="pd-header-right">
@@ -533,6 +690,30 @@ export default function PageDelivery() {
             </button>
           </div>
         </header>
+
+        <nav className="pd-mobile-nav">
+          <button
+            className={`pd-mobile-nav-btn ${activeTab === "dashboard" ? "active" : ""}`}
+            onClick={() => setActiveTab("dashboard")}
+          >
+            <Icons.Dashboard />
+            <span>Dashboard</span>
+          </button>
+          <button
+            className={`pd-mobile-nav-btn ${activeTab === "orders" ? "active" : ""}`}
+            onClick={() => setActiveTab("orders")}
+          >
+            <Icons.Orders />
+            <span>Órdenes</span>
+          </button>
+          <div className="pd-mobile-nav-spacer" />
+          <button className="pd-mobile-nav-btn" onClick={refreshOrders} title="Actualizar">
+            <Icons.Refresh />
+          </button>
+          <button className="pd-mobile-nav-btn pd-mobile-nav-logout" onClick={handleLogout} title="Cerrar sesión">
+            <Icons.Logout />
+          </button>
+        </nav>
 
         <div className="pd-content">
           {activeTab === "dashboard" && (
@@ -564,11 +745,34 @@ export default function PageDelivery() {
 
               <div className="pd-recent-section">
                 <div className="pd-panel-stripe" />
-                <h3>Órdenes para Entrega</h3>
+                <div className="pd-panel-header">
+                  <div>
+                    <div className="pd-panel-title">Órdenes para Entrega</div>
+                    <div className="pd-panel-sub">Últimas órdenes listas para entregar.</div>
+                  </div>
+                  <div className="pd-recent-header-right">
+                    <span className="pd-recent-count">{orders.length} orden{orders.length !== 1 ? "es" : ""}</span>
+                    <button className="pd-link-btn" onClick={() => setActiveTab("orders")}>
+                      Ver todas <Icons.ArrowRight />
+                    </button>
+                  </div>
+                </div>
                 {loading ? (
-                  <div className="pd-loading">Cargando...</div>
+                  <div className="pd-skeleton-grid" style={{ padding: 16 }}>
+                    {[1,2,3].map(i => (
+                      <div key={i} className="pd-skeleton-card">
+                        <div className="pd-skeleton-line w60" />
+                        <div className="pd-skeleton-line w40" />
+                        <div className="pd-skeleton-block" />
+                      </div>
+                    ))}
+                  </div>
                 ) : orders.length === 0 ? (
-                  <div className="pd-empty">No hay órdenes</div>
+                  <div className="pd-empty">
+                    <div className="pd-empty-icon"><Icons.Package /></div>
+                    <div className="pd-empty-title">No hay órdenes pendientes</div>
+                    <div className="pd-empty-sub">Las órdenes aparecerán aquí cuando estén listas para entrega.</div>
+                  </div>
                 ) : (
                   <div className="pd-orders-grid pd-dashboard-orders">
                     {orders.slice(0, 5).map(order => renderOrderCard(order))}
@@ -640,14 +844,23 @@ export default function PageDelivery() {
               </div>
 
               {loading ? (
-                <div className="pd-loading">Cargando...</div>
-              ) : filteredOrders.length === 0 ? (
-                <div className="pd-empty">No hay órdenes</div>
-              ) : viewMode === "cards" ? (
-                <div className="pd-orders-grid">
-                  {paginatedOrders.map(order => renderOrderCard(order))}
+                <div className="pd-skeleton-grid">
+                  {[1,2,3,4,5,6].map(i => (
+                    <div key={i} className="pd-skeleton-card">
+                      <div className="pd-skeleton-line w60" />
+                      <div className="pd-skeleton-line w40" />
+                      <div className="pd-skeleton-block" />
+                      <div className="pd-skeleton-line w80" />
+                    </div>
+                  ))}
                 </div>
-              ) : (
+              ) : filteredOrders.length === 0 ? (
+                <div className="pd-empty">
+                  <div className="pd-empty-icon"><Icons.Package /></div>
+                  <div className="pd-empty-title">No se encontraron órdenes</div>
+                  <div className="pd-empty-sub">Intenta ajustar los filtros o buscar con otro término.</div>
+                </div>
+              ) : viewMode === "table" && !isMobile ? (
                 <div className="pd-orders-table-wrap">
                   <table className="pd-orders-table">
                     <thead>
@@ -677,6 +890,10 @@ export default function PageDelivery() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              ) : (
+                <div className="pd-orders-grid">
+                  {paginatedOrders.map(order => renderOrderCard(order))}
                 </div>
               )}
               <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />

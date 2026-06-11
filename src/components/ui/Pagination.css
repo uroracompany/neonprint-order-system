@@ -14,27 +14,27 @@
   min-width: 36px;
   height: 36px;
   padding: 0 10px;
-  border: 1.5px solid #dde3ef;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #4a5e80;
+  border: 1.5px solid var(--pd-border, #dde3ef);
+  border-radius: var(--pd-radius-sm, 8px);
+  background: var(--pd-surface, #ffffff);
+  color: var(--pd-text-sub, #4a5e80);
   font-size: 13px;
   font-weight: 600;
-  font-family: 'Poppins', sans-serif;
+  font-family: var(--pd-font, 'Poppins', sans-serif);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 .pagination-btn:hover:not(:disabled):not(.active) {
-  background: #e8edf8;
-  border-color: #b8c3da;
-  color: #0f1e40;
+  background: var(--pd-primary-light, #e8edf8);
+  border-color: var(--pd-border-hov, #b8c3da);
+  color: var(--pd-text, #0f1e40);
 }
 
 .pagination-btn.active {
-  background: #091127;
-  border-color: #091127;
+  background: var(--pd-primary, #091127);
+  border-color: var(--pd-primary, #091127);
   color: #ffffff;
   cursor: default;
 }
@@ -49,7 +49,7 @@
   align-items: center;
   justify-content: center;
   width: 28px;
-  color: #8899b5;
+  color: var(--pd-text-muted, #8899b5);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -60,7 +60,7 @@
   margin-left: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: #8899b5;
+  color: var(--pd-text-muted, #8899b5);
   white-space: nowrap;
-  font-family: 'Poppins', sans-serif;
+  font-family: var(--pd-font, 'Poppins', sans-serif);
 }
