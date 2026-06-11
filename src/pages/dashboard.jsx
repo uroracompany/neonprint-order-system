@@ -1501,6 +1501,8 @@ export default function Dashboard() {
   const [materialFormName, setMaterialFormName] = useState("");
   const [materialFormError, setMaterialFormError] = useState("");
   const [deletingMaterialId, setDeletingMaterialId] = useState(null);
+  const [materialSearch, setMaterialSearch] = useState("");
+  const [materialsPage, setMaterialsPage] = useState(1);
   const [clients, setClients] = useState([]);
   const [clientsLoading, setClientsLoading] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
@@ -2333,6 +2335,18 @@ export default function Dashboard() {
 
   useEffect(() => { setClientPage(1); }, [filteredClients.length]);
 
+  const filteredMaterials = useMemo(() => {
+    const q = normalizeText(materialSearch);
+    return q ? materials.filter(mat => normalizeText(mat.name).includes(q)) : materials;
+  }, [materials, materialSearch]);
+
+  const MATERIALS_PER_PAGE = 20;
+  const totalMaterialPages = Math.ceil(filteredMaterials.length / MATERIALS_PER_PAGE) || 1;
+  const safeMaterialPage = Math.min(materialsPage, totalMaterialPages);
+  const paginatedMaterials = filteredMaterials.slice((safeMaterialPage - 1) * MATERIALS_PER_PAGE, safeMaterialPage * MATERIALS_PER_PAGE);
+
+  useEffect(() => { setMaterialsPage(1); }, [filteredMaterials.length]);
+
   const metrics = [
     { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders />, accentIdx: 0 },
     { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money />, accentIdx: 5 },
@@ -2810,59 +2824,84 @@ export default function Dashboard() {
                 <p>Administra los materiales disponibles para las órdenes de producción.</p>
               </div>
               <button className="pa-btn primary" onClick={handleAddMaterial}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <Icons.Plus />
                 Agregar material
               </button>
             </div>
+            <div className="pa-toolbar pa-toolbar-users">
+              <div className="pa-search-box pa-toolbar-search">
+                <Icons.Search />
+                <input
+                  value={materialSearch}
+                  onChange={(event) => setMaterialSearch(event.target.value)}
+                  placeholder="Buscar por nombre..."
+                />
+              </div>
+            </div>
             <div className="pa-panel">
               <div className="pa-panel-stripe" />
-              <div className="pa-panel-body" style={{ padding: 0 }}>
-                {materialsLoading ? (
-                  <div className="pa-loading" style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>Cargando materiales...</div>
-                ) : materials.length === 0 ? (
-                  <div className="pa-empty" style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>
-                    <p>No hay materiales registrados.</p>
-                    <p style={{ fontSize: "12px", marginTop: "4px" }}>Haz clic en "Agregar material" para comenzar.</p>
-                  </div>
-                ) : (
-                  <div className="pa-table-wrap" style={{ maxHeight: 520 }}>
-                    <table className="pa-table">
-                      <thead>
-                        <tr>
-                          <th>Nombre</th>
-                          <th>Fecha de creación</th>
-                          <th style={{ width: 160 }}>Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {materials.map((mat) => (
-                          <tr key={mat.id}>
-                            <td style={{ fontWeight: 600 }}>{mat.name}</td>
-                            <td style={{ color: "#64748b", fontSize: "13px" }}>
-                              {new Date(mat.created_at).toLocaleDateString("es-DO", {
-                                day: "2-digit", month: "short", year: "numeric"
-                              })}
-                            </td>
-                            <td>
-                              <div style={{ display: "flex", gap: 8 }}>
-                                <button className="pa-btn secondary small" onClick={() => handleEditMaterial(mat)}>
-                                  Editar
-                                </button>
-                                <button
-                                  className={`pa-btn ${deletingMaterialId === mat.id ? "danger" : "secondary"} small`}
-                                  onClick={() => handleDeleteMaterial(mat.id)}
-                                >
-                                  {deletingMaterialId === mat.id ? "¿Eliminar?" : "Eliminar"}
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+              <div className="pa-panel-head pa-panel-head-results">
+                <div>
+                  <span className="pa-section-kicker">Inventario</span>
+                  <h2>Materiales registrados</h2>
+                </div>
+                <span className="pa-results-count">
+                  {filteredMaterials.length} resultados
+                </span>
               </div>
+              <div className="ps-table-wrap" style={{ maxHeight: 520 }}>
+                <table className="ps-table">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Registro</th>
+                      <th style={{ width: 120 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {materialsLoading ? (
+                      <tr>
+                        <td colSpan={3} className="ps-table-empty">Cargando materiales...</td>
+                      </tr>
+                    ) : filteredMaterials.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="ps-table-empty">
+                          {materialSearch ? "No hay materiales que coincidan con la búsqueda." : "No hay materiales registrados. Agrega el primer material para comenzar."}
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedMaterials.map((mat) => (
+                        <tr key={mat.id} className="row-hover">
+                          <td className="td-pad td-name">{mat.name}</td>
+                          <td className="td-pad td-date">
+                            {new Date(mat.created_at).toLocaleDateString("es-DO", {
+                              day: "2-digit", month: "short", year: "numeric"
+                            })}
+                          </td>
+                          <td className="td-pad td-actions" onClick={(e) => e.stopPropagation()}>
+                            <div className="table-actions">
+                              <button className="table-action-btn edit" onClick={() => handleEditMaterial(mat)} title="Editar material">
+                                <Icons.Edit />
+                              </button>
+                              <button
+                                className={`table-action-btn ${deletingMaterialId === mat.id ? "" : "cancel"}`}
+                                onClick={() => handleDeleteMaterial(mat.id)}
+                                title={deletingMaterialId === mat.id ? "Confirmar eliminación" : "Eliminar material"}
+                                style={deletingMaterialId === mat.id ? { background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA" } : undefined}
+                              >
+                                {deletingMaterialId === mat.id ? <Icons.Check /> : <Icons.Trash />}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {filteredMaterials.length > MATERIALS_PER_PAGE && (
+                <Pagination currentPage={safeMaterialPage} totalPages={totalMaterialPages} onPageChange={setMaterialsPage} />
+              )}
             </div>
           </section>
         )}
