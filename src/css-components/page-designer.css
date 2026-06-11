@@ -2369,3 +2369,24 @@ label.pd-upload-btn {
     padding-right: 16px;
   }
 }
+
+.pd-file-missing .fc-file-item {
+  border-color: #EF4444;
+  background: rgba(239, 68, 68, 0.04);
+}
+.pd-file-error-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: #b91c1c;
+}
+.pd-file-error-desc {
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #991b1b;
+}
+.pd-input-error {
+  border-color: #EF4444 !important;
+  background: rgba(239, 68, 68, 0.04) !important;
+}

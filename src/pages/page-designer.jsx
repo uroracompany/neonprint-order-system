@@ -155,10 +155,10 @@ function MetricCard({ icon, label, value, sub, accentIdx = 0 }) {
   );
 }
 
-function ProductionAreaSelect({ value, onChange }) {
+function ProductionAreaSelect({ value, onChange, isError }) {
   return (
-    <select className="pd-input" value={value || ""} onChange={(event) => onChange(event.target.value)}>
-      <option value="">Tipo de produccion</option>
+    <select className={`pd-input${isError ? ' pd-input-error' : ''}`} value={value || ""} onChange={(event) => onChange(event.target.value)}>
+      <option value="">Tipo de produccion *</option>
       {PRODUCTION_AREAS.map((area) => (
         <option key={area.code} value={area.code}>{area.label}</option>
       ))}
@@ -174,6 +174,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [missingAreaIndices, setMissingAreaIndices] = useState([]);
   const [sellerName, setSellerName] = useState("");
   const referenceImageUrls = getReferenceImages(order);
 
@@ -232,6 +233,13 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
 
     setSaveError(rejectedFiles.length > 0 ? rejectedFiles.join(" ") : null);
     setSaveSuccess(false);
+    setMissingAreaIndices([]);
+    if (rejectedFiles.length > 0) {
+      requestAnimationFrame(() => {
+        const el = document.querySelector(".pd-upload-area");
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
     e.target.value = "";
   };
   
@@ -243,6 +251,10 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
 
       if (sizeError) {
         setSaveError(sizeError);
+        requestAnimationFrame(() => {
+          const el = document.querySelector(".pd-preview-empty, .pd-preview-container");
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
         e.target.value = "";
         return;
       }
@@ -260,17 +272,27 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
     setPendingFileAreas(prev => prev.filter((_, i) => i !== index));
     setSaveSuccess(false);
+    setMissingAreaIndices([]);
   };
   
   const handleSave = async () => {
     if (!canEditDesignerAssets) return;
     if (pendingFiles.some((_, index) => !pendingFileAreas[index])) {
-      setSaveError("Cada archivo debe tener un tipo de produccion.");
+      const missing = pendingFiles
+        .map((_, i) => (!pendingFileAreas[i] ? i : -1))
+        .filter(i => i !== -1);
+      setMissingAreaIndices(missing);
+      setSaveError("missing-area");
+      requestAnimationFrame(() => {
+        const el = document.querySelector(".pd-file-missing");
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
       return;
     }
     setSaving(true);
     setSaveSuccess(false);
     setSaveError(null);
+    setMissingAreaIndices([]);
     
     try {
       const updateData = {};
@@ -406,7 +428,20 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
             </div>
           )}
           
-          {saveError && (
+          {saveError === "missing-area" && (
+            <div className="pd-alert pd-alert-error">
+              <Icons.X />
+              <div>
+                <div className="pd-file-error-title">Área de producción requerida</div>
+                <div className="pd-file-error-desc">
+                  No es posible guardar los cambios porque uno o más archivos adjuntos no tienen un área de producción asignada.
+                  <br />
+                  Por favor, selecciona un área de producción para cada archivo antes de continuar.
+                </div>
+              </div>
+            </div>
+          )}
+          {saveError && saveError !== "missing-area" && (
             <div className="pd-alert pd-alert-error">
               <Icons.X />
               {saveError}
@@ -540,19 +575,24 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
               <div className="pd-files-container">
                 <span className="pd-files-label">Archivos pendientes ({pendingFiles.length})</span>
                 {pendingFiles.map((file, i) => (
-                  <FileCard
-                    key={i}
-                    name={file.name}
-                    secondaryText={formatFileSize(file.size)}
-                    onRemove={() => removePendingFile(i)}
-                  >
-                    <div style={{ minWidth: '180px' }}>
-                      <ProductionAreaSelect
-                        value={pendingFileAreas[i]}
-                        onChange={(value) => setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area))}
-                      />
-                    </div>
-                  </FileCard>
+                  <div key={i} className={missingAreaIndices.includes(i) ? 'pd-file-missing' : ''}>
+                    <FileCard
+                      name={file.name}
+                      secondaryText={formatFileSize(file.size)}
+                      onRemove={() => removePendingFile(i)}
+                    >
+                      <div style={{ minWidth: '180px' }}>
+                        <ProductionAreaSelect
+                          value={pendingFileAreas[i]}
+                          isError={missingAreaIndices.includes(i)}
+                          onChange={(value) => {
+                            setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area));
+                            setMissingAreaIndices([]);
+                          }}
+                        />
+                      </div>
+                    </FileCard>
+                  </div>
                 ))}
               </div>
             )}

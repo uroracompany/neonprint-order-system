@@ -1093,6 +1093,12 @@
   border: 1px solid #bbf7d0;
 }
 
+.pp-alert-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
 .pp-modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -1363,4 +1369,50 @@
   .pp-content {
     padding: 16px;
   }
+}
+
+.pp-modal-compact .pp-modal-body {
+  padding: 8px 20px 16px;
+}
+.pp-modal-compact .pp-modal-header {
+  padding: 16px 24px 12px;
+}
+.pp-modal-compact .pp-modal-footer {
+  padding: 12px 24px;
+  gap: 12px;
+}
+.pp-modal-compact .pp-modal-title h3 {
+  font-size: 16px;
+}
+.pp-confirm-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #F59E0B, #F97316);
+  color: #fff;
+  margin: 0 auto 10px;
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.3);
+}
+.pp-confirm-body {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+.pp-confirm-text-em {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1e293b;
+  margin: 0;
+}
+.pp-confirm-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+  margin: 10px 0 0;
+}
+.pp-confirm-text strong {
+  font-weight: 700;
 }

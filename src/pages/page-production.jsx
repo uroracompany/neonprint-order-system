@@ -66,15 +66,19 @@ function MetricCard({ icon, label, value, accentIdx = 0 }) {
   );
 }
 
-function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus }) {
+export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [updateError, setUpdateError] = useState("");
+  const [showLastFileConfirm, setShowLastFileConfirm] = useState(false);
+  const [pendingLastFile, setPendingLastFile] = useState(null);
   const [designerName, setDesignerName] = useState("");
   const [quoteName, setQuoteName] = useState("");
   const [sellerName, setSellerName] = useState("");
 
-  const handleUpdateFileStatus = async (fileId, nextStatus) => {
+  const executeFileUpdate = async (fileId, nextStatus) => {
     setUpdating(true);
+    setUpdateError("");
     try {
       const { error } = await supabase
         .rpc("update_production_file_status", { p_file_id: fileId, p_next_status: nextStatus });
@@ -89,8 +93,44 @@ function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus }) {
       }, 1500);
     } catch (err) {
       console.error("Error updating status:", err);
+      setUpdateError("No se pudo actualizar el estado del archivo. Intenta nuevamente.");
     }
     setUpdating(false);
+  };
+
+  const handleUpdateFileStatus = async (fileId, nextStatus) => {
+    if (nextStatus !== PRODUCTION_FILE_STATUS.COMPLETED) {
+      executeFileUpdate(fileId, nextStatus);
+      return;
+    }
+
+    setUpdating(true);
+    setUpdateError("");
+    try {
+      const { data: willCompleteOrder, error } = await supabase
+        .rpc("will_complete_production_order", { p_file_id: fileId });
+
+      if (error) throw error;
+
+      if (willCompleteOrder) {
+        setPendingLastFile({ fileId, nextStatus });
+        setShowLastFileConfirm(true);
+        setUpdating(false);
+        return;
+      }
+      setUpdating(false);
+      executeFileUpdate(fileId, nextStatus);
+    } catch (err) {
+      console.error("Error checking last pending file:", err);
+      setUpdateError("No se pudo verificar si este es el ultimo archivo pendiente. Intenta nuevamente.");
+      setUpdating(false);
+    }
+  };
+
+  const handleConfirmLastFile = () => {
+    if (!pendingLastFile) return;
+    setShowLastFileConfirm(false);
+    executeFileUpdate(pendingLastFile.fileId, pendingLastFile.nextStatus);
   };
   const handleUpdateStatus = () => {};
   const onCompleteOrder = null;
@@ -160,7 +200,7 @@ function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus }) {
   const referenceImageUrls = getReferenceImages(order);
   const hasAreaFiles = areaFiles.length > 0;
 
-  return (
+  return (<>
     <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="pp-modal">
         <div className="pp-modal-stripe" />
@@ -179,6 +219,12 @@ function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus }) {
             <div className="pp-modal-alert pp-alert-success">
               <Icons.Check />
               Estado actualizado correctamente
+            </div>
+          )}
+          {updateError && (
+            <div className="pp-modal-alert pp-alert-error">
+              <Icons.Close />
+              {updateError}
             </div>
           )}
 
@@ -496,7 +542,47 @@ function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus }) {
         </div>
       </div>
     </div>
-  );
+    {showLastFileConfirm && (
+      <div className="pp-modal-overlay" onClick={() => setShowLastFileConfirm(false)} style={{ zIndex: 1100 }}>
+        <div className="pp-modal pp-modal-compact" onClick={(e) => e.stopPropagation()}>
+          <div className="pp-modal-stripe" />
+          <div className="pp-modal-header">
+            <div>
+              <div className="pp-modal-title"><h3>Finalizar orden de producción</h3></div>
+              <div className="pp-modal-subtitle">Confirmación requerida</div>
+            </div>
+            <button className="pp-modal-close" onClick={() => setShowLastFileConfirm(false)}><Icons.Close /></button>
+          </div>
+          <div className="pp-modal-body">
+            <div className="pp-confirm-body">
+              <div className="pp-confirm-icon"><Icons.Check size={28} /></div>
+              <p className="pp-confirm-text-em">
+                Estás a punto de completar el <strong>último archivo pendiente</strong> de esta orden.
+              </p>
+              <p className="pp-confirm-text">
+                Al marcar este archivo como completado, la orden de producción cambiará automáticamente a estado <strong>Completada</strong>.
+              </p>
+              <p className="pp-confirm-text" style={{ marginTop: 14 }}>
+                ¿Deseas continuar?
+              </p>
+            </div>
+          </div>
+          <div className="pp-modal-footer">
+            <button className="pp-btn pp-btn-secondary" onClick={() => setShowLastFileConfirm(false)}>
+              Cancelar
+            </button>
+            <button className="pp-btn pp-btn-primary" onClick={handleConfirmLastFile} disabled={updating}>
+              {updating ? (
+                <><span className="pp-btn-spinner" /> Completando...</>
+              ) : (
+                "Confirmar y completar orden"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>);
 }
 
 export default function PageProduction() {
