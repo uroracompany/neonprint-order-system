@@ -44,7 +44,7 @@ import {
 } from "../utils/archive";
 import { getReferenceImages } from "../utils/orderAssets";
 import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
-import { adminApiFetch } from "../utils/adminApi";
+import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
 import { useAuth } from "../hooks/useAuth";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
@@ -1479,7 +1479,7 @@ export default function Dashboard() {
   const notif = useNotifications(user?.id);
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-  const [userViewMode, setUserViewMode] = useState("cards");
+  // userViewMode eliminado — solo vista tabla
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [orderModalMode, setOrderModalMode] = useState("create");
@@ -1761,7 +1761,7 @@ export default function Dashboard() {
 
     setSavingOrder(false);
 
-    if (error) return showFeedback("error", `No se pudo guardar la orden: ${error.message}`);
+    if (error) return showFeedback("error", isTimeoutError(error) ? FRIENDLY_TIMEOUT_MESSAGE : `No se pudo guardar la orden: ${error.message}`);
 
     await Promise.all([
       ...orderForm.removedFiles.map((url) => removeOrderAssetByPublicUrl({ bucket: "order-docs", url })),
@@ -1984,9 +1984,9 @@ export default function Dashboard() {
           password: trimmedPassword,
           role: userForm.role,
         }));
-    } catch {
+    } catch (err) {
       setSavingUser(false);
-      return showFeedback("error", "No se pudo conectar con el servicio de creación de usuarios.");
+      return showFeedback("error", isTimeoutError(err) ? FRIENDLY_TIMEOUT_MESSAGE : "No se pudo conectar con el servicio de creación de usuarios.");
     }
 
     setSavingUser(false);
@@ -2034,9 +2034,9 @@ export default function Dashboard() {
           password: trimmedPassword || undefined,
           role: userForm.role,
         }));
-    } catch {
+    } catch (err) {
       setSavingUser(false);
-      return showFeedback("error", "No se pudo conectar con el servicio de edición de empleados.");
+      return showFeedback("error", isTimeoutError(err) ? FRIENDLY_TIMEOUT_MESSAGE : "No se pudo conectar con el servicio de edición de empleados.");
     }
 
     setSavingUser(false);
@@ -2089,9 +2089,9 @@ export default function Dashboard() {
           userId: profileId,
           employment_status: nextStatus,
         }));
-    } catch {
+    } catch (err) {
       setSavingEmploymentStatus(false);
-      return showFeedback("error", "No se pudo conectar con el servicio de usuarios.");
+      return showFeedback("error", isTimeoutError(err) ? FRIENDLY_TIMEOUT_MESSAGE : "No se pudo conectar con el servicio de usuarios.");
     }
 
     setSavingEmploymentStatus(false);
@@ -2960,14 +2960,6 @@ export default function Dashboard() {
                 <option value="ploteo_producer">Produccion Ploteo</option>
                 <option value="delivery">Entrega</option>
               </select>
-              <div className="pa-view-toggle-group">
-                <button onClick={() => setUserViewMode("table")} className={`pa-view-toggle ${userViewMode === "table" ? "active" : ""}`} title="Vista de tabla">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
-                </button>
-                <button onClick={() => setUserViewMode("cards")} className={`pa-view-toggle ${userViewMode === "cards" ? "active" : ""}`} title="Vista de tarjetas">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
-                </button>
-              </div>
               <button className="pa-btn primary pa-toolbar-create" onClick={openCreateUserModal}><Icons.Plus />
                 Crear usuario
               </button>
@@ -2981,88 +2973,6 @@ export default function Dashboard() {
                 </div>
                 <span className="pa-results-count">{filteredProfiles.length} usuarios</span>
               </div>
-              {userViewMode === "cards" ? (
-                <div className="pa-users-grid">
-                  {loadingUsers ?
-                    <div className="pa-empty-card">
-                      Cargando usuarios...
-                    </div>
-                    : filteredProfiles.length === 0 ?
-                      <div className="pa-empty-card">
-                        {loadUsersError ? (
-                          <span style={{ color: "#EF4444" }}>{loadUsersError}</span>
-                        ) : (
-                          "No hay usuarios para mostrar."
-                        )}
-                      </div>
-                      : filteredProfiles.map(item => {
-                        const isActive = isEmploymentActive(item);
-
-                        return <article key={item.id} className="pa-user-card" onClick={() => { setSelectedUser(item); setUserDetailModalOpen(true); }}>
-                          <div className="pa-user-card-content">
-                            <div className="pa-user-card-header">
-                              <div className="pa-user-header-main">
-                                <div className="pa-user-avatar-mini">
-                                  {getUserDisplayName(item).charAt(0).toUpperCase()}
-                                </div>
-                                <div className="pa-user-info">
-                                  <strong className="pa-user-name">
-                                    {getUserDisplayName(item)}
-                                  </strong>
-                                  <span className="pa-user-email">
-                                    {item.email || "Sin correo"}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="pa-user-role-badge">
-                                <RoleBadge role={item.role} />
-                              </div>
-                            </div>
-                            <div className="pa-user-card-divider"></div>
-                            <div className="pa-user-card-body">
-                              <div className="pa-user-meta-item">
-                                <span className="pa-meta-label">
-                                  Rol
-                                </span>
-                                <span className="pa-meta-value">
-                                  {getRoleLabel(item.role) || "sin rol"}
-                                </span>
-                              </div>
-                              <div className="pa-user-meta-item">
-                                <span className="pa-meta-label">
-                                  Estado
-                                </span>
-                                <span className={`pa-meta-badge ${isActive ? "active" : "inactive"}`}>
-                                  {getEmploymentStatus(item)}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="pa-user-card-actions">
-                            <button className="pa-btn secondary pa-btn-sm detail" onClick={(event) => {
-                              event.stopPropagation();
-                              setSelectedUser(item);
-                              setUserDetailModalOpen(true);
-                            }}>
-                              Ver detalles
-                            </button>
-                            <button className="pa-btn secondary pa-btn-sm" onClick={(event) => {
-                              event.stopPropagation();
-                              openEditUserModal(item);
-                            }}>
-                              Editar empleado
-                            </button>
-                            <button className={`pa-btn pa-btn-sm ${isActive ? "deactivate" : "primary"}`} onClick={(event) => {
-                              event.stopPropagation();
-                              openEmploymentStatusConfirm(item);
-                            }}>
-                              {isActive ? "Desactivar usuario" : "Activar usuario"}
-                            </button>
-                          </div>
-                        </article>;
-                      })}
-                </div>
-              ) : (
               <div className="ps-table-wrap" style={{ maxHeight: 520 }}>
                 <table className="ps-table">
                     <thead>
@@ -3116,7 +3026,6 @@ export default function Dashboard() {
                     </tbody>
                   </table>
                 </div>
-              )}
             </div>
           </section>
         }
