@@ -66,7 +66,14 @@ function MetricCard({ icon, label, value, accentIdx = 0 }) {
   );
 }
 
-export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus }) {
+function getProductionTeamStatusLabel(status) {
+  if (status === PRODUCTION_FILE_STATUS.COMPLETED) return "Completado";
+  if (status === PRODUCTION_FILE_STATUS.IN_TERMINATION) return "En terminacion";
+  if (status === PRODUCTION_FILE_STATUS.IN_PRODUCTION) return "En progreso";
+  return "Pendiente";
+}
+
+export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus, teamRefreshKey = 0 }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [updateError, setUpdateError] = useState("");
@@ -75,6 +82,9 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus 
   const [designerName, setDesignerName] = useState("");
   const [quoteName, setQuoteName] = useState("");
   const [sellerName, setSellerName] = useState("");
+  const [teamProgress, setTeamProgress] = useState([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState("");
 
   const executeFileUpdate = async (fileId, nextStatus) => {
     setUpdating(true);
@@ -186,6 +196,39 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus 
       });
   }, [order?.seller_name, order?.seller_id, order?.created_by]);
 
+  useEffect(() => {
+    if (!order?.id) {
+      setTeamProgress([]);
+      setTeamError("");
+      return;
+    }
+
+    let active = true;
+    setTeamLoading(true);
+    setTeamError("");
+
+    supabase
+      .rpc("get_production_order_team", { p_order_id: order.id })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          console.error("Error loading production team:", error);
+          setTeamProgress([]);
+          setTeamError("No se pudo cargar el progreso del equipo.");
+        } else {
+          const raw = Array.isArray(data) ? data : [];
+          setTeamProgress(raw.filter((m) => (m.total_files || 0) > 0));
+        }
+      })
+      .finally(() => {
+        if (active) setTeamLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [order?.id, order?.updated_at, teamRefreshKey]);
+
   if (!order) return null;
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
@@ -199,6 +242,7 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus 
   const areaSummary = getProductionSummary(areaFiles);
   const referenceImageUrls = getReferenceImages(order);
   const hasAreaFiles = areaFiles.length > 0;
+  const teamCompleted = teamProgress.filter((item) => item.summary_status === PRODUCTION_FILE_STATUS.COMPLETED).length;
 
   return (<>
     <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -393,6 +437,49 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus 
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="pp-modal-card pp-team-progress-card" style={{ marginTop: 18 }}>
+            <div className="pp-modal-card-title">
+              <Icons.Users />
+              <h4>Progreso del equipo</h4>
+            </div>
+            {teamLoading ? (
+              <div className="pp-team-progress-empty">Cargando progreso del equipo...</div>
+            ) : teamError ? (
+              <div className="pp-team-progress-empty">{teamError}</div>
+            ) : teamProgress.length === 0 ? (
+              <div className="pp-team-progress-empty">No hay responsables de produccion asignados.</div>
+            ) : (
+              <>
+                <div className="pp-team-progress-summary">
+                  {teamCompleted}/{teamProgress.length} areas completadas
+                </div>
+                <div className="pp-team-progress-grid">
+                  {teamProgress.map((member) => {
+                    const isCurrentArea = member.production_area_code === areaCode;
+                    return (
+                      <div className={`pp-team-progress-item ${isCurrentArea ? "current" : ""}`} key={member.production_area_code}>
+                        <div className="pp-team-progress-head">
+                          <div>
+                            <strong>{member.production_area_label || getProductionAreaLabel(member.production_area_code)}</strong>
+                            <span>{member.assigned_name || "Usuario de produccion"}</span>
+                          </div>
+                          {isCurrentArea && <em>Tu area</em>}
+                        </div>
+                        <div className={`pp-team-progress-status ${member.summary_status || "pending"}`}>
+                          {getProductionTeamStatusLabel(member.summary_status)}
+                        </div>
+                        <div className="pp-team-progress-counts">
+                          <span>{member.completed_count || 0}/{member.total_files || 0} completados</span>
+                          <span>{member.in_termination_count || 0} en terminacion</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
 
           {hasAreaFiles ? (
@@ -602,15 +689,16 @@ export default function PageProduction() {
   const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [teamRefreshKey, setTeamRefreshKey] = useState(0);
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [filterArchive, setFilterArchive] = useState("active");
   const [clients, setClients] = useState([]);
   const notif = useNotifications(user?.id);
 
-  const refreshOrders = useCallback(async () => {
+  const refreshOrders = useCallback(async (silent = false) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     const { data, error } = await supabase
       .from("orders")
       .select("*, order_production_files(*), order_production_assignments(*), order_production_user_archives(*)")
@@ -620,7 +708,7 @@ export default function PageProduction() {
     if (!error && data) {
       setOrders(data);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [user?.id]);
 
   const handleArchiveOrder = (order) => {
@@ -691,17 +779,28 @@ export default function PageProduction() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
-        () => refreshOrders()
+        () => refreshOrders(true)
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "order_production_files" },
-        () => refreshOrders()
+        () => {
+          setTeamRefreshKey((value) => value + 1);
+          refreshOrders(true);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "order_production_assignments" },
+        () => {
+          setTeamRefreshKey((value) => value + 1);
+          refreshOrders(true);
+        }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "order_production_user_archives" },
-        () => refreshOrders()
+        () => refreshOrders(true)
       )
       .subscribe();
 
@@ -1103,6 +1202,7 @@ export default function PageProduction() {
         order={selectedOrder}
         producerRole={profileRole}
         onUpdateStatus={refreshOrders}
+        teamRefreshKey={teamRefreshKey}
       />
 
       <ArchiveOrderModal

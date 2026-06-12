@@ -13,6 +13,28 @@ import { supabase } from "../../supabaseClient";
 const NOTIFICATION_DURATION = 5000; // Toast desaparece después de 5 segundos
 const MAX_TOASTS = 3; // Máximo de toasts visibles simultáneamente
 
+const getNotificationEventKind = (notification) =>
+  notification?.metadata?.event_kind || "";
+
+const isVisibleNotification = (notification) =>
+  notification && !notification.is_archived && !notification.deleted_at;
+
+const sameNotificationFingerprint = (notification, target) =>
+  notification?.user_id === target?.user_id &&
+  notification?.type === target?.type &&
+  (notification?.order_id || null) === (target?.order_id || null) &&
+  notification?.title === target?.title &&
+  notification?.message === target?.message &&
+  getNotificationEventKind(notification) === getNotificationEventKind(target);
+
+const removeNotificationFamily = (items, id) => {
+  const target = items.find((notification) => notification.id === id);
+  if (!target) {
+    return items.filter((notification) => notification.id !== id);
+  }
+  return items.filter((notification) => !sameNotificationFingerprint(notification, target));
+};
+
 export default function useNotifications(userId) {
   // ============= ESTADOS =============
   const [notifications, setNotifications] = useState([]); // Todas las notificaciones del usuario
@@ -20,12 +42,13 @@ export default function useNotifications(userId) {
   const [toasts, setToasts] = useState([]); // Toasts flotantes activos (últimas 3)
   
   // Referencias para limpiar timeouts de toasts
+  const notificationsRef = useRef([]);
   const toastTimeouts = useRef({});
   // Referencia al canal de Supabase para suscripción en tiempo real
   const channelRef = useRef(null);
 
   // Contar notificaciones no leídas (excluyendo archivadas)
-  const unreadCount = notifications.filter((n) => !n.is_read && !n.is_archived).length;
+  const unreadCount = notifications.filter((n) => !n.is_read && isVisibleNotification(n)).length;
 
   // ============= FUNCIÓN: CERRAR TOAST =============
   // Elimina un toast de la pantalla y limpia su timeout
@@ -40,9 +63,30 @@ export default function useNotifications(userId) {
 
   // ============= FUNCIÓN: CARGAR NOTIFICACIONES =============
   // Consulta las últimas 50 notificaciones del usuario desde BD
-  const fetchNotifications = useCallback(async () => {
+  const enqueueToast = useCallback((notification) => {
+    if (!isVisibleNotification(notification)) return;
+
+    const toastId = `${notification.id}-toast`;
+    if (toastTimeouts.current[toastId]) return;
+
+    setToasts((prev) => {
+      if (prev.some((t) => t.id === notification.id)) return prev;
+      return [notification, ...prev].slice(0, MAX_TOASTS);
+    });
+
+    toastTimeouts.current[toastId] = setTimeout(() => {
+      dismissToast(notification.id);
+    }, NOTIFICATION_DURATION);
+  }, [dismissToast]);
+
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
+
+  const fetchNotifications = useCallback(async ({ showNewToasts = false } = {}) => {
     if (!userId) {
       setNotifications([]);
+      notificationsRef.current = [];
       setLoading(false);
       return;
     }
@@ -51,13 +95,24 @@ export default function useNotifications(userId) {
       .from("notifications")
       .select("*")
       .eq("user_id", userId)
+      .or("is_archived.is.false,is_archived.is.null")
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(50);
     if (!error && data) {
-      setNotifications(data);
+      const visibleNotifications = data.filter(isVisibleNotification);
+      const previousIds = new Set(notificationsRef.current.map((notification) => notification.id));
+      const newNotifications = showNewToasts
+        ? visibleNotifications.filter((notification) => !previousIds.has(notification.id))
+        : [];
+
+      notificationsRef.current = visibleNotifications;
+      setNotifications(visibleNotifications);
+
+      [...newNotifications].reverse().forEach(enqueueToast);
     }
     setLoading(false);
-  }, [userId]);
+  }, [enqueueToast, userId]);
 
   // ============= EFECTO 1: CARGA INICIAL =============
   // Se ejecuta cuando cambia el userId
@@ -88,6 +143,7 @@ export default function useNotifications(userId) {
         (payload) => {
           // Cuando llega una notificación nueva
           const newNotif = payload.new;
+          if (!isVisibleNotification(newNotif)) return;
           
           // Actualizar lista de notificaciones (máximo 50)
           setNotifications((prev) => {
@@ -120,9 +176,19 @@ export default function useNotifications(userId) {
         },
         (payload) => {
           // Cuando se actualiza una notificación (leída, archivada, etc.)
-          setNotifications((prev) =>
-            prev.map((n) => (n.id === payload.new.id ? { ...n, ...payload.new } : n))
-          );
+          const updatedNotif = payload.new;
+          if (!isVisibleNotification(updatedNotif)) {
+            setNotifications((prev) => removeNotificationFamily(prev, updatedNotif.id));
+            setToasts((prev) => removeNotificationFamily(prev, updatedNotif.id));
+            return;
+          }
+
+          setNotifications((prev) => {
+            if (prev.some((n) => n.id === updatedNotif.id)) {
+              return prev.map((n) => (n.id === updatedNotif.id ? { ...n, ...updatedNotif } : n));
+            }
+            return [updatedNotif, ...prev].slice(0, 50);
+          });
         }
       )
       .on(
@@ -177,6 +243,10 @@ export default function useNotifications(userId) {
         return null;
       }
 
+      if (!isVisibleNotification(notification)) {
+        return null;
+      }
+
       setNotifications((prev) => {
         if (prev.some((n) => n.id === notification.id)) return prev;
         return [notification, ...prev].slice(0, 50);
@@ -201,7 +271,7 @@ export default function useNotifications(userId) {
 
   const markAllAsRead = useCallback(async () => {
     const unreadIds = notifications
-      .filter((n) => !n.is_read)
+      .filter((n) => !n.is_read && isVisibleNotification(n))
       .map((n) => n.id);
     if (unreadIds.length === 0) return;
 
@@ -215,25 +285,22 @@ export default function useNotifications(userId) {
   }, [notifications]);
 
   const archive = useCallback(async (id) => {
-    const { error } = await supabase
-      .from("notifications")
-      .update({ is_archived: true })
-      .eq("id", id);
+    const { error } = await supabase.rpc("archive_notification", {
+      p_notification_id: id,
+    });
     if (!error) {
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_archived: true } : n))
-      );
+      setNotifications((prev) => removeNotificationFamily(prev, id));
+      setToasts((prev) => removeNotificationFamily(prev, id));
     }
   }, []);
 
   const deleteNotification = useCallback(async (id) => {
-    const { error } = await supabase
-      .from("notifications")
-      .delete()
-      .eq("id", id);
+    const { error } = await supabase.rpc("dismiss_notification", {
+      p_notification_id: id,
+    });
     if (!error) {
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-      setToasts((prev) => prev.filter((t) => t.id !== id));
+      setNotifications((prev) => removeNotificationFamily(prev, id));
+      setToasts((prev) => removeNotificationFamily(prev, id));
     }
   }, []);
 

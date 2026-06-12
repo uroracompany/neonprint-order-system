@@ -1529,9 +1529,11 @@ export default function Dashboard() {
     setProfile(authProfile || null);
   }, [authProfile, authUser]);
 
-  const loadOrders = useCallback(async () => {
-    setLoadingOrders(true);
-    setLoadOrdersError(null);
+  const loadOrders = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoadingOrders(true);
+      setLoadOrdersError(null);
+    }
 
     try {
       const { response, result } = await adminApiFetch("/api/admin-list-orders", { page: 1, pageSize: 1000 });
@@ -1541,13 +1543,15 @@ export default function Dashboard() {
       }
 
       setOrders(Array.isArray(result?.orders) ? result.orders : []);
-      setLoadingOrders(false);
+      if (!silent) setLoadingOrders(false);
       return;
     } catch (error) {
       console.error("Error loading orders:", error);
-      setLoadOrdersError(error?.message || "No se pudieron cargar ordenes.");
-      setOrders([]);
-      setLoadingOrders(false);
+      if (!silent) {
+        setLoadOrdersError(error?.message || "No se pudieron cargar ordenes.");
+        setOrders([]);
+        setLoadingOrders(false);
+      }
       return;
     }
   }, []);
@@ -1586,7 +1590,7 @@ export default function Dashboard() {
     const ordersChannel = supabase
       .channel('admin-orders-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        loadOrders();
+        loadOrders(true);
       })
       .subscribe();
 

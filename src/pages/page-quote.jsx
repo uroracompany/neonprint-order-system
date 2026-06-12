@@ -761,22 +761,9 @@ export default function PageQuote() {
       )
       .subscribe();
 
-    // REFRESCO AL RECUPERAR FOCO: cuando el usuario vuelve a la pestaña
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") fetchOrdersRef.current(user.id, true);
-    };
-    
-    // REFRESCO CUANDO LA VENTANA RECUPERA FOCO
-    const handleFocus = () => fetchOrdersRef.current(user.id, true);
-    
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("focus", handleFocus);
-
     // LIMPIEZA: desuscribirse de Supabase y remover listeners al desmontar
     return () => {
       supabase.removeChannel(channel);
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("focus", handleFocus);
     };
   }, [user?.id]);
 

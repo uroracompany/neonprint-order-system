@@ -402,9 +402,9 @@ export default function PageDelivery() {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  const refreshOrders = useCallback(async () => {
+  const refreshOrders = useCallback(async (silent = false) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     const { data, error } = await supabase
       .from("orders")
       .select("*")
@@ -414,7 +414,7 @@ export default function PageDelivery() {
     if (!error && data) {
       setOrders(data);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [user?.id]);
 
   useEffect(() => {
@@ -459,7 +459,7 @@ export default function PageDelivery() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
-        () => refreshOrders()
+        () => refreshOrders(true)
       )
       .subscribe();
 

@@ -85,7 +85,7 @@ export default function NotificationCenter({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const activeNotifications = notifications.filter((n) => !n.is_archived);
+  const activeNotifications = notifications.filter((n) => !n.is_archived && !n.deleted_at);
 
   return (
     <>

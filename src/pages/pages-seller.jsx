@@ -1968,16 +1968,8 @@ export default function PageSeller() {
       )
       .subscribe();
 
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") refreshOrders();
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("focus", refreshOrders);
-
     return () => {
       supabase.removeChannel(channel);
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("focus", refreshOrders);
     };
   }, [user?.id]);
 
@@ -2041,7 +2033,8 @@ export default function PageSeller() {
     }
     
     setCancelingOrder(null);
-    fetchOrders(user?.id);
+    await fetchOrders(user?.id);
+    await notif.refresh({ showNewToasts: true });
   };
 
   // ── Ver detalles de orden ─────────────────────────────────────────────────
@@ -2107,6 +2100,7 @@ export default function PageSeller() {
     setSendingToQuotation(null);
     setSelectedOrder(null);
     await fetchOrders(user?.id);
+    await notif.refresh({ showNewToasts: true });
 
   };
 
@@ -2135,6 +2129,7 @@ export default function PageSeller() {
 
       setSendingToDesigner(null);
       await fetchOrders(user?.id);
+      await notif.refresh({ showNewToasts: true });
 
       const { data: updated } = await supabase
         .from("orders")
@@ -2653,7 +2648,19 @@ export default function PageSeller() {
         </main>
       </div>
 
-      <CreateOrderModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={() => fetchOrders(user?.id)} userId={user?.id} materialOptions={materialOptions} clients={clients} clientsLoading={clientsLoading} onClientSearch={handleClientSearch} />
+      <CreateOrderModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={async () => {
+          await fetchOrders(user?.id);
+          await notif.refresh({ showNewToasts: true });
+        }}
+        userId={user?.id}
+        materialOptions={materialOptions}
+        clients={clients}
+        clientsLoading={clientsLoading}
+        onClientSearch={handleClientSearch}
+      />
       <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} materialOptions={materialOptions} />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} onSendToQuotation={handleSendToQuotation} />
       <AssignModal
