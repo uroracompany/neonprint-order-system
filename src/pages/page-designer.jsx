@@ -1241,7 +1241,7 @@ export default function PageDesigner() {
             <>
               <div className="pd-greeting">
                 <h2>Buen día, <span className="pd-user-name">{displayName}</span></h2>
-                <p>Aquí tienes el resumen de tu flujo creativo y las órdenes que requieren acción.</p>
+                <p>Aqui tienes el resumen de tu actividad de hoy.</p>
               </div>
               
               <div className="pd-metrics">
