@@ -38,6 +38,8 @@ import {
   archiveOrder,
   restoreOrder,
 } from "../utils/archive";
+import { openOrderAssetUrl } from "../utils/fileAccess";
+import { isR2OrderAssetUrl } from "../utils/uploadOrderAsset";
 
 const METRIC_ACCENTS = [
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
@@ -528,7 +530,18 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus,
                             <span className="pp-file-name">{file.filename}</span>
                             <span style={{ fontSize: 11, color: "var(--pp-text-muted)" }}>{getProductionFileStatusLabel(file.status)}</span>
                           </div>
-                          <a href={file.url} target="_blank" rel="noopener noreferrer" className="pp-file-download" title="Descargar">
+                          <a
+                            href={file.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="pp-file-download"
+                            title="Descargar"
+                            onClick={(event) => {
+                              if (!isR2OrderAssetUrl(file.url)) return;
+                              event.preventDefault();
+                              openOrderAssetUrl({ url: file.url, fileName: file.filename, download: true });
+                            }}
+                          >
                             <Icons.Download />
                           </a>
                           {nextStatus && (

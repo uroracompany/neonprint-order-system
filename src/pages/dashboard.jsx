@@ -45,6 +45,8 @@ import {
 import { getReferenceImages } from "../utils/orderAssets";
 import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
+import { openOrderAssetUrl } from "../utils/fileAccess";
+import { isR2OrderAssetUrl } from "../utils/uploadOrderAsset";
 import { useAuth } from "../hooks/useAuth";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
@@ -191,7 +193,7 @@ function OrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit
 
 
 // Modal de detalles de orden para admin
-function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel, onAssign, onArchive }) {
+function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel, onAssign, onArchive, onDelete }) {
   const [paymentInvoiceUrl, setPaymentInvoiceUrl] = useState("");
 
   useEffect(() => {
@@ -233,6 +235,11 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
   const preview = order.preview_image;
   const referenceImageUrls = getReferenceImages(order);
   const paymentInvoice = paymentInvoiceUrl;
+  const openStoredAsset = (event, url, fileName, download = false) => {
+    if (!isR2OrderAssetUrl(url)) return;
+    event.preventDefault();
+    openOrderAssetUrl({ url, fileName, download });
+  };
 
   return (
     <ModalShell open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} size="large">
@@ -365,6 +372,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
                         <div style={{ display: "flex", gap: 8 }}>
                           <a
                             href={url}
+                            onClick={(event) => openStoredAsset(event, url, fileName, false)}
                             target="_blank"
                             rel="noreferrer"
                             style={{
@@ -395,6 +403,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
                           </a>
                           <a
                             href={downloadUrl}
+                            onClick={(event) => openStoredAsset(event, url, fileName, true)}
                             download={fileName}
                             style={{
                               display: "flex", flexDirection: "column",
@@ -425,7 +434,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                          <a href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                          <a href={url} onClick={(event) => openStoredAsset(event, url, fileName, false)} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
                             <img 
                               src={url} 
                               alt="diseno" 
@@ -442,6 +451,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
                           </a>
                           <a
                             href={downloadUrl}
+                            onClick={(event) => openStoredAsset(event, url, fileName, true)}
                             download={fileName}
                             style={{
                               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
@@ -480,6 +490,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCanc
                               <div key={index} style={{ display: "flex", gap: 8 }}>
                                 <a
                                   href={url}
+                                  onClick={(event) => openStoredAsset(event, url, fileName, false)}
                                   target="_blank"
                                   rel="noreferrer"
                                   style={{
@@ -509,6 +520,7 @@ onMouseEnter={e => {
                                 </a>
                                 <a
                                   href={downloadUrl}
+                                  onClick={(event) => openStoredAsset(event, url, fileName, true)}
                                   download={fileName}
                                   style={{
                                     display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
@@ -716,6 +728,9 @@ onMouseEnter={e => {
               <Icons.Trash />Cancelar Orden
             </button>
           )}
+          <button className="pa-btn danger" style={{ width: "100%", marginTop: 8 }} onClick={() => onDelete(order)}>
+            <Icons.Trash />Eliminar orden y archivos
+          </button>
         </div>
       </div>
     </ModalShell>
@@ -1468,6 +1483,8 @@ export default function Dashboard() {
   const [quotationLoading, setQuotationLoading] = useState(false);
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [deletingOrder, setDeletingOrder] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
@@ -1839,6 +1856,30 @@ export default function Dashboard() {
     setArchivingOrder(null);
     await loadOrders();
     showFeedback("success", "La orden fue archivada correctamente.");
+  };
+
+  const openDeleteOrderModal = (order) => {
+    setDeletingOrder(order);
+  };
+
+  const handleConfirmDeleteOrder = async () => {
+    if (!deletingOrder?.id) return;
+    setDeleteLoading(true);
+
+    const { response, result } = await adminApiFetch("/api/admin-delete-order", {
+      orderId: deletingOrder.id,
+    });
+
+    setDeleteLoading(false);
+
+    if (!response.ok) {
+      return showFeedback("error", result?.error || "No se pudo eliminar la orden y sus archivos.");
+    }
+
+    if (selectedOrder?.id === deletingOrder.id) setSelectedOrder(null);
+    setDeletingOrder(null);
+    await loadOrders();
+    showFeedback("success", "La orden y sus archivos fueron eliminados correctamente.");
   };
 
   const handleAssignOrder = async (userId) => {
@@ -2598,6 +2639,9 @@ export default function Dashboard() {
                                     <Icons.Archive />
                                   </button>
                                 ) : null}
+                                <button className="table-action-btn cancel" onClick={() => openDeleteOrderModal(order)} title="Eliminar orden y archivos">
+                                  <Icons.X />
+                                </button>
                               </div>
                             </td>
                           </tr>)}
@@ -3056,6 +3100,7 @@ export default function Dashboard() {
         onCancel={openCancelModal}
         onAssign={openAssignModal}
         onArchive={openArchiveModal}
+        onDelete={openDeleteOrderModal}
       />
       <AssignModal
         open={!!assigningOrder}
@@ -3158,6 +3203,25 @@ export default function Dashboard() {
         order={archivingOrder}
         loading={archiveLoading}
       />
+      <ArchiveOrderModal
+        open={!!deletingOrder}
+        onClose={() => setDeletingOrder(null)}
+        onConfirm={handleConfirmDeleteOrder}
+        order={deletingOrder}
+        loading={deleteLoading}
+        title="Eliminar orden y archivos"
+        confirmText="Eliminar definitivamente"
+        cancelText="Conservar orden"
+      >
+        <p>
+          Vas a eliminar la orden{" "}
+          <strong>#{deletingOrder?.id?.slice(0, 8).toUpperCase()}</strong>
+          {" "}y todos sus archivos relacionados.
+        </p>
+        <p className="archive-modal-hint">
+          Primero se borraran archivos en Supabase Storage y Cloudflare R2. Si algo falla, la orden se conserva para evitar archivos huerfanos.
+        </p>
+      </ArchiveOrderModal>
       <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} />
       <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />

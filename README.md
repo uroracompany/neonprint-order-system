@@ -19,7 +19,7 @@ NeonPrint centraliza el flujo operativo de una orden desde ventas hasta entrega:
 - Cliente Supabase browser: `supabaseClient.js` con variables `VITE_*`.
 - Endpoints server-side: `api/` con logica compartida en `server/`.
 - Base de datos: Supabase Auth, `profiles`, `orders`, `notifications`, `order_events`.
-- Storage: buckets de documentos, previews y comprobantes.
+- Storage: buckets de documentos, previews y comprobantes; `order_files` registra metadatos canonicos para Supabase Storage o Cloudflare R2.
 - Migraciones SQL: `supabase/`.
 
 
@@ -33,6 +33,13 @@ VITE_SUPABASE_ANON_KEY="your_publishable_or_anon_key"
 SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="your_service_role_key"
 ORDER_PURGE_CRON_SECRET="optional_long_random_token"
+STORAGE_PROVIDER="supabase"
+R2_UPLOAD_THRESHOLD_MB="25"
+R2_ACCOUNT_ID=""
+R2_ACCESS_KEY_ID=""
+R2_SECRET_ACCESS_KEY=""
+R2_BUCKET_DEV="neonprint-order-files-dev"
+R2_BUCKET_PROD="neonprint-order-files-prod"
 ```
 
 Reglas importantes:
@@ -41,6 +48,8 @@ Reglas importantes:
 - Nunca crear una variable `VITE_SUPABASE_SERVICE_ROLE_KEY`.
 - `ORDER_PURGE_CRON_SECRET` es opcional si el cron invoca la Edge Function con `SUPABASE_SERVICE_ROLE_KEY` como Bearer token.
 - La autorizacion debe venir de `public.profiles.role`, no de `user_metadata`.
+- `STORAGE_PROVIDER=supabase` conserva el flujo actual; `hybrid` envia archivos grandes de `order-docs` a Cloudflare R2 si las credenciales R2 estan configuradas.
+- Las claves R2 son solo server-side. Nunca deben usar prefijo `VITE_`.
 
 ## Scripts
 
@@ -115,8 +124,11 @@ Contrato de seguridad:
 - `order-docs`: documentos de trabajo de las ordenes.
 - `order-previews`: previews asociados a ordenes.
 - `payment-invoice`: comprobantes de pago.
+- Cloudflare R2 opcional para archivos grandes de `order-docs` cuando `STORAGE_PROVIDER=hybrid` o `r2`.
 
 La politica esperada para `payment-invoice` es privada con signed URLs. La migracion `supabase/20260526_harden_tracking_and_payment_assets.sql` actualiza el bucket y agrega politicas para lectura, subida, reemplazo y borrado segun rol/departamento.
+
+El endpoint `POST /api/admin-delete-order` elimina ordenes de prueba de forma segura: borra primero archivos en Supabase Storage y R2, registra auditoria en `order_delete_audit` y solo despues borra la orden.
 
 ## Tracking publico
 
@@ -128,7 +140,7 @@ La politica esperada para `payment-invoice` es privada con signed URLs. La migra
 
 ## Purga automatica de ordenes antiguas
 
-La migracion `supabase/20260604_add_old_order_purge_job.sql` crea una auditoria minima en `order_purge_audit`, funciones internas para purgar ordenes con mas de 3 meses y un job diario `purge-old-orders-daily`.
+La migracion `supabase/20260604_add_old_order_purge_job.sql` crea una auditoria minima en `order_purge_audit`, funciones internas para purgar ordenes con mas de 3 meses y un job diario `purge-old-orders-daily`. La Edge Function tambien borra objetos registrados en `order_files`, incluyendo R2 cuando las variables R2 estan configuradas.
 
 Antes de activar en produccion:
 

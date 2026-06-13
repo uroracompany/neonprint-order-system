@@ -8,6 +8,12 @@ import { handleAdminListUsers } from './server/admin-list-users-handler.js'
 import { handleAdminSetUserStatus } from './server/admin-set-user-status-handler.js'
 import { handleGetUserEmail } from './server/get-user-email-handler.js'
 import { handleChangeUserPassword } from './server/change-user-password-handler.js'
+import {
+  handleAdminDeleteOrderWithFiles,
+  handleCompleteFileUpload,
+  handleFileDownloadUrl,
+  handleInitiateFileUpload,
+} from './server/storage-gateway.js'
 function createApiHandler(path, handler) {
   return {
     name: `api-handler-${path}`,
@@ -71,6 +77,10 @@ export default defineConfig(() => {
       createApiHandler("/api/admin-set-user-status", handleAdminSetUserStatus),
       createApiHandler("/api/get-user-email", handleGetUserEmail),
       createApiHandler("/api/change-user-password", handleChangeUserPassword),
+      createApiHandler("/api/files-initiate-upload", handleInitiateFileUpload),
+      createApiHandler("/api/files-complete-upload", handleCompleteFileUpload),
+      createApiHandler("/api/files-download-url", handleFileDownloadUrl),
+      createApiHandler("/api/admin-delete-order", handleAdminDeleteOrderWithFiles),
     ],
   };
 })

@@ -1,4 +1,6 @@
 import { Icons } from "../utils/icons";
+import { openOrderAssetUrl } from "../utils/fileAccess";
+import { isR2OrderAssetUrl } from "../utils/uploadOrderAsset";
 import "./FileCard.css";
 
 export default function FileCard({
@@ -9,6 +11,12 @@ export default function FileCard({
   actions = [],
   children,
 }) {
+  const handleOpen = async (event) => {
+    if (!isR2OrderAssetUrl(url)) return;
+    event.preventDefault();
+    await openOrderAssetUrl({ url, fileName: name, download: true });
+  };
+
   return (
     <div className="fc-file-item">
       <div className="fc-file-icon">
@@ -24,6 +32,7 @@ export default function FileCard({
       {url && (
         <a
           href={url}
+          onClick={handleOpen}
           target="_blank"
           rel="noopener noreferrer"
           className="fc-file-action"

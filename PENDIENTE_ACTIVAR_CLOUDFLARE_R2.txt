@@ -1,0 +1,139 @@
+PENDIENTE PARA ACTIVAR CLOUDFLARE R2 EN NEONPRINT
+==================================================
+
+Este documento queda como recordatorio para cuando se quiera activar Cloudflare R2.
+La implementacion base ya quedo preparada en el codigo, pero R2 NO queda activo
+hasta completar estos pasos externos.
+
+
+1. Crear buckets en Cloudflare R2
+---------------------------------
+
+Crear estos buckets desde el dashboard de Cloudflare:
+
+- neonprint-order-files-dev
+- neonprint-order-files-prod
+
+Recomendacion:
+
+- Usar el bucket dev para pruebas.
+- Usar el bucket prod solo cuando el flujo ya este validado.
+- Mantener ambos buckets privados.
+
+
+2. Crear credenciales R2
+------------------------
+
+Desde Cloudflare, crear credenciales/API token para R2.
+
+Guardar estos valores:
+
+- R2_ACCOUNT_ID
+- R2_ACCESS_KEY_ID
+- R2_SECRET_ACCESS_KEY
+
+Importante:
+
+- Estas claves son solo del servidor.
+- Nunca deben tener prefijo VITE_.
+- Nunca deben pegarse en codigo frontend.
+
+
+3. Configurar variables de entorno
+----------------------------------
+
+Agregar estas variables en el entorno del servidor:
+
+STORAGE_PROVIDER="hybrid"
+R2_UPLOAD_THRESHOLD_MB="25"
+R2_ACCOUNT_ID="valor_de_cloudflare"
+R2_ACCESS_KEY_ID="valor_de_cloudflare"
+R2_SECRET_ACCESS_KEY="valor_de_cloudflare"
+R2_BUCKET_DEV="neonprint-order-files-dev"
+R2_BUCKET_PROD="neonprint-order-files-prod"
+
+Notas:
+
+- Mientras STORAGE_PROVIDER sea "supabase", el sistema sigue usando Supabase Storage.
+- Con STORAGE_PROVIDER="hybrid", los archivos grandes de order-docs pasan a R2.
+- El umbral inicial recomendado es 25 MB.
+
+
+4. Aplicar migracion en Supabase
+--------------------------------
+
+Aplicar la migracion:
+
+supabase/20260613_order_files_storage_gateway.sql
+
+Esta migracion crea:
+
+- Tabla order_files.
+- Tabla order_delete_audit.
+- Relacion opcional order_production_files.order_file_id.
+- Indices y politicas RLS.
+- Correccion del bucket order-docs a 200 MB.
+
+
+5. Desplegar Edge Function actualizada
+--------------------------------------
+
+Desplegar nuevamente:
+
+supabase/functions/purge-old-orders
+
+Esta funcion ya fue preparada para:
+
+- Borrar archivos legacy en Supabase Storage.
+- Borrar archivos registrados en order_files.
+- Borrar objetos en Cloudflare R2.
+- Conservar la orden si falla el borrado de archivos.
+- Registrar errores en order_purge_audit.
+
+
+6. Configurar lifecycle en Cloudflare R2
+----------------------------------------
+
+Configurar reglas de lifecycle desde el dashboard de Cloudflare R2.
+
+Recomendacion para dev:
+
+- Borrar archivos despues de 7 o 15 dias.
+
+Recomendacion para produccion:
+
+- Borrar archivos despues de 90 o 100 dias.
+
+Esto sirve como respaldo por si algun archivo queda huerfano.
+La limpieza principal debe seguir siendo la del sistema.
+
+
+7. Pruebas antes de usar en produccion
+--------------------------------------
+
+Probar primero con el bucket dev:
+
+- Crear una orden de prueba.
+- Subir un archivo menor a 25 MB y confirmar que sigue en Supabase.
+- Subir un archivo mayor a 25 MB y confirmar que va a R2.
+- Descargar el archivo y confirmar que usa URL firmada.
+- Eliminar la orden desde Admin.
+- Confirmar que se borra la orden.
+- Confirmar que se borran sus archivos de Supabase Storage y R2.
+- Ejecutar purge-old-orders con dry_run.
+- Ejecutar purge-old-orders sobre una orden vieja de prueba.
+
+
+8. Recordatorio importante
+--------------------------
+
+No borrar ordenes directamente con:
+
+DELETE FROM orders
+
+Para ordenes de prueba, usar siempre el flujo seguro desde Admin o el endpoint:
+
+POST /api/admin-delete-order
+
+Ese flujo borra primero los archivos y despues la orden.
+
