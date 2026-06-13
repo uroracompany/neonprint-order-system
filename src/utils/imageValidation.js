@@ -118,3 +118,134 @@ export const validateImage = (file) => {
     reader.readAsDataURL(file);
   });
 };
+
+// ─── REFERENCE IMAGES VALIDATION ────────────────────────────────────────────────
+
+export const REF_IMAGE_CONFIG = {
+  MAX_COUNT: 3,
+  MAX_SIZE_PER_IMAGE: 20 * 1024 * 1024,
+  MAX_TOTAL_SIZE: 60 * 1024 * 1024,
+  PREVIEW_ALLOWED_TYPES: ["image/jpeg", "image/png", "image/webp", "image/svg+xml", "application/pdf"],
+  PREVIEW_MAX_SIZE: 10 * 1024 * 1024,
+};
+
+export function validateReferenceImages(files) {
+  const errors = [];
+
+  if (!files || files.length === 0) return { valid: true, errors: [] };
+
+  if (files.length > REF_IMAGE_CONFIG.MAX_COUNT) {
+    errors.push(
+      `Solo se permiten hasta ${REF_IMAGE_CONFIG.MAX_COUNT} imágenes por orden.`
+    );
+    return { valid: false, errors };
+  }
+
+  let totalSize = 0;
+  for (const file of files) {
+    if (file.size > REF_IMAGE_CONFIG.MAX_SIZE_PER_IMAGE) {
+      const mb = (file.size / 1024 / 1024).toFixed(1);
+      errors.push(
+        `"${file.name}" pesa ${mb}MB. Máximo ${
+          REF_IMAGE_CONFIG.MAX_SIZE_PER_IMAGE / 1024 / 1024
+        }MB por imagen.`
+      );
+    }
+    totalSize += file.size;
+  }
+
+  if (totalSize > REF_IMAGE_CONFIG.MAX_TOTAL_SIZE) {
+    const totalMB = (totalSize / 1024 / 1024).toFixed(1);
+    const maxMB = REF_IMAGE_CONFIG.MAX_TOTAL_SIZE / 1024 / 1024;
+    errors.push(
+      `El total de imágenes (${totalMB}MB) excede el límite de ${maxMB}MB.`
+    );
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+export function canDecodeAsImage(file) {
+  if (!file) return Promise.resolve({ valid: false, error: "No se seleccionó ningún archivo." });
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => resolve({ valid: true });
+      img.onerror = () => resolve({
+        valid: false,
+        error: "El formato de este archivo no es compatible. Usa una imagen estándar (JPG, PNG, WebP).",
+      });
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve({
+      valid: false,
+      error: "Error al leer el archivo. Intenta nuevamente.",
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
+// ─── IMAGE COMPRESSION ──────────────────────────────────────────────────────────
+
+const MAX_DIMENSION = 2048;
+const COMPRESSION_QUALITY = 0.85;
+
+export function compressImage(file) {
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    const cleanup = () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    img.onload = () => {
+      let { width, height } = img;
+      if (width <= MAX_DIMENSION && height <= MAX_DIMENSION && file.size <= REF_IMAGE_CONFIG.MAX_SIZE_PER_IMAGE) {
+        cleanup();
+        resolve(file);
+        return;
+      }
+
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        const ratio = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          cleanup();
+          if (!blob) {
+            resolve(file);
+            return;
+          }
+          const baseName = file.name.replace(/\.[^/.]+$/, "");
+          const compressedFile = new File([blob], `${baseName}.jpg`, {
+            type: "image/jpeg",
+          });
+          resolve(compressedFile);
+        },
+        "image/jpeg",
+        COMPRESSION_QUALITY
+      );
+    };
+
+    img.onerror = () => {
+      cleanup();
+      resolve(file);
+    };
+
+    img.src = objectUrl;
+  });
+}

@@ -35,6 +35,7 @@ import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { buildStorageSafeFileName, formatFileSize, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
+import { validateReferenceImages, compressImage, canDecodeAsImage, REF_IMAGE_CONFIG } from "../utils/imageValidation";
 import { formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 
 const isReturnedOrder = (order) => {
@@ -481,16 +482,28 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                 file: form.design_preview,
               });
               if (previewUrl) uploadedUrls.push({ bucket: "order-previews", url: previewUrl });
-            } catch {
+            } catch (err) {
+              console.error("Preview upload failed:", err);
               await cleanupUploadedUrls();
-              throw new Error("Error al subir la imagen de previsualización. Intenta con un archivo más pequeño.");
+              const msg = err?.message || "";
+              if (/mime type/i.test(msg)) {
+                throw new Error("Formato de imagen no soportado para la previsualización. Usa JPG, PNG, WebP, SVG o PDF.");
+              }
+              if (/size|grande|large/i.test(msg)) {
+                throw new Error("La imagen de previsualización es demasiado grande. Máximo 10MB.");
+              }
+              throw new Error("Error al subir la imagen de previsualización. Verifica el formato y el tamaño.");
             }
           }
 
           if (form.reference_images.length > 0) {
             try {
+              const validation = validateReferenceImages(form.reference_images);
+              if (!validation.valid) {
+                throw new Error(validation.errors.join(". "));
+              }
               for (let i = 0; i < form.reference_images.length; i++) {
-                const file = form.reference_images[i];
+                const file = await compressImage(form.reference_images[i]);
                 const fileName = buildStorageSafeFileName(file, `ref-${i}-`);
                 const publicUrl = await uploadOrderAsset({
                   bucket: "order-docs",
@@ -752,7 +765,14 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                       accept="image/*"
                       onChange={e => {
                         if (e.target.files && e.target.files[0]) {
-                          set("design_preview", e.target.files[0]);
+                          const file = e.target.files[0];
+                          if (!REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES.includes(file.type)) {
+                            setFieldErrors(prev => ({ ...prev, design_preview: "Formato no soportado. Usa JPG, PNG, WebP, SVG o PDF." }));
+                            e.target.value = "";
+                            return;
+                          }
+                          setFieldErrors(prev => ({ ...prev, design_preview: "" }));
+                          set("design_preview", file);
                         }
                       }}
                       style={{ display: "none" }}
@@ -818,9 +838,27 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                 type="file"
                 multiple
                 accept="image/*"
-                onChange={e => {
-                  const files = Array.from(e.target.files);
-                  set("reference_images", [...form.reference_images, ...files]);
+                onChange={async e => {
+                  const rawFiles = Array.from(e.target.files);
+                  const validFiles = [];
+                  const errors = [];
+                  for (const file of rawFiles) {
+                    const result = await canDecodeAsImage(file);
+                    if (result.valid) {
+                      validFiles.push(file);
+                    } else {
+                      errors.push(`"${file.name}": ${result.error}`);
+                    }
+                  }
+                  const combined = [...form.reference_images, ...validFiles];
+                  const validation = validateReferenceImages(combined);
+                  if (!validation.valid) {
+                    setFieldErrors(prev => ({ ...prev, reference_images: [...errors, ...validation.errors].join(". ") }));
+                    e.target.value = "";
+                    return;
+                  }
+                  setFieldErrors(prev => ({ ...prev, reference_images: errors.length > 0 ? errors.join(". ") : "" }));
+                  set("reference_images", combined);
                   e.target.value = "";
                 }}
                 style={{ display: "none" }}
@@ -829,8 +867,11 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
               <div className="ps-upload-btn-wrapper">
                 <span className="ps-upload-btn-text">Subir imágenes</span>
               </div>
-              <span className="ps-upload-hint">Imágenes de referencia (JPG, PNG...)</span>
+              <span className="ps-upload-hint">Imágenes de referencia (Máx 3, 20MB c/u. Soporta JPG, PNG, WebP, HEIC y más)</span>
             </div>
+            {fieldErrors?.reference_images && (
+              <div className="ps-field-error">{fieldErrors.reference_images}</div>
+            )}
             {form.reference_images.length > 0 && (
               <div className="ps-files-list">
                 {form.reference_images.map((file, i) => (
@@ -972,7 +1013,14 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
 
   const handleAddNewPreview = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setNewPreview(e.target.files[0]);
+      const file = e.target.files[0];
+      if (!REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES.includes(file.type)) {
+        setFieldErrors(prev => ({ ...prev, design_preview: "Formato no soportado. Usa JPG, PNG, WebP, SVG o PDF." }));
+        e.target.value = "";
+        return;
+      }
+      setFieldErrors(prev => ({ ...prev, design_preview: "" }));
+      setNewPreview(file);
       e.target.value = "";
     }
   };
@@ -1062,9 +1110,21 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
 
     let refImageUrls = [...existingRefImages];
     if (newRefImages.length > 0) {
+      const totalCount = existingRefImages.length + newRefImages.length;
+      if (totalCount > REF_IMAGE_CONFIG.MAX_COUNT) {
+        setLoading(false);
+        setError(`Solo se permiten hasta ${REF_IMAGE_CONFIG.MAX_COUNT} imágenes de referencia por orden.`);
+        return;
+      }
+      const validation = validateReferenceImages(newRefImages);
+      if (!validation.valid) {
+        setLoading(false);
+        setError(validation.errors.join(". "));
+        return;
+      }
       try {
         for (let i = 0; i < newRefImages.length; i++) {
-          const file = newRefImages[i];
+          const file = await compressImage(newRefImages[i]);
           const fileName = buildStorageSafeFileName(file, `ref-${i}-`);
           const publicUrl = await uploadOrderAsset({
             bucket: "order-docs",
@@ -1329,9 +1389,32 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
                 type="file"
                 multiple
                 accept="image/*"
-                onChange={e => {
-                  const files = Array.from(e.target.files);
-                  setNewRefImages([...newRefImages, ...files]);
+                onChange={async e => {
+                  const rawFiles = Array.from(e.target.files);
+                  const validFiles = [];
+                  const errors = [];
+                  for (const file of rawFiles) {
+                    const result = await canDecodeAsImage(file);
+                    if (result.valid) {
+                      validFiles.push(file);
+                    } else {
+                      errors.push(`"${file.name}": ${result.error}`);
+                    }
+                  }
+                  const totalCount = existingRefImages.length + newRefImages.length + validFiles.length;
+                  if (totalCount > REF_IMAGE_CONFIG.MAX_COUNT) {
+                    const remaining = REF_IMAGE_CONFIG.MAX_COUNT - (existingRefImages.length + newRefImages.length);
+                    if (remaining <= 0) {
+                      setError(`Ya tienes ${REF_IMAGE_CONFIG.MAX_COUNT} imágenes. Elimina una antes de agregar otra.`);
+                      e.target.value = "";
+                      return;
+                    }
+                    setError(`Solo puedes agregar ${remaining} imagen(es) más (máx ${REF_IMAGE_CONFIG.MAX_COUNT} en total).`);
+                    e.target.value = "";
+                    return;
+                  }
+                  setError(errors.length > 0 ? errors.join(". ") : "");
+                  setNewRefImages([...newRefImages, ...validFiles]);
                   e.target.value = "";
                 }}
                 style={{ display: "none" }}
@@ -1340,7 +1423,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
               <div className="ps-upload-btn-wrapper">
                 <span className="ps-upload-btn-text">Subir imágenes</span>
               </div>
-              <span className="ps-upload-hint">Imágenes de referencia (JPG, PNG...)</span>
+              <span className="ps-upload-hint">Imágenes de referencia (Máx 3, 20MB c/u. Soporta JPG, PNG, WebP, HEIC y más)</span>
             </div>
           </Field>
         </div>
