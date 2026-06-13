@@ -62,6 +62,12 @@ Notas:
 4. Aplicar migracion en Supabase
 --------------------------------
 
+ESTO NO SE DEBE OLVIDAR.
+
+Cuando se vaya a activar Cloudflare R2, esta migracion debe aplicarse en la
+base de datos de Supabase. Si no se aplica, R2 no quedara correctamente
+integrado con las ordenes, la auditoria ni la limpieza automatica.
+
 Aplicar la migracion:
 
 supabase/20260613_order_files_storage_gateway.sql
@@ -73,6 +79,12 @@ Esta migracion crea:
 - Relacion opcional order_production_files.order_file_id.
 - Indices y politicas RLS.
 - Correccion del bucket order-docs a 200 MB.
+
+Nota:
+
+- Si R2 no se va a usar todavia, esta migracion puede esperar.
+- Cuando se decida activar R2, debe aplicarse antes de cambiar
+  STORAGE_PROVIDER a "hybrid".
 
 
 5. Desplegar Edge Function actualizada
@@ -136,4 +148,3 @@ Para ordenes de prueba, usar siempre el flujo seguro desde Admin o el endpoint:
 POST /api/admin-delete-order
 
 Ese flujo borra primero los archivos y despues la orden.
-
