@@ -449,7 +449,7 @@ export default function PageDelivery() {
           ...Object.fromEntries(data.map(p => [p.id, p.name || "Vendedor"]))
         }));
       });
-  }, [orders]);
+  }, [orders, sellerDirectory]);
 
   useEffect(() => {
     if (!user?.id) return;

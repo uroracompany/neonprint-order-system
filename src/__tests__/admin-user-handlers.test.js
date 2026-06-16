@@ -395,6 +395,29 @@ const makeAdminSetStatusClient = ({
   };
 };
 
+const makeAdminUtilityClient = ({
+  email = "ana@example.com",
+  getUserByIdError = null,
+  updateUserError = null,
+} = {}) => {
+  const getUserById = vi.fn(async (id) => ({
+    data: getUserByIdError ? null : { user: { id, email } },
+    error: getUserByIdError,
+  }));
+  const updateUserById = vi.fn(async () => ({ error: updateUserError }));
+
+  return {
+    auth: {
+      admin: {
+        getUserById,
+        updateUserById,
+      },
+    },
+    getUserById,
+    updateUserById,
+  };
+};
+
 describe("requireAdmin", () => {
   let requireAdmin;
 
@@ -449,6 +472,21 @@ describe("requireAdmin", () => {
     expect(result.authorized).toBe(false);
     expect(result.status).toBe(503);
     expect(result.error).toMatch(/Supabase Auth/);
+  });
+
+  it("does not accept VITE_SUPABASE_URL as the server admin URL", async () => {
+    currentClient = makeAdminListClient();
+    const publicOnlyEnv = {
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      VITE_SUPABASE_ANON_KEY: "anon-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+    };
+
+    const result = await requireAdmin(makeAdminToken(), publicOnlyEnv);
+
+    expect(result.authorized).toBe(false);
+    expect(result.status).toBe(500);
+    expect(currentClient.getUser).not.toHaveBeenCalled();
   });
 });
 
@@ -629,6 +667,20 @@ describe("handleAdminUpdateUser", () => {
 
     expect(result.status).toBe(500);
     expect(result.body.error).toMatch(/SUPABASE_URL/);
+  });
+
+  it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
+    currentClient = makeAdminUpdateClient();
+
+    const result = await handleAdminUpdateUser(validPayload, {
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+      authHeader: makeAdminToken(),
+    });
+
+    expect(result.status).toBe(500);
+    expect(result.body.error).toMatch(/SUPABASE_URL/);
+    expect(currentClient.getUser).not.toHaveBeenCalled();
   });
 });
 
@@ -896,5 +948,74 @@ describe("handleAdminSetUserStatus", () => {
 
     expect(result.status).toBe(400);
     expect(currentClient.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleGetUserEmail", () => {
+  let handleGetUserEmail;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleGetUserEmail } = await import("../../server/get-user-email-handler.js"));
+  });
+
+  it("reads a user email with server-only Supabase credentials", async () => {
+    currentClient = makeAdminUtilityClient({ email: "ana@example.com" });
+
+    const result = await handleGetUserEmail({ userId: "user-1" }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.email).toBe("ana@example.com");
+    expect(currentClient.getUserById).toHaveBeenCalledWith("user-1");
+  });
+
+  it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleGetUserEmail({ userId: "user-1" }, {
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+    });
+
+    expect(result.status).toBe(500);
+    expect(result.body.error).toMatch(/SUPABASE_URL/);
+    expect(currentClient.getUserById).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleChangeUserPassword", () => {
+  let handleChangeUserPassword;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleChangeUserPassword } = await import("../../server/change-user-password-handler.js"));
+  });
+
+  it("updates a password with server-only Supabase credentials", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleChangeUserPassword({
+      userId: "user-1",
+      newPassword: "secret1",
+    }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.updateUserById).toHaveBeenCalledWith("user-1", { password: "secret1" });
+  });
+
+  it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleChangeUserPassword({
+      userId: "user-1",
+      newPassword: "secret1",
+    }, {
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+    });
+
+    expect(result.status).toBe(500);
+    expect(result.body.error).toMatch(/SUPABASE_URL/);
+    expect(currentClient.updateUserById).not.toHaveBeenCalled();
   });
 });

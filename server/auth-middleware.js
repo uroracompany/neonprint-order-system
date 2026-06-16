@@ -78,7 +78,7 @@ export async function verifyAdmin(token, supabaseUrl, _anonKey, serviceRoleKey =
 export async function requireAdmin(authHeader = "", env = process.env) {
   return verifyAdmin(
     authHeader,
-    env.SUPABASE_URL || env.VITE_SUPABASE_URL,
+    env.SUPABASE_URL,
     env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY,
     env.SUPABASE_SERVICE_ROLE_KEY,
     env

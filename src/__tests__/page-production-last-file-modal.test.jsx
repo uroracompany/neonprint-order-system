@@ -136,7 +136,12 @@ describe("Production last pending file confirmation", () => {
     await waitFor(() => {
       expect(screen.getByText(/Finalizar orden/i)).toBeInTheDocument();
     });
-    expect(supabase.rpc).toHaveBeenCalledTimes(3);
+    expect(
+      supabase.rpc.mock.calls.filter(([fnName]) => fnName === "will_complete_production_order")
+    ).toHaveLength(2);
+    expect(
+      supabase.rpc.mock.calls.filter(([fnName]) => fnName === "update_production_file_status")
+    ).toHaveLength(1);
 
     fireEvent.click(screen.getByText("Confirmar y completar orden"));
 

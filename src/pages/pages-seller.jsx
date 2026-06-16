@@ -7,7 +7,6 @@ import { Icons } from "../utils/icons";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import {
   canArchiveOrder,
-  canRestoreOrder,
   archiveOrder,
 } from "../utils/archive";
 import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";

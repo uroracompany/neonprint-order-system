@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-designer.css";
@@ -8,7 +8,6 @@ import { AssignModal } from "../components/ui/AssignModal";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import {
   canArchiveOrder,
-  canRestoreOrder,
   archiveOrder,
 } from "../utils/archive";
 import { ORDER_STATUS, PRODUCTION_AREAS, isOrderStatus, isOrderStatusIn, ARCHIVE_MODULES } from "../utils/constants";

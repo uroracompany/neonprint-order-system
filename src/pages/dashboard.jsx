@@ -33,14 +33,11 @@ import {
   serializeFileUrls,
   getFileNameFromUrl,
   resolveSellerId,
-  isAdminArchivable,
   ARCHIVE_MODULES,
 } from "../utils/constants";
 import {
   canArchiveOrder,
-  canRestoreOrder,
   archiveOrder,
-  restoreOrder,
 } from "../utils/archive";
 import { getReferenceImages } from "../utils/orderAssets";
 import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
@@ -193,7 +190,7 @@ function OrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit
 
 
 // Modal de detalles de orden para admin
-function AdminOrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel, onAssign, onArchive, onDelete }) {
+function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit, onCancel, onAssign, onArchive, onDelete }) {
   const [paymentInvoiceUrl, setPaymentInvoiceUrl] = useState("");
 
   useEffect(() => {
@@ -705,7 +702,7 @@ onMouseEnter={e => {
               <Icons.Edit />Editar
             </button>
           </div>
-          {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, user?.id) && (
+          {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, userId) && (
             <button className="pa-btn" style={{ width: "100%", marginTop: 8, background: "#F59E0B", color: "#fff", border: "none" }} onClick={() => onArchive(order)}>
               <Icons.Archive />Archivar orden
             </button>
@@ -3095,6 +3092,7 @@ export default function Dashboard() {
         open={!!selectedOrder}
         order={selectedOrder}
         usersById={usersById}
+        userId={user?.id}
         onClose={() => setSelectedOrder(null)}
         onEdit={openEditOrder}
         onCancel={openCancelModal}

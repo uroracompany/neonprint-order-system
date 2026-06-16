@@ -23,7 +23,7 @@ export function getEnvValue(env, key, fallback) {
 }
 
 export function getSupabaseAdminEnv(env) {
-  const supabaseUrl = getEnvValue(env, "SUPABASE_URL", "VITE_SUPABASE_URL");
+  const supabaseUrl = getEnvValue(env, "SUPABASE_URL");
   const serviceRoleKey = getEnvValue(env, "SUPABASE_SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !serviceRoleKey) {

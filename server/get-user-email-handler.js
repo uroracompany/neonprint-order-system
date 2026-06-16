@@ -1,18 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
-
-function jsonResponse(status, body) {
-  return { status, body };
-}
+import { getSupabaseAdminEnv, jsonResponse } from "./admin-user-utils.js";
 
 export async function handleGetUserEmail(payload, env = {}) {
-  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
-  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(500, {
-      error: "Configuración de Supabase incompleta.",
-    });
-  }
+  const envResult = getSupabaseAdminEnv(env);
+  if (envResult.error) return envResult.error;
+  const { supabaseUrl, serviceRoleKey } = envResult;
 
   const userId = payload?.userId;
   if (!userId) {
