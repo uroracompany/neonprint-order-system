@@ -1,6 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+
 /* ── BELL BUTTON ── */
 .nc-bell-wrap {
   position: relative;
+  font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 /* Boton de notifcaciones */
@@ -12,6 +15,7 @@
   color: var(--text-sub, #8899b5);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; position: relative;
+  font: inherit;
   transition: all 0.2s;
 }
 
@@ -59,6 +63,7 @@
 .nc-link-btn {
   background: none; border: none;
   color: var(--primary, #06b6d4);
+  font: inherit;
   font-size: 12px; font-weight: 600;
   cursor: pointer; padding: 6px 10px;
   border-radius: 6px;
@@ -159,6 +164,7 @@
   background: transparent;
   color: var(--text-muted, #64748b);
   cursor: pointer;
+  font: inherit;
   display: flex; align-items: center; justify-content: center;
   transition: all 0.15s;
 }
@@ -174,9 +180,11 @@
 /* ── TOAST STACK ── */
 .nc-toast-stack {
   position: fixed; top: 96px; right: 24px;
-  z-index: 9999;
+  /* Must stay above app modals that use z-index: 9999. */
+  z-index: 2147483647;
   display: flex; flex-direction: column; gap: 12px;
   width: min(360px, calc(100vw - 32px));
+  font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   pointer-events: none;
 }
 .nc-toast {
@@ -186,7 +194,7 @@
   border-radius: 14px;
   overflow: hidden;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
-  animation: nc-slide-in 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: nc-slide-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
   --nc-accent: #8b5cf6;
 }
 .nc-toast.new       { --nc-accent: #8b5cf6; }
@@ -236,6 +244,7 @@
   border: none; background: transparent;
   color: var(--text-muted, #64748b);
   cursor: pointer;
+  font: inherit;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
   transition: all 0.15s;
@@ -256,8 +265,8 @@
 }
 
 @keyframes nc-slide-in {
-  from { opacity: 0; transform: translateX(40px) scale(0.97); }
-  to   { opacity: 1; transform: translateX(0) scale(1); }
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* ── RESPONSIVE ── */

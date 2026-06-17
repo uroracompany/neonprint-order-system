@@ -1480,47 +1480,82 @@
   }
 }
 
+.pp-modal-compact {
+  max-width: 600px;
+}
 .pp-modal-compact .pp-modal-body {
-  padding: 8px 20px 16px;
+  padding: 6px 24px 18px;
 }
 .pp-modal-compact .pp-modal-header {
   padding: 16px 24px 12px;
 }
 .pp-modal-compact .pp-modal-footer {
-  padding: 12px 24px;
+  padding: 14px 24px;
   gap: 12px;
 }
 .pp-modal-compact .pp-modal-title h3 {
-  font-size: 16px;
+  font-size: 15px;
 }
 .pp-confirm-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #F59E0B, #F97316);
+  background: linear-gradient(135deg, #10B981, #059669);
   color: #fff;
   margin: 0 auto 10px;
-  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.3);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+  flex-shrink: 0;
 }
 .pp-confirm-body {
   display: flex;
   flex-direction: column;
-  padding: 4px 0;
+  align-items: center;
+  text-align: center;
+  padding: 6px 2px 0;
 }
 .pp-confirm-text-em {
   font-size: 14px;
-  line-height: 1.6;
-  color: #1e293b;
+  line-height: 1.5;
+  color: #0f1e40;
+  margin: 0;
+  font-weight: 600;
+}
+.pp-confirm-text-em strong {
+  font-weight: 700;
+}
+.pp-confirm-alert-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-left: 2px solid #10B981;
+  padding: 8px 0 8px 12px;
+  margin: 10px 0;
+  text-align: left;
+  width: 100%;
+}
+.pp-confirm-alert-box svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #059669;
+}
+.pp-confirm-alert-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #374151;
   margin: 0;
 }
+.pp-confirm-alert-text strong {
+  font-weight: 700;
+}
 .pp-confirm-text {
-  font-size: 14px;
-  line-height: 1.6;
-  color: #475569;
-  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #6b7280;
+  margin: 0 0 2px;
+  font-weight: 500;
 }
 .pp-confirm-text strong {
   font-weight: 700;

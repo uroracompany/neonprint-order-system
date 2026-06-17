@@ -655,14 +655,17 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus,
           </div>
           <div className="pp-modal-body">
             <div className="pp-confirm-body">
-              <div className="pp-confirm-icon"><Icons.Check size={28} /></div>
+              <div className="pp-confirm-icon"><Icons.CheckCircle size={28} /></div>
               <p className="pp-confirm-text-em">
                 Estás a punto de completar el <strong>último archivo pendiente</strong> de esta orden.
               </p>
+              <div className="pp-confirm-alert-box">
+                <Icons.AlertCircle size={16} />
+                <p className="pp-confirm-alert-text">
+                  Al marcar este archivo como completado, la orden de producción cambiará automáticamente a estado <strong>Completada</strong>.
+                </p>
+              </div>
               <p className="pp-confirm-text">
-                Al marcar este archivo como completado, la orden de producción cambiará automáticamente a estado <strong>Completada</strong>.
-              </p>
-              <p className="pp-confirm-text" style={{ marginTop: 14 }}>
                 ¿Deseas continuar?
               </p>
             </div>
@@ -671,7 +674,7 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus,
             <button className="pp-btn pp-btn-secondary" onClick={() => setShowLastFileConfirm(false)}>
               Cancelar
             </button>
-            <button className="pp-btn pp-btn-primary" onClick={handleConfirmLastFile} disabled={updating}>
+            <button className="pp-btn pp-btn-success" onClick={handleConfirmLastFile} disabled={updating}>
               {updating ? (
                 <><span className="pp-btn-spinner" /> Completando...</>
               ) : (

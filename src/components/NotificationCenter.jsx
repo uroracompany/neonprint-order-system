@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Icons } from "../utils/icons";
 import { formatDate, formatUiTerms } from "../utils/constants";
 import "./NotificationCenter.css";
@@ -86,6 +87,14 @@ export default function NotificationCenter({
   }, []);
 
   const activeNotifications = notifications.filter((n) => !n.is_archived && !n.deleted_at);
+  const toastRoot = typeof document !== "undefined" ? document.body : null;
+  const toastStack = toasts.length > 0 && (
+    <div className="nc-toast-stack">
+      {toasts.map((n) => (
+        <NotificationToast key={n.id} notification={n} onDismiss={onDismissToast} />
+      ))}
+    </div>
+  );
 
   return (
     <>
@@ -152,13 +161,7 @@ export default function NotificationCenter({
         )}
       </div>
 
-      {toasts.length > 0 && (
-        <div className="nc-toast-stack">
-          {toasts.map((n) => (
-            <NotificationToast key={n.id} notification={n} onDismiss={onDismissToast} />
-          ))}
-        </div>
-      )}
+      {toastRoot && toastStack ? createPortal(toastStack, toastRoot) : null}
     </>
   );
 }
