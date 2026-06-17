@@ -125,6 +125,7 @@ export function ClientSelect({
   className = "",
   disabled = false,
   minSearchLength = 1,
+  onAddNewClient,
 }) {
   const listboxId = useId();
   const ref = useRef(null);
@@ -217,6 +218,25 @@ export function ClientSelect({
               autoFocus
             />
           </div>
+
+          {onAddNewClient && (
+            <button
+              type="button"
+              className="client-lookup-add-new"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setOpen(false);
+                setQuery("");
+                onAddNewClient();
+              }}
+            >
+              <span className="client-lookup-add-new-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+              Agregar nuevo cliente
+            </button>
+          )}
+
+          {onAddNewClient && <div className="client-lookup-divider" />}
 
           {isLoading ? (
             <ClientLookupState loading>{loadingText}</ClientLookupState>

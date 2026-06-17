@@ -2308,7 +2308,11 @@ export default function Dashboard() {
       setClientForm(DEFAULT_CLIENT_FORM);
       setClientFormErrors({});
       await fetchClients();
-      showFeedback("success", editingClient ? "Cliente actualizado correctamente." : "Cliente creado correctamente.");
+      notif.showActionNotification({
+        type: "success",
+        title: editingClient ? "Cliente actualizado" : "Cliente registrado",
+        message: `Cliente "${clientForm.name.trim()}" ${editingClient ? "actualizado" : "creado"} correctamente.`,
+      });
     } catch (err) {
       setClientFormError(err.message || "No se pudo guardar el cliente.");
     } finally {

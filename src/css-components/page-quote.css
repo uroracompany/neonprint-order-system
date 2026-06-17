@@ -186,6 +186,29 @@
   gap: 12px;
 }
 
+/* Boton para agregar nuevo cliente */
+.pq-header-client-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 1.5px solid var(--pq-border);
+  border-radius: var(--pq-radius-sm);
+  background: var(--pq-surface-alt);
+  color: var(--pq-text);
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.pq-header-client-btn:hover {
+  border-color: var(--pq-primary);
+  background: var(--pq-primary-light);
+  color: var(--pq-primary);
+}
+
 /* Campana y panel de notificaciones */
 .pq-bell-wrap {
   position: relative;

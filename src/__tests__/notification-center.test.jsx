@@ -31,6 +31,13 @@ const notifications = [
   },
 ];
 
+const variantToasts = [
+  { id: "variant-success", type: "info", title: "Success variant", message: "Cliente registrado.", metadata: { variant: "success" } },
+  { id: "variant-error", type: "info", title: "Error variant", message: "Error controlado.", metadata: { variant: "error" } },
+  { id: "variant-warning", type: "info", title: "Warning variant", message: "Advertencia controlada.", metadata: { variant: "warning" } },
+  { id: "variant-info", type: "info", title: "Info variant", message: "Info controlada.", metadata: { variant: "info" } },
+];
+
 describe("NotificationCenter", () => {
   afterEach(() => {
     cleanup();
@@ -79,5 +86,20 @@ describe("NotificationCenter", () => {
     expect(getComputedStyle(document.querySelector(".nc-panel")).fontFamily).toContain("Poppins");
     expect(getComputedStyle(document.querySelector(".nc-item")).fontFamily).toContain("Poppins");
     expect(getComputedStyle(document.querySelector(".nc-link-btn")).fontFamily).toContain("Poppins");
+  });
+
+  it("maps generic metadata variants to the expected toast visual classes", () => {
+    render(
+      <NotificationCenter
+        {...baseProps}
+        toasts={variantToasts}
+        onDismissToast={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Success variant").closest(".nc-toast")).toHaveClass("completed");
+    expect(screen.getByText("Error variant").closest(".nc-toast")).toHaveClass("cancelled");
+    expect(screen.getByText("Warning variant").closest(".nc-toast")).toHaveClass("returned");
+    expect(screen.getByText("Info variant").closest(".nc-toast")).toHaveClass("info");
   });
 });

@@ -197,3 +197,40 @@
 .client-filter-select {
   min-width: 180px;
 }
+
+.client-lookup-divider {
+  height: 1px;
+  margin: 4px 10px;
+  background: #edf2f8;
+}
+
+.client-lookup-add-new {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--primary, #091127);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Poppins', sans-serif;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.client-lookup-add-new:hover {
+  background: var(--surface-alt, #f0f2f7);
+}
+.client-lookup-add-new-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: rgba(9, 17, 39, 0.08);
+  color: #091127;
+}

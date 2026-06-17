@@ -9,6 +9,7 @@ import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import FileUploadZone from "../components/ui/FileUploadZone";
+import CreateClientModal from "../components/ui/CreateClientModal";
 import {
   ORDER_STATUS,
   PRODUCTION_AREAS,
@@ -757,6 +758,7 @@ export default function PageQuote() {
   const [filterClient, setFilterClient] = useState("all"); // Filtro por cliente registrado
   const [filterArchive, setFilterArchive] = useState("active"); // Mostrar activas o archivadas
   const [clients, setClients] = useState([]);
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
   
   // Directorio de vendedores (cache para no hacer múltiples queries)
   const [sellerDirectory, setSellerDirectory] = useState({});
@@ -794,6 +796,18 @@ export default function PageQuote() {
     fetchOrdersRef.current = fetchOrders;
   });
 
+  const handleNewClientCreated = (newClient) => {
+    setClients(prev => {
+      const exists = prev.some(c => c.id === newClient.id);
+      return exists ? prev : [...prev, newClient].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    });
+    notif.showActionNotification({
+      type: "info",
+      title: "Cliente registrado",
+      message: `Cliente "${newClient.name}" registrado correctamente.`,
+      metadata: { event_kind: "client_created", client_id: newClient.id, variant: "success" },
+    });
+  };
 
   // ============= EFECTO 2: SUSCRIPCIÓN EN TIEMPO REAL Y REFRESCO =============
   // Se ejecuta cuando el user cambia
@@ -1316,7 +1330,7 @@ export default function PageQuote() {
               <Icons.Menu />
             </button>
             <div>
-              <span className="pq-header-kicker">Caja</span>
+              
               {/* Nombre del apartado de la pantalla */}
               <h1 className="pq-header-title">
                 {activeTab === "dashboard" ? "Panel de Caja" : "Mis órdenes de caja"}
@@ -1325,6 +1339,9 @@ export default function PageQuote() {
           </div>
 
           <div className="pq-header-actions">
+            <button className="pq-header-client-btn" onClick={() => setShowNewClientModal(true)} title="Agregar nuevo cliente">
+              <Icons.Plus /> Nuevo Cliente
+            </button>
             <NotificationCenter
               notifications={notif.notifications}
               unreadCount={notif.unreadCount}
@@ -1431,6 +1448,8 @@ export default function PageQuote() {
                 allLabel="Todos los clientes"
               />
 
+
+
               <select className="pq-input" value={filterArchive} onChange={event => setFilterArchive(event.target.value)}>
                 <option value="active">Activas</option>
                 <option value="archived">Archivadas</option>
@@ -1532,6 +1551,14 @@ export default function PageQuote() {
         onConfirm={handleConfirmSendToProduction}
         order={forwardToProductionOrder}
         loading={productionSaving}
+      />
+
+      <CreateClientModal
+        open={showNewClientModal}
+        onClose={() => setShowNewClientModal(false)}
+        onCreated={handleNewClientCreated}
+        supabase={supabase}
+        userId={user?.id}
       />
 
     </div>

@@ -12,6 +12,7 @@ import { supabase } from "../../supabaseClient";
 // Constantes de configuración
 const NOTIFICATION_DURATION = 5000; // Toast desaparece después de 5 segundos
 const MAX_TOASTS = 3; // Máximo de toasts visibles simultáneamente
+const LOCAL_TOAST_PREFIX = "local-toast";
 
 const getNotificationEventKind = (notification) =>
   notification?.metadata?.event_kind || "";
@@ -44,6 +45,7 @@ export default function useNotifications(userId) {
   // Referencias para limpiar timeouts de toasts
   const notificationsRef = useRef([]);
   const toastTimeouts = useRef({});
+  const localToastCounter = useRef(0);
   // Referencia al canal de Supabase para suscripción en tiempo real
   const channelRef = useRef(null);
 
@@ -70,7 +72,7 @@ export default function useNotifications(userId) {
     if (toastTimeouts.current[toastId]) return;
 
     setToasts((prev) => {
-      if (prev.some((t) => t.id === notification.id)) return prev;
+      if (prev.some((t) => t.id === notification.id || sameNotificationFingerprint(t, notification))) return prev;
       return [notification, ...prev].slice(0, MAX_TOASTS);
     });
 
@@ -151,19 +153,7 @@ export default function useNotifications(userId) {
             return [newNotif, ...prev].slice(0, 50);
           });
 
-          // Mostrar toast flotante (máximo 3)
-          const toastId = `${newNotif.id}-toast`;
-          if (!toastTimeouts.current[toastId]) {
-            setToasts((prev) => {
-              if (prev.some(t => t.id === newNotif.id)) return prev;
-              return [newNotif, ...prev].slice(0, MAX_TOASTS);
-            });
-            
-            // Auto-cerrar el toast después de 5 segundos
-            toastTimeouts.current[toastId] = setTimeout(() => {
-              dismissToast(newNotif.id);
-            }, NOTIFICATION_DURATION);
-          }
+          enqueueToast(newNotif);
         }
       )
       .on(
@@ -213,7 +203,7 @@ export default function useNotifications(userId) {
       Object.values(toastTimeouts.current).forEach(clearTimeout);
       toastTimeouts.current = {};
     };
-  }, [userId, dismissToast]);
+  }, [userId, enqueueToast]);
 
   const createNotification = useCallback(
     async ({ type, title, message, orderId = null, metadata = {} }) => {
@@ -248,7 +238,7 @@ export default function useNotifications(userId) {
       }
 
       setNotifications((prev) => {
-        if (prev.some((n) => n.id === notification.id)) return prev;
+        if (prev.some((n) => n.id === notification.id || sameNotificationFingerprint(n, notification))) return prev;
         return [notification, ...prev].slice(0, 50);
       });
 
@@ -306,27 +296,35 @@ export default function useNotifications(userId) {
 
   const showActionNotification = useCallback(
     async ({ type = "info", title, label, message, orderId = null, orderTitle = null, metadata = {} }) => {
+      const resolvedTitle = title || label || message;
+      const resolvedMetadata = { ...metadata, order_title: orderTitle || null };
+      localToastCounter.current += 1;
+      const optimisticNotification = {
+        id: `${LOCAL_TOAST_PREFIX}-${Date.now()}-${localToastCounter.current}`,
+        user_id: userId || null,
+        type,
+        title: resolvedTitle,
+        message,
+        order_id: orderId,
+        metadata: resolvedMetadata,
+        created_at: new Date().toISOString(),
+        is_read: true,
+        is_archived: false,
+        deleted_at: null,
+      };
+
+      enqueueToast(optimisticNotification);
+
       const notification = await createNotification({
         type,
-        title: title || label || message,
+        title: resolvedTitle,
         message,
         orderId,
-        metadata: { ...metadata, order_title: orderTitle || null },
+        metadata: resolvedMetadata,
       });
-      if (notification) {
-        const toastId = `${notification.id}-toast`;
-        if (!toastTimeouts.current[toastId]) {
-          setToasts((prev) => {
-            if (prev.some((t) => t.id === notification.id)) return prev;
-            return [notification, ...prev].slice(0, MAX_TOASTS);
-          });
-          toastTimeouts.current[toastId] = setTimeout(() => {
-            dismissToast(notification.id);
-          }, NOTIFICATION_DURATION);
-        }
-      }
+      if (notification) enqueueToast(notification);
     },
-    [createNotification, dismissToast]
+    [createNotification, enqueueToast, userId]
   );
 
   return {

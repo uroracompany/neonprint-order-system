@@ -5,6 +5,7 @@ import "../css-components/page-seller.css";
 import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import CreateClientModal from "../components/ui/CreateClientModal";
 import {
   canArchiveOrder,
   archiveOrder,
@@ -283,7 +284,7 @@ const EMPTY_FORM = {
   reference_images: [], // imágenes de referencia (opcional)
 };
 
-function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, clients = [], clientsLoading = false, onClientSearch }) {
+function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, clients = [], clientsLoading = false, onClientSearch, onAddNewClient }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
   const refImagesInputRef = useRef(null);
@@ -586,6 +587,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
               value={form.client_id}
               onSelect={applySelectedClient}
               onSearch={onClientSearch}
+              onAddNewClient={onAddNewClient}
               placeholder="Seleccionar cliente registrado"
             />
           </Field>
@@ -1914,6 +1916,7 @@ export default function PageSeller() {
   const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
   const [showCreate, setShowCreate] = useState(false);
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [materialOptions, setMaterialOptions] = useState([]);
@@ -2027,6 +2030,14 @@ export default function PageSeller() {
   }, []);
 
   const handleLogout = async () => { await signOut(); navigate("/"); };
+
+  const handleNewClientCreated = async (newClient) => {
+    setClients(prev => {
+      const exists = prev.some(c => c.id === newClient.id);
+      return exists ? prev : [...prev, newClient].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    });
+    showToast("Cliente creado correctamente.");
+  };
 
   // ── Funcion para cancelar orden ───────────────────────────────────────────────────────
   const handleCancelOrder = (order) => {
@@ -2350,6 +2361,16 @@ export default function PageSeller() {
           </div>
           <div className="ps-topbar-right">
             <button className="ps-icon-btn" onClick={() => fetchOrders(user?.id)}><Icons.Refresh /></button>
+            <div className="ps-topbar-divider" />
+            {/* Boton para agregar  registrar Nuevo Cliente */}
+            <button className="ps-topbar-client-btn" onClick={() => setShowNewClientModal(true)}>
+              <div className="ps-topbar-client-inner"><Icons.Plus /> Nuevo Cliente</div>
+            </button>
+            {/* Boton para regitrar Nueva Orden */}
+             <button className="ps-topbar-new-btn" onClick={() => setShowCreate(true)}>
+              <div className="ps-topbar-new-inner"><Icons.Plus /> Nueva Orden</div>
+              <div className="ps-topbar-new-stripe" />
+            </button>
             <NotificationCenter
               notifications={visibleSellerNotifications}
               unreadCount={visibleSellerUnreadCount}
@@ -2360,11 +2381,6 @@ export default function PageSeller() {
               onDelete={notif.deleteNotification}
               onDismissToast={notif.dismissToast}
             />
-            <div className="ps-topbar-divider" />
-            <button className="ps-topbar-new-btn" onClick={() => setShowCreate(true)}>
-              <div className="ps-topbar-new-inner"><Icons.Plus /> Nueva Orden</div>
-              <div className="ps-topbar-new-stripe" />
-            </button>
           </div>
         </header>
 
@@ -2693,6 +2709,7 @@ export default function PageSeller() {
         clients={clients}
         clientsLoading={clientsLoading}
         onClientSearch={handleClientSearch}
+        onAddNewClient={() => setShowNewClientModal(true)}
       />
       <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} materialOptions={materialOptions} />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} onSendToQuotation={handleSendToQuotation} />
@@ -2716,6 +2733,14 @@ export default function PageSeller() {
       <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
       <ArchiveOrderModal open={!!archivingOrder} onClose={() => setArchivingOrder(null)} order={archivingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />
       
+      <CreateClientModal
+        open={showNewClientModal}
+        onClose={() => setShowNewClientModal(false)}
+        onCreated={handleNewClientCreated}
+        supabase={supabase}
+        userId={user?.id}
+      />
+
       {toastMsg && (
         <div className="ps-toast">
           <div className="ps-toast-icon">

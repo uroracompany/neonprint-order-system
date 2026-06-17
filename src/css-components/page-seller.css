@@ -306,6 +306,29 @@
   width: 4px; align-self: stretch;
   background: var(--gradient);
 }
+.ps-topbar-client-btn {
+  display: flex; align-items: center;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  cursor: pointer; padding: 0;
+  transition: all 0.15s;
+  box-shadow: var(--shadow-sm);
+}
+.ps-topbar-client-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+.ps-topbar-client-inner {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 16px;
+  color: var(--text);
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600; font-size: 13px;
+}
+.ps-topbar-client-btn:hover .ps-topbar-client-inner {
+  color: var(--primary);
+}
 
 /* ── MAIN CONTENT ──────────────────────────────────────────────── */
 .ps-main-wrap {

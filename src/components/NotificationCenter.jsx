@@ -16,7 +16,15 @@ const TYPE_CONFIG = {
   system:          { label: "Sistema", icon: "system" },
 };
 
-function getTypeClass(type) {
+function getTypeClass(type, variant) {
+  const variantMap = {
+    success: "completed",
+    error: "cancelled",
+    warning: "returned",
+    info: "info",
+  };
+  if (variantMap[variant]) return variantMap[variant];
+
   const map = {
     new_order: "new", order_cancelled: "cancelled", order_returned: "returned",
     order_updated: "updated", order_archived: "archived", order_completed: "completed",
@@ -40,7 +48,7 @@ function NotificationToast({ notification, onDismiss }) {
     return () => clearInterval(interval);
   }, []);
 
-  const typeClass = getTypeClass(notification.type);
+  const typeClass = getTypeClass(notification.type, notification.metadata?.variant);
 
   return (
     <div className={`nc-toast ${typeClass}`} role="alert" aria-live="polite">
