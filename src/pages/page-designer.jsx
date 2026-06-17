@@ -6,6 +6,7 @@ import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
 import { AssignModal } from "../components/ui/AssignModal";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   canArchiveOrder,
   archiveOrder,
@@ -175,7 +176,15 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   const [saveError, setSaveError] = useState(null);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
   const [sellerName, setSellerName] = useState("");
+  const designerPreviewInputRef = useRef(null);
   const referenceImageUrls = getReferenceImages(order);
+  const displayPreview = useMemo(() => (
+    pendingPreview ? URL.createObjectURL(pendingPreview) : (designerPreview || order?.preview_image)
+  ), [designerPreview, order?.preview_image, pendingPreview]);
+
+  useEffect(() => () => {
+    if (displayPreview?.startsWith("blob:")) URL.revokeObjectURL(displayPreview);
+  }, [displayPreview]);
 
   useEffect(() => {
     if (order?.seller_name) {
@@ -210,9 +219,9 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
         : "Esta orden está en modo lectura según su estado actual.";
   const returnedReason = String(order.return_reason || "").trim();
   
-  const handleFileSelect = (e) => {
+  const handleFileSelect = (filesOrEvent, { showError } = {}) => {
     if (!canEditDesignerAssets) return;
-    const files = Array.from(e.target.files);
+    const files = Array.from(filesOrEvent?.target?.files || filesOrEvent || []);
     const acceptedFiles = [];
     const rejectedFiles = [];
 
@@ -230,7 +239,16 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
       setPendingFileAreas(prev => [...prev, ...acceptedFiles.map(() => "")]);
     }
 
-    setSaveError(rejectedFiles.length > 0 ? rejectedFiles.join(" ") : null);
+    if (rejectedFiles.length > 0) {
+      const message = rejectedFiles.join(" ");
+      if (showError) {
+        showError(message);
+      } else {
+        setSaveError(message);
+      }
+    } else {
+      setSaveError(null);
+    }
     setSaveSuccess(false);
     setMissingAreaIndices([]);
     if (rejectedFiles.length > 0) {
@@ -239,22 +257,26 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
         el?.scrollIntoView({ behavior: "smooth", block: "center" });
       });
     }
-    e.target.value = "";
+    if (filesOrEvent?.target) filesOrEvent.target.value = "";
   };
   
-  const handlePreviewSelect = (e) => {
+  const handlePreviewSelect = (filesOrEvent, { showError } = {}) => {
     if (!canEditDesignerAssets) return;
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
+    const file = Array.from(filesOrEvent?.target?.files || filesOrEvent || [])[0];
+    if (file) {
       const sizeError = validateOrderAssetSize({ bucket: DESIGNER_PREVIEW_BUCKET, file });
 
       if (sizeError) {
-        setSaveError(sizeError);
+        if (showError) {
+          showError(sizeError);
+        } else {
+          setSaveError(sizeError);
+        }
         requestAnimationFrame(() => {
-          const el = document.querySelector(".pd-preview-empty, .pd-preview-container");
+          const el = document.querySelector(".file-upload-zone, .pd-preview-container");
           el?.scrollIntoView({ behavior: "smooth", block: "center" });
         });
-        e.target.value = "";
+        if (filesOrEvent?.target) filesOrEvent.target.value = "";
         return;
       }
 
@@ -263,7 +285,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
       setSaveError(null);
       setSaveSuccess(false);
     }
-    e.target.value = "";
+    if (filesOrEvent?.target) filesOrEvent.target.value = "";
   };
   
   const removePendingFile = (index) => {
@@ -399,7 +421,6 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   
   const allFiles = [...(designerFiles || []), ...dbFiles];
   const uniqueFiles = allFiles.filter((f, i, arr) => arr.findIndex(x => x.url === f.url) === i);
-  const displayPreview = pendingPreview ? URL.createObjectURL(pendingPreview) : (designerPreview || order.preview_image);
   const hasPreview = !!displayPreview;
   const canSendToQuotation = canEditDesignerAssets && uniqueFiles.length > 0 && hasPreview && !hasChanges;
   
@@ -549,20 +570,13 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
             )}
             
             {canEditDesignerAssets ? (
-              <div className="pd-upload-area" style={{ position: 'relative', zIndex: 100 }}>
-                <input
-                  type="file"
-                  id="designer-file-upload"
-                  multiple
-                  onChange={handleFileSelect}
-                  style={{ display: "none" }}
-                />
-                <label htmlFor="designer-file-upload" className="pd-upload-btn" style={{ cursor: 'pointer' }}>
-                  <Icons.Upload />
-                  <span>Agregar archivo</span>
-                </label>
-                <span className="pd-upload-hint">Archivos hasta {formatFileSize(getOrderAssetLimit(DESIGNER_FILES_BUCKET))} se guardarán al hacer clic en "Guardar cambios"</span>
-              </div>
+              <FileUploadZone
+                mode="attachment"
+                multiple
+                buttonLabel="Agregar archivo"
+                hint={`Archivos hasta ${formatFileSize(getOrderAssetLimit(DESIGNER_FILES_BUCKET))} se guardarán al hacer clic en "Guardar cambios"`}
+                onFilesAccepted={handleFileSelect}
+              />
             ) : (
               <div className="pd-upload-area pd-upload-area-disabled">
                 <Icons.File />
@@ -627,26 +641,34 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
                       <Icons.Eye />
                     </a>
                     {canEditDesignerAssets && (
-                      <button className="pd-file-action remove" style={{ background: 'white' }} onClick={() => { setPendingPreview(null); setPendingPreviewName(null); setSaveSuccess(false); }}>
-                        <Icons.Trash />
-                      </button>
+                      <>
+                        <FileUploadZone
+                          mode="image"
+                          replaceMode
+                          className="file-upload-zone--hidden-picker"
+                          inputRef={designerPreviewInputRef}
+                          buttonLabel="Cambiar preview"
+                          onFilesAccepted={handlePreviewSelect}
+                        />
+                        <button className="pd-file-action" style={{ background: 'white', color: '#0f172a' }} onClick={() => designerPreviewInputRef.current?.click()}>
+                          <Icons.Edit />
+                        </button>
+                        <button className="pd-file-action remove" style={{ background: 'white' }} onClick={() => { setPendingPreview(null); setPendingPreviewName(null); setSaveSuccess(false); }}>
+                          <Icons.Trash />
+                        </button>
+                      </>
                     )}
                   </div>
                 </>
               ) : (
                 canEditDesignerAssets ? (
-                  <label htmlFor="designer-preview-upload" className="pd-preview-empty">
-                    <input
-                      type="file"
-                      id="designer-preview-upload"
-                      accept="image/*"
-                      onChange={handlePreviewSelect}
-                      style={{ display: "none" }}
-                    />
-                    <Icons.Image />
-                    <span>Subir orden de trabajo (obligatorio)</span>
-                    <small>Max. {formatFileSize(getOrderAssetLimit(DESIGNER_PREVIEW_BUCKET))}</small>
-                  </label>
+                  <FileUploadZone
+                    mode="image"
+                    replaceMode
+                    buttonLabel="Subir orden de trabajo"
+                    hint={`Max. ${formatFileSize(getOrderAssetLimit(DESIGNER_PREVIEW_BUCKET))}`}
+                    onFilesAccepted={handlePreviewSelect}
+                  />
                 ) : (
                   <div className="pd-preview-empty pd-preview-empty-disabled">
                     <Icons.Image />

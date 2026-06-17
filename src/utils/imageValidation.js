@@ -1,3 +1,5 @@
+import { isAllowedImageFile } from "./fileValidation";
+
 /**
  * ============= VALIDACIÓN DE IMÁGENES PARA COMPROBANTES DE PAGO =============
  * 
@@ -77,6 +79,20 @@ export const validateImage = (file) => {
   // Si se dispara 'onerror':
   //   → El navegador NO pudo decodificar (no es imagen válida) ❌
   
+  if (!isAllowedImageFile(file)) {
+    return {
+      isValid: false,
+      error: "Formato no soportado. Usa PNG, JPG, JPEG, WebP, GIF, HEIC o HEIF.",
+    };
+  }
+
+  if (/\.(heic|heif)$/i.test(file.name || "") || ["image/heic", "image/heif"].includes(String(file.type || "").toLowerCase())) {
+    return {
+      isValid: true,
+      previewAvailable: false,
+    };
+  }
+
   return new Promise((resolve) => {
     const reader = new FileReader();
 
@@ -125,7 +141,7 @@ export const REF_IMAGE_CONFIG = {
   MAX_COUNT: 3,
   MAX_SIZE_PER_IMAGE: 20 * 1024 * 1024,
   MAX_TOTAL_SIZE: 60 * 1024 * 1024,
-  PREVIEW_ALLOWED_TYPES: ["image/jpeg", "image/png", "image/webp", "image/svg+xml", "application/pdf"],
+  PREVIEW_ALLOWED_TYPES: ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"],
   PREVIEW_MAX_SIZE: 10 * 1024 * 1024,
 };
 
@@ -143,6 +159,12 @@ export function validateReferenceImages(files) {
 
   let totalSize = 0;
   for (const file of files) {
+    if (!isAllowedImageFile(file)) {
+      errors.push(
+        `"${file.name}" no es una imagen permitida. Usa PNG, JPG, JPEG, WebP, GIF, HEIC o HEIF.`
+      );
+    }
+
     if (file.size > REF_IMAGE_CONFIG.MAX_SIZE_PER_IMAGE) {
       const mb = (file.size / 1024 / 1024).toFixed(1);
       errors.push(
@@ -167,6 +189,16 @@ export function validateReferenceImages(files) {
 
 export function canDecodeAsImage(file) {
   if (!file) return Promise.resolve({ valid: false, error: "No se seleccionó ningún archivo." });
+  if (!isAllowedImageFile(file)) {
+    return Promise.resolve({
+      valid: false,
+      error: "El formato de este archivo no es compatible. Usa PNG, JPG, JPEG, WebP, GIF, HEIC o HEIF.",
+    });
+  }
+
+  if (/\.(heic|heif)$/i.test(file.name || "") || ["image/heic", "image/heif"].includes(String(file.type || "").toLowerCase())) {
+    return Promise.resolve({ valid: true, previewAvailable: false });
+  }
 
   return new Promise((resolve) => {
     const reader = new FileReader();

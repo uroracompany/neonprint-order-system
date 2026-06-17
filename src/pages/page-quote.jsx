@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
-import { validateImage } from "../utils/imageValidation";
 import { uploadOrderAsset, buildPaymentReceiptPath, createSignedOrderAssetUrlFromStoredUrl } from "../utils/uploadOrderAsset";
+import { PAYMENT_RECEIPT_HINT, validateReceiptFile } from "../utils/receiptValidation";
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
+import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   ORDER_STATUS,
   PRODUCTION_AREAS,
@@ -310,6 +311,9 @@ function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading })
 
 function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory, onOpenReturnModal, onValidationError, onOpenProductionModal }) {
   const [receiptFile, setReceiptFile] = useState(null);
+  const [receiptPreviewAvailable, setReceiptPreviewAvailable] = useState(true);
+  const [receiptZoneError, setReceiptZoneError] = useState("");
+  const [receiptZoneErrorKey, setReceiptZoneErrorKey] = useState(0);
   const [paymentStatus, setPaymentStatus] = useState("pagado");
   const [localError, setLocalError] = useState("");
   const [receiptUrl, setReceiptUrl] = useState("");
@@ -318,6 +322,9 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   useEffect(() => {
     if (open) {
       setReceiptFile(null);
+      setReceiptPreviewAvailable(true);
+      setReceiptZoneError("");
+      setReceiptZoneErrorKey(0);
       setPaymentStatus(order?.payment_status || "Pending_Payment");
       setLocalError("");
       setReceiptUrl("");
@@ -350,6 +357,14 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
     };
   }, [open, order?.invoice_payment]);
 
+  const receiptPreviewUrl = useMemo(() => (
+    receiptFile && receiptPreviewAvailable ? URL.createObjectURL(receiptFile) : ""
+  ), [receiptFile, receiptPreviewAvailable]);
+
+  useEffect(() => () => {
+    if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+  }, [receiptPreviewUrl]);
+
   if (!open || !order) return null;
 
   const orderFiles = getOrderFiles(order);
@@ -368,7 +383,36 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
         ? "Esta orden está en modo lectura porque el pago ya fue confirmado."
         : "Esta orden está en modo lectura porque su estado actual no permite confirmar pago.";
 
-  const handleSubmit = () => {
+  const showReceiptZoneError = (message) => {
+    setReceiptZoneError(message || "No se pudo procesar la imagen del recibo.");
+    setReceiptZoneErrorKey(prev => prev + 1);
+  };
+
+  const handleReceiptAccepted = async ([nextFile], { showError } = {}) => {
+    const validation = await validateReceiptFile(nextFile);
+    if (!validation.isValid) {
+      const message = validation.error || "La imagen no cumple con los requisitos.";
+      if (showError) showError(message);
+      else showReceiptZoneError(message);
+      return;
+    }
+
+    setReceiptFile(nextFile);
+    setReceiptPreviewAvailable(validation.previewAvailable !== false);
+    setReceiptZoneError("");
+    setLocalError("");
+  };
+
+  const handleRemoveReceipt = () => {
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setReceiptFile(null);
+    setReceiptPreviewAvailable(true);
+    setReceiptZoneError("");
+    setReceiptZoneErrorKey(0);
+    setLocalError("");
+  };
+
+  const handleSubmit = async () => {
     if (paymentStatus === "pagado" && !receiptFile) {
       const msg = "Debes subir una imagen del recibo o factura antes de confirmar.";
       // Mostramos error inline DENTRO del modal
@@ -379,7 +423,10 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
     }
 
     setLocalError("");
-    onConfirmPayment({ order, receiptFile, paymentStatus });
+    const result = await onConfirmPayment({ order, receiptFile, paymentStatus });
+    if (result?.receiptError) {
+      showReceiptZoneError(result.receiptError);
+    }
   };
 
   return (
@@ -538,58 +585,79 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                 {paymentStatus === "pagado" ? (
                   receiptFile ? (
                     <div className="pq-receipt-preview-card">
-                      <a href={URL.createObjectURL(receiptFile)} target="_blank" rel="noreferrer">
-                        <img
-                          src={URL.createObjectURL(receiptFile)}
-                          alt="Vista previa del recibo"
-                          className="pq-receipt-preview-img"
-                        />
-                      </a>
+                      <FileUploadZone
+                        mode="image"
+                        replaceMode
+                        inputRef={fileInputRef}
+                        className="file-upload-zone--hidden-picker"
+                        buttonLabel="Cambiar recibo"
+                        disabled={!canConfirmPayment || paymentSaving}
+                        externalError={receiptZoneError}
+                        externalErrorKey={receiptZoneErrorKey}
+                        onFilesAccepted={handleReceiptAccepted}
+                      />
+                      {receiptPreviewAvailable && receiptPreviewUrl ? (
+                        <a href={receiptPreviewUrl} target="_blank" rel="noreferrer">
+                          <img
+                            src={receiptPreviewUrl}
+                            alt="Vista previa del recibo"
+                            className="pq-receipt-preview-img"
+                          />
+                        </a>
+                      ) : (
+                        <div className="pq-receipt-preview-unavailable">
+                          <Icons.Image />
+                          <span>{receiptFile.name}</span>
+                          <small>Vista previa no disponible</small>
+                        </div>
+                      )}
                       <div className="pq-receipt-preview-footer">
                         <span className="pq-receipt-preview-name">{receiptFile.name}</span>
-                        <button
-                          type="button"
-                          className="pq-receipt-preview-change"
-                          disabled={!canConfirmPayment || paymentSaving}
-                          onClick={() => {
-                            if (fileInputRef.current) {
-                              fileInputRef.current.value = "";
-                              fileInputRef.current.click();
-                            }
-                          }}
-                        >
-                          <Icons.Edit /> Cambiar
-                        </button>
+                        <div className="pq-receipt-preview-actions">
+                          <button
+                            type="button"
+                            className="pq-receipt-preview-action"
+                            disabled={!canConfirmPayment || paymentSaving}
+                            aria-label="Cambiar recibo o factura"
+                            onClick={() => {
+                              if (fileInputRef.current) {
+                                fileInputRef.current.value = "";
+                                fileInputRef.current.click();
+                              }
+                            }}
+                          >
+                            <Icons.Edit /> Cambiar
+                          </button>
+                          <button
+                            type="button"
+                            className="pq-receipt-preview-action danger"
+                            disabled={!canConfirmPayment || paymentSaving}
+                            aria-label="Eliminar recibo o factura cargado"
+                            title="Eliminar recibo o factura"
+                            onClick={handleRemoveReceipt}
+                          >
+                            <Icons.Trash />
+                            <span>Eliminar</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : (
-                    <div
-                      className={`pq-upload-box ${!canConfirmPayment ? "disabled" : ""}`}
-                      onClick={() => {
-                        if (fileInputRef.current) {
-                          fileInputRef.current.value = "";
-                          fileInputRef.current.click();
-                        }
-                      }}
-                    >
-                      <span><Icons.Upload /> Subir imagen del recibo</span>
-                    </div>
+                    <FileUploadZone
+                      mode="image"
+                      replaceMode
+                      inputRef={fileInputRef}
+                      buttonLabel="Seleccionar desde el ordenador"
+                      hint={PAYMENT_RECEIPT_HINT}
+                      disabled={!canConfirmPayment || paymentSaving}
+                      externalError={receiptZoneError}
+                      externalErrorKey={receiptZoneErrorKey}
+                      onFilesAccepted={handleReceiptAccepted}
+                    />
                   )
                 ) : (
                   <span className="pq-upload-hint">El campo de recibo solo se muestra cuando el estado es "Pagado"</span>
                 )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  disabled={!canConfirmPayment || paymentSaving}
-                  onChange={event => {
-                    const nextFile = event.target.files?.[0] || null;
-                    setReceiptFile(nextFile);
-                    setLocalError("");
-                  }}
-                  style={{ display: "none" }}
-                />
               </div>
             </div>
 
@@ -917,7 +985,7 @@ export default function PageQuote() {
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
         message: "No puedes confirmar el pago sin subir la imagen del recibo o factura.",
       });
-      return;
+      return { ok: false };
     }
 
     setPaymentSaving(true);
@@ -927,17 +995,18 @@ export default function PageQuote() {
     // PASO 1: Si hay archivo, validar formato y subir a Storage
     if (receiptFile) {
       // Validar que sea una imagen válida (JPG/PNG, tamaño razonable)
-      const validation = await validateImage(receiptFile);
+      const validation = await validateReceiptFile(receiptFile);
 
       if (!validation.isValid) {
+        const message = validation.error || "La imagen no cumple con los requisitos. Asegurate de que sea una imagen valida.";
         setPaymentSaving(false);
         notif.showActionNotification({
           type: "order_cancelled",
           label: "Imagen inválida",
           orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-          message: validation.error || "La imagen no cumple con los requisitos. Asegúrate de que sea JPG o PNG válido.",
+          message,
         });
-        return;
+        return { ok: false, receiptError: message };
       }
 
       // Construir ruta: /order-{orderId}/payment-{timestamp}.jpg
@@ -952,25 +1021,27 @@ export default function PageQuote() {
         });
 
         if (!invoicePaymentUrl) {
+          const message = "No se pudo obtener la URL de la imagen. Intentalo nuevamente.";
           setPaymentSaving(false);
           notif.showActionNotification({
             type: "order_cancelled",
             label: "Error al subir",
             orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-            message: "No se pudo obtener la URL de la imagen. Inténtalo nuevamente.",
+            message,
           });
-          return;
+          return { ok: false, receiptError: message };
         }
       } catch (uploadError) {
+        const message = uploadError?.message || "No se pudo subir la imagen del comprobante. Intentalo nuevamente.";
         console.error("Error uploading image:", uploadError);
         setPaymentSaving(false);
         notif.showActionNotification({
           type: "order_cancelled",
           label: "Error al subir",
           orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-          message: uploadError?.message || "No se pudo subir la imagen del comprobante. Inténtalo nuevamente.",
+          message,
         });
-        return;
+        return { ok: false, receiptError: message };
       }
     }
 
@@ -1009,6 +1080,7 @@ export default function PageQuote() {
     // Actualiza estado local con los nuevos datos
     setOrders(prev => prev.map(item => item.id === updatedOrder.id ? updatedOrder : item));
     setSelectedOrder(updatedOrder);
+    return { ok: true };
 
   };
 

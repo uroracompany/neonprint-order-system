@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient"
 import { signOutAuth } from "../utils/authManager";
+import { normalizeEmailForAuth } from "../utils/fileValidation";
 
 // Styles & Assets
 import "../css-components/lobby.css"
@@ -81,9 +82,10 @@ export default function Lobby() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    const normalizedEmail = normalizeEmailForAuth(email);
 
     // Basic validation Email and Password not empty
-    if (!email.trim() || !password) {
+    if (!normalizedEmail || !password) {
       setMessage({ type: "error", text: "Por favor, completa todos los campos." });
       setFieldErr(true);
       return;
@@ -95,7 +97,8 @@ export default function Lobby() {
     try {
 
       // Login with Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      setEmail(normalizedEmail);
+      const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
       if (error) {
         throw error; //send to catch block
       }
@@ -243,7 +246,7 @@ export default function Lobby() {
                   <input id="np-email" type="email" placeholder="usuario@empresa.com"
                     autoComplete="email" value={email}
                     className={`field-input${fieldErr ? " err" : ""}`}
-                    onFocus={() => setFocused("email")} onBlur={() => setFocused(null)}
+                    onFocus={() => setFocused("email")} onBlur={() => { setFocused(null); setEmail(prev => normalizeEmailForAuth(prev)); }}
                     onChange={e => { setEmail(e.target.value); clearMsg(); }} />
                 </div>
               </div>

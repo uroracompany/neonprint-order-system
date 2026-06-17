@@ -13,6 +13,7 @@ import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
+import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
@@ -127,7 +128,7 @@ function MetricCard({ icon, label, value, sub, accentIdx = 0, trend }) {
 }
 
 //OVERLAY DE LOS MODALES, RECIBE PROPS DE CONTROL Y CONTENIDO
-function Modal({ open, onClose, title, children, wide }) {
+function Modal({ open, onClose, title, children, wide, stickyHeader = false }) {
   if (!open) return null;
   return (
     // onClick={e => e.target === e.currentTarget && onClose()}
@@ -135,7 +136,7 @@ function Modal({ open, onClose, title, children, wide }) {
     <div className="ps-modal-overlay">
       <div className={`ps-modal ${wide ? "wide" : "narrow"}`}>
         <div className="ps-modal-stripe" />
-        <div className="ps-modal-header">
+        <div className={`ps-modal-header ${stickyHeader ? "is-sticky" : ""}`}>
           <span className="ps-modal-title">{title}</span>
           <button className="ps-modal-close" onClick={onClose}><Icons.Close /></button>
         </div>
@@ -259,41 +260,6 @@ export function MultiMaterialSelector({ selected = [], onChange, options = [] })
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// ─── UPLOAD FIELD ─────────────────────────────────────────────────────────────
-function UploadField({ fileRef, previewUrl, fileName, onFileChange, onRemove, onChangeClick, accept = "image/*", maxMB = 5 }) {
-  return !previewUrl ? (
-    <div className="ps-upload-zone" onClick={() => fileRef.current?.click()}>
-      <div className="ps-upload-icon"><Icons.Upload /></div>
-      <p className="ps-upload-title">Haz clic para seleccionar un archivo</p>
-      <p className="ps-upload-sub">{accept === "image/*" ? "PNG, JPG, WEBP" : "PDF, PNG, JPG"} &mdash; max. {maxMB} MB</p>
-      <input ref={fileRef} type="file" accept={accept} style={{ display: "none" }} onChange={onFileChange} />
-    </div>
-  ) : (
-    <div className="ps-preview-wrap">
-      {accept === "image/*"
-        ? <img src={previewUrl} alt="preview" className="ps-preview-img" />
-        : (
-          <div className="ps-file-preview-box">
-            <Icons.Receipt />
-            <span className="ps-file-preview-name">{fileName}</span>
-          </div>
-        )
-      }
-      <div className="ps-preview-overlay">
-        <div>
-          <p className="ps-preview-file-label">Archivo seleccionado</p>
-          <p className="ps-preview-file-name">{fileName}</p>
-        </div>
-        <div className="ps-preview-actions">
-          <button className="ps-preview-change-btn" onClick={onChangeClick}>Cambiar</button>
-          <button className="ps-preview-del-btn" onClick={onRemove}><Icons.Trash /></button>
-        </div>
-      </div>
-      <input ref={fileRef} type="file" accept={accept} style={{ display: "none" }} onChange={onFileChange} />
     </div>
   );
 }
@@ -599,7 +565,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="Nueva Orden">
+    <Modal open={open} onClose={handleClose} title="Nueva Orden" stickyHeader>
       {error && <div className="ps-form-error">{error}</div>}
 
       {/* ─ Sección 1: Datos del cliente ─ */}
@@ -710,25 +676,18 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
           <>
             <div className="col-full">
               <Field label="Archivos de diseño" required error={fieldErrors.design_files} hint="Sube los archivos de diseño del cliente (obligatorio)">
-                <div className="ps-upload-zone" onClick={() => fileInputRef.current?.click()}>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    onChange={e => {
-                      const files = Array.from(e.target.files);
-                      set("design_files", [...form.design_files, ...files]);
-                      set("design_file_areas", [...form.design_file_areas, ...files.map(() => "")]);
-                      e.target.value = "";
-                    }}
-                    style={{ display: "none" }}
-                  />
-                  <div className="ps-upload-icon"><Icons.Upload /></div>
-                  <div className="ps-upload-btn-wrapper">
-                    <span className="ps-upload-btn-text">Subir archivos</span>
-                  </div>
-                  <span className="ps-upload-hint">Archivos del diseño (PDF, AI, PNG, JPG...)</span>
-                </div>
+                <FileUploadZone
+                  mode="attachment"
+                  multiple
+                  inputRef={fileInputRef}
+                  buttonLabel="Subir archivos"
+                  hint="Archivos del diseño (PDF, AI, PNG, JPG...)"
+                  onFilesAccepted={(files) => {
+                    set("design_files", [...form.design_files, ...files]);
+                    set("design_file_areas", [...form.design_file_areas, ...files.map(() => "")]);
+                    setFieldErrors(prev => ({ ...prev, design_files: "" }));
+                  }}
+                />
                 {form.design_files.length > 0 && (
                   <div className="ps-files-list">
                     {form.design_files.map((file, i) => (
@@ -757,33 +716,30 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
             <div className="col-full">
               <Field label="Imagen de la orden de trabajo" required error={fieldErrors.design_preview} hint="Vista previa del diseño (obligatorio)">
                 {!form.design_preview ? (
-                  <div className="ps-upload-zone" onClick={() => previewInputRef.current?.click()}>
-                    <input
-                      ref={previewInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={e => {
-                        if (e.target.files && e.target.files[0]) {
-                          const file = e.target.files[0];
-                          if (!REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES.includes(file.type)) {
-                            setFieldErrors(prev => ({ ...prev, design_preview: "Formato no soportado. Usa JPG, PNG, WebP, SVG o PDF." }));
-                            e.target.value = "";
-                            return;
-                          }
-                          setFieldErrors(prev => ({ ...prev, design_preview: "" }));
-                          set("design_preview", file);
-                        }
-                      }}
-                      style={{ display: "none" }}
-                    />
-                    <div className="ps-upload-icon"><Icons.Image /></div>
-                    <div className="ps-upload-btn-wrapper">
-                      <span className="ps-upload-btn-text">Subir imagen de preview</span>
-                    </div>
-                    <span className="ps-upload-hint">Imagen de la orden de trabajo (PNG, JPG...)</span>
-                  </div>
+                  <FileUploadZone
+                    mode="image"
+                    replaceMode
+                    inputRef={previewInputRef}
+                    buttonLabel="Subir imagen de preview"
+                    hint="Imagen de la orden de trabajo (PNG, JPG...)"
+                    onFilesAccepted={([file]) => {
+                      setFieldErrors(prev => ({ ...prev, design_preview: "" }));
+                      set("design_preview", file);
+                    }}
+                  />
                 ) : (
                   <div className="ps-preview-showcase">
+                    <FileUploadZone
+                      mode="image"
+                      replaceMode
+                      inputRef={previewInputRef}
+                      className="file-upload-zone--hidden-picker"
+                      buttonLabel="Cambiar imagen"
+                      onFilesAccepted={([file]) => {
+                        setFieldErrors(prev => ({ ...prev, design_preview: "" }));
+                        set("design_preview", file);
+                      }}
+                    />
                     <div className="ps-preview-card">
                       <img src={URL.createObjectURL(form.design_preview)} alt="Preview" className="ps-preview-img-main" />
                       <div className="ps-preview-card-overlay">
@@ -831,46 +787,45 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
 
         <div className="col-full">
           <Field label="Imágenes de referencia" hint="Sube imágenes de referencia para la orden (opcional)">
-            <div className="ps-upload-zone" onClick={() => refImagesInputRef.current?.click()}>
-              <input
-                ref={refImagesInputRef}
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={async e => {
-                  const rawFiles = Array.from(e.target.files);
-                  const validFiles = [];
-                  const errors = [];
-                  for (const file of rawFiles) {
-                    const result = await canDecodeAsImage(file);
-                    if (result.valid) {
-                      validFiles.push(file);
-                    } else {
-                      errors.push(`"${file.name}": ${result.error}`);
-                    }
+            <FileUploadZone
+              mode="image"
+              multiple
+              inputRef={refImagesInputRef}
+              maxFiles={REF_IMAGE_CONFIG.MAX_COUNT}
+              existingCount={form.reference_images.length}
+              buttonLabel="Subir imágenes"
+              hint="Imágenes de referencia (Máx 3, 20MB c/u. Soporta JPG, PNG, WebP, GIF, HEIC y HEIF)"
+              onFilesAccepted={async (rawFiles, { showError }) => {
+                const validFiles = [];
+                const errors = [];
+                for (const file of rawFiles) {
+                  const result = await canDecodeAsImage(file);
+                  if (result.valid) {
+                    validFiles.push(file);
+                  } else {
+                    errors.push(`"${file.name}": ${result.error}`);
                   }
-                  const combined = [...form.reference_images, ...validFiles];
-                  const validation = validateReferenceImages(combined);
-                  if (!validation.valid) {
-                    setFieldErrors(prev => ({ ...prev, reference_images: [...errors, ...validation.errors].join(". ") }));
-                    e.target.value = "";
-                    return;
-                  }
-                  setFieldErrors(prev => ({ ...prev, reference_images: errors.length > 0 ? errors.join(". ") : "" }));
-                  set("reference_images", combined);
-                  e.target.value = "";
-                }}
-                style={{ display: "none" }}
-              />
-              <div className="ps-upload-icon"><Icons.Image /></div>
-              <div className="ps-upload-btn-wrapper">
-                <span className="ps-upload-btn-text">Subir imágenes</span>
-              </div>
-              <span className="ps-upload-hint">Imágenes de referencia (Máx 3, 20MB c/u. Soporta JPG, PNG, WebP, HEIC y más)</span>
-            </div>
-            {fieldErrors?.reference_images && (
-              <div className="ps-field-error">{fieldErrors.reference_images}</div>
-            )}
+                }
+                const combined = [...form.reference_images, ...validFiles];
+                const validation = validateReferenceImages(combined);
+                const message = [
+                  ...errors,
+                  ...(!validation.valid ? validation.errors : []),
+                ].join(". ");
+                if (message) {
+                  showError(message);
+                }
+                if (!validation.valid) {
+                  return;
+                }
+                setFieldErrors(prev => {
+                  const next = { ...prev };
+                  delete next.reference_images;
+                  return next;
+                });
+                set("reference_images", combined);
+              }}
+            />
             {form.reference_images.length > 0 && (
               <div className="ps-files-list">
                 {form.reference_images.map((file, i) => (
@@ -1290,20 +1245,14 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
                 ))}
               </div>
             )}
-            <div className="ps-upload-zone" onClick={() => fileInputRef.current?.click()}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                onChange={handleAddNewFiles}
-                style={{ display: "none" }}
-              />
-              <div className="ps-upload-icon"><Icons.Upload /></div>
-              <div className="ps-upload-btn-wrapper">
-                <span className="ps-upload-btn-text">Agregar archivos</span>
-              </div>
-              <span className="ps-upload-hint">PDF, AI, PNG, JPG...</span>
-            </div>
+            <FileUploadZone
+              mode="attachment"
+              multiple
+              inputRef={fileInputRef}
+              buttonLabel="Agregar archivos"
+              hint="PDF, AI, PNG, JPG..."
+              onFilesAccepted={(files) => handleAddNewFiles({ target: { files, value: "" } })}
+            />
           </Field>
         </div>
 
@@ -1311,6 +1260,14 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
           <Field label="Imagen de preview" hint="Vista previa del diseño">
             {(existingPreview || newPreview) ? (
               <div className="ps-preview-showcase">
+                <FileUploadZone
+                  mode="image"
+                  replaceMode
+                  inputRef={previewInputRef}
+                  className="file-upload-zone--hidden-picker"
+                  buttonLabel="Cambiar imagen"
+                  onFilesAccepted={(files) => handleAddNewPreview({ target: { files, value: "" } })}
+                />
                 <div className="ps-preview-card">
                   <img
                     src={newPreview ? URL.createObjectURL(newPreview) : existingPreview}
@@ -1333,20 +1290,14 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
                 </div>
               </div>
             ) : (
-              <div className="ps-upload-zone" onClick={() => previewInputRef.current?.click()}>
-                <input
-                  ref={previewInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAddNewPreview}
-                  style={{ display: "none" }}
-                />
-                <div className="ps-upload-icon"><Icons.Image /></div>
-                <div className="ps-upload-btn-wrapper">
-                  <span className="ps-upload-btn-text">Subir imagen de preview</span>
-                </div>
-                <span className="ps-upload-hint">Imagen de la orden de trabajo (PNG, JPG...)</span>
-              </div>
+              <FileUploadZone
+                mode="image"
+                replaceMode
+                inputRef={previewInputRef}
+                buttonLabel="Subir imagen de preview"
+                hint="Imagen de la orden de trabajo (PNG, JPG...)"
+                onFilesAccepted={(files) => handleAddNewPreview({ target: { files, value: "" } })}
+              />
             )}
           </Field>
         </div>
@@ -1382,48 +1333,33 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
                 ))}
               </div>
             )}
-            <div className="ps-upload-zone" onClick={() => refImagesInputRef.current?.click()}>
-              <input
-                ref={refImagesInputRef}
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={async e => {
-                  const rawFiles = Array.from(e.target.files);
-                  const validFiles = [];
-                  const errors = [];
-                  for (const file of rawFiles) {
-                    const result = await canDecodeAsImage(file);
-                    if (result.valid) {
-                      validFiles.push(file);
-                    } else {
-                      errors.push(`"${file.name}": ${result.error}`);
-                    }
+            <FileUploadZone
+              mode="image"
+              multiple
+              inputRef={refImagesInputRef}
+              maxFiles={REF_IMAGE_CONFIG.MAX_COUNT}
+              existingCount={existingRefImages.length + newRefImages.length}
+              buttonLabel="Subir imágenes"
+              hint="Imágenes de referencia (Máx 3, 20MB c/u. Soporta JPG, PNG, WebP, GIF, HEIC y HEIF)"
+              onFilesAccepted={async (rawFiles, { showError }) => {
+                const validFiles = [];
+                const errors = [];
+                for (const file of rawFiles) {
+                  const result = await canDecodeAsImage(file);
+                  if (result.valid) {
+                    validFiles.push(file);
+                  } else {
+                    errors.push(`"${file.name}": ${result.error}`);
                   }
-                  const totalCount = existingRefImages.length + newRefImages.length + validFiles.length;
-                  if (totalCount > REF_IMAGE_CONFIG.MAX_COUNT) {
-                    const remaining = REF_IMAGE_CONFIG.MAX_COUNT - (existingRefImages.length + newRefImages.length);
-                    if (remaining <= 0) {
-                      setError(`Ya tienes ${REF_IMAGE_CONFIG.MAX_COUNT} imágenes. Elimina una antes de agregar otra.`);
-                      e.target.value = "";
-                      return;
-                    }
-                    setError(`Solo puedes agregar ${remaining} imagen(es) más (máx ${REF_IMAGE_CONFIG.MAX_COUNT} en total).`);
-                    e.target.value = "";
-                    return;
-                  }
-                  setError(errors.length > 0 ? errors.join(". ") : "");
+                }
+                if (errors.length > 0) {
+                  showError(errors.join(". "));
+                }
+                if (validFiles.length > 0) {
                   setNewRefImages([...newRefImages, ...validFiles]);
-                  e.target.value = "";
-                }}
-                style={{ display: "none" }}
-              />
-              <div className="ps-upload-icon"><Icons.Image /></div>
-              <div className="ps-upload-btn-wrapper">
-                <span className="ps-upload-btn-text">Subir imágenes</span>
-              </div>
-              <span className="ps-upload-hint">Imágenes de referencia (Máx 3, 20MB c/u. Soporta JPG, PNG, WebP, HEIC y más)</span>
-            </div>
+                }
+              }}
+            />
           </Field>
         </div>
       </div>

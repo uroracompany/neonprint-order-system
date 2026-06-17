@@ -1,0 +1,159 @@
+.file-upload-zone {
+  width: 100%;
+  border: 2px dashed #dbe4f4;
+  border-radius: 8px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 20px;
+  color: #0f1e40;
+  outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.file-upload-zone:focus,
+.file-upload-zone:focus-visible,
+.file-upload-zone.is-focused,
+.file-upload-zone.is-drag-over {
+  border-color: #0f1e40;
+  background: #f4f7fb;
+  box-shadow: 0 0 0 4px rgba(15, 30, 64, 0.08);
+}
+
+.file-upload-zone.is-drag-over {
+  border-style: solid;
+  box-shadow: 0 0 0 5px rgba(15, 30, 64, 0.12);
+}
+
+.file-upload-zone.is-error {
+  border-color: #ef4444;
+}
+
+.file-upload-zone.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.file-upload-zone input[type="file"] {
+  display: none;
+}
+
+.file-upload-zone__icon {
+  color: #0f1e40;
+  line-height: 0;
+}
+
+.file-upload-zone__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.file-upload-zone__button {
+  border: 0;
+  border-radius: 8px;
+  background: #0f1e40;
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(15, 30, 64, 0.24);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 10px 20px;
+}
+
+.file-upload-zone__button:disabled {
+  cursor: not-allowed;
+}
+
+.file-upload-zone__hint {
+  color: #8492b6;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.file-upload-zone__error {
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.file-upload-zone--compact {
+  min-height: 54px;
+  align-items: stretch;
+  gap: 6px;
+  padding: 0 14px;
+  border: 1px dashed #94a3b8;
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.file-upload-zone--compact .file-upload-zone__button {
+  width: 100%;
+  min-height: 52px;
+  justify-content: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.file-upload-zone--compact .file-upload-zone__button svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.file-upload-zone--compact .file-upload-zone__hint,
+.file-upload-zone--compact .file-upload-zone__error {
+  padding-bottom: 10px;
+  text-align: left;
+}
+
+.file-upload-zone--hidden-picker {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.file-upload-zone--hidden-picker.is-error {
+  background: transparent;
+  box-shadow: none;
+  clip: auto;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+  padding: 0;
+  position: static;
+  white-space: normal;
+  width: 100%;
+}
+
+.file-upload-zone--hidden-picker.is-error .file-upload-zone__icon,
+.file-upload-zone--hidden-picker.is-error .file-upload-zone__button,
+.file-upload-zone--hidden-picker.is-error .file-upload-zone__hint {
+  display: none;
+}
+
+.file-upload-zone--hidden-picker.is-error .file-upload-zone__error {
+  display: block;
+  width: 100%;
+}

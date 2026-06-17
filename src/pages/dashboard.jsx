@@ -16,6 +16,7 @@ import { AssignModal } from "../components/ui/AssignModal";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect, ClientNameAutocomplete, ClientSelect } from "../components/ui/ClientCombobox";
+import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   ORDER_STATUS,
   STATUS_LABELS,
@@ -785,8 +786,8 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
     }));
   };
 
-  const handleAddFiles = (event) => {
-    const files = Array.from(event.target.files || []);
+  const handleAddFiles = (filesOrEvent) => {
+    const files = Array.from(filesOrEvent?.target?.files || filesOrEvent || []);
     if (!files.length) return;
 
     setOrderForm((prev) => ({
@@ -794,7 +795,7 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
       newFiles: [...prev.newFiles, ...files],
     }));
 
-    event.target.value = "";
+    if (filesOrEvent?.target) filesOrEvent.target.value = "";
   };
 
   const handleRemoveExistingFile = (fileUrl) => {
@@ -812,8 +813,8 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
     }));
   };
 
-  const handlePreviewChange = (event) => {
-    const nextPreview = event.target.files?.[0];
+  const handlePreviewChange = (filesOrEvent) => {
+    const nextPreview = Array.from(filesOrEvent?.target?.files || filesOrEvent || [])[0];
     if (!nextPreview) return;
 
     setOrderForm((prev) => ({
@@ -822,7 +823,7 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
       removePreview: false,
     }));
 
-    event.target.value = "";
+    if (filesOrEvent?.target) filesOrEvent.target.value = "";
   };
 
   const handleRemovePreview = () => {
@@ -960,14 +961,14 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
                   <div className="pa-empty-small">Todavía no se han agregado archivos de diseño.</div>
                 )}
 
-                <div className="pa-upload-dropzone" onClick={() => filesInputRef.current?.click()}>
-                  <input ref={filesInputRef} type="file" multiple style={{ display: "none" }} onChange={handleAddFiles} />
-                  <div className="pa-upload-dropzone-copy">
-                    <strong>Agregar archivos</strong>
-                    <span>PDF, AI, PNG, JPG y otros documentos de diseño.</span>
-                  </div>
-                  <button type="button" className="pa-btn ghost pa-btn-sm">Seleccionar</button>
-                </div>
+                <FileUploadZone
+                  mode="attachment"
+                  multiple
+                  inputRef={filesInputRef}
+                  buttonLabel="Agregar archivos"
+                  hint="PDF, AI, PNG, JPG y otros documentos de diseño."
+                  onFilesAccepted={handleAddFiles}
+                />
               </div>
             </div>
 
@@ -986,17 +987,24 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
                       <button type="button" className="pa-btn danger pa-btn-sm" onClick={handleRemovePreview}>Quitar</button>
                     </div>
                   </div>
-                  <input ref={previewInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePreviewChange} />
+                  <FileUploadZone
+                    mode="image"
+                    replaceMode
+                    inputRef={previewInputRef}
+                    className="file-upload-zone--hidden-picker"
+                    buttonLabel="Cambiar preview"
+                    onFilesAccepted={handlePreviewChange}
+                  />
                 </div>
               ) : (
-                <div className="pa-upload-dropzone is-preview" onClick={() => previewInputRef.current?.click()}>
-                  <input ref={previewInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePreviewChange} />
-                  <div className="pa-upload-dropzone-copy">
-                    <strong>Subir preview</strong>
-                    <span>Imagen opcional para mostrar la orden de trabajo dentro del detalle.</span>
-                  </div>
-                  <button type="button" className="pa-btn ghost pa-btn-sm">Seleccionar</button>
-                </div>
+                <FileUploadZone
+                  mode="image"
+                  replaceMode
+                  inputRef={previewInputRef}
+                  buttonLabel="Subir preview"
+                  hint="Imagen opcional para mostrar la orden de trabajo dentro del detalle."
+                  onFilesAccepted={handlePreviewChange}
+                />
               )}
             </div>
           </div>
@@ -3134,21 +3142,12 @@ export default function Dashboard() {
           {quotationPaymentStatus === "pagado" && (
             <div className="pa-field" style={{ marginBottom: 20 }}>
               <span>Imagen de Recibo/Factura <span style={{ color: "#ef4444" }}>*</span></span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(e) => setQuotationInvoice(e.target.files?.[0] || null)}
-                style={{
-                  width: "100%",
-                  padding: "10px 13px",
-                  borderRadius: "var(--radius-sm)",
-                  border: "1.5px solid var(--border)",
-                  background: "var(--surface-alt)",
-                  fontSize: 13,
-                  fontFamily: "'Poppins', sans-serif",
-                  outline: "none",
-                  boxSizing: "border-box"
-                }}
+              <FileUploadZone
+                mode="image"
+                replaceMode
+                variant="compact"
+                buttonLabel={quotationInvoice ? "Cambiar recibo/factura" : "Subir recibo/factura"}
+                onFilesAccepted={([file]) => setQuotationInvoice(file)}
               />
               {quotationInvoice && (
                 <p style={{ fontSize: 12, color: "var(--success)", marginTop: 8 }}>

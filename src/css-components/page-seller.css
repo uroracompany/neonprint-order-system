@@ -635,6 +635,12 @@
   padding: 20px 26px;
   border-bottom: 1px solid var(--border);
 }
+.ps-modal-header.is-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+}
 .ps-modal-title { font-size: 17px; font-weight: 700; color: var(--text); }
 
 .ps-modal-close {

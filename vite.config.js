@@ -12,6 +12,7 @@ import {
   handleAdminDeleteOrderWithFiles,
   handleCompleteFileUpload,
   handleFileDownloadUrl,
+  handleImportRemoteFile,
   handleInitiateFileUpload,
 } from './server/storage-gateway.js'
 function createApiHandler(path, handler) {
@@ -80,6 +81,7 @@ export default defineConfig(() => {
       createApiHandler("/api/files-initiate-upload", handleInitiateFileUpload),
       createApiHandler("/api/files-complete-upload", handleCompleteFileUpload),
       createApiHandler("/api/files-download-url", handleFileDownloadUrl),
+      createApiHandler("/api/files-import-url", handleImportRemoteFile),
       createApiHandler("/api/admin-delete-order", handleAdminDeleteOrderWithFiles),
     ],
   };

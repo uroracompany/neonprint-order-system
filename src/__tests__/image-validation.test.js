@@ -30,14 +30,19 @@ describe("validateReferenceImages", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("aceuta cualquier formato (HEIC, BMP, SVG) — la validacion de formato es por decoder", () => {
+  it("acepta HEIC/HEIF y rechaza BMP/SVG en campos de imagen", () => {
     const files = [
       makeFile("photo.heic", "image/heic", 1024 * 1024),
-      makeFile("img.bmp", "image/bmp", 1024 * 1024),
-      makeFile("doc.svg", "image/svg+xml", 1024 * 1024),
+      makeFile("photo.heif", "image/heif", 1024 * 1024),
     ];
     const result = validateReferenceImages(files);
     expect(result.valid).toBe(true);
+
+    const rejected = validateReferenceImages([
+      makeFile("img.bmp", "image/bmp", 1024 * 1024),
+      makeFile("doc.svg", "image/svg+xml", 1024 * 1024),
+    ]);
+    expect(rejected.valid).toBe(false);
   });
 
   it("rechaza mas de 3 imagenes", () => {
@@ -108,12 +113,13 @@ describe("REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES", () => {
     expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).toContain("image/jpeg");
     expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).toContain("image/png");
     expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).toContain("image/webp");
-    expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).toContain("image/svg+xml");
-    expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).toContain("application/pdf");
+    expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).toContain("image/heic");
+    expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).toContain("image/heif");
   });
 
-  it("no incluye HEIC ni BMP para preview", () => {
-    expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).not.toContain("image/heic");
+  it("no incluye PDF, SVG ni BMP para preview", () => {
+    expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).not.toContain("application/pdf");
+    expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).not.toContain("image/svg+xml");
     expect(REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES).not.toContain("image/bmp");
   });
 });

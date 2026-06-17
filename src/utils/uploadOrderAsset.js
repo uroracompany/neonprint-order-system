@@ -122,6 +122,10 @@ export const uploadOrderAsset = async ({ bucket, path, file }) => {
         category: inferCategoryFromPath({ bucket, path }),
       });
 
+      if (!response.ok) {
+        throw new Error(result?.error || "No se pudo iniciar la subida del archivo.");
+      }
+
       if (response.ok && result?.provider === "supabase") {
         const fallbackSizeError = validateOrderAssetSize({ bucket, file });
         if (fallbackSizeError) throw new Error(fallbackSizeError);

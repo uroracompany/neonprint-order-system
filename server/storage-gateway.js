@@ -1,11 +1,15 @@
 import { createHmac, createHash } from "node:crypto";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "./auth-middleware.js";
 import { getEnvValue, getSupabaseAdminEnv, jsonResponse } from "./admin-user-utils.js";
+import { isAllowedImageFile, validateUploadPolicy } from "../src/utils/fileValidation.js";
 
 const MB = 1024 * 1024;
 const DEFAULT_R2_THRESHOLD_MB = 25;
 const DEFAULT_SIGNED_URL_TTL = 60 * 10;
+const MAX_IMPORTED_URL_BYTES = 4 * MB;
 const R2_SCHEME = "r2://";
 
 const ORDER_ASSIGNMENT_FIELDS = [
@@ -27,6 +31,16 @@ const ORDER_FILE_BUCKET_LIMITS = {
   "order-docs": 200 * MB,
   "order-previews": 10 * MB,
   "payment-invoice": 10 * MB,
+};
+
+const IMAGE_EXTENSION_BY_TYPE = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/heic": "heic",
+  "image/heif": "heif",
 };
 
 const encodeRfc3986 = (value) =>
@@ -494,6 +508,109 @@ const removeR2Targets = async ({ targets, env = process.env }) => {
 
 const targetBucketName = (targets, fallback) => targets.find((target) => target?.bucket)?.bucket || fallback || "";
 
+const isPrivateAddress = (address = "") => {
+  const ipVersion = isIP(address);
+  if (!ipVersion) return false;
+
+  if (ipVersion === 4) {
+    const parts = address.split(".").map(Number);
+    return (
+      parts[0] === 10 ||
+      parts[0] === 127 ||
+      (parts[0] === 169 && parts[1] === 254) ||
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && parts[1] === 168) ||
+      parts[0] === 0
+    );
+  }
+
+  const normalized = address.toLowerCase();
+  return normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:");
+};
+
+const assertSafeRemoteUrl = async (rawUrl) => {
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl || ""));
+  } catch {
+    throw new Error("URL de imagen invalida.");
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Solo se permiten imagenes remotas http/https.");
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    throw new Error("No se permiten URLs locales.");
+  }
+
+  if (isPrivateAddress(hostname)) {
+    throw new Error("No se permiten URLs privadas o locales.");
+  }
+
+  const addresses = await lookup(hostname, { all: true }).catch(() => []);
+  if (addresses.some((entry) => isPrivateAddress(entry.address))) {
+    throw new Error("No se permiten URLs privadas o locales.");
+  }
+
+  return parsed;
+};
+
+const fetchRemoteImage = async (url, redirectCount = 0) => {
+  if (redirectCount > 3) throw new Error("La URL remota redirige demasiadas veces.");
+  const parsed = await assertSafeRemoteUrl(url);
+
+  const response = await fetch(parsed.toString(), {
+    redirect: "manual",
+    headers: {
+      Accept: "image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,*/*;q=0.8",
+      "User-Agent": "NeonPrint-FileImporter/1.0",
+    },
+  });
+
+  if ([301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.get("location");
+    if (!location) throw new Error("La imagen remota redirige sin destino valido.");
+    return fetchRemoteImage(new URL(location, parsed).toString(), redirectCount + 1);
+  }
+
+  if (!response.ok) {
+    throw new Error("No se pudo descargar la imagen remota.");
+  }
+
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > MAX_IMPORTED_URL_BYTES) {
+    throw new Error(`La imagen remota supera el limite de ${Math.round(MAX_IMPORTED_URL_BYTES / MB)} MB.`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  if (arrayBuffer.byteLength > MAX_IMPORTED_URL_BYTES) {
+    throw new Error(`La imagen remota supera el limite de ${Math.round(MAX_IMPORTED_URL_BYTES / MB)} MB.`);
+  }
+
+  const contentType = (response.headers.get("content-type") || "application/octet-stream").split(";")[0].trim().toLowerCase();
+  const rawName = safeFileName(parsed.pathname.split("/").filter(Boolean).pop() || "imagen-arrastrada");
+  const extension = IMAGE_EXTENSION_BY_TYPE[contentType];
+  const fileName = extension && !/\.[a-z0-9]{2,5}$/i.test(rawName) ? `${rawName}.${extension}` : rawName;
+  const fileLike = { name: fileName, type: contentType };
+  if (!isAllowedImageFile(fileLike)) {
+    throw new Error("La URL arrastrada no corresponde a una imagen permitida.");
+  }
+
+  return {
+    fileName,
+    contentType,
+    base64: Buffer.from(arrayBuffer).toString("base64"),
+  };
+};
+
+const validateUploadRequestPolicy = ({ bucket, category, fileName, contentType }) => {
+  const validation = validateUploadPolicy({ bucket, category, fileName, contentType });
+  if (validation.valid) return null;
+  return jsonResponse(415, { error: validation.error || "Tipo de archivo no permitido para este destino." });
+};
+
 export async function handleInitiateFileUpload(payload = {}, env = process.env) {
   const auth = await requireAuthenticated(env.authHeader, env);
   if (!auth.authorized) return auth.response;
@@ -510,6 +627,9 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
   if (!orderId || !bucket || !path || !fileName) {
     return jsonResponse(400, { error: "Faltan datos requeridos para iniciar la subida." });
   }
+
+  const policyError = validateUploadRequestPolicy({ bucket, category, fileName, contentType });
+  if (policyError) return policyError;
 
   const limit = ORDER_FILE_BUCKET_LIMITS[bucket];
   if (limit && sizeBytes > limit && !shouldUseR2({ bucket, sizeBytes, env })) {
@@ -609,6 +729,11 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
   const bucket = String(payload?.bucket || "").trim();
   const path = String(payload?.path || "").trim();
   if (!bucket || !path) return jsonResponse(400, { error: "Faltan bucket y path." });
+  const category = inferCategory({ bucket, path, category: payload?.category });
+  const fileName = payload?.fileName || path.split("/").pop();
+  const contentType = payload?.contentType || null;
+  const policyError = validateUploadRequestPolicy({ bucket, category, fileName, contentType });
+  if (policyError) return policyError;
 
   const { data, error } = await supabaseAdmin
     .from("order_files")
@@ -617,10 +742,10 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
       provider: "supabase",
       bucket,
       object_key: path,
-      original_filename: payload?.fileName || path.split("/").pop(),
-      content_type: payload?.contentType || null,
+      original_filename: fileName,
+      content_type: contentType,
       size_bytes: Number.isFinite(Number(payload?.sizeBytes)) ? Number(payload?.sizeBytes) : null,
-      category: inferCategory({ bucket, path, category: payload?.category }),
+      category,
       status: "uploaded",
       uploaded_by: user.id,
       updated_at: new Date().toISOString(),
@@ -630,6 +755,25 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
 
   if (error) return jsonResponse(500, { error: `No se pudo registrar el archivo: ${error.message}` });
   return jsonResponse(200, { file: data });
+}
+
+export async function handleImportRemoteFile(payload = {}, env = process.env) {
+  const auth = await requireAuthenticated(env.authHeader, env);
+  if (!auth.authorized) return auth.response;
+
+  const mode = String(payload?.mode || "image").trim();
+  if (mode !== "image") {
+    return jsonResponse(400, { error: "Por ahora solo se pueden importar imagenes remotas." });
+  }
+
+  try {
+    const imported = await fetchRemoteImage(payload?.url);
+    return jsonResponse(200, imported);
+  } catch (error) {
+    return jsonResponse(400, {
+      error: error?.message || "No se pudo importar el archivo remoto.",
+    });
+  }
 }
 
 export async function handleFileDownloadUrl(payload = {}, env = process.env) {
