@@ -270,6 +270,7 @@ const EMPTY_FORM = {
   client_id: null,
   client_name: "",
   client_phone: "",
+  invoice_number: "",
   description: "",
   materials: [],       // array — multi-select
   termination_type: "", // tipo de terminación
@@ -351,6 +352,9 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
     }
     if (!form.design_type) {
       errors.design_type = "Indica si el diseño es interno o externo.";
+    }
+    if (!form.invoice_number.trim()) {
+      errors.invoice_number = "El número de facturación es requerido.";
     }
     if (form.client_phone.trim() && !isValidDominicanPhone(form.client_phone)) {
       errors.client_phone = "El teléfono debe ser un número válido de República Dominicana (809, 829 o 849).";
@@ -493,6 +497,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
           client_id: form.client_id || null,
           client_name: form.client_name.trim(),
           client_contact: form.client_phone.trim() || null,
+          invoice_number: form.invoice_number.trim(),
           description: form.description.trim(),
           material: form.materials.join(", "),
           termination_type: form.termination_type.trim() || null,
@@ -598,6 +603,12 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
               <input className="ps-form-input with-icon" placeholder={PHONE_PLACEHOLDER}
                 value={form.client_phone} onChange={e => setClientField("client_phone", formatDominicanPhone(e.target.value))} maxLength="12" />
             </div>
+          </Field>
+        </div>
+        <div className="col-full">
+          <Field label="Número de Facturación" required error={fieldErrors.invoice_number}>
+            <input className="ps-form-input" placeholder="Ej: FAC-001-2024"
+              value={form.invoice_number} onChange={e => set("invoice_number", e.target.value)} />
           </Field>
         </div>
       </div>
@@ -862,6 +873,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
   const [form, setForm] = useState({
     client_name: "",
     client_contact: "",
+    invoice_number: "",
     description: "",
     materials: [],
     termination_type: "",
@@ -885,6 +897,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       setForm({
         client_name: order.client_name || "",
         client_contact: order.client_contact || "",
+        invoice_number: order.invoice_number || "",
         description: order.description || "",
         materials: order.material ? order.material.split(", ").filter(Boolean) : [],
         termination_type: order.termination_type || "",
@@ -1100,6 +1113,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       .update({
         client_name: form.client_name.trim(),
         client_contact: form.client_contact.trim() || null,
+        invoice_number: form.invoice_number.trim(),
         description: form.description.trim(),
         material: form.materials.join(", "),
         termination_type: form.termination_type.trim() || null,
@@ -1490,6 +1504,7 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
                 { label: "Material", value: order.material, icon: <Icons.Paintbrush /> },
                 { label: "Tipo de terminación", value: order.termination_type || "---", icon: <Icons.Check /> },
                 { label: "Tipo de orden", value: order.order_type, icon: <Icons.Package /> },
+                { label: "Núm. Facturación", value: order.invoice_number || "---", icon: <Icons.FileText /> },
                 { label: "Diseño", 
                   value: order.order_design_type === "INTERNAL_DESING" ? "Diseño interno" :
                          order.order_design_type === "EXTERNAL_DESING" ? "Diseño externo" : "---", 
@@ -1499,7 +1514,7 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
                 <div key={i} style={{
                   display: "grid", gridTemplateColumns: "28px 1fr auto",
                   gap: 10, alignItems: "center", paddingBottom: 11,
-                  borderBottom: i < 4 ? "1px solid var(--border)" : "none"
+                  borderBottom: i < 5 ? "1px solid var(--border)" : "none"
                 }}>
                   <div style={{ color: "var(--text-muted)" }}>{item.icon}</div>
                   <div>

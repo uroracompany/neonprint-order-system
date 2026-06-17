@@ -457,6 +457,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                 <div className="pq-info-row"><span>Cliente</span><strong>{order.client_name || "No definido"}</strong></div>
                 <div className="pq-info-row"><span>Vendedor</span><strong>{resolveSellerName(order, sellerDirectory)}</strong></div>
                 <div className="pq-info-row"><span>Teléfono</span><strong>{order.client_contact || order.client_phone || "No definido"}</strong></div>
+                <div className="pq-info-row"><span>Núm. Facturación</span><strong>{order.invoice_number || "No definido"}</strong></div>
                 <div className="pq-info-row"><span>Tipo</span><strong>{order.order_type || "No definido"}</strong></div>
                 <div className="pq-info-row"><span>Material</span><strong>{order.material || "No definido"}</strong></div>
               </div>
