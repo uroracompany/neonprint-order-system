@@ -17,6 +17,8 @@ import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobo
 import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   ORDER_STATUS,
+  isPaymentPaid,
+  isPaymentPartial,
   PAYMENT_COLORS,
   PRODUCTION_AREAS,
   QUOTE_ASSIGNMENT_FIELDS,
@@ -1916,19 +1918,21 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
     }
   }, [open]);
   
-  // Validación: No permitir cancelar órdenes pagadas
-  const isPaid = order?.payment_status === "pagado";
+  const isPaid = isPaymentPaid(order?.payment_status);
+  const isPartial = isPaymentPartial(order?.payment_status);
 
   return (
     <Modal open={open} onClose={onClose} title="Cancelar Orden">
       <div style={{ minWidth: 350, paddingTop: 8 }}>
-        {isPaid ? (
+        {isPaid || isPartial ? (
           <>
             <p style={{ fontSize: 14, color: "#991B1B", marginBottom: 16, lineHeight: 1.5, fontWeight: 500 }}>
               ⚠️ No se puede cancelar esta orden
             </p>
             <p style={{ fontSize: 13, color: "#7F1D1D", marginBottom: 20, lineHeight: 1.5 }}>
-              Esta orden ya ha sido pagada. No se permite cancelar órdenes con pago confirmado. Si necesitas anular esta orden, contacta con el administrador.
+              {isPartial
+                ? "Esta orden tiene pago parcial. No se puede cancelar hasta que esté totalmente pagada."
+                : "Esta orden ya ha sido pagada. No se permite cancelar órdenes con pago confirmado. Si necesitas anular esta orden, contacta con el administrador."}
             </p>
             {order && (
               <p style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 16 }}>
@@ -2141,8 +2145,13 @@ export default function PageSeller() {
 
   // ── Funcion para cancelar orden ───────────────────────────────────────────────────────
   const handleCancelOrder = (order) => {
+    if (isPaymentPartial(order?.payment_status)) {
+      showToast("No se puede cancelar una orden con pago parcial", "error");
+      return;
+    }
+
     // Validación: No permitir cancelar órdenes pagadas
-    if (order?.payment_status === "pagado") {
+    if (isPaymentPaid(order?.payment_status)) {
       showToast("No se puede cancelar una orden que ya ha sido pagada", "error");
       return;
     }
@@ -2153,7 +2162,13 @@ export default function PageSeller() {
     if (!cancelingOrder) return;
     
     // Validación adicional: Verificar nuevamente que no esté pagada
-    if (cancelingOrder?.payment_status === "pagado") {
+    if (isPaymentPartial(cancelingOrder?.payment_status)) {
+      showToast("No se puede cancelar una orden con pago parcial", "error");
+      setCancelingOrder(null);
+      return;
+    }
+
+    if (isPaymentPaid(cancelingOrder?.payment_status)) {
       showToast("No se puede cancelar una orden que ya ha sido pagada", "error");
       setCancelingOrder(null);
       return;
@@ -2692,7 +2707,7 @@ export default function PageSeller() {
                                       <Icons.Edit />
                                     </button>
                                   )}
-                                  {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && o.payment_status !== "pagado" && (
+                                  {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && (
                                     <button 
                                       className="table-action-btn cancel" 
                                       onClick={() => handleCancelOrder(o)} 
@@ -2769,12 +2784,12 @@ export default function PageSeller() {
                                 <Icons.Edit />
                               </button>
                             )}
-                            {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && o.payment_status !== "pagado" && (
+                            {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && (
                               <button className="card-action-btn cancel" onClick={() => handleCancelOrder(o)} title="Cancelar">
                                 <Icons.Trash />
                               </button>
                             )}
-                            {o.payment_status === "pagado" && !o.is_archived && !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && (
+                            {isPaymentPaid(o.payment_status) && !o.is_archived && !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && (
                               <button className="card-action-btn cancel" disabled title="No se puede cancelar: orden pagada" style={{ opacity: 0.5, cursor: "not-allowed" }}>
                                 <Icons.Trash />
                               </button>

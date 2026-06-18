@@ -3,8 +3,11 @@ import {
   CLIENT_FLOW_STEPS_EXTERNAL,
   CLIENT_STATUS_MAP,
   ORDER_STATUS,
+  PAYMENT_STATUS,
   PRODUCTION_FILE_STATUS,
   PRODUCTION_FILE_STATUS_LABELS,
+  isPaymentPaid,
+  isPaymentPartial,
   normalizeOrderStatus,
   formatDate,
 } from "../utils/constants";
@@ -92,7 +95,8 @@ export function FlowTrackClient({ status, events, order, designType, productionF
   const currentStepIdx = steps.findIndex((s) => s.key === clientStatus);
   const isCancelled = normalizedStatus === ORDER_STATUS.CANCELLED;
   const paymentStatus = order?.payment_status;
-  const isPaymentPending = paymentStatus && paymentStatus !== "pagado";
+  const isPaymentPending = paymentStatus === PAYMENT_STATUS.PENDING;
+  const isPartialPayment = isPaymentPartial(paymentStatus);
   const productionFiles = normalizePublicProductionFiles(productionFilesProp ?? order?.production_files);
   const productionFilesByStep = groupProductionFilesByStep(productionFiles);
   const productionPartColumns = PRODUCTION_PART_COLUMNS.map((column) => ({
@@ -117,8 +121,9 @@ export function FlowTrackClient({ status, events, order, designType, productionF
     const isCompleted = currentStepIdx >= 0 && (i < currentStepIdx || (i === currentStepIdx && isFinishedStatus));
     const isActive = currentStepIdx >= 0 && i === currentStepIdx && !isFinishedStatus;
     const isQuoteBlocked = isActive && step.key === ORDER_STATUS.IN_QUOTE && isPaymentPending;
-    const isQuoteConfirmed = step.key === ORDER_STATUS.IN_QUOTE && i <= currentStepIdx && paymentStatus === "pagado";
-    return { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed };
+    const isQuoteConfirmed = step.key === ORDER_STATUS.IN_QUOTE && i <= currentStepIdx && isPaymentPaid(paymentStatus);
+    const isQuotePartial = step.key === ORDER_STATUS.IN_QUOTE && i <= currentStepIdx && isPartialPayment;
+    return { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed, isQuotePartial };
   };
 
   return (
@@ -145,13 +150,13 @@ export function FlowTrackClient({ status, events, order, designType, productionF
         <div className={`ftc-timeline-horizontal ${productionFiles.length > 0 ? "with-files" : ""}`}>
           <div className="ftc-h-track">
             {steps.map((step, i) => {
-              const { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed } = getStepState(step, i);
+              const { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed, isQuotePartial } = getStepState(step, i);
               const hasDate = !!eventDates[step.key];
 
               return (
                 <div key={step.key} className="ftc-h-step-wrap">
-                  <div className={`ftc-h-step ${isCompleted ? "completed" : ""} ${isActive ? "active" : ""} ${isQuoteBlocked ? "blocked" : ""}`}>
-                    <div className={`ftc-h-circle ${isCompleted ? "done" : isQuoteConfirmed ? "confirmed" : isQuoteBlocked ? "blocked" : isActive ? "active" : ""}`}>
+                  <div className={`ftc-h-step ${isCompleted ? "completed" : ""} ${isActive ? "active" : ""} ${isQuoteBlocked ? "blocked" : ""} ${isQuotePartial ? "partial" : ""}`}>
+                    <div className={`ftc-h-circle ${isCompleted ? "done" : isQuoteConfirmed ? "confirmed" : isQuotePartial ? "partial" : isQuoteBlocked ? "blocked" : isActive ? "active" : ""}`}>
                       {isCompleted && (
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                       )}
@@ -161,7 +166,7 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                       {!isCompleted && isQuoteConfirmed && (
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                       )}
-                      {!isCompleted && !isQuoteBlocked && isActive && <div className="ftc-h-pulse" />}
+                      {!isCompleted && !isQuoteBlocked && !isQuotePartial && isActive && <div className="ftc-h-pulse" />}
                       {!isCompleted && !isActive && <span className="ftc-h-num">{i + 1}</span>}
                     </div>
                     <span className={`ftc-h-label ${isCompleted ? "done" : isActive ? "active" : ""}`}>
@@ -180,6 +185,12 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                         Pago confirmado
                       </span>
                     )}
+                    {isQuotePartial && (
+                      <span className="ftc-h-badge partial">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" /></svg>
+                        Pago parcial
+                      </span>
+                    )}
                   </div>
                   {i < steps.length - 1 && (
                     <div className={`ftc-h-line ${isCompleted ? "done" : isQuoteConfirmed ? "confirmed" : isQuoteBlocked ? "pending-payment" : ""}`} />
@@ -193,6 +204,11 @@ export function FlowTrackClient({ status, events, order, designType, productionF
             }) && (
               <div className="ftc-h-message">
                 El proceso continuará cuando el pago sea confirmado
+              </div>
+            )}
+            {isPartialPayment && (
+              <div className="ftc-h-message partial">
+                No se puede entregar la orden hasta que esté totalmente pagada.
               </div>
             )}
           </div>
@@ -223,13 +239,13 @@ export function FlowTrackClient({ status, events, order, designType, productionF
       {!isCancelled && currentStepIdx >= 0 && (
         <div className="ftc-timeline-vertical">
           {steps.map((step, i) => {
-            const { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed } = getStepState(step, i);
+            const { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed, isQuotePartial } = getStepState(step, i);
             const hasDate = !!eventDates[step.key];
 
             return (
-              <div key={step.key} className={`ftc-v-step ${isCompleted ? "completed" : ""} ${isActive ? "active" : ""} ${isQuoteBlocked ? "blocked" : ""}`}>
+              <div key={step.key} className={`ftc-v-step ${isCompleted ? "completed" : ""} ${isActive ? "active" : ""} ${isQuoteBlocked ? "blocked" : ""} ${isQuotePartial ? "partial" : ""}`}>
                 <div className="ftc-v-indicator">
-                  <div className={`ftc-v-dot ${isCompleted ? "done" : isQuoteConfirmed ? "confirmed" : isQuoteBlocked ? "blocked" : isActive ? "active" : ""}`}>
+                  <div className={`ftc-v-dot ${isCompleted ? "done" : isQuoteConfirmed ? "confirmed" : isQuotePartial ? "partial" : isQuoteBlocked ? "blocked" : isActive ? "active" : ""}`}>
                     {isCompleted && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                     {isQuoteBlocked && (
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -237,7 +253,7 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                     {!isCompleted && isQuoteConfirmed && (
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                     )}
-                    {isActive && !isQuoteBlocked && <div className="ftc-v-pulse" />}
+                    {isActive && !isQuoteBlocked && !isQuotePartial && <div className="ftc-v-pulse" />}
                   </div>
                   {i < steps.length - 1 && (
                     <div className={`ftc-v-line ${isCompleted ? "done" : isQuoteConfirmed ? "confirmed" : isQuoteBlocked ? "pending-payment" : ""}`} />
@@ -263,10 +279,19 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                         Pago confirmado
                       </span>
                     )}
+                    {isQuotePartial && (
+                      <span className="ftc-v-badge partial">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" /></svg>
+                        Pago parcial
+                      </span>
+                    )}
                   </div>
                   {/* Mensaje que aparece cuando la cotización está bloqueada */}
                   {isQuoteBlocked && (
                     <span className="ftc-v-message">El proceso continuará cuando el pago sea confirmado</span>
+                  )}
+                  {isQuotePartial && (
+                    <span className="ftc-v-message partial">No se puede entregar la orden hasta que esté totalmente pagada.</span>
                   )}
                   {productionFilesByStep[step.key]?.length > 0 && (
                     <div className="ftc-v-files" aria-label={`Partes del pedido en ${step.label}`}>

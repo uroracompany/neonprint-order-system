@@ -642,6 +642,14 @@ html, body {
     box-shadow: 0 0 0 5px var(--ft-green-glow);
   }
 
+  .ftc-h-circle.partial {
+    border-color: var(--ft-primary);
+    background: var(--ft-primary);
+    box-shadow: 0 0 0 5px var(--ft-primary-glow);
+    color: #fff;
+  }
+
+
   .ftc-h-pulse {
     position: absolute;
     inset: -6px;
@@ -759,6 +767,12 @@ html, body {
     background: var(--ft-green-light);
   }
 
+  .ftc-h-badge.partial,
+  .ftc-h-message.partial {
+    color: #0369A1;
+    background: #E0F2FE;
+  }
+
   /* Estilos del mensaje de comfirmacion cuando esta  en exitoso */
   .ftc-h-message.confirmed {
     color: #065F46;
@@ -851,6 +865,7 @@ html, body {
   gap: 10px;
   width: 100%;
   padding-top: 4px;
+  margin-top: 22px;
 }
 
 .ftc-part-column {
@@ -995,6 +1010,12 @@ html, body {
   box-shadow: 0 0 0 4px var(--ft-green-glow);
 }
 
+.ftc-v-dot.partial {
+  border-color: var(--ft-primary);
+  background: var(--ft-primary);
+  box-shadow: 0 0 0 4px var(--ft-primary-glow);
+}
+
 .ftc-v-pulse {
   position: absolute;
   inset: -6px;
@@ -1100,6 +1121,20 @@ html, body {
 .ftc-v-badge.confirmed {
   color: #065F46;
   background: var(--ft-green-light);
+}
+
+.ftc-v-badge.partial{
+  color: #0369A1;
+  background: #E0F2FE;
+  border-radius: 10px;
+  padding: 3px 8px;
+
+}
+/* Estilos para el badge parcial Mobile */
+.ftc-v-message.partial {
+  color: #0369A1;
+  border-radius: 10px;
+  padding: 3px 8px;
 }
 
 .ftc-v-files {

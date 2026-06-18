@@ -12,11 +12,15 @@ import FileUploadZone from "../components/ui/FileUploadZone";
 import CreateClientModal from "../components/ui/CreateClientModal";
 import {
   ORDER_STATUS,
+  PAYMENT_STATUS,
   PRODUCTION_AREAS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   ARCHIVE_MODULES,
   getOrderStatusConfig,
+  isPaymentPaid,
+  isPaymentPartial,
+  isPaymentProductionEligible,
   isOrderStatus,
   isOrderStatusIn,
   getFileNameFromUrl,
@@ -34,6 +38,7 @@ import {
   canArchiveOrder,
   archiveOrder,
 } from "../utils/archive";
+import { getPaymentConfirmButtonLabel } from "../utils/paymentUi";
 // Normaliza texto a minúsculas y sin espacios para comparaciones seguras
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
 const INVOICE_PAYMENT_FIELD = "invoice_payment";
@@ -45,7 +50,11 @@ const resolveSellerId = (order) => order?.seller_id || order?.created_by || null
 // Obtiene el nombre del vendedor buscando en el directorio o usando valor por defecto
 const resolveSellerName = (order, sellerDirectory) => order?.seller_name || sellerDirectory?.[resolveSellerId(order)] || "No definido";
 // Verifica si una orden puede ser editada en cotización (debe estar en estado IN_QUOTE, no pagada, no archivada)
-const isQuoteEditable = (order) => isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
+const isQuoteEditable = (order) => (
+  !order?.is_archived_quote &&
+  !isPaymentPaid(order?.payment_status) &&
+  (isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) || isPaymentPartial(order?.payment_status))
+);
 // Verifica si una orden está asignada al usuario actual
 const isOrderAssignedToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId);
 // Verifica si una orden puede ser archivada (recibe userId explícitamente)
@@ -326,7 +335,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
       setReceiptPreviewAvailable(true);
       setReceiptZoneError("");
       setReceiptZoneErrorKey(0);
-      setPaymentStatus(order?.payment_status || "Pending_Payment");
+      setPaymentStatus(isPaymentPartial(order?.payment_status) ? PAYMENT_STATUS.PAID : order?.payment_status || PAYMENT_STATUS.PENDING);
       setLocalError("");
       setReceiptUrl("");
     }
@@ -374,13 +383,15 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   const referenceImageUrls = getReferenceImages(order);
   const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const canConfirmPayment = isQuoteEditable(order);
-  const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status !== "pagado" && !order?.is_archived_quote;
-  const canMoveToProduction = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && order?.payment_status === "pagado" && !order?.is_archived_quote;
+  const canSelectPendingPayment = !isPaymentPartial(order.payment_status);
+  const isCompletingPartialPayment = isPaymentPartial(order.payment_status);
+  const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && !isPaymentPaid(order?.payment_status) && !order?.is_archived_quote;
+  const canMoveToProduction = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && isPaymentProductionEligible(order?.payment_status) && !order?.is_archived_quote;
   const returnedReason = String(order?.return_reason || "").trim();
   const readonlyMessage =
     order.is_archived_quote
       ? "Esta orden está en modo lectura porque fue archivada en caja."
-      : order.payment_status === "pagado"
+      : isPaymentPaid(order.payment_status)
         ? "Esta orden está en modo lectura porque el pago ya fue confirmado."
         : "Esta orden está en modo lectura porque su estado actual no permite confirmar pago.";
 
@@ -414,7 +425,14 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
   };
 
   const handleSubmit = async () => {
-    if (paymentStatus === "pagado" && !receiptFile) {
+    if (isPaymentPartial(order.payment_status) && paymentStatus === PAYMENT_STATUS.PENDING) {
+      const msg = "Una orden con pago parcial solo puede mantenerse parcial o cambiarse a pagado.";
+      setLocalError(msg);
+      if (onValidationError) onValidationError(order, msg);
+      return;
+    }
+
+    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile) {
       const msg = "Debes subir una imagen del recibo o factura antes de confirmar.";
       // Mostramos error inline DENTRO del modal
       setLocalError(msg);
@@ -561,7 +579,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
             <div className="pq-panel-title">Confirmación de pago</div>
 
             {!canConfirmPayment && (
-              <div className={`pq-readonly-note ${order.payment_status === "pagado" ? "success" : ""}`}>
+              <div className={`pq-readonly-note ${isPaymentPaid(order.payment_status) ? "success" : ""}`}>
                 <Icons.Check />
                 {readonlyMessage}
               </div>
@@ -573,18 +591,18 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                 <select
                   className="pq-input"
                   value={paymentStatus}
-                  disabled={!canConfirmPayment || paymentSaving}
+                  disabled={!canConfirmPayment || paymentSaving || isCompletingPartialPayment}
                   onChange={event => setPaymentStatus(event.target.value)}
                 >
-                  <option value="Pending_Payment">Pendiente</option>
-                  <option value="parcial">Parcial</option>
-                  <option value="pagado">Pagado</option>
+                  <option value={PAYMENT_STATUS.PENDING} disabled={!canSelectPendingPayment}>Pendiente</option>
+                  <option value={PAYMENT_STATUS.PARTIAL}>Pago parcial</option>
+                  <option value={PAYMENT_STATUS.PAID}>Pagado</option>
                 </select>
               </div>
 
               <div className="pq-payment-field">
                 <label>Recibo o factura</label>
-                {paymentStatus === "pagado" ? (
+                {paymentStatus === PAYMENT_STATUS.PAID ? (
                   receiptFile ? (
                     <div className="pq-receipt-preview-card">
                       <FileUploadZone
@@ -658,7 +676,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                     />
                   )
                 ) : (
-                  <span className="pq-upload-hint">El campo de recibo solo se muestra cuando el estado es "Pagado"</span>
+                  <span className="pq-upload-hint">El campo de recibo solo se muestra cuando el estado es "Pagado". En pago parcial no se adjunta comprobante final.</span>
                 )}
               </div>
             </div>
@@ -708,7 +726,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
               )}
               <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
               <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving}>
-                {paymentSaving ? "Confirmando..." : "Confirmar pago"}
+                {getPaymentConfirmButtonLabel(paymentStatus, paymentSaving)}
               </button>
             </div>
           </div>
@@ -993,7 +1011,17 @@ export default function PageQuote() {
   // 5. Notifica al usuario del resultado
   const handleConfirmPayment = async ({ order, receiptFile, paymentStatus }) => {
     // Validación inicial: si es pagado, debe haber recibo
-    if (paymentStatus === "pagado" && !receiptFile) {
+    if (isPaymentPartial(order?.payment_status) && paymentStatus === PAYMENT_STATUS.PENDING) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Cambio no permitido",
+        orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+        message: "Una orden con pago parcial solo puede mantenerse parcial o cambiarse a pagado.",
+      });
+      return { ok: false };
+    }
+
+    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile) {
       notif.showActionNotification({
         type: "order_cancelled",
         label: "Imagen requerida",
@@ -1066,7 +1094,11 @@ export default function PageQuote() {
       payment_status: paymentStatus,
     };
 
-    // Solo incluir invoice_payment si hay URL (o si es null para limpiar)
+    if (paymentStatus === PAYMENT_STATUS.PARTIAL) {
+      updatePayload[INVOICE_PAYMENT_FIELD] = null;
+    }
+
+    // Solo incluir invoice_payment si hay URL final de pago completo
     if (invoicePaymentUrl) {
       updatePayload[INVOICE_PAYMENT_FIELD] = invoicePaymentUrl;
     }

@@ -173,6 +173,11 @@ export const normalizePaymentStatus = (value) => {
 };
 
 export const isPaymentStatus = (value, expectedStatus) => normalizePaymentStatus(value) === expectedStatus;
+export const isPaymentPaid = (value) => isPaymentStatus(value, PAYMENT_STATUS.PAID);
+export const isPaymentPartial = (value) => isPaymentStatus(value, PAYMENT_STATUS.PARTIAL);
+export const isPaymentProductionEligible = (value) => (
+  isPaymentPaid(value) || isPaymentPartial(value)
+);
 
 export const PAYMENT_OPTIONS = [PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL, PAYMENT_STATUS.PAID];
 
@@ -220,7 +225,7 @@ export const STATUS_LABELS = {
 // Etiquetas legibles para estados de pago, mapeados a los valores de PAYMENT_OPTIONS
 export const PAYMENT_LABELS = {
   [PAYMENT_STATUS.PENDING]: "Pendiente",
-  [PAYMENT_STATUS.PARTIAL]: "Parcial",
+  [PAYMENT_STATUS.PARTIAL]: "Pago parcial",
   [PAYMENT_STATUS.PAID]: "Pagado",
 };
 
@@ -303,7 +308,7 @@ export const getOrderStatusConfig = (value) => STATUS_COLORS[normalizeOrderStatu
 export const PAYMENT_COLORS = {
   [PAYMENT_STATUS.PAID]: { label: "Pagado", color: "#14532D", bg: "#DCFCE7" },
   [PAYMENT_STATUS.PENDING]: { label: "Pago Pendiente", color: "#92620A", bg: "#FEF3C7" },
-  [PAYMENT_STATUS.PARTIAL]: { label: "Parcial", color: "#0369A1", bg: "#E0F2FE" },
+  [PAYMENT_STATUS.PARTIAL]: { label: "Pago parcial", color: "#0369A1", bg: "#E0F2FE" },
 };
 
 // FUNCIONES UTILIDAD PARA FORMATEO

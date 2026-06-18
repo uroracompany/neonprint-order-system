@@ -1,5 +1,5 @@
 import { supabase } from "../../supabaseClient";
-import { ARCHIVE_MODULE_CONFIG, ARCHIVE_MODULES } from "./constants";
+import { ARCHIVE_MODULE_CONFIG, ARCHIVE_MODULES, isPaymentPaid, isPaymentPartial } from "./constants";
 
 export const getArchiveConfig = (module) => ARCHIVE_MODULE_CONFIG[module] || null;
 
@@ -18,9 +18,10 @@ export const canRestoreOrder = (order, module, userId) => {
 export const isOrderArchivableByStatus = (order, module) => {
   const config = getArchiveConfig(module);
   if (!config) return false;
+  if (isPaymentPartial(order?.payment_status)) return false;
 
   if (config.requiresPaymentPaid) {
-    return order?.payment_status === "pagado";
+    return isPaymentPaid(order?.payment_status);
   }
 
   return config.archivableStatuses.includes(order?.status);
@@ -45,6 +46,9 @@ export const isOrderArchivedForUser = (order, module, userId) => {
 export const archiveOrder = async (order, module) => {
   const config = getArchiveConfig(module);
   if (!config || !order?.id) return { error: new Error("Invalid module or order") };
+  if (isPaymentPartial(order?.payment_status)) {
+    return { error: new Error("No se puede archivar una orden con pago parcial.") };
+  }
 
   if (config.usesRpc) {
     return supabase.rpc(config.rpcName, { p_order_id: order.id, p_archived: true });

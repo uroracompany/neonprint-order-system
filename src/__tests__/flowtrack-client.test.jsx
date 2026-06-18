@@ -155,4 +155,23 @@ describe("FlowTrackClient order part subphases", () => {
     expect(screen.getAllByText("El proceso continuará cuando el pago sea confirmado").length).toBeGreaterThan(0);
     expect(document.querySelector(".ftc-file-chip")).not.toBeInTheDocument();
   });
+
+  it("shows partial payment without blocking production progress", () => {
+    renderFlowTrack({
+      status: ORDER_STATUS.IN_COMPLETED,
+      order: {
+        status: ORDER_STATUS.IN_COMPLETED,
+        payment_status: PAYMENT_STATUS.PARTIAL,
+      },
+      productionFiles: [
+        makeTrackingPart(1, "Digital", PRODUCTION_FILE_STATUS.COMPLETED),
+      ],
+    });
+
+    expect(screen.getAllByText("Pago parcial").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("No se puede entregar la orden hasta que esté totalmente pagada.").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Pago confirmado")).not.toBeInTheDocument();
+    expect(screen.queryByText("El proceso continuará cuando el pago sea confirmado")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Banner principal")).toHaveLength(2);
+  });
 });

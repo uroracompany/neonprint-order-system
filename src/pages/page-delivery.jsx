@@ -8,7 +8,7 @@ import NotificationCenter from "../components/NotificationCenter";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
-import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isOrderStatus, ARCHIVE_MODULES, PRODUCTION_AREAS, PRODUCTION_AREA_LABELS, resolveSellerId } from "../utils/constants";
+import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isPaymentPartial, isOrderStatus, ARCHIVE_MODULES, PRODUCTION_AREAS, PRODUCTION_AREA_LABELS, resolveSellerId } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
@@ -27,7 +27,9 @@ const CARD_ACCENTS = [
   { color: "#8B5CF6", bg: "#F3E8FF", glow: "radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%)" },
 ];
 
-function OrderDetailModal({ onClose, order, onUpdateStatus }) {
+const PARTIAL_PAYMENT_DELIVERY_MESSAGE = "No se puede entregar la orden hasta que esté totalmente pagada.";
+
+function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [sellerName, setSellerName] = useState("");
@@ -115,6 +117,11 @@ function OrderDetailModal({ onClose, order, onUpdateStatus }) {
       console.warn("No se pueden cambiar estados de órdenes archivadas");
       return;
     }
+
+    if (newStatus === ORDER_STATUS.IN_DELIVERED && isPaymentPartial(order.payment_status)) {
+      onBlockedAction?.(order, PARTIAL_PAYMENT_DELIVERY_MESSAGE);
+      return;
+    }
     
     setUpdating(true);
     try {
@@ -140,6 +147,7 @@ function OrderDetailModal({ onClose, order, onUpdateStatus }) {
   if (!order) return null;
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
+  const hasPartialPayment = isPaymentPartial(order.payment_status);
 
   return (
     <div className="pd-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -166,6 +174,12 @@ function OrderDetailModal({ onClose, order, onUpdateStatus }) {
           {order.is_archived_delivery && (
             <div className="pd-alert pd-alert-warning" style={{ background: "#FEF3C7", color: "#92400E", borderColor: "#F59E0B" }}>
               <span>⚠️ Esta orden está archivada. No se pueden cambiar sus estados.</span>
+            </div>
+          )}
+
+          {hasPartialPayment && (
+            <div className="pd-alert pd-alert-warning" style={{ background: "#FEF3C7", color: "#92400E", borderColor: "#F59E0B" }}>
+              <span>{PARTIAL_PAYMENT_DELIVERY_MESSAGE}</span>
             </div>
           )}
 
@@ -322,8 +336,8 @@ function OrderDetailModal({ onClose, order, onUpdateStatus }) {
             <button 
               className="pd-btn pd-btn-primary"
               onClick={() => handleUpdateStatus(ORDER_STATUS.IN_DELIVERED)}
-              disabled={updating || order.is_archived_delivery}
-              title={order.is_archived_delivery ? "No se pueden cambiar estados de órdenes archivadas" : ""}
+              disabled={updating || order.is_archived_delivery || hasPartialPayment}
+              title={hasPartialPayment ? PARTIAL_PAYMENT_DELIVERY_MESSAGE : order.is_archived_delivery ? "No se pueden cambiar estados de órdenes archivadas" : ""}
             >
               {updating ? (
                 <>
@@ -496,8 +510,25 @@ export default function PageDelivery() {
     { icon: <Icons.Package />, label: "Completadas", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length },
   ];
 
+  const notifyPartialPaymentBlocked = (order, message = PARTIAL_PAYMENT_DELIVERY_MESSAGE) => {
+    notif.showActionNotification({
+      type: "order_cancelled",
+      label: "Entrega bloqueada",
+      orderTitle: order?.client_name || order?.description || `Orden #${order?.id?.slice(0, 8).toUpperCase()}`,
+      orderId: order?.id || null,
+      message,
+      metadata: { event_kind: "partial_payment_delivery_blocked" },
+    });
+  };
+
   const handleQuickMarkDelivered = async (e, orderId) => {
     e.stopPropagation();
+    const order = orders.find(item => item.id === orderId);
+    if (isPaymentPartial(order?.payment_status)) {
+      notifyPartialPaymentBlocked(order);
+      return;
+    }
+
     setUpdatingOrderId(orderId);
     try {
       const { error } = await supabase
@@ -519,6 +550,14 @@ export default function PageDelivery() {
       }
     } catch (err) {
       console.error("Error marking order as delivered:", err);
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Entrega bloqueada",
+        orderTitle: order?.client_name || order?.description || `Orden #${orderId?.slice(0, 8).toUpperCase()}`,
+        orderId,
+        message: err?.message?.includes("totalmente pagada") ? PARTIAL_PAYMENT_DELIVERY_MESSAGE : "No se pudo marcar la orden como entregada.",
+        metadata: { event_kind: "delivery_update_failed" },
+      });
     }
     setUpdatingOrderId(null);
   };
@@ -571,8 +610,8 @@ export default function PageDelivery() {
         <button
           className={variant === "table" ? "table-action-btn deliver" : "pd-card-action-btn deliver"}
           onClick={event => handleQuickMarkDelivered(event, order.id)}
-          disabled={updatingOrderId === order.id}
-          title="Marcar como entregado"
+          disabled={updatingOrderId === order.id || isPaymentPartial(order.payment_status)}
+          title={isPaymentPartial(order.payment_status) ? PARTIAL_PAYMENT_DELIVERY_MESSAGE : "Marcar como entregado"}
         >
           {updatingOrderId === order.id ? <span className="pd-btn-spinner" /> : <Icons.Check />}
         </button>
@@ -614,6 +653,7 @@ export default function PageDelivery() {
         </div>
         <div className="pd-order-card-badges">
           <StatusBadge status={order.status} className="pd-badge" showDot={false} />
+          <PaymentBadge status={order.payment_status} className="pd-badge" />
         </div>
       </div>
 
@@ -911,6 +951,7 @@ export default function PageDelivery() {
         onClose={() => setSelectedOrder(null)} 
         order={selectedOrder}
         onUpdateStatus={refreshOrders}
+        onBlockedAction={notifyPartialPaymentBlocked}
         onUnarchive={handleUnarchiveOrder}
       />
     </div>

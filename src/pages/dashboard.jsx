@@ -19,12 +19,15 @@ import { ClientFilterSelect, ClientNameAutocomplete, ClientSelect } from "../com
 import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   ORDER_STATUS,
+  PAYMENT_STATUS,
   STATUS_LABELS,
   PAYMENT_LABELS,
   MATERIAL_OPTIONS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   getOrderStatusLabel,
+  isPaymentPaid,
+  isPaymentPartial,
   isOrderStatus,
   isOrderStatusIn,
   normalizeOrderStatus,
@@ -40,11 +43,10 @@ import {
   canArchiveOrder,
   archiveOrder,
 } from "../utils/archive";
+import { getPaymentConfirmButtonLabel } from "../utils/paymentUi";
 import { getReferenceImages } from "../utils/orderAssets";
 import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
-import { openOrderAssetUrl } from "../utils/fileAccess";
-import { isR2OrderAssetUrl } from "../utils/uploadOrderAsset";
 import { useAuth } from "../hooks/useAuth";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
@@ -233,12 +235,6 @@ function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit
   const preview = order.preview_image;
   const referenceImageUrls = getReferenceImages(order);
   const paymentInvoice = paymentInvoiceUrl;
-  const openStoredAsset = (event, url, fileName, download = false) => {
-    if (!isR2OrderAssetUrl(url)) return;
-    event.preventDefault();
-    openOrderAssetUrl({ url, fileName, download });
-  };
-
   return (
     <ModalShell open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} size="large">
       {order.order_design_type === "EXTERNAL_DESING" ? (
@@ -464,7 +460,7 @@ function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit
             </div>
           </div>
 
-          {order.payment_status === "pagado" && paymentInvoice && (
+          {isPaymentPaid(order.payment_status) && paymentInvoice && (
             <div style={{
               background: "var(--surface)",
               border: "1.5px solid var(--border)",
@@ -1631,8 +1627,13 @@ export default function Dashboard() {
   };
 
   const openCancelModal = (order) => {
-    if (order.payment_status === "pagado" || isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED])) {
-      showFeedback("error", "No se puede cancelar una orden pagada o cancelada.");
+    if (isPaymentPartial(order.payment_status)) {
+      showFeedback("error", "No se puede cancelar una orden con pago parcial.");
+      return;
+    }
+
+    if (isOrderStatus(order.status, ORDER_STATUS.CANCELLED)) {
+      showFeedback("error", "No se puede cancelar una orden ya cancelada.");
       return;
     }
     setCancelOrderData(order);
@@ -1641,6 +1642,13 @@ export default function Dashboard() {
 
   const handleConfirmCancelOrder = async () => {
     if (!cancelOrderData) return;
+    if (isPaymentPartial(cancelOrderData.payment_status)) {
+      showFeedback("error", "No se puede cancelar una orden con pago parcial.");
+      setCancelModalOpen(false);
+      setCancelOrderData(null);
+      return;
+    }
+
     setCancelLoading(true);
 
     const { error } = await supabase
@@ -1740,7 +1748,7 @@ export default function Dashboard() {
 
   const openQuotationModal = (order) => {
     setQuotationOrder(order);
-    setQuotationPaymentStatus(order.payment_status || "Pending_Payment");
+    setQuotationPaymentStatus(isPaymentPartial(order.payment_status) ? PAYMENT_STATUS.PAID : order.payment_status || PAYMENT_STATUS.PENDING);
     setQuotationInvoice(null);
     setQuotationModalOpen(true);
   };
@@ -1748,7 +1756,11 @@ export default function Dashboard() {
   const handleQuotationOrder = async () => {
     if (!quotationOrder) return;
 
-    if (quotationPaymentStatus === "pagado" && !quotationInvoice) {
+    if (isPaymentPartial(quotationOrder.payment_status) && quotationPaymentStatus === PAYMENT_STATUS.PENDING) {
+      return showFeedback("error", "Una orden con pago parcial solo puede mantenerse parcial o cambiarse a pagado.");
+    }
+
+    if (quotationPaymentStatus === PAYMENT_STATUS.PAID && !quotationInvoice) {
       return showFeedback("error", "Debe subir la imagen de pago para marcar como pagado.");
     }
 
@@ -1788,7 +1800,7 @@ export default function Dashboard() {
       .from("orders")
       .update({
         payment_status: quotationPaymentStatus,
-        invoice_payment: paymentInvoiceUrl,
+        invoice_payment: quotationPaymentStatus === PAYMENT_STATUS.PARTIAL ? null : paymentInvoiceUrl,
       })
       .eq("id", quotationOrder.id);
 
@@ -1801,7 +1813,7 @@ export default function Dashboard() {
     setQuotationModalOpen(false);
     setQuotationOrder(null);
     await loadOrders();
-    showFeedback("success", "Orden cotizada correctamente.");
+    showFeedback("success", quotationPaymentStatus === PAYMENT_STATUS.PARTIAL ? "Pago parcial registrado correctamente." : "Orden cotizada correctamente.");
   };
 
   const openCreateUserModal = () => {
@@ -2262,6 +2274,9 @@ export default function Dashboard() {
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
     { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: profiles.length },
   ];
+
+  const isQuotationCompletingPartialPayment = isPaymentPartial(quotationOrder?.payment_status);
+  const quotationConfirmButtonLabel = quotationLoading ? "Guardando..." : getPaymentConfirmButtonLabel(quotationPaymentStatus);
 
   return (
     // Apartado principal totalmente flexible
@@ -2957,20 +2972,28 @@ export default function Dashboard() {
             {quotationOrder?.description?.slice(0, 60)}{quotationOrder?.description?.length > 60 ? "..." : ""}
           </p>
 
+          {quotationOrder && (
+            <div className="pa-field" style={{ marginBottom: 16 }}>
+              <span>Estado real actual</span>
+              <PaymentBadge status={quotationOrder.payment_status} className="ps-badge" bordered />
+            </div>
+          )}
+
           <div className="pa-field" style={{ marginBottom: 16 }}>
             <span>Estado de Pago</span>
             <select
               value={quotationPaymentStatus}
               onChange={(e) => setQuotationPaymentStatus(e.target.value)}
+              disabled={quotationLoading || isQuotationCompletingPartialPayment}
               style={{ width: "100%" }}
             >
-              <option value="Pending_Payment">Pendiente</option>
-              <option value="parcial">Parcial</option>
-              <option value="pagado">Pagado</option>
+              <option value={PAYMENT_STATUS.PENDING} disabled={isPaymentPartial(quotationOrder?.payment_status)}>Pendiente</option>
+              <option value={PAYMENT_STATUS.PARTIAL}>Pago parcial</option>
+              <option value={PAYMENT_STATUS.PAID}>Pagado</option>
             </select>
           </div>
 
-          {quotationPaymentStatus === "pagado" && (
+          {quotationPaymentStatus === PAYMENT_STATUS.PAID && (
             <div className="pa-field" style={{ marginBottom: 20 }}>
               <span>Imagen de Recibo/Factura <span style={{ color: "#ef4444" }}>*</span></span>
               <FileUploadZone
@@ -2996,9 +3019,9 @@ export default function Dashboard() {
               className="pa-btn primary"
               style={{ background: "#06B6D4", borderColor: "#06B6D4", flex: 2 }}
               onClick={handleQuotationOrder}
-              disabled={quotationLoading || (quotationPaymentStatus === "pagado" && !quotationInvoice)}
+              disabled={quotationLoading || (quotationPaymentStatus === PAYMENT_STATUS.PAID && !quotationInvoice)}
             >
-              {quotationLoading ? "Guardando..." : "Confirmar"}
+              {quotationConfirmButtonLabel}
             </button>
           </div>
         </div>
