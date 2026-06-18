@@ -1,16 +1,25 @@
 .fc-file-item {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
   padding: 10px 12px;
-  background: var(--surface-alt, #f5f7fb);
-  border: 1px solid var(--border, #dde3ef);
+  background: var(--surface-alt, #F5F7FB);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s ease;
 }
 
 .fc-file-item:hover {
-  border-color: var(--primary, #091127);
+  border-color: var(--primary);
+}
+
+.fc-file-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
 }
 
 .fc-file-icon {
@@ -19,54 +28,83 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface, #ffffff);
-  border: 1px solid var(--border, #dde3ef);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--text-muted, #8899b5);
+  color: var(--text-muted);
   flex-shrink: 0;
+}
+
+.fc-file-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .fc-file-info {
   flex: 1;
   min-width: 0;
+  line-height: 1.25;
 }
 
 .fc-file-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text, #0f1e40);
   display: block;
   overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .fc-file-secondary {
-  font-size: 10px;
-  color: var(--text-muted, #8899b5);
   display: block;
-  margin-top: 1px;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.fc-file-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .fc-file-action {
   width: 32px;
   height: 32px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--primary, #091127);
+  background: var(--primary);
   color: #fff;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   flex-shrink: 0;
   text-decoration: none;
-  transition: opacity 0.15s, background 0.15s;
+  transition: background 0.15s ease;
 }
 
-.fc-file-action:hover {
-  opacity: 0.85;
+.fc-file-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.fc-file-action:hover:not(:disabled) {
   background: var(--primary-mid, #1a3060);
+}
+
+.fc-file-action:focus-visible {
+  outline: 2px solid rgba(9, 17, 39, 0.22);
+  outline-offset: 2px;
+}
+
+.fc-file-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .fc-file-action-remove {
@@ -74,8 +112,94 @@
   color: #f43f5e;
 }
 
-.fc-file-action-remove:hover {
-  background: #f43f5e;
-  color: #fff;
-  opacity: 1;
+.fc-file-action-remove:hover:not(:disabled) {
+  background: rgba(244, 63, 94, 0.25);
+  color: #e11d48;
+}
+
+.fc-file-extra {
+  width: 100%;
+  padding: 10px 10px 10px 46px;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(221, 227, 239, 0.72);
+  border-radius: 8px;
+}
+
+.production-file-meta {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(170px, 220px);
+  gap: 12px;
+  align-items: end;
+  width: 100%;
+}
+
+.production-file-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.production-file-field-label {
+  color: var(--text-muted, #8899b5);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.25px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.production-file-field input,
+.production-file-field select {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-family: 'Poppins', sans-serif;
+  color: var(--text, #0f1e40);
+  border: 1.5px solid rgba(184, 195, 218, 0.72);
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.production-file-field input:hover,
+.production-file-field select:hover {
+  border-color: var(--border-hov, #B8C3DA);
+  background-color: #ffffff;
+}
+
+.production-file-field input:focus,
+.production-file-field select:focus {
+  border-color: var(--primary, #091127);
+  background-color: var(--surface, #ffffff);
+  box-shadow: 0 0 0 3px rgba(9, 17, 39, 0.08);
+}
+
+@media (max-width: 760px) {
+  .production-file-meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .fc-file-item {
+    padding: 11px;
+  }
+
+  .fc-file-main {
+    align-items: flex-start;
+  }
+
+  .fc-file-actions {
+    align-self: flex-start;
+  }
+
+  .fc-file-extra {
+    padding: 10px;
+  }
 }

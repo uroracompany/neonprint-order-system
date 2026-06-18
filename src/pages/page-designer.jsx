@@ -169,12 +169,14 @@ function ProductionAreaSelect({ value, onChange, isError }) {
 function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRefresh, onSendToQuotation, quotationSending }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingFileAreas, setPendingFileAreas] = useState([]);
+  const [pendingFileLabels, setPendingFileLabels] = useState([]);
   const [pendingPreview, setPendingPreview] = useState(null);
   const [pendingPreviewName, setPendingPreviewName] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
+  const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [sellerName, setSellerName] = useState("");
   const designerPreviewInputRef = useRef(null);
   const referenceImageUrls = getReferenceImages(order);
@@ -237,6 +239,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
     if (acceptedFiles.length > 0) {
       setPendingFiles(prev => [...prev, ...acceptedFiles]);
       setPendingFileAreas(prev => [...prev, ...acceptedFiles.map(() => "")]);
+      setPendingFileLabels(prev => [...prev, ...acceptedFiles.map(() => "")]);
     }
 
     if (rejectedFiles.length > 0) {
@@ -251,6 +254,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
     }
     setSaveSuccess(false);
     setMissingAreaIndices([]);
+    setMissingLabelIndices([]);
     if (rejectedFiles.length > 0) {
       requestAnimationFrame(() => {
         const el = document.querySelector(".pd-upload-area");
@@ -292,17 +296,24 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
     if (!canEditDesignerAssets) return;
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
     setPendingFileAreas(prev => prev.filter((_, i) => i !== index));
+    setPendingFileLabels(prev => prev.filter((_, i) => i !== index));
     setSaveSuccess(false);
     setMissingAreaIndices([]);
   };
   
   const handleSave = async () => {
     if (!canEditDesignerAssets) return;
-    if (pendingFiles.some((_, index) => !pendingFileAreas[index])) {
-      const missing = pendingFiles
-        .map((_, i) => (!pendingFileAreas[i] ? i : -1))
-        .filter(i => i !== -1);
-      setMissingAreaIndices(missing);
+    const missingAreas = pendingFiles
+      .map((_, i) => (!pendingFileAreas[i] ? i : -1))
+      .filter(i => i !== -1);
+    const missingLabels = pendingFiles
+      .map((_, i) => (!pendingFileLabels[i]?.trim() ? i : -1))
+      .filter(i => i !== -1);
+
+    setMissingAreaIndices(missingAreas);
+    setMissingLabelIndices(missingLabels);
+
+    if (missingAreas.length > 0 || missingLabels.length > 0) {
       setSaveError("missing-area");
       requestAnimationFrame(() => {
         const el = document.querySelector(".pd-file-missing");
@@ -314,6 +325,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
     setSaveSuccess(false);
     setSaveError(null);
     setMissingAreaIndices([]);
+    setMissingLabelIndices([]);
     
     try {
       const updateData = {};
@@ -349,6 +361,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
             urls: fileUrls,
             files: pendingFiles,
             areaCodes: pendingFileAreas,
+            publicLabels: pendingFileLabels,
             userId: order.designer_id,
           });
 
@@ -391,6 +404,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
       
       setPendingFiles([]);
       setPendingFileAreas([]);
+      setPendingFileLabels([]);
       setPendingPreview(null);
       setPendingPreviewName(null);
       setSaveSuccess(true);
@@ -406,6 +420,7 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
   const handleClose = () => {
     setPendingFiles([]);
     setPendingFileAreas([]);
+    setPendingFileLabels([]);
     setPendingPreview(null);
     setSaveSuccess(false);
     setSaveError(null);
@@ -588,21 +603,37 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
               <div className="pd-files-container">
                 <span className="pd-files-label">Archivos pendientes ({pendingFiles.length})</span>
                 {pendingFiles.map((file, i) => (
-                  <div key={i} className={missingAreaIndices.includes(i) ? 'pd-file-missing' : ''}>
+                  <div key={i} className={missingLabelIndices.includes(i) || missingAreaIndices.includes(i) ? 'pd-file-missing' : ''}>
                     <FileCard
                       name={file.name}
                       secondaryText={formatFileSize(file.size)}
                       onRemove={() => removePendingFile(i)}
                     >
-                      <div style={{ minWidth: '180px' }}>
-                        <ProductionAreaSelect
-                          value={pendingFileAreas[i]}
-                          isError={missingAreaIndices.includes(i)}
-                          onChange={(value) => {
-                            setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area));
-                            setMissingAreaIndices([]);
-                          }}
-                        />
+                      <div className="production-file-meta pd-production-file-fields">
+                        <label className="production-file-field">
+                          <span className="production-file-field-label">Nombre visible en seguimiento</span>
+                          <input
+                            className={`pd-input${missingLabelIndices.includes(i) ? " pd-input-error" : ""}`}
+                            value={pendingFileLabels[i] || ""}
+                            onChange={(event) => {
+                              setPendingFileLabels(pendingFileLabels.map((label, idx) => idx === i ? event.target.value : label));
+                              setMissingLabelIndices([]);
+                            }}
+                            placeholder="Ej: Banner principal"
+                            aria-label={`Nombre visible en seguimiento de ${file.name}`}
+                          />
+                        </label>
+                        <label className="production-file-field">
+                          <span className="production-file-field-label">Área de producción</span>
+                          <ProductionAreaSelect
+                            value={pendingFileAreas[i]}
+                            isError={missingAreaIndices.includes(i)}
+                            onChange={(value) => {
+                              setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area));
+                              setMissingAreaIndices([]);
+                            }}
+                          />
+                        </label>
                       </div>
                     </FileCard>
                   </div>
@@ -695,13 +726,13 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
                         width: 120,
                         height: 120,
                         objectFit: "cover",
-                        borderRadius: 8,
+                        borderRadius: "var(--pd-radius-md)",
                         border: "1px solid var(--pd-border)",
                         cursor: "pointer",
-                        transition: "transform 0.2s",
+                        transition: "transform 0.2s, box-shadow 0.2s",
                       }}
-                      onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; }}
-                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; }}
+                      onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
+                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
                     />
                   </a>
                 ))}

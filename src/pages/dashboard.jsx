@@ -331,29 +331,25 @@ function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit
           {(preview || existingFiles.length > 0 || referenceImageUrls.length > 0) && (
             <>
               {preview && (
-                <div style={{
-                  background: "var(--surface)",
-                  border: "1.5px solid var(--border)",
-                  borderRadius: "var(--radius-lg)",
-                  padding: 20,
-                  marginBottom: 18
-                }}>
-                  <p style={{
-                    fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
-                    textTransform: "uppercase", letterSpacing: "0.07em",
-                    marginBottom: 14, margin: "0 0 14px 0"
-                  }}>Vista previa</p>
-                  <img
-                    src={preview}
-                    alt="Preview"
-                    style={{
-                      width: "100%",
-                      maxHeight: 200,
-                      objectFit: "contain",
-                      borderRadius: "var(--radius-md)",
-                      background: "var(--surface-alt)"
-                    }}
-                  />
+                <div>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icons.Eye /> Orden de Trabajo
+                  </p>
+                  <a href={preview} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                    <img
+                      src={preview}
+                      alt="preview"
+                      style={{
+                        width: "100%",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--border)",
+                        cursor: "pointer",
+                        transition: "transform 0.2s, box-shadow 0.2s",
+                      }}
+                      onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                    />
+                  </a>
                 </div>
               )}
               {existingFiles.length > 0 && (
@@ -361,196 +357,15 @@ function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit
                   <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                     <Icons.Brush /> Diseño del cliente
                   </p>
-                  {(() => {
-                    if (existingFiles.length === 1) {
-                      const url = existingFiles[0].url;
-                      const fileName = existingFiles[0].name || "archivo";
-                      const downloadUrl = url.includes("?") ? `${url}&download=${fileName}` : `${url}?download=${fileName}`;
-                      return url.toLowerCase().endsWith(".pdf") ? (
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <a
-                            href={url}
-                            onClick={(event) => openStoredAsset(event, url, fileName, false)}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{
-                              display: "flex", flexDirection: "column",
-                              alignItems: "center", justifyContent: "center",
-                              gap: 10, padding: "24px 16px",
-                              borderRadius: "var(--radius-md)",
-                              background: "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)",
-                              border: "1.5px dashed var(--primary)",
-                              color: "var(--primary)", fontSize: 13,
-                              textDecoration: "none",
-                              fontWeight: 600,
-                              cursor: "pointer",
-                              transition: "all 0.2s",
-                              flex: 1
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.background = "linear-gradient(135deg, var(--primary) 0%, rgba(6,182,212,0.8) 100%)";
-                              e.currentTarget.style.color = "#fff";
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.background = "linear-gradient(135deg, var(--primary-light) 0%, rgba(6,182,212,0.05) 100%)";
-                              e.currentTarget.style.color = "var(--primary)";
-                            }}
-                          >
-                            <Icons.Receipt style={{ fontSize: 24 }} />
-                            Ver PDF
-                          </a>
-                          <a
-                            href={downloadUrl}
-                            onClick={(event) => openStoredAsset(event, url, fileName, true)}
-                            download={fileName}
-                            style={{
-                              display: "flex", flexDirection: "column",
-                              alignItems: "center", justifyContent: "center",
-                              gap: 10, padding: "24px 16px",
-                              borderRadius: "var(--radius-md)",
-                              background: "var(--surface-alt)",
-                              border: "1.5px solid var(--border)",
-                              color: "var(--text)", fontSize: 13,
-                              textDecoration: "none",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                              transition: "all 0.2s",
-                              flex: 1
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.background = "var(--primary-light)";
-                              e.currentTarget.style.color = "#fff";
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.background = "var(--surface-alt)";
-                              e.currentTarget.style.color = "var(--text)";
-                            }}
-                          >
-                            <Icons.Download style={{ fontSize: 24 }} />
-                            Descargar
-                          </a>
-                        </div>
-                      ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                          <a href={url} onClick={(event) => openStoredAsset(event, url, fileName, false)} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                            <img 
-                              src={url} 
-                              alt="diseno" 
-                              style={{
-                                width: "100%",
-                                borderRadius: "var(--radius-md)",
-                                border: "1px solid var(--border)",
-                                cursor: "pointer",
-                                transition: "transform 0.2s, box-shadow 0.2s",
-                              }}
-                              onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
-                              onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
-                            />
-                          </a>
-                          <a
-                            href={downloadUrl}
-                            onClick={(event) => openStoredAsset(event, url, fileName, true)}
-                            download={fileName}
-                            style={{
-                              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                              padding: "12px 16px",
-                              borderRadius: "var(--radius-md)",
-                              background: "var(--surface-alt)",
-                              border: "1px solid var(--border)",
-                              color: "var(--text)",
-                              textDecoration: "none",
-                              fontSize: 13,
-                              fontWeight: 500,
-                              transition: "all 0.2s"
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.background = "var(--primary)";
-                              e.currentTarget.style.color = "#fff";
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.background = "var(--surface-alt)";
-                              e.currentTarget.style.color = "var(--text)";
-                            }}
-                          >
-                            <Icons.Download />
-                            Descargar imagen
-                          </a>
-                        </div>
-                      );
-                    } else {
-                      return (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {existingFiles.map((file, index) => {
-                            const url = file.url;
-                            const fileName = file.name || `archivo-${index + 1}`;
-                            const downloadUrl = url.includes("?") ? `${url}&download=${fileName}` : `${url}?download=${fileName}`;
-                            return (
-                              <div key={index} style={{ display: "flex", gap: 8 }}>
-                                <a
-                                  href={url}
-                                  onClick={(event) => openStoredAsset(event, url, fileName, false)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 8,
-                                    padding: "12px 16px",
-                                    borderRadius: "var(--radius-md)",
-                                    background: "var(--surface-alt)",
-                                    border: "1px solid var(--border)",
-                                    color: "var(--primary)",
-                                    textDecoration: "none",
-                                    fontSize: 13,
-                                    fontWeight: 500,
-                                    transition: "all 0.2s",
-                                    flex: 1
-                                  }}
-onMouseEnter={e => {
-                                    e.currentTarget.style.background = "var(--primary)";
-                                    e.currentTarget.style.color = "#fff";
-                                  }}
-                                  onMouseLeave={e => {
-                                    e.currentTarget.style.background = "var(--surface-alt)";
-                                    e.currentTarget.style.color = "var(--primary)";
-                                  }}
-                                >
-                                  <Icons.FileText />
-                                  Ver archivo {index + 1}
-                                </a>
-                                <a
-                                  href={downloadUrl}
-                                  onClick={(event) => openStoredAsset(event, url, fileName, true)}
-                                  download={fileName}
-                                  style={{
-                                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                                    padding: "12px 16px",
-                                    borderRadius: "var(--radius-md)",
-                                    background: "var(--surface)",
-                                    border: "1px solid var(--border)",
-                                    color: "var(--text)",
-                                    textDecoration: "none",
-                                    fontSize: 13,
-                                    fontWeight: 500,
-                                    transition: "all 0.2s"
-                                  }}
-                                  onMouseEnter={e => {
-                                    e.currentTarget.style.background = "var(--primary-light)";
-                                    e.currentTarget.style.color = "#fff";
-                                  }}
-                                  onMouseLeave={e => {
-                                    e.currentTarget.style.background = "var(--surface)";
-                                    e.currentTarget.style.color = "var(--text)";
-                                  }}
-                                >
-                                  <Icons.Download />
-                                  Descargar
-                                </a>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    }
-                  })()}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {existingFiles.map((file, index) => (
+                      <FileCard
+                        key={index}
+                        name={file.name}
+                        url={file.url}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
               {referenceImageUrls.length > 0 && (
@@ -1139,7 +954,19 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
             <div><span>Precio</span><strong>{order.price ? `RD$${Number(order.price).toLocaleString("es-DO")}` : "Precio pendiente"}</strong></div>
             <div><span>Preview</span><strong>{order.preview_image ? <a href={order.preview_image} target="_blank" rel="noreferrer">Ver preview</a> : "Sin preview"}</strong></div>
           </div>
-          {files.length > 0 ? <div className="pa-file-list">{files.map((file, index) => <a key={`${file}-${index}`} href={file} target="_blank" rel="noreferrer" className="pa-file-link"><Icons.File /> Diseño {index + 1}</a>)}</div> : <div className="pa-empty-small">No hay diseños cargados.</div>}
+          {files.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+              {files.map((file, index) => (
+                <FileCard
+                  key={`${file}-${index}`}
+                  name={getFileNameFromUrl(file)}
+                  url={file}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="pa-empty-small">No hay diseños cargados.</div>
+          )}
         </div>
       </div>
       <div className="pa-modal-actions">

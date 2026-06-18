@@ -28,6 +28,7 @@ export const normalizeProductionFile = (file, index = 0) => {
     id: file.id || `${url}-${index}`,
     url,
     filename: file.filename || file.name || getFileNameFromUrl(url),
+    public_label: file.public_label || null,
     production_area_code: file.production_area_code || null,
     status: file.status || PRODUCTION_FILE_STATUS.PENDING,
     assigned_to: file.assigned_to || null,
@@ -151,11 +152,12 @@ export const getNextProductionFileStatus = (status) => {
   return PRODUCTION_FILE_STATUS.IN_TERMINATION;
 };
 
-export const buildProductionFileRows = ({ orderId, urls, files, areaCodes, userId }) => (
+export const buildProductionFileRows = ({ orderId, urls, files, areaCodes, publicLabels, userId }) => (
   (urls || []).map((url, index) => ({
     order_id: orderId,
     url,
     filename: files?.[index]?.name || getFileNameFromUrl(url),
+    public_label: String(publicLabels?.[index] || "").trim() || null,
     production_area_code: areaCodes?.[index] || null,
     status: PRODUCTION_FILE_STATUS.PENDING,
     created_by: userId || null,

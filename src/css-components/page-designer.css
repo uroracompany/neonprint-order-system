@@ -1767,6 +1767,17 @@ label.pd-upload-btn {
   margin-top: 17px;
 }
 
+.pd-production-file-fields {
+  grid-template-columns: minmax(220px, 1fr) minmax(170px, 220px);
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .pd-production-file-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .pd-file-card {
   justify-content: space-between;
   gap: 12px;

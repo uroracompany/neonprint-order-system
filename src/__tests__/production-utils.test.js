@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getProductionAreaForRole, PRODUCTION_FILE_STATUS } from "../utils/constants";
 import {
+  buildProductionFileRows,
   filterProductionFilesForRole,
   filterProductionOrdersByArchiveState,
   getProductionAssignmentForRole,
@@ -44,6 +45,28 @@ describe("production file helpers", () => {
         production_area_code: null,
         status: PRODUCTION_FILE_STATUS.PENDING,
         isLegacy: true,
+      }),
+    ]);
+  });
+
+  it("builds production file rows with optional public tracking labels", () => {
+    const rows = buildProductionFileRows({
+      orderId: "order-1",
+      urls: ["https://example.com/banner.pdf", "https://example.com/dtf.pdf"],
+      files: [{ name: "banner.pdf" }, { name: "dtf.pdf" }],
+      areaCodes: ["digital", "dtf"],
+      publicLabels: ["Banner principal", "  "],
+      userId: "user-1",
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        public_label: "Banner principal",
+        production_area_code: "digital",
+      }),
+      expect.objectContaining({
+        public_label: null,
+        production_area_code: "dtf",
       }),
     ]);
   });

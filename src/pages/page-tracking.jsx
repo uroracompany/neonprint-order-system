@@ -210,6 +210,7 @@ export default function PageTracking() {
               events={events}
               order={order}
               designType={order.order_design_type}
+              productionFiles={order.production_files}
             />
           </div>
 

@@ -853,6 +853,18 @@
   flex-direction: column;
   gap: 8px;
 }
+
+.ps-files-list-designer {
+  margin-top: 17px;
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .ps-files-list-designer .ps-production-file-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ps-file-item {
   display: flex;
   align-items: center;
@@ -2124,4 +2136,18 @@ select option { background: var(--surface); color: var(--text); }
   .ps-notification-progress-track {
     margin: 0 16px 16px;
   }
+}
+
+/* ── File input error state ──────────────────────────────────────── */
+.ps-input-error {
+  border-color: var(--pink) !important;
+  background: rgba(244, 63, 94, 0.02) !important;
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.1) !important;
+}
+
+/* ── File card error wrapper ────────────────────────────────────── */
+.ps-file-missing .fc-file-item {
+  border-color: var(--pink) !important;
+  background: rgba(244, 63, 94, 0.02) !important;
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.1) !important;
 }

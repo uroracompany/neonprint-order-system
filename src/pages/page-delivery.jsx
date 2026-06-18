@@ -286,13 +286,9 @@ function OrderDetailModal({ onClose, order, onUpdateStatus }) {
               <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
                 <img
                   src={order.preview_image}
-                  alt="Orden de Trabajo"
+                  alt="preview"
                   style={{
                     width: "100%",
-                    maxHeight: 200,
-                    objectFit: "contain",
-                    objectPosition: "left",
-                    background: "var(--pd-surface-alt, #f5f7fb)",
                     borderRadius: "var(--pd-radius-md)",
                     border: "1px solid var(--pd-border)",
                     cursor: "pointer",

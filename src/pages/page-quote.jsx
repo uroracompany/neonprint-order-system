@@ -469,7 +469,9 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
             </div>
 
             <div className="pq-panel">
-              <div className="pq-panel-title">Archivos entregados</div>
+              <div className="pq-panel-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                <Icons.File /> Archivos Adjuntos
+              </div>
               {orderFiles.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {orderFiles.map((fileUrl, index) => (
@@ -486,7 +488,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
 
               <div className="pq-preview-block">
                 <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icons.Eye /> Orden de trabajo
+                  <Icons.Eye /> Orden de Trabajo
                 </span>
                 {order.preview_image ? (
                   <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
@@ -495,10 +497,6 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                       alt="preview"
                       style={{
                         width: "100%",
-                        maxHeight: 200,
-                        objectFit: "contain",
-                        objectPosition: "left",
-                        background: "var(--pq-surface-alt, #f5f7fb)",
                         borderRadius: "var(--pq-radius-md)",
                         border: "1px solid var(--pq-border)",
                         cursor: "pointer",
@@ -515,10 +513,12 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
 
               {referenceImageUrls.length > 0 && (
                 <div className="pq-preview-block" style={{ marginTop: 16 }}>
-                  <span className="pq-description-label">Imágenes de referencia</span>
+                  <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icons.Image /> Imágenes de referencia
+                  </span>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
                     {referenceImageUrls.map((url, i) => (
-                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
                         <img
                           src={url}
                           alt={`Ref ${i + 1}`}
@@ -526,13 +526,13 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                             width: 120,
                             height: 120,
                             objectFit: "cover",
-                            borderRadius: 8,
+                            borderRadius: "var(--pq-radius-md)",
                             border: "1px solid var(--pq-border)",
                             cursor: "pointer",
-                            transition: "transform 0.2s",
+                            transition: "transform 0.2s, box-shadow 0.2s",
                           }}
-                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; }}
-                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; }}
+                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
+                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
                         />
                       </a>
                     ))}
@@ -1144,13 +1144,6 @@ export default function PageQuote() {
     // Actualizamos la orden seleccionada
     setSelectedOrder(updatedOrder);
     setForwardToProductionOrder(null);
-
-    notif.showActionNotification({
-      type: "order_cancelled",
-      label: "En producción",
-      orderTitle: updatedOrder.client_name || updatedOrder.description || `Orden #${updatedOrder.id?.slice(0, 8).toUpperCase()}`,
-      message: `La orden fue enviada a producción y asignada a un impresor.`,
-    });
   };
 
   // Archiva órdenes en el campo específico del rol Quote.

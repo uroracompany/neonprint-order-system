@@ -69,9 +69,9 @@ const isSellerVisibleNotification = (notification) => {
 
 const PHONE_PLACEHOLDER = "Ej: 809-555-1234";
 
-function ProductionAreaSelect({ value, onChange, className = "ps-form-input" }) {
+function ProductionAreaSelect({ value, onChange, className = "ps-form-input", isError }) {
   return (
-    <select className={className} value={value || ""} onChange={(event) => onChange(event.target.value)}>
+    <select className={`${className}${isError ? " ps-input-error" : ""}`} value={value || ""} onChange={(event) => onChange(event.target.value)}>
       <option value="">Tipo de produccion</option>
       {PRODUCTION_AREAS.map((area) => (
         <option key={area.code} value={area.code}>{area.label}</option>
@@ -268,6 +268,7 @@ export function MultiMaterialSelector({ selected = [], onChange, options = [] })
 // ─── CREATE ORDER MODAL ───────────────────────────────────────────────────────
 const EMPTY_FORM = {
   design_file_areas: [],
+  design_file_labels: [],
   client_id: null,
   client_name: "",
   client_phone: "",
@@ -293,6 +294,8 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
+  const [missingLabelIndices, setMissingLabelIndices] = useState([]);
+  const [missingAreaIndices, setMissingAreaIndices] = useState([]);
 
   const set = (k, v) => {
     setForm(p => ({ ...p, [k]: v }));
@@ -366,11 +369,26 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
     if (form.design_type === "EXTERNAL_DESING" && form.design_files.length === 0) {
       errors.design_files = "Debe subir al menos un archivo de diseño.";
     }
-    if (
-      form.design_type === "EXTERNAL_DESING" &&
-      form.design_files.some((_, index) => !form.design_file_areas[index])
-    ) {
-      errors.design_files = "Cada archivo debe tener un tipo de produccion.";
+    if (form.design_type === "EXTERNAL_DESING" && form.design_files.length > 0) {
+      const missingAreas = form.design_file_areas
+        .map((a, i) => (!a ? i : -1))
+        .filter(i => i !== -1);
+      const missingLabels = form.design_file_labels
+        .map((l, i) => (!l?.trim() ? i : -1))
+        .filter(i => i !== -1);
+
+      setMissingAreaIndices(missingAreas);
+      setMissingLabelIndices(missingLabels);
+
+      const msgs = [];
+      if (missingAreas.length > 0) msgs.push("un tipo de producción");
+      if (missingLabels.length > 0) msgs.push("un nombre de representación");
+      if (msgs.length > 0) {
+        errors.design_files = `Cada archivo debe tener ${msgs.join(" y ")}.`;
+      }
+    } else {
+      setMissingAreaIndices([]);
+      setMissingLabelIndices([]);
     }
     if (form.design_type === "EXTERNAL_DESING" && !form.design_preview) {
       errors.design_preview = "Debe agregar una imagen de la orden de trabajo.";
@@ -403,6 +421,8 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
     setLoading(true);
     setError("");
     setFieldErrors({});
+    setMissingLabelIndices([]);
+    setMissingAreaIndices([]);
 
     try {
       await withTimeout((async () => {
@@ -526,6 +546,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
             urls: fileUrls,
             files: form.design_files,
             areaCodes: form.design_file_areas,
+            publicLabels: form.design_file_labels,
             userId,
           });
 
@@ -698,28 +719,53 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
                   onFilesAccepted={(files) => {
                     set("design_files", [...form.design_files, ...files]);
                     set("design_file_areas", [...form.design_file_areas, ...files.map(() => "")]);
+                    set("design_file_labels", [...form.design_file_labels, ...files.map(() => "")]);
                     setFieldErrors(prev => ({ ...prev, design_files: "" }));
                   }}
                 />
                 {form.design_files.length > 0 && (
-                  <div className="ps-files-list">
+                  <div className="ps-files-list ps-files-list-designer">
                     {form.design_files.map((file, i) => (
+                      <div key={i} className={missingLabelIndices.includes(i) || missingAreaIndices.includes(i) ? 'ps-file-missing' : ''}>
                       <FileCard
-                        key={i}
                         name={file.name}
                         secondaryText={formatFileSize(file.size)}
                         onRemove={() => {
                           set("design_files", form.design_files.filter((_, idx) => idx !== i));
                           set("design_file_areas", form.design_file_areas.filter((_, idx) => idx !== i));
+                          set("design_file_labels", form.design_file_labels.filter((_, idx) => idx !== i));
                         }}
                       >
-                        <div style={{ maxWidth: '210px' }}>
-                          <ProductionAreaSelect
-                            value={form.design_file_areas[i]}
-                            onChange={(value) => set("design_file_areas", form.design_file_areas.map((area, idx) => idx === i ? value : area))}
-                          />
+                        <div className="production-file-meta ps-production-file-fields">
+                          <label className="production-file-field">
+                            <span className="production-file-field-label">Nombre visible en seguimiento</span>
+                            <input
+                              className={`ps-form-input${missingLabelIndices.includes(i) ? " ps-input-error" : ""}`}
+                              value={form.design_file_labels[i] || ""}
+                              onChange={(event) => {
+                                set("design_file_labels", form.design_file_labels.map((label, idx) => idx === i ? event.target.value : label));
+                                setMissingLabelIndices([]);
+                                setFieldErrors(prev => ({ ...prev, design_files: "" }));
+                              }}
+                              placeholder="Ej: Banner principal"
+                              aria-label={`Nombre visible en seguimiento de ${file.name}`}
+                            />
+                          </label>
+                          <label className="production-file-field">
+                            <span className="production-file-field-label">Área de producción</span>
+                            <ProductionAreaSelect
+                              value={form.design_file_areas[i]}
+                              isError={missingAreaIndices.includes(i)}
+                              onChange={(value) => {
+                                set("design_file_areas", form.design_file_areas.map((area, idx) => idx === i ? value : area));
+                                setMissingAreaIndices([]);
+                                setFieldErrors(prev => ({ ...prev, design_files: "" }));
+                              }}
+                            />
+                          </label>
                         </div>
                       </FileCard>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -884,6 +930,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
   const [existingFiles, setExistingFiles] = useState([]);
   const [newFiles, setNewFiles] = useState([]);
   const [newFileAreas, setNewFileAreas] = useState([]);
+  const [newFileLabels, setNewFileLabels] = useState([]);
   const [existingPreview, setExistingPreview] = useState(null);
   const [newPreview, setNewPreview] = useState(null);
   const [existingRefImages, setExistingRefImages] = useState([]);
@@ -893,6 +940,8 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
+  const [missingLabelIndices, setMissingLabelIndices] = useState([]);
+  const [missingAreaIndices, setMissingAreaIndices] = useState([]);
 
   useEffect(() => {
     if (order) {
@@ -915,6 +964,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       setExistingRefImages(parseFiles(order.reference_images));
       setNewFiles([]);
       setNewFileAreas([]);
+      setNewFileLabels([]);
       setNewPreview(null);
       setNewRefImages([]);
       setRemovedRefImageUrls([]);
@@ -946,8 +996,26 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
     if (!form.description.trim()) {
       errors.description = "La descripción es requerida.";
     }
-    if (newFiles.some((_, index) => !newFileAreas[index])) {
-      errors.order_files = "Cada archivo nuevo debe tener un tipo de produccion.";
+    if (newFiles.length > 0) {
+      const missingAreas = newFileAreas
+        .map((a, i) => (!a ? i : -1))
+        .filter(i => i !== -1);
+      const missingLabels = newFileLabels
+        .map((l, i) => (!l?.trim() ? i : -1))
+        .filter(i => i !== -1);
+
+      setMissingAreaIndices(missingAreas);
+      setMissingLabelIndices(missingLabels);
+
+      const msgs = [];
+      if (missingAreas.length > 0) msgs.push("un tipo de producción");
+      if (missingLabels.length > 0) msgs.push("un nombre de representación");
+      if (msgs.length > 0) {
+        errors.order_files = `Cada archivo nuevo debe tener ${msgs.join(" y ")}.`;
+      }
+    } else {
+      setMissingAreaIndices([]);
+      setMissingLabelIndices([]);
     }
     if (form.client_contact.trim() && !isValidDominicanPhone(form.client_contact)) {
       errors.client_contact = "El teléfono debe ser un número válido de República Dominicana (809, 829 o 849).";
@@ -965,12 +1033,14 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
     const files = Array.from(e.target.files);
     setNewFiles(prev => [...prev, ...files]);
     setNewFileAreas(prev => [...prev, ...files.map(() => "")]);
+    setNewFileLabels(prev => [...prev, ...files.map(() => "")]);
     e.target.value = "";
   };
 
   const handleRemoveNewFile = (index) => {
     setNewFiles(prev => prev.filter((_, i) => i !== index));
     setNewFileAreas(prev => prev.filter((_, i) => i !== index));
+    setNewFileLabels(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleRemoveExistingPreview = () => {
@@ -1014,6 +1084,8 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
     setLoading(true);
     setError("");
     setFieldErrors({});
+    setMissingLabelIndices([]);
+    setMissingAreaIndices([]);
 
     // 1. Upload files first (no disparan el trigger de orders)
     let fileUrls = [...existingFiles];
@@ -1045,6 +1117,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
         urls: newFileUrls,
         files: newFiles,
         areaCodes: newFileAreas,
+        publicLabels: newFileLabels,
         userId: order.seller_id || order.created_by,
       });
 
@@ -1229,7 +1302,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       </div>
       <div className="ps-form-grid">
         <div className="col-full">
-          <Field label="Archivos adjuntos" hint="Archivos de diseño existentes y nuevos">
+          <Field label="Archivos adjuntos" hint="Archivos de diseño existentes y nuevos" error={fieldErrors.order_files}>
                 {existingFiles.length > 0 && (
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {existingFiles.map((url, i) => (
@@ -1245,19 +1318,42 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
             {newFiles.length > 0 && (
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {newFiles.map((file, i) => (
+                  <div key={i} className={missingLabelIndices.includes(i) || missingAreaIndices.includes(i) ? 'ps-file-missing' : ''}>
                   <FileCard
-                    key={i}
                     name={file.name}
                     secondaryText={formatFileSize(file.size)}
                     onRemove={() => handleRemoveNewFile(i)}
                   >
-                    <div style={{ maxWidth: '210px' }}>
-                      <ProductionAreaSelect
-                        value={newFileAreas[i]}
-                        onChange={(value) => setNewFileAreas(newFileAreas.map((area, idx) => idx === i ? value : area))}
-                      />
+                    <div className="production-file-meta ps-production-file-fields">
+                      <label className="production-file-field">
+                        <span className="production-file-field-label">Nombre visible en seguimiento</span>
+                        <input
+                          className={`ps-form-input${missingLabelIndices.includes(i) ? " ps-input-error" : ""}`}
+                          value={newFileLabels[i] || ""}
+                          onChange={(event) => {
+                            setNewFileLabels(newFileLabels.map((label, idx) => idx === i ? event.target.value : label));
+                            setMissingLabelIndices([]);
+                            setFieldErrors(prev => ({ ...prev, order_files: "" }));
+                          }}
+                          placeholder="Ej: Banner principal"
+                          aria-label={`Nombre visible en seguimiento de ${file.name}`}
+                        />
+                      </label>
+                      <label className="production-file-field">
+                        <span className="production-file-field-label">Área de producción</span>
+                        <ProductionAreaSelect
+                          value={newFileAreas[i]}
+                          isError={missingAreaIndices.includes(i)}
+                          onChange={(value) => {
+                            setNewFileAreas(newFileAreas.map((area, idx) => idx === i ? value : area));
+                            setMissingAreaIndices([]);
+                            setFieldErrors(prev => ({ ...prev, order_files: "" }));
+                          }}
+                        />
+                      </label>
                     </div>
                   </FileCard>
+                  </div>
                 ))}
               </div>
             )}
@@ -1711,17 +1807,21 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
       {/* Archivos Adjuntos — Full Width */}
       {hasAssets && (
         <div style={{
-          marginTop: 24,
+          marginTop: 18,
           background: "var(--surface)",
           border: "1.5px solid var(--border)",
           borderRadius: "var(--radius-lg)",
-          padding: 20
+          padding: 20,
+          boxShadow: "var(--shadow-sm)"
         }}>
           <p style={{
             fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
             textTransform: "uppercase", letterSpacing: "0.07em",
-            marginBottom: 16
-          }}>Archivos Adjuntos</p>
+            marginBottom: 16,
+            display: "flex", alignItems: "center", gap: 8
+          }}>
+            <Icons.File /> Archivos Adjuntos
+          </p>
 
           <div style={{ display: "grid", gridTemplateColumns: order.preview_image && orderFileUrls.length > 0 ? "1fr 1fr" : "1fr", gap: 16 }}>
             {order.preview_image && (
@@ -1769,15 +1869,15 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
               <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                 <Icons.Image /> Imágenes de referencia
               </p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
                 {referenceImageUrls.map((url, index) => (
                   <a key={index} href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
                     <img
                       src={url}
                       alt={`Ref ${index + 1}`}
                       style={{
-                        width: 130,
-                        height: 130,
+                        width: 120,
+                        height: 120,
                         objectFit: "cover",
                         borderRadius: "var(--radius-md)",
                         border: "1px solid var(--border)",

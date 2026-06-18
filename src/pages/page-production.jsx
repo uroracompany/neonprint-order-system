@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import "../css-components/page-production.css";
 import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
+import FileCard from "../components/FileCard";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
@@ -38,8 +39,7 @@ import {
   archiveOrder,
   restoreOrder,
 } from "../utils/archive";
-import { openOrderAssetUrl } from "../utils/fileAccess";
-import { isR2OrderAssetUrl } from "../utils/uploadOrderAsset";
+
 
 const METRIC_ACCENTS = [
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
@@ -521,41 +521,25 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus,
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {areaFiles.map((file) => {
                         const nextStatus = getNextProductionFileStatus(file.status);
+                        const actions = [];
+                        if (nextStatus) {
+                          actions.push({
+                            icon: nextStatus === PRODUCTION_FILE_STATUS.COMPLETED ? <Icons.Check /> : <Icons.Play />,
+                            onClick: () => handleUpdateFileStatus(file.id, nextStatus),
+                            disabled: updating,
+                            title: nextStatus === PRODUCTION_FILE_STATUS.COMPLETED ? "Marcar completado" : "Marcar en terminacion",
+                          });
+                        }
                         return (
-                        <div key={file.id} className="pp-file-item" style={{ margin: 0 }}>
-                          <div className="pp-file-icon">
-                            <Icons.File />
-                          </div>
-                          <div className="pp-file-info">
-                            <span className="pp-file-name">{file.filename}</span>
-                            <span style={{ fontSize: 11, color: "var(--pp-text-muted)" }}>{getProductionFileStatusLabel(file.status)}</span>
-                          </div>
-                          <a
-                            href={file.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="pp-file-download"
-                            title="Descargar"
-                            onClick={(event) => {
-                              if (!isR2OrderAssetUrl(file.url)) return;
-                              event.preventDefault();
-                              openOrderAssetUrl({ url: file.url, fileName: file.filename, download: true });
-                            }}
-                          >
-                            <Icons.Download />
-                          </a>
-                          {nextStatus && (
-                            <button
-                              className="pp-file-download"
-                              onClick={() => handleUpdateFileStatus(file.id, nextStatus)}
-                              disabled={updating}
-                              title={nextStatus === PRODUCTION_FILE_STATUS.COMPLETED ? "Marcar completado" : "Marcar en terminacion"}
-                            >
-                              {nextStatus === PRODUCTION_FILE_STATUS.COMPLETED ? <Icons.Check /> : <Icons.Play />}
-                            </button>
-                          )}
-                        </div>
-                      );})}
+                          <FileCard
+                            key={file.id}
+                            name={file.filename}
+                            secondaryText={getProductionFileStatusLabel(file.status)}
+                            url={file.url}
+                            actions={actions}
+                          />
+                        );
+                      })}
                     </div>
                   </div>
                 )}
