@@ -12,7 +12,7 @@ import {
   archiveOrder,
 } from "../utils/archive";
 import { ORDER_STATUS, PRODUCTION_AREAS, isOrderStatus, isOrderStatusIn, ARCHIVE_MODULES } from "../utils/constants";
-import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
+import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { useAuth } from "../hooks/useAuth";
@@ -26,9 +26,28 @@ import { buildProductionFileRows } from "../utils/production";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const PER_PAGE = 15;
+const DESIGNER_ORDER_SELECT = [
+  "id",
+  "client_name",
+  "client_contact",
+  "order_type",
+  "created_at",
+  "description",
+  "material",
+  "status",
+  "return_reason",
+  "returned_to_designer_at",
+  "order_file_url",
+  "preview_image",
+  "designer_id",
+  "seller_id",
+  "created_by",
+  "is_archived_designer",
+  "quote_id",
+  "quantity",
+].join(", ");
 const TRACKED_ORDER_FIELDS = [
   "client_name",
-  "seller_name",
   "client_contact",
   "order_type",
   "created_at",
@@ -849,7 +868,7 @@ export default function PageDesigner() {
 
     const { data, error } = await supabase
       .from("orders")
-      .select("*")
+      .select(DESIGNER_ORDER_SELECT)
       .eq("designer_id", userRef.current.id)
       .order("created_at", { ascending: false });
 
@@ -936,7 +955,7 @@ export default function PageDesigner() {
 
     const { data } = await supabase
       .from("orders")
-      .select("*")
+      .select(DESIGNER_ORDER_SELECT)
       .eq("id", order.id)
       .single();
     
@@ -1126,7 +1145,7 @@ export default function PageDesigner() {
   }, [orders]);
 
   const refreshOrderFromDB = async (orderId) => {
-    const { data } = await supabase.from("orders").select("*").eq("id", orderId).single();
+    const { data } = await supabase.from("orders").select(DESIGNER_ORDER_SELECT).eq("id", orderId).single();
     if (data) {
       setOrders(prev => prev.map(o => o.id === orderId ? data : o));
       setSelectedOrder(data);
@@ -1140,7 +1159,7 @@ export default function PageDesigner() {
 
   const handleOpenSendToQuotation = (order) => {
     const wasReturned = isReturnedOrder(order);
-    const originalQuoterId = wasReturned ? (order.quote_id || order.quotation_id || order.quote_user_id) : null;
+    const originalQuoterId = wasReturned ? (order.quote_id || "") : null;
     setSendingToQuotation(order);
     if (wasReturned && originalQuoterId) {
       setOriginalQuoterId(originalQuoterId);
@@ -1349,7 +1368,7 @@ export default function PageDesigner() {
                                 {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
                                 {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
                                 {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
-                                <StatusBadge status={order.status} className="pd-badge" />
+                                <StatusBadge status={order.status} className="pd-badge" bordered />
                               </div>
                             </td>
                             <td className="pd-td-pad">
@@ -1464,7 +1483,6 @@ export default function PageDesigner() {
                           <th>Material</th>
                           <th>Tipo</th>
                           <th>Estado</th>
-                          <th>Pago</th>
                           <th>Fecha</th>
                           <th>Acciones</th>
                         </tr>
@@ -1489,8 +1507,7 @@ export default function PageDesigner() {
                             <td className="pd-td-pad pd-td-type">
                               {order.order_type === "orden 911" ? <span className="pd-card-911">911</span> : <span className="pd-badge-normal-table">Normal</span>}
                             </td>
-                            <td className="pd-td-pad"><StatusBadge status={order.status} className="pd-badge" /></td>
-                            <td className="pd-td-pad pd-td-payment"><StatusBadge status={order.payment_status} type="payment" /></td>
+                            <td className="pd-td-pad"><StatusBadge status={order.status} className="pd-badge" bordered /></td>
                             <td className="pd-td-pad pd-td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
                             <td className="pd-td-pad pd-td-actions">
                               <div className="pd-table-actions">
@@ -1524,14 +1541,13 @@ export default function PageDesigner() {
                             {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
                             {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
                             {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
-                            <StatusBadge status={order.status} className="pd-badge" />
+                            <StatusBadge status={order.status} className="pd-badge" bordered />
                           </div>
                         </div>
                         <div className="pd-card-client">{order.client_name}</div>
                         <div className="pd-card-desc">{order.description}</div>
                         <div className="pd-card-meta">
                           <span className="pd-card-material">{order.material}</span>
-                          <StatusBadge status={order.payment_status} type="payment" />
                         </div>
                         <div className="pd-card-footer">
                           <span className="pd-card-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}</span>

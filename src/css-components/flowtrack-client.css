@@ -699,10 +699,6 @@ html, body {
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    position: absolute;
-    top: 80px;
-    left: 50%;
-    transform: translateX(-50%);
     font-size: 9px;
     font-weight: 600;
     color: #92400E;

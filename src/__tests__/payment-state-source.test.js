@@ -27,6 +27,15 @@ describe("payment state integration source guards", () => {
     expect(renderOrderCardSource).not.toContain("labelOverride");
   });
 
+  it("no expone el estado de pago en el modulo de diseno", () => {
+    const source = readSource("src/pages/page-designer.jsx");
+
+    expect(source).not.toContain("PaymentBadge");
+    expect(source).not.toContain("order.payment_status");
+    expect(source).not.toContain('"payment_status"');
+    expect(source).not.toContain("<th>Pago</th>");
+  });
+
   it("prepara el modal admin para completar pagos parciales como pagados", () => {
     const source = readSource("src/pages/dashboard.jsx");
 

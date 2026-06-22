@@ -96,7 +96,7 @@ export function FlowTrackClient({ status, events, order, designType, productionF
   const currentStepIdx = steps.findIndex((s) => s.key === clientStatus);
   const isCancelled = normalizedStatus === ORDER_STATUS.CANCELLED;
   const paymentStatus = order?.payment_status;
-  const isPaymentPending = paymentStatus === PAYMENT_STATUS.PENDING;
+  const isPaymentPending = !paymentStatus || paymentStatus === PAYMENT_STATUS.PENDING;
   const isPartialPayment = isPaymentPartial(paymentStatus);
   const isCreditPayment = isPaymentCredit(paymentStatus);
   const productionFiles = normalizePublicProductionFiles(productionFilesProp ?? order?.production_files);
@@ -175,7 +175,6 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                     <span className={`ftc-h-label ${isCompleted ? "done" : isActive ? "active" : ""}`}>
                       {step.label}
                     </span>
-                    {hasDate && <span className="ftc-h-date">{formatDate(eventDates[step.key])}</span>}
                     {isQuoteBlocked && (
                       <span className="ftc-h-badge">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -200,6 +199,7 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                         Pago a crédito
                       </span>
                     )}
+                    {hasDate && <span className="ftc-h-date">{formatDate(eventDates[step.key])}</span>}
                   </div>
                   {i < steps.length - 1 && (
                     <div className={`ftc-h-line ${isCompleted ? "done" : isQuoteConfirmed ? "confirmed" : isQuoteBlocked ? "pending-payment" : ""}`} />
@@ -273,15 +273,12 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                     {step.label}
                   </span>
                   <div className="ftc-v-meta">
-                    {hasDate && <span className="ftc-v-date">{formatDate(eventDates[step.key])}</span>}
-                    {/* Badge que aparece cuando la cotización está bloqueada */}
                     {isQuoteBlocked && (
                       <span className="ftc-v-badge">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                         Pago pendiente
                       </span>
                     )}
-                    {/* Etiqueta que aparece cuando la cotización está confirmada como pagada */}
                     {isQuoteConfirmed && (
                       <span className="ftc-v-badge confirmed">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -300,6 +297,7 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                         Pago a crédito
                       </span>
                     )}
+                    {hasDate && <span className="ftc-v-date">{formatDate(eventDates[step.key])}</span>}
                   </div>
                   {/* Mensaje que aparece cuando la cotización está bloqueada */}
                   {isQuoteBlocked && (
