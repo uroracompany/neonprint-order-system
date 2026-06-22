@@ -8,7 +8,7 @@ import NotificationCenter from "../components/NotificationCenter";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import { Icons } from "../utils/icons";
-import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isPaymentPartial, isOrderStatus, ARCHIVE_MODULES, PRODUCTION_AREAS, PRODUCTION_AREA_LABELS, resolveSellerId } from "../utils/constants";
+import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isPaymentCredit, isPaymentDeliveryEligible, isPaymentPartial, isOrderStatus, ARCHIVE_MODULES, PRODUCTION_AREAS, PRODUCTION_AREA_LABELS, resolveSellerId } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
@@ -27,7 +27,7 @@ const CARD_ACCENTS = [
   { color: "#8B5CF6", bg: "#F3E8FF", glow: "radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%)" },
 ];
 
-const PARTIAL_PAYMENT_DELIVERY_MESSAGE = "No se puede entregar la orden hasta que esté totalmente pagada.";
+const PAYMENT_DELIVERY_BLOCKED_MESSAGE = "No se puede entregar la orden hasta que esté totalmente pagada o aprobada a crédito.";
 
 function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction }) {
   const [updating, setUpdating] = useState(false);
@@ -118,8 +118,8 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction }) {
       return;
     }
 
-    if (newStatus === ORDER_STATUS.IN_DELIVERED && isPaymentPartial(order.payment_status)) {
-      onBlockedAction?.(order, PARTIAL_PAYMENT_DELIVERY_MESSAGE);
+    if (newStatus === ORDER_STATUS.IN_DELIVERED && !isPaymentDeliveryEligible(order.payment_status)) {
+      onBlockedAction?.(order, PAYMENT_DELIVERY_BLOCKED_MESSAGE);
       return;
     }
     
@@ -148,6 +148,8 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction }) {
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const hasPartialPayment = isPaymentPartial(order.payment_status);
+  const hasCreditPayment = isPaymentCredit(order.payment_status);
+  const deliveryBlockedByPayment = !isPaymentDeliveryEligible(order.payment_status);
 
   return (
     <div className="pd-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -179,7 +181,13 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction }) {
 
           {hasPartialPayment && (
             <div className="pd-alert pd-alert-warning" style={{ background: "#FEF3C7", color: "#92400E", borderColor: "#F59E0B" }}>
-              <span>{PARTIAL_PAYMENT_DELIVERY_MESSAGE}</span>
+              <span>{PAYMENT_DELIVERY_BLOCKED_MESSAGE}</span>
+            </div>
+          )}
+
+          {hasCreditPayment && (
+            <div className="pd-alert pd-alert-warning" style={{ background: "#F3E8FF", color: "#6D28D9", borderColor: "#A855F7" }}>
+              <span>Esta orden puede entregarse, pero queda como crédito pendiente de cobro.</span>
             </div>
           )}
 
@@ -336,8 +344,8 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction }) {
             <button 
               className="pd-btn pd-btn-primary"
               onClick={() => handleUpdateStatus(ORDER_STATUS.IN_DELIVERED)}
-              disabled={updating || order.is_archived_delivery || hasPartialPayment}
-              title={hasPartialPayment ? PARTIAL_PAYMENT_DELIVERY_MESSAGE : order.is_archived_delivery ? "No se pueden cambiar estados de órdenes archivadas" : ""}
+              disabled={updating || order.is_archived_delivery || deliveryBlockedByPayment}
+              title={hasPartialPayment ? PAYMENT_DELIVERY_BLOCKED_MESSAGE : order.is_archived_delivery ? "No se pueden cambiar estados de órdenes archivadas" : ""}
             >
               {updating ? (
                 <>
@@ -510,7 +518,7 @@ export default function PageDelivery() {
     { icon: <Icons.Package />, label: "Completadas", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length },
   ];
 
-  const notifyPartialPaymentBlocked = (order, message = PARTIAL_PAYMENT_DELIVERY_MESSAGE) => {
+  const notifyPartialPaymentBlocked = (order, message = PAYMENT_DELIVERY_BLOCKED_MESSAGE) => {
     notif.showActionNotification({
       type: "order_cancelled",
       label: "Entrega bloqueada",
@@ -524,7 +532,7 @@ export default function PageDelivery() {
   const handleQuickMarkDelivered = async (e, orderId) => {
     e.stopPropagation();
     const order = orders.find(item => item.id === orderId);
-    if (isPaymentPartial(order?.payment_status)) {
+    if (!isPaymentDeliveryEligible(order?.payment_status)) {
       notifyPartialPaymentBlocked(order);
       return;
     }
@@ -555,7 +563,7 @@ export default function PageDelivery() {
         label: "Entrega bloqueada",
         orderTitle: order?.client_name || order?.description || `Orden #${orderId?.slice(0, 8).toUpperCase()}`,
         orderId,
-        message: err?.message?.includes("totalmente pagada") ? PARTIAL_PAYMENT_DELIVERY_MESSAGE : "No se pudo marcar la orden como entregada.",
+        message: err?.message?.includes("totalmente pagada") || err?.message?.includes("credito") ? PAYMENT_DELIVERY_BLOCKED_MESSAGE : "No se pudo marcar la orden como entregada.",
         metadata: { event_kind: "delivery_update_failed" },
       });
     }
@@ -610,8 +618,8 @@ export default function PageDelivery() {
         <button
           className={variant === "table" ? "table-action-btn deliver" : "pd-card-action-btn deliver"}
           onClick={event => handleQuickMarkDelivered(event, order.id)}
-          disabled={updatingOrderId === order.id || isPaymentPartial(order.payment_status)}
-          title={isPaymentPartial(order.payment_status) ? PARTIAL_PAYMENT_DELIVERY_MESSAGE : "Marcar como entregado"}
+          disabled={updatingOrderId === order.id || !isPaymentDeliveryEligible(order.payment_status)}
+          title={!isPaymentDeliveryEligible(order.payment_status) ? PAYMENT_DELIVERY_BLOCKED_MESSAGE : "Marcar como entregado"}
         >
           {updatingOrderId === order.id ? <span className="pd-btn-spinner" /> : <Icons.Check />}
         </button>

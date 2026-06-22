@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Icons } from "../utils/icons";
 import { formatDate, formatUiTerms } from "../utils/constants";
+import { filterActiveNotifications } from "../utils/notifications";
 import "./NotificationCenter.css";
 
 const TYPE_CONFIG = {
@@ -94,7 +95,7 @@ export default function NotificationCenter({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const activeNotifications = notifications.filter((n) => !n.is_archived && !n.deleted_at);
+  const activeNotifications = filterActiveNotifications(notifications);
   const toastRoot = typeof document !== "undefined" ? document.body : null;
   const toastStack = toasts.length > 0 && (
     <div className="nc-toast-stack">

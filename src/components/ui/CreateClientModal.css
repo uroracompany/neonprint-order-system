@@ -1,5 +1,6 @@
 .crm-overlay {
-  position: fixed; inset: 0; z-index: 1000;
+  /* Above operational modals such as .pq-overlay (1200), below global toasts. */
+  position: fixed; inset: 0; z-index: 1500;
   background: rgba(15,30,64,0.35);
   backdrop-filter: blur(6px);
   display: flex; align-items: center;

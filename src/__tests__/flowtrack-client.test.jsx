@@ -174,4 +174,20 @@ describe("FlowTrackClient order part subphases", () => {
     expect(screen.queryByText("El proceso continuará cuando el pago sea confirmado")).not.toBeInTheDocument();
     expect(screen.getAllByText("Banner principal")).toHaveLength(2);
   });
+
+  it("shows credit payment as operational progress with pending debt", () => {
+    renderFlowTrack({
+      status: ORDER_STATUS.IN_DELIVERED,
+      order: {
+        status: ORDER_STATUS.IN_DELIVERED,
+        payment_status: PAYMENT_STATUS.CREDIT,
+      },
+      productionFiles: [],
+    });
+
+    expect(screen.getAllByText("Pago a crédito").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Pago confirmado")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pago pendiente")).not.toBeInTheDocument();
+    expect(screen.queryByText("El proceso continuarÃ¡ cuando el pago sea confirmado")).not.toBeInTheDocument();
+  });
 });

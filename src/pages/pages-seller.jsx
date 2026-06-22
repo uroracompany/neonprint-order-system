@@ -17,6 +17,7 @@ import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobo
 import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   ORDER_STATUS,
+  isPaymentCredit,
   isPaymentPaid,
   isPaymentPartial,
   PAYMENT_COLORS,
@@ -1920,11 +1921,12 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
   
   const isPaid = isPaymentPaid(order?.payment_status);
   const isPartial = isPaymentPartial(order?.payment_status);
+  const isCredit = isPaymentCredit(order?.payment_status);
 
   return (
     <Modal open={open} onClose={onClose} title="Cancelar Orden">
       <div style={{ minWidth: 350, paddingTop: 8 }}>
-        {isPaid || isPartial ? (
+        {isPaid || isPartial || isCredit ? (
           <>
             <p style={{ fontSize: 14, color: "#991B1B", marginBottom: 16, lineHeight: 1.5, fontWeight: 500 }}>
               ⚠️ No se puede cancelar esta orden
@@ -2707,7 +2709,7 @@ export default function PageSeller() {
                                       <Icons.Edit />
                                     </button>
                                   )}
-                                  {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && (
+                                  {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && !isPaymentCredit(o.payment_status) && (
                                     <button 
                                       className="table-action-btn cancel" 
                                       onClick={() => handleCancelOrder(o)} 
@@ -2784,7 +2786,7 @@ export default function PageSeller() {
                                 <Icons.Edit />
                               </button>
                             )}
-                            {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && (
+                            {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && !isPaymentCredit(o.payment_status) && (
                               <button className="card-action-btn cancel" onClick={() => handleCancelOrder(o)} title="Cancelar">
                                 <Icons.Trash />
                               </button>

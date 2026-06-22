@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
@@ -14,6 +14,11 @@ import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge, RoleBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import SettleCreditModal from "../components/ui/SettleCreditModal";
+import {
+  CreditCustomReminderDueModal,
+  CreditReminderCreateModal,
+} from "../components/ui/CreditReminderModals";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect, ClientNameAutocomplete, ClientSelect } from "../components/ui/ClientCombobox";
 import FileUploadZone from "../components/ui/FileUploadZone";
@@ -47,6 +52,7 @@ import { getPaymentConfirmButtonLabel } from "../utils/paymentUi";
 import { getReferenceImages } from "../utils/orderAssets";
 import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
+import { filterActiveNotifications, getActiveUnreadCount, showCreditActionFeedback } from "../utils/notifications";
 import { useAuth } from "../hooks/useAuth";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
@@ -61,6 +67,7 @@ const DEFAULT_ORDER_FORM = {
   client_id: null,
   client_name: "",
   client_contact: "",
+  invoice_number: "",
   description: "",
   material: "",
   order_type: "normal",
@@ -80,6 +87,138 @@ const DEFAULT_ORDER_FORM = {
 };
 const DEFAULT_USER_FORM = { name: "", email: "", password: "", confirmPassword: "", role: "seller", employment_status: true };
 const DEFAULT_CLIENT_FORM = { name: "", phone: "", email: "", address: "", notes: "" };
+const getOpenCreditReceivables = (items = []) => items.filter((item) => (
+  item?.client_id && ["open", "partial"].includes(item.status)
+));
+
+const isOpenCreditReceivable = (item) => ["open", "partial"].includes(item?.status);
+const formatCreditDate = (value) => (value ? formatDate(value) : "---");
+const getCreditIssuedAt = (item) => item?.issued_at || item?.created_at || item?.order?.created_at || null;
+const getCreditAlertPeriodKey = (date = new Date()) => {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${date.getFullYear()}-${month}`;
+};
+const CREDIT_REMINDER_FALLBACK_CHECK_MS = 30000;
+const CREDIT_REMINDER_SERVER_TIME_RESYNC_MS = 300000;
+const CREDIT_REMINDER_MAX_TIMEOUT_MS = 2147483000;
+const CREDIT_REMINDER_TIME_ZONE = "America/Santo_Domingo";
+const CREDIT_REMINDER_VISIBILITY = {
+  CREATOR: "creator",
+  ADMIN_QUOTE: "admin_quote",
+  QUOTE: "quote",
+};
+const CREDIT_REMINDER_VISIBILITY_OPTIONS = [
+  {
+    value: CREDIT_REMINDER_VISIBILITY.CREATOR,
+    label: "Solo Administrador",
+    description: "Solo tu usuario administrador podra ver y recibir este recordatorio.",
+  },
+  {
+    value: CREDIT_REMINDER_VISIBILITY.ADMIN_QUOTE,
+    label: "Administrador y Caja",
+    description: "Tu usuario administrador y la Caja asignada a las ordenes seleccionadas lo recibiran.",
+  },
+  {
+    value: CREDIT_REMINDER_VISIBILITY.QUOTE,
+    label: "Solo Caja",
+    description: "Solo la Caja asignada a las ordenes seleccionadas vera este recordatorio.",
+  },
+];
+const CREDIT_REMINDER_VISIBILITY_VALUES = new Set(Object.values(CREDIT_REMINDER_VISIBILITY));
+const creditReminderVisibilityIncludesQuote = (scope) => (
+  scope === CREDIT_REMINDER_VISIBILITY.ADMIN_QUOTE
+  || scope === CREDIT_REMINDER_VISIBILITY.QUOTE
+);
+const getMonotonicNow = () => (
+  typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : 0
+);
+const getCreditReminderServerNow = (clock) => {
+  if (!clock) return null;
+  return clock.serverNowMs + (getMonotonicNow() - clock.clientMonotonicMs);
+};
+const getTimeZoneDateParts = (date, timeZone = CREDIT_REMINDER_TIME_ZONE) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  return Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, Number(part.value)]));
+};
+const formatDatetimeLocalParts = ({ year, month, day, hour = 0, minute = 0 }) => (
+  `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+);
+const getTimeZoneOffsetMs = (date, timeZone = CREDIT_REMINDER_TIME_ZONE) => {
+  const parts = getTimeZoneDateParts(date, timeZone);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second || 0);
+  return asUtc - date.getTime();
+};
+const parseDatetimeLocalValue = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value || "");
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match;
+  return {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+  };
+};
+const zonedDatetimeLocalToUtcMs = (value, timeZone = CREDIT_REMINDER_TIME_ZONE) => {
+  const parts = parseDatetimeLocalValue(value);
+  if (!parts) return NaN;
+
+  const utcGuess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0);
+  const firstOffset = getTimeZoneOffsetMs(new Date(utcGuess), timeZone);
+  const firstInstant = utcGuess - firstOffset;
+  const secondOffset = getTimeZoneOffsetMs(new Date(firstInstant), timeZone);
+  return utcGuess - secondOffset;
+};
+const getDefaultCreditReminderAt = (baseTimeMs) => {
+  const baseDate = Number.isFinite(baseTimeMs) ? new Date(baseTimeMs) : new Date();
+  const countryParts = getTimeZoneDateParts(baseDate, CREDIT_REMINDER_TIME_ZONE);
+  const nextDay = new Date(Date.UTC(countryParts.year, countryParts.month - 1, countryParts.day + 1, 9, 0, 0));
+  return formatDatetimeLocalParts({
+    year: nextDay.getUTCFullYear(),
+    month: nextDay.getUTCMonth() + 1,
+    day: nextDay.getUTCDate(),
+    hour: 9,
+    minute: 0,
+  });
+};
+const getMinimumCreditReminderAt = (baseTimeMs) => {
+  if (!Number.isFinite(baseTimeMs)) return "";
+  const countryParts = getTimeZoneDateParts(new Date(baseTimeMs), CREDIT_REMINDER_TIME_ZONE);
+  return formatDatetimeLocalParts({
+    year: countryParts.year,
+    month: countryParts.month,
+    day: countryParts.day,
+    hour: countryParts.hour,
+    minute: countryParts.minute,
+  });
+};
+const getCreditReceivableStatusLabel = (status) => {
+  const labels = {
+    open: "Pendiente",
+    partial: "Pendiente",
+    paid: "Saldada",
+    void: "Anulada",
+  };
+  return labels[status] || status || "Pendiente";
+};
+const getCreditReceivableStatusStyle = (status) => {
+  if (status === "paid") return { background: "#DCFCE7", color: "#166534", border: "1px solid #22C55E40" };
+  if (status === "void") return { background: "#F1F5F9", color: "#475569", border: "1px solid #CBD5E140" };
+  return { background: "#FEF3C7", color: "#92400E", border: "1px solid #F59E0B40" };
+};
 
 const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map((field) => order?.[field]).find(Boolean) || null;
 const resolveAssignmentIdsByRole = (order, role) => {
@@ -192,15 +331,15 @@ function OrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit
 
 
 
-// Modal de detalles de orden para admin
-function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit, onCancel, onAssign, onArchive, onDelete }) {
+// Shared order info rendering (used by both modals)
+function OrderDetailInfo({ order, usersById }) {
   const [paymentInvoiceUrl, setPaymentInvoiceUrl] = useState("");
 
   useEffect(() => {
     let active = true;
 
     const loadPaymentInvoiceUrl = async () => {
-      if (!open || !order?.invoice_payment) {
+      if (!order?.invoice_payment) {
         if (active) setPaymentInvoiceUrl("");
         return;
       }
@@ -220,9 +359,7 @@ function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit
     return () => {
       active = false;
     };
-  }, [open, order?.invoice_payment]);
-
-  if (!open || !order) return null;
+  }, [order?.invoice_payment]);
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const sellerId = resolveSellerId(order);
@@ -235,8 +372,9 @@ function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit
   const preview = order.preview_image;
   const referenceImageUrls = getReferenceImages(order);
   const paymentInvoice = paymentInvoiceUrl;
+
   return (
-    <ModalShell open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} size="large">
+    <>
       {order.order_design_type === "EXTERNAL_DESING" ? (
         <FlowTrackerExternal status={order.status} />
       ) : (
@@ -349,7 +487,7 @@ function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit
                 </div>
               )}
               {existingFiles.length > 0 && (
-                <div>
+                <div style={{ marginTop: 16 }}>
                   <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                     <Icons.Brush /> Diseño del cliente
                   </p>
@@ -445,6 +583,12 @@ function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit
                   {order.is_archived_admin ? "Si" : "No"}
                 </span>
               </div>
+              {order.invoice_number && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 13, color: "var(--text-sub)" }}>Facturacion:</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{order.invoice_number}</span>
+                </div>
+              )}
               {order.price && (
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 13, color: "var(--text-sub)" }}>Precio:</span>
@@ -504,44 +648,65 @@ function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit
               fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
               textTransform: "uppercase", letterSpacing: "0.07em",
               marginBottom: 12
-            }}>🔗 Link de Seguimiento</p>
+            }}>Link de Seguimiento</p>
 
             <AdminTrackingLinkField orderId={order.id} />
           </div>
-
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="pa-btn primary" style={{ flex: 1 }} onClick={() => { onClose(); onEdit(order); }}>
-              <Icons.Edit />Editar
-            </button>
-          </div>
-          {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, userId) && (
-            <button className="pa-btn" style={{ width: "100%", marginTop: 8, background: "#F59E0B", color: "#fff", border: "none" }} onClick={() => onArchive(order)}>
-              <Icons.Archive />Archivar orden
-            </button>
-          )}
-          {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED, ORDER_STATUS.IN_DESIGN]) && (
-            <div style={{ marginTop: 8 }}>
-              {order.order_design_type === "EXTERNAL_DESING" ? (
-                <button className="pa-btn" style={{ width: "100%", background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => onAssign(order, "quote")}>
-                  Enviar a Caja
-                </button>
-              ) : (
-                <button className="pa-btn" style={{ width: "100%", background: "#8B5CF6", color: "#fff", border: "none" }} onClick={() => onAssign(order, "designer")}>
-                  Asignar a Diseñador
-                </button>
-              )}
-            </div>
-          )}
-          {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED]) && (
-            <button className="pa-btn danger" style={{ width: "100%", marginTop: 8 }} onClick={() => onCancel(order)}>
-              <Icons.Trash />Cancelar Orden
-            </button>
-          )}
-          <button className="pa-btn danger" style={{ width: "100%", marginTop: 8 }} onClick={() => onDelete(order)}>
-            <Icons.Trash />Eliminar orden y archivos
-          </button>
         </div>
       </div>
+    </>
+  );
+}
+
+// Modal de detalles de orden para admin (con botones de accion)
+function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit, onCancel, onAssign, onArchive, onDelete }) {
+  if (!open || !order) return null;
+
+  return (
+    <ModalShell open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} size="large">
+      <OrderDetailInfo order={order} usersById={usersById} />
+      <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+        <button className="pa-btn primary" style={{ flex: 1 }} onClick={() => { onClose(); onEdit(order); }}>
+          <Icons.Edit />Editar
+        </button>
+      </div>
+      {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, userId) && (
+        <button className="pa-btn" style={{ width: "100%", marginTop: 8, background: "#F59E0B", color: "#fff", border: "none" }} onClick={() => onArchive(order)}>
+          <Icons.Archive />Archivar orden
+        </button>
+      )}
+      {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED, ORDER_STATUS.IN_DESIGN]) && (
+        <div style={{ marginTop: 8 }}>
+          {order.order_design_type === "EXTERNAL_DESING" ? (
+            <button className="pa-btn" style={{ width: "100%", background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => onAssign(order, "quote")}>
+              Enviar a Caja
+            </button>
+          ) : (
+            <button className="pa-btn" style={{ width: "100%", background: "#8B5CF6", color: "#fff", border: "none" }} onClick={() => onAssign(order, "designer")}>
+              Asignar a Diseñador
+            </button>
+          )}
+        </div>
+      )}
+      {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED]) && (
+        <button className="pa-btn danger" style={{ width: "100%", marginTop: 8 }} onClick={() => onCancel(order)}>
+          <Icons.Trash />Cancelar Orden
+        </button>
+      )}
+      <button className="pa-btn danger" style={{ width: "100%", marginTop: 8 }} onClick={() => onDelete(order)}>
+        <Icons.Trash />Eliminar orden y archivos
+      </button>
+    </ModalShell>
+  );
+}
+
+// Modal de detalles de orden para el apartado de crédito (solo informacion, sin acciones)
+function CreditOrderDetailModal({ open, order, usersById, onClose }) {
+  if (!open || !order) return null;
+
+  return (
+    <ModalShell open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} size="large">
+      <OrderDetailInfo order={order} usersById={usersById} />
     </ModalShell>
   );
 }
@@ -683,6 +848,10 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
             <label className="pa-field">
               <span>Teléfono</span>
               <input value={orderForm.client_contact} onChange={(event) => setClientField("client_contact", event.target.value)} placeholder="Contacto principal" />
+            </label>
+            <label className="pa-field">
+              <span>Numero de facturacion</span>
+              <input value={orderForm.invoice_number} onChange={(event) => setField("invoice_number", event.target.value)} placeholder="Ej: FAC-001-2026" />
             </label>
             <label className="pa-field full">
               <span>Descripción</span>
@@ -947,6 +1116,7 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
           <div className="pa-detail-list">
             <div><span>Estado</span><strong><StatusBadge status={order.status} className="ps-badge" showDot bordered /></strong></div>
             <div><span>Pago</span><strong><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></strong></div>
+            <div><span>Facturacion</span><strong>{order.invoice_number || "No definido"}</strong></div>
             <div><span>Precio</span><strong>{order.price ? `RD$${Number(order.price).toLocaleString("es-DO")}` : "Precio pendiente"}</strong></div>
             <div><span>Preview</span><strong>{order.preview_image ? <a href={order.preview_image} target="_blank" rel="noreferrer">Ver preview</a> : "Sin preview"}</strong></div>
           </div>
@@ -1230,7 +1400,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
                 <span className="pa-detail-item-label">Estado Laboral</span>
                 <div className="pa-status-badge-container">
                   <span className={`pa-status-pill ${isActive ? "active" : "inactive"}`}>
-                    {employmentStatus === "empleado" ? "✓ Activo" : "✗ Inactivo"}
+                    {employmentStatus === "empleado" ? "Activo" : "Inactivo"}
                   </span>
                 </div>
               </div>
@@ -1324,7 +1494,7 @@ export default function Dashboard() {
   const notif = useNotifications(user?.id);
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-  // userViewMode eliminado — solo vista tabla
+  // userViewMode eliminado: solo vista tabla
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [orderModalMode, setOrderModalMode] = useState("create");
@@ -1349,7 +1519,40 @@ export default function Dashboard() {
   const [materialSearch, setMaterialSearch] = useState("");
   const [materialsPage, setMaterialsPage] = useState(1);
   const [clients, setClients] = useState([]);
-  const [clientsLoading, setClientsLoading] = useState(false);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const [accountsReceivable, setAccountsReceivable] = useState([]);
+  const [accountsReceivableLoading, setAccountsReceivableLoading] = useState(true);
+  const [recordPaymentClient, setRecordPaymentClient] = useState(null);
+  const [recordPaymentForm, setRecordPaymentForm] = useState({ amount: "", payment_method: "", notes: "" });
+  const [recordPaymentLoading, setRecordPaymentLoading] = useState(false);
+  const [creditSearch, setCreditSearch] = useState("");
+  const [creditStatusFilter, setCreditStatusFilter] = useState("open");
+  const [creditView, setCreditView] = useState("list");
+  const [creditDetailClientId, setCreditDetailClientId] = useState(null);
+  const [selectedCreditOrderIds, setSelectedCreditOrderIds] = useState({});
+  const [creditSettleAllTarget, setCreditSettleAllTarget] = useState(null);
+  const [creditSettleAllNotes, setCreditSettleAllNotes] = useState("");
+  const [creditSettleAllLoading, setCreditSettleAllLoading] = useState(false);
+  const [creditSettlementTarget, setCreditSettlementTarget] = useState(null);
+  const [creditSettlementNotes, setCreditSettlementNotes] = useState("");
+  const [creditSettlementLoading, setCreditSettlementLoading] = useState(false);
+  const [creditAlertAcknowledged, setCreditAlertAcknowledged] = useState(true);
+  const [creditAlertLoading, setCreditAlertLoading] = useState(false);
+  const [creditAlertSaving, setCreditAlertSaving] = useState(false);
+  const [creditCustomReminders, setCreditCustomReminders] = useState([]);
+  const [creditCustomReminderLinks, setCreditCustomReminderLinks] = useState([]);
+  const [creditReminderTarget, setCreditReminderTarget] = useState(null);
+  const [creditReminderForm, setCreditReminderForm] = useState({
+    remind_at: "",
+    note: "",
+    orderIds: [],
+    visibilityScope: CREDIT_REMINDER_VISIBILITY.CREATOR,
+  });
+  const [creditReminderSaving, setCreditReminderSaving] = useState(false);
+  const [creditReminderDismissedIds, setCreditReminderDismissedIds] = useState([]);
+  const [creditReminderCompletingId, setCreditReminderCompletingId] = useState(null);
+  const [creditReminderNow, setCreditReminderNow] = useState(null);
+  const creditReminderServerClockRef = useRef(null);
   const [clientSearch, setClientSearch] = useState("");
   const [showClientModal, setShowClientModal] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
@@ -1361,7 +1564,20 @@ export default function Dashboard() {
   const [clientPage, setClientPage] = useState(1);
 
   const usersById = useMemo(() => Object.fromEntries(profiles.map(item => [item.id, item])), [profiles]);
+  const adminVisibleNotifications = useMemo(() => filterActiveNotifications(notif.notifications), [notif.notifications]);
+  const adminVisibleToasts = useMemo(() => filterActiveNotifications(notif.toasts), [notif.toasts]);
+  const adminUnreadCount = useMemo(() => getActiveUnreadCount(adminVisibleNotifications), [adminVisibleNotifications]);
+  const creditAlertPeriodKey = useMemo(() => getCreditAlertPeriodKey(), []);
+  const minimumCreditReminderAt = useMemo(() => getMinimumCreditReminderAt(creditReminderNow), [creditReminderNow]);
   const showFeedback = (type, message) => setFeedback({ type, message, id: Date.now() });
+  const showCreditFeedback = useCallback((variant, title, message) => {
+    showCreditActionFeedback(notif, {
+      variant,
+      title,
+      message,
+      eventKind: "admin_credit_feedback",
+    });
+  }, [notif]);
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -1373,6 +1589,56 @@ export default function Dashboard() {
     setUser(authUser || null);
     setProfile(authProfile || null);
   }, [authProfile, authUser]);
+
+  const syncCreditReminderServerTime = useCallback(async () => {
+    const { data, error } = await supabase.rpc("get_server_time");
+    if (error) {
+      console.warn("No se pudo sincronizar la hora del servidor para recordatorios:", error.message || error);
+      return null;
+    }
+
+    const serverTimeValue = Array.isArray(data) ? data[0] : data;
+    const serverNowMs = new Date(serverTimeValue).getTime();
+    if (!Number.isFinite(serverNowMs)) {
+      console.warn("La hora del servidor para recordatorios no es valida:", serverTimeValue);
+      return null;
+    }
+
+    const nextClock = {
+      serverNowMs,
+      clientMonotonicMs: getMonotonicNow(),
+    };
+
+    creditReminderServerClockRef.current = nextClock;
+    setCreditReminderNow(getCreditReminderServerNow(nextClock));
+    return nextClock;
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      creditReminderServerClockRef.current = null;
+      setCreditReminderNow(null);
+      return undefined;
+    }
+
+    syncCreditReminderServerTime();
+
+    const interval = setInterval(() => {
+      const serverNow = getCreditReminderServerNow(creditReminderServerClockRef.current);
+      if (serverNow !== null) {
+        setCreditReminderNow(serverNow);
+      }
+    }, CREDIT_REMINDER_FALLBACK_CHECK_MS);
+
+    const resyncInterval = setInterval(() => {
+      syncCreditReminderServerTime();
+    }, CREDIT_REMINDER_SERVER_TIME_RESYNC_MS);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(resyncInterval);
+    };
+  }, [syncCreditReminderServerTime, user?.id]);
 
   const loadOrders = useCallback(async (silent = false) => {
     if (!silent) {
@@ -1425,25 +1691,6 @@ export default function Dashboard() {
 
   }, []);
 
-  useEffect(() => {
-    if (!authUser?.id) return undefined;
-
-    loadOrders();
-    loadProfiles();
-
-    // Realtime subscription para órdenes
-    const ordersChannel = supabase
-      .channel('admin-orders-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        loadOrders(true);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(ordersChannel);
-    };
-  }, [authUser?.id, loadOrders, loadProfiles]);
-
   const fetchMaterials = async () => {
     setMaterialsLoading(true);
     try {
@@ -1460,13 +1707,209 @@ export default function Dashboard() {
     }
   };
 
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     setClientsLoading(true);
     try {
       const data = await loadClients(supabase);
-      setClients(data);
+      setClients(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn("No se pudieron cargar clientes:", err?.message || err);
+      setClients([]);
     } finally {
       setClientsLoading(false);
+    }
+  }, []);
+
+  const fetchAccountsReceivable = useCallback(async () => {
+    setAccountsReceivableLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("accounts_receivable")
+        .select("*")
+        .order("issued_at", { ascending: false });
+
+      if (error) {
+        if (!String(error.message || "").includes("accounts_receivable")) {
+          console.warn("No se pudieron cargar cuentas por cobrar:", error.message);
+        }
+        setAccountsReceivable([]);
+        return;
+      }
+
+      setAccountsReceivable(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn("No se pudieron cargar cuentas por cobrar:", err?.message || err);
+      setAccountsReceivable([]);
+    } finally {
+      setAccountsReceivableLoading(false);
+    }
+  }, []);
+
+  const fetchCreditCustomReminders = useCallback(async () => {
+    if (!user?.id) {
+      setCreditCustomReminders([]);
+      setCreditCustomReminderLinks([]);
+      return;
+    }
+
+    try {
+      const [{ data: reminders, error: remindersError }, { data: links, error: linksError }] = await Promise.all([
+        supabase
+          .from("credit_custom_reminders")
+          .select("*")
+          .in("status", ["scheduled", "due"])
+          .order("remind_at", { ascending: true }),
+        supabase
+          .from("credit_custom_reminder_orders")
+          .select("*")
+          .order("created_at", { ascending: true }),
+      ]);
+
+      if (remindersError) throw remindersError;
+      if (linksError) throw linksError;
+
+      setCreditCustomReminders(Array.isArray(reminders) ? reminders : []);
+      setCreditCustomReminderLinks(Array.isArray(links) ? links : []);
+    } catch (error) {
+      if (!String(error?.message || "").includes("credit_custom_reminders")) {
+        console.warn("No se pudieron cargar recordatorios de crédito:", error?.message || error);
+      }
+      setCreditCustomReminders([]);
+      setCreditCustomReminderLinks([]);
+    }
+  }, [user?.id]);
+
+  const dispatchDueCreditReminderNotifications = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      const { error } = await supabase.rpc("dispatch_due_credit_reminder_notifications");
+      if (error) throw error;
+    } catch (error) {
+      if (!String(error?.message || "").includes("dispatch_due_credit_reminder_notifications")) {
+        console.warn("No se pudieron emitir notificaciones de recordatorios de credito:", error?.message || error);
+      }
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    const refreshReminderClock = async () => {
+      await syncCreditReminderServerTime();
+      await dispatchDueCreditReminderNotifications();
+      fetchCreditCustomReminders();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshReminderClock();
+      }
+    };
+
+    window.addEventListener("focus", refreshReminderClock);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", refreshReminderClock);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [dispatchDueCreditReminderNotifications, fetchCreditCustomReminders, syncCreditReminderServerTime, user?.id]);
+
+  useEffect(() => {
+    if (!authUser?.id) return undefined;
+
+    loadOrders();
+    loadProfiles();
+    fetchClients();
+    fetchAccountsReceivable();
+    dispatchDueCreditReminderNotifications();
+    fetchCreditCustomReminders();
+
+    const ordersChannel = supabase
+      .channel(`admin-realtime-${authUser.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        loadOrders(true);
+        fetchAccountsReceivable();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts_receivable' }, () => {
+        loadOrders(true);
+        fetchAccountsReceivable();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
+        fetchClients();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'credit_custom_reminders' }, () => {
+        fetchCreditCustomReminders();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'credit_custom_reminder_orders' }, () => {
+        fetchCreditCustomReminders();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ordersChannel);
+    };
+  }, [authUser?.id, dispatchDueCreditReminderNotifications, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, loadOrders, loadProfiles]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setCreditAlertAcknowledged(true);
+      return;
+    }
+
+    let active = true;
+    const loadCreditAlertAck = async () => {
+      setCreditAlertLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("credit_pending_alert_acknowledgements")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("period_key", creditAlertPeriodKey)
+          .limit(1);
+
+        if (error) throw error;
+        if (active) setCreditAlertAcknowledged((data || []).length > 0);
+      } catch (error) {
+        console.warn("No se pudo consultar el acuse de créditos pendientes:", error?.message || error);
+        if (active) setCreditAlertAcknowledged(true);
+      } finally {
+        if (active) setCreditAlertLoading(false);
+      }
+    };
+
+    loadCreditAlertAck();
+    return () => {
+      active = false;
+    };
+  }, [creditAlertPeriodKey, user?.id]);
+
+  const acknowledgeCreditPendingAlert = async ({ review = false } = {}) => {
+    if (!user?.id) return;
+
+    setCreditAlertSaving(true);
+    try {
+      const { error } = await supabase
+        .from("credit_pending_alert_acknowledgements")
+        .insert({
+          user_id: user.id,
+          period_key: creditAlertPeriodKey,
+          acknowledged_at: new Date().toISOString(),
+        });
+
+      if (error && error.code !== "23505") throw error;
+      setCreditAlertAcknowledged(true);
+      if (review) {
+        setActiveTab("credits");
+        setCreditView("list");
+        setCreditStatusFilter("open");
+      }
+    } catch (error) {
+      console.warn("No se pudo guardar el acuse de créditos pendientes:", error?.message || error);
+      showFeedback("error", "No se pudo guardar el aviso de créditos pendientes.");
+    } finally {
+      setCreditAlertSaving(false);
     }
   };
 
@@ -1484,10 +1927,16 @@ export default function Dashboard() {
     if (activeTab === "materials") {
       fetchMaterials();
     }
-    if (activeTab === "clients" || activeTab === "orders") {
+    if (activeTab === "clients" || activeTab === "orders" || activeTab === "credits") {
       fetchClients();
+      fetchAccountsReceivable();
+      fetchCreditCustomReminders();
     }
-  }, [activeTab]);
+  }, [activeTab, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders]);
+
+  useEffect(() => {
+    fetchCreditCustomReminders();
+  }, [fetchCreditCustomReminders]);
 
   const handleLogout = async () => {
     await signOut();
@@ -1505,6 +1954,7 @@ export default function Dashboard() {
       client_id: order.client_id || null,
       client_name: order.client_name || "",
       client_contact: order.client_contact || "",
+      invoice_number: order.invoice_number || "",
       description: order.description || "",
       material: order.material || "",
       order_type: order.order_type || "normal",
@@ -1546,6 +1996,7 @@ export default function Dashboard() {
       client_id: orderForm.client_id || null,
       client_name: orderForm.client_name.trim(),
       client_contact: orderForm.client_contact.trim() || null,
+      invoice_number: orderForm.invoice_number.trim() || null,
       description: orderForm.description.trim(),
       material: orderForm.material.trim() || null,
       termination_type: orderForm.termination_type.trim() || null,
@@ -1758,6 +2209,32 @@ export default function Dashboard() {
 
     if (isPaymentPartial(quotationOrder.payment_status) && quotationPaymentStatus === PAYMENT_STATUS.PENDING) {
       return showFeedback("error", "Una orden con pago parcial solo puede mantenerse parcial o cambiarse a pagado.");
+    }
+
+    if (quotationPaymentStatus === PAYMENT_STATUS.CREDIT) {
+      if (!String(quotationOrder.invoice_number || "").trim()) {
+        return showFeedback("error", "La orden debe tener un numero de facturacion para vender a crédito.");
+      }
+
+      if (!quotationOrder.client_id) {
+        return showFeedback("error", "Para vender a crédito debes registrar y vincular este cliente.");
+      }
+
+      setQuotationLoading(true);
+      const { error } = await supabase.rpc("mark_order_as_credit", {
+        p_order_id: quotationOrder.id,
+        p_due_date: null,
+      });
+      setQuotationLoading(false);
+
+      if (error) {
+        return showFeedback("error", error.message || "No se pudo aprobar el crédito.");
+      }
+
+      setQuotationModalOpen(false);
+      setQuotationOrder(null);
+      await Promise.all([loadOrders(), fetchAccountsReceivable()]);
+      return;
     }
 
     if (quotationPaymentStatus === PAYMENT_STATUS.PAID && !quotationInvoice) {
@@ -2177,6 +2654,290 @@ export default function Dashboard() {
     }
   };
 
+  const openRecordPaymentModal = (client) => {
+    setRecordPaymentClient(client);
+    setRecordPaymentForm({
+      amount: "",
+      payment_method: "",
+      notes: "",
+    });
+  };
+
+  const handleOpenCreditSettleAll = (client, openInvoices) => {
+    const orderIds = openInvoices.map((item) => item.order_id);
+    const invoices = openInvoices.map((item) => item.invoiceNumber);
+    const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
+    if (uniqueOrderIds.length === 0) {
+      showFeedback("error", "No hay facturas pendientes para cerrar.");
+      return;
+    }
+    setCreditSettleAllTarget({ client, orderIds: uniqueOrderIds, invoices: [...new Set((invoices || []).filter(Boolean))] });
+    setCreditSettleAllNotes("");
+  };
+
+  const handleConfirmCreditSettleAll = async () => {
+    const target = creditSettleAllTarget;
+    if (!target) return;
+    await handleSettleCreditOrders({
+      orderIds: target.orderIds,
+      notes: creditSettleAllNotes,
+      setLoadingState: setCreditSettleAllLoading,
+      onSuccess: () => {
+        setCreditSettleAllTarget(null);
+        setCreditSettleAllNotes("");
+        if (target.client?.id) {
+          setSelectedCreditOrderIds((prev) => ({ ...prev, [target.client.id]: [] }));
+        }
+      },
+    });
+  };
+
+  const openCreditSettlementModal = ({ client, orderIds, invoices, mode }) => {
+    const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
+    if (uniqueOrderIds.length === 0) {
+      showFeedback("error", "No hay facturas pendientes para cerrar.");
+      return;
+    }
+
+    setCreditSettlementTarget({
+      client,
+      orderIds: uniqueOrderIds,
+      invoices: [...new Set((invoices || []).filter(Boolean))],
+      mode,
+    });
+    setCreditSettlementNotes("");
+  };
+
+  const handleSettleCreditOrders = async ({ orderIds, notes, onSuccess, setLoadingState }) => {
+    const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
+    if (uniqueOrderIds.length === 0) {
+      showFeedback("error", "No hay créditos pendientes para cerrar.");
+      return false;
+    }
+
+    setLoadingState(true);
+    const { error } = await supabase.rpc("settle_credit_orders", {
+      p_order_ids: uniqueOrderIds,
+      p_receipt_url: null,
+      p_notes: notes || null,
+    });
+    setLoadingState(false);
+
+    if (error) {
+      showFeedback("error", error.message || "No se pudo registrar el cierre del crédito.");
+      return false;
+    }
+
+    await Promise.all([loadOrders(true), fetchAccountsReceivable()]);
+    if (onSuccess) onSuccess();
+    showFeedback("success", uniqueOrderIds.length === 1 ? "Factura marcada como saldada correctamente." : "Facturas marcadas como saldadas correctamente.");
+    return true;
+  };
+
+  const handleRecordClientPayment = async () => {
+    if (!recordPaymentClient?.id) return;
+    const orderIds = receivablesByClient[recordPaymentClient.id]?.orderIds || [];
+    if (orderIds.length === 0) {
+      showFeedback("error", "El cliente no tiene créditos pendientes para cerrar.");
+      return;
+    }
+
+    await handleSettleCreditOrders({
+      orderIds,
+      notes: recordPaymentForm.notes,
+      setLoadingState: setRecordPaymentLoading,
+      onSuccess: () => {
+        setRecordPaymentClient(null);
+        setRecordPaymentForm({ amount: "", payment_method: "", notes: "" });
+      },
+    });
+  };
+
+  const handleConfirmCreditSettlement = async () => {
+    const target = creditSettlementTarget;
+    if (!target) return;
+
+    await handleSettleCreditOrders({
+      orderIds: target.orderIds,
+      notes: creditSettlementNotes,
+      setLoadingState: setCreditSettlementLoading,
+      onSuccess: () => {
+        if (target.client?.id) {
+          setSelectedCreditOrderIds(prev => ({ ...prev, [target.client.id]: [] }));
+        }
+        setCreditSettlementTarget(null);
+        setCreditSettlementNotes("");
+      },
+    });
+  };
+
+  const openCreditReminderModal = (client, invoices = []) => {
+    if (!client?.id) {
+      showFeedback("error", "Selecciona un cliente valido para crear el recordatorio.");
+      return;
+    }
+
+    const openInvoices = invoices.filter(item => isOpenCreditReceivable(item) && item.order_id);
+    const serverNow = getCreditReminderServerNow(creditReminderServerClockRef.current) ?? creditReminderNow;
+    setCreditReminderTarget({ client, invoices: openInvoices });
+    setCreditReminderForm({
+      remind_at: getDefaultCreditReminderAt(serverNow),
+      note: "",
+      orderIds: [...new Set(openInvoices.map(item => item.order_id).filter(Boolean))],
+      visibilityScope: CREDIT_REMINDER_VISIBILITY.CREATOR,
+    });
+  };
+
+  const closeCreditReminderModal = () => {
+    setCreditReminderTarget(null);
+    setCreditReminderForm({
+      remind_at: "",
+      note: "",
+      orderIds: [],
+      visibilityScope: CREDIT_REMINDER_VISIBILITY.CREATOR,
+    });
+  };
+
+  const toggleCreditReminderOrder = (orderId) => {
+    if (!orderId) return;
+    setCreditReminderForm(prev => {
+      const current = new Set(prev.orderIds || []);
+      if (current.has(orderId)) current.delete(orderId);
+      else current.add(orderId);
+      return { ...prev, orderIds: [...current] };
+    });
+  };
+
+  const handleSaveCreditReminder = async () => {
+    if (!user?.id) {
+      showFeedback("error", "No se pudo identificar el usuario actual.");
+      return;
+    }
+    if (!creditReminderTarget?.client?.id) {
+      showFeedback("error", "Selecciona un cliente para el recordatorio.");
+      return;
+    }
+
+    const validSelectedOrderIds = [...new Set(creditReminderForm.orderIds || [])].filter((orderId) => {
+      const invoice = (creditReminderTarget.invoices || []).find(item => item.order_id === orderId);
+      return invoice?.order_id && isOpenCreditReceivable(invoice);
+    });
+    if (validSelectedOrderIds.length === 0) {
+      showFeedback("error", "Los recordatorios personalizados solo pueden crearse para ordenes a credito.");
+      return;
+    }
+
+    const visibilityScope = CREDIT_REMINDER_VISIBILITY_VALUES.has(creditReminderForm.visibilityScope)
+      ? creditReminderForm.visibilityScope
+      : CREDIT_REMINDER_VISIBILITY.CREATOR;
+    if (creditReminderVisibilityIncludesQuote(visibilityScope)) {
+      const selectedQuoteIds = validSelectedOrderIds
+        .map((orderId) => {
+          const invoice = (creditReminderTarget.invoices || []).find(item => item.order_id === orderId);
+          return resolveQuoteAssignmentId(invoice?.order);
+        })
+        .filter(Boolean);
+
+      if (new Set(selectedQuoteIds).size === 0) {
+        showFeedback("error", "Selecciona al menos una orden asignada a Caja para compartir el recordatorio.");
+        return;
+      }
+    }
+
+    const reminderNote = (creditReminderForm.note || "").trim();
+    if (!reminderNote) {
+      showFeedback("error", "Describe la razon del recordatorio antes de continuar.");
+      return;
+    }
+
+    const reminderAtValue = (creditReminderForm.remind_at || "").trim();
+    if (!reminderAtValue) {
+      showFeedback("error", "Selecciona una fecha antes de continuar.");
+      return;
+    }
+
+    const remindAtMs = zonedDatetimeLocalToUtcMs(reminderAtValue, CREDIT_REMINDER_TIME_ZONE);
+    if (!Number.isFinite(remindAtMs)) {
+      showFeedback("error", "La fecha del recordatorio no es valida.");
+      return;
+    }
+
+    const serverClock = await syncCreditReminderServerTime();
+    if (!serverClock) {
+      showFeedback("error", "No se pudo validar la hora del servidor. Intenta nuevamente.");
+      return;
+    }
+
+    const serverNowMs = getCreditReminderServerNow(serverClock);
+    if (serverNowMs !== null && remindAtMs <= serverNowMs) {
+      showFeedback("error", "Selecciona una fecha y hora futura para el recordatorio.");
+      return;
+    }
+
+    setCreditReminderSaving(true);
+    try {
+      const { error } = await supabase.rpc("create_credit_custom_reminder", {
+        p_client_id: creditReminderTarget.client.id,
+        p_remind_at: new Date(remindAtMs).toISOString(),
+        p_note: reminderNote,
+        p_order_ids: validSelectedOrderIds,
+        p_visibility_scope: visibilityScope,
+      });
+
+      if (error) throw error;
+
+      closeCreditReminderModal();
+      await syncCreditReminderServerTime();
+      await fetchCreditCustomReminders();
+      showFeedback("success", "Recordatorio registrado correctamente.");
+    } catch (error) {
+      console.error("Error creating credit reminder:", error);
+      showFeedback("error", error?.message || "No se pudo crear el recordatorio.");
+    } finally {
+      setCreditReminderSaving(false);
+    }
+  };
+
+  const dismissDueCreditReminders = async (reminders = dueCreditCustomReminders) => {
+    const ids = reminders.map(item => item.id).filter(Boolean);
+    if (ids.length === 0) return;
+
+    setCreditReminderDismissedIds(prev => [...new Set([...prev, ...ids])]);
+    await supabase.rpc("touch_credit_custom_reminders", { p_reminder_ids: ids });
+  };
+
+  const handleAcknowledgeCreditReminder = async (reminderId) => {
+    if (!reminderId) return;
+    setCreditReminderCompletingId(reminderId);
+    try {
+      const { error } = await supabase.rpc("acknowledge_credit_custom_reminder", {
+        p_reminder_id: reminderId,
+      });
+
+      if (error) throw error;
+      setCreditReminderDismissedIds(prev => [...new Set([...prev, reminderId])]);
+      await fetchCreditCustomReminders();
+      showCreditFeedback("success", "Recordatorio atendido", "Recordatorio marcado como atendido.");
+    } catch (error) {
+      showFeedback("error", error?.message || "No se pudo marcar el recordatorio.");
+    } finally {
+      setCreditReminderCompletingId(null);
+    }
+  };
+
+  const handleReviewCreditReminder = async (reminder) => {
+    if (!reminder) return;
+    await dismissDueCreditReminders([reminder]);
+    setActiveTab("credits");
+    setCreditStatusFilter("open");
+    if (reminder.client_id) {
+      setCreditDetailClientId(reminder.client_id);
+      setCreditView("detail");
+    } else {
+      setCreditView("list");
+    }
+  };
+
   // Funcionalidad de filtros 
   const filteredOrders = useMemo(() => {
     const q = normalizeText(search);
@@ -2189,7 +2950,7 @@ export default function Dashboard() {
     return orders.filter(order => {
       const relatedUserNames = [...new Set(getOrderSearchUserIds(order))]
         .map((userId) => getUserDisplayName(usersById[userId]));
-      const matchesSearch = !q || [order.client_name, order.description, order.material, order.id, ...relatedUserNames].some(value => normalizeText(value).includes(q));
+      const matchesSearch = !q || [order.client_name, order.description, order.material, order.invoice_number, order.id, ...relatedUserNames].some(value => normalizeText(value).includes(q));
       const matchesStatus = statusFilter === "all" || isOrderStatus(order.status, statusFilter);
       const matchesOwner = ownerFilter === "all" || orderMatchesProfileFilter(order, selectedProfile);
       const matchesClient = orderMatchesClientFilter(order, clientFilter);
@@ -2205,6 +2966,249 @@ export default function Dashboard() {
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
   const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  const receivablesByClient = useMemo(() => {
+    return getOpenCreditReceivables(accountsReceivable).reduce((acc, item) => {
+      const current = acc[item.client_id] || { count: 0, orderIds: [], invoices: [], oldestIssuedAt: null };
+      const issuedAt = item.issued_at || item.created_at || null;
+      acc[item.client_id] = {
+        count: current.count + 1,
+        orderIds: [...current.orderIds, item.order_id].filter(Boolean),
+        invoices: [...current.invoices, item.invoice_number].filter(Boolean),
+        oldestIssuedAt: !current.oldestIssuedAt || (issuedAt && issuedAt < current.oldestIssuedAt) ? issuedAt : current.oldestIssuedAt,
+      };
+      return acc;
+    }, {});
+  }, [accountsReceivable]);
+
+  const receivablesTotal = useMemo(() => (
+    Object.values(receivablesByClient).reduce((sum, item) => sum + item.count, 0)
+  ), [receivablesByClient]);
+
+  const ordersById = useMemo(() => Object.fromEntries(orders.map(order => [order.id, order])), [orders]);
+  const clientsById = useMemo(() => Object.fromEntries(clients.map(client => [client.id, client])), [clients]);
+  const accountsReceivableById = useMemo(() => Object.fromEntries(accountsReceivable.map(item => [item.id, item])), [accountsReceivable]);
+  const accountsReceivableByOrderId = useMemo(() => Object.fromEntries(accountsReceivable.filter(item => item.order_id).map(item => [item.order_id, item])), [accountsReceivable]);
+
+  const creditRows = useMemo(() => {
+    return accountsReceivable
+      .filter(item => item?.client_id)
+      .map(item => {
+        const order = ordersById[item.order_id] || null;
+        const client = clientsById[item.client_id] || null;
+        return {
+          ...item,
+          order,
+          client,
+          clientName: client?.name || order?.client_name || "Cliente sin nombre",
+          clientPhone: client?.phone || order?.client_contact || "---",
+          invoiceNumber: item.invoice_number || order?.invoice_number || "---",
+          creditIssuedAt: getCreditIssuedAt({ ...item, order }),
+        };
+      });
+  }, [accountsReceivable, clientsById, ordersById]);
+
+  const buildCreditClientGroups = useCallback((rows) => {
+    const grouped = rows.reduce((acc, item) => {
+      const clientKey = item.client_id;
+      const current = acc[clientKey] || {
+        client: item.client || { id: item.client_id, name: item.clientName, phone: item.clientPhone },
+        invoices: [],
+        pendingCount: 0,
+        oldestIssuedAt: null,
+        newestIssuedAt: null,
+      };
+      const issuedAt = item.creditIssuedAt || null;
+      const issuedTime = issuedAt ? new Date(issuedAt).getTime() : null;
+      const oldestTime = current.oldestIssuedAt ? new Date(current.oldestIssuedAt).getTime() : null;
+      const newestTime = current.newestIssuedAt ? new Date(current.newestIssuedAt).getTime() : null;
+
+      acc[clientKey] = {
+        ...current,
+        invoices: [...current.invoices, item],
+        pendingCount: current.pendingCount + (isOpenCreditReceivable(item) ? 1 : 0),
+        oldestIssuedAt: issuedTime && (!oldestTime || issuedTime < oldestTime) ? issuedAt : current.oldestIssuedAt,
+        newestIssuedAt: issuedTime && (!newestTime || issuedTime > newestTime) ? issuedAt : current.newestIssuedAt,
+      };
+      return acc;
+    }, {});
+
+    return Object.values(grouped)
+      .map(group => ({
+        ...group,
+        invoices: [...group.invoices].sort((a, b) => new Date(b.issued_at || b.created_at || 0) - new Date(a.issued_at || a.created_at || 0)),
+      }))
+      .sort((a, b) => String(a.client?.name || "").localeCompare(String(b.client?.name || "")));
+  }, []);
+
+  const allCreditClientGroups = useMemo(() => (
+    buildCreditClientGroups(creditRows)
+  ), [buildCreditClientGroups, creditRows]);
+
+  const creditClientGroups = useMemo(() => {
+    const q = normalizeText(creditSearch);
+    const filtered = creditRows.filter(item => {
+      const matchesStatus = creditStatusFilter === "all"
+        || (creditStatusFilter === "open" && isOpenCreditReceivable(item))
+        || item.status === creditStatusFilter;
+      const matchesSearch = !q || [
+        item.clientName,
+        item.clientPhone,
+        item.invoiceNumber,
+        item.order_id,
+        item.order?.id,
+      ].some(value => normalizeText(value).includes(q));
+      return matchesStatus && matchesSearch;
+    });
+
+    return buildCreditClientGroups(filtered);
+  }, [buildCreditClientGroups, creditRows, creditSearch, creditStatusFilter]);
+
+  const creditDetailClient = useMemo(() => (
+    allCreditClientGroups.find(group => group.client?.id === creditDetailClientId) || null
+  ), [allCreditClientGroups, creditDetailClientId]);
+
+  const creditPendingInvoicesCount = useMemo(() => (
+    creditRows.filter(item => isOpenCreditReceivable(item)).length
+  ), [creditRows]);
+
+  const creditPendingClientCount = useMemo(() => (
+    new Set(creditRows.filter(item => isOpenCreditReceivable(item)).map(item => item.client_id)).size
+  ), [creditRows]);
+
+  const creditPendingClientPreview = useMemo(() => (
+    allCreditClientGroups
+      .filter(group => group.pendingCount > 0)
+      .sort((a, b) => b.pendingCount - a.pendingCount || String(a.client?.name || "").localeCompare(String(b.client?.name || "")))
+      .slice(0, 4)
+  ), [allCreditClientGroups]);
+
+  const shouldShowCreditPendingAlert = creditPendingInvoicesCount > 0 && !creditAlertAcknowledged && !creditAlertLoading;
+
+  const creditCustomReminderRows = useMemo(() => (
+    creditCustomReminders.map((reminder) => {
+      const links = creditCustomReminderLinks.filter((link) => link.reminder_id === reminder.id);
+      const client = clientsById[reminder.client_id] || { id: reminder.client_id, name: "Cliente sin nombre", phone: "" };
+      const invoices = links.map((link) => {
+        const receivable = accountsReceivableById[link.accounts_receivable_id] || accountsReceivableByOrderId[link.order_id] || null;
+        const order = ordersById[link.order_id] || (receivable?.order_id ? ordersById[receivable.order_id] : null);
+        return {
+          ...link,
+          receivable,
+          order,
+          invoiceNumber: receivable?.invoice_number || order?.invoice_number || "---",
+        };
+      });
+
+      return {
+        ...reminder,
+        client,
+        invoices,
+      };
+    })
+  ), [accountsReceivableById, accountsReceivableByOrderId, clientsById, creditCustomReminderLinks, creditCustomReminders, ordersById]);
+
+  const dueCreditCustomReminders = useMemo(() => {
+    const dismissed = new Set(creditReminderDismissedIds);
+    return creditCustomReminderRows
+      .filter((reminder) => (
+        ["scheduled", "due"].includes(reminder.status)
+        && reminder.remind_at
+        && creditReminderNow !== null
+        && new Date(reminder.remind_at).getTime() <= creditReminderNow
+        && !dismissed.has(reminder.id)
+      ))
+      .sort((a, b) => new Date(a.remind_at || 0) - new Date(b.remind_at || 0));
+  }, [creditCustomReminderRows, creditReminderDismissedIds, creditReminderNow]);
+
+  useEffect(() => {
+    if (creditReminderNow === null) return undefined;
+
+    const dismissed = new Set(creditReminderDismissedIds);
+    const serverNow = getCreditReminderServerNow(creditReminderServerClockRef.current) ?? creditReminderNow;
+    const nextReminderTime = creditCustomReminderRows
+      .filter((reminder) => (
+        ["scheduled", "due"].includes(reminder.status)
+        && reminder.remind_at
+        && !dismissed.has(reminder.id)
+      ))
+      .map((reminder) => new Date(reminder.remind_at).getTime())
+      .filter((time) => Number.isFinite(time))
+      .sort((a, b) => a - b)
+      .find((time) => time > serverNow);
+
+    if (!nextReminderTime) return undefined;
+
+    const delay = Math.min(
+      Math.max(nextReminderTime - serverNow + 250, 0),
+      CREDIT_REMINDER_MAX_TIMEOUT_MS
+    );
+
+    const timeout = setTimeout(async () => {
+      await syncCreditReminderServerTime();
+      await dispatchDueCreditReminderNotifications();
+      fetchCreditCustomReminders();
+    }, delay);
+
+    return () => clearTimeout(timeout);
+  }, [creditCustomReminderRows, creditReminderDismissedIds, creditReminderNow, dispatchDueCreditReminderNotifications, fetchCreditCustomReminders, syncCreditReminderServerTime]);
+
+  const openCreditOrderIds = useMemo(() => new Set(
+    creditRows
+      .filter(item => isOpenCreditReceivable(item) && item.order_id)
+      .map(item => item.order_id)
+  ), [creditRows]);
+
+  useEffect(() => {
+    setSelectedCreditOrderIds(prev => {
+      let changed = false;
+      const next = {};
+
+      Object.entries(prev).forEach(([clientId, orderIds]) => {
+        const keptOrderIds = orderIds.filter(orderId => openCreditOrderIds.has(orderId));
+        if (keptOrderIds.length !== orderIds.length) changed = true;
+        if (keptOrderIds.length > 0) next[clientId] = keptOrderIds;
+      });
+
+      return changed ? next : prev;
+    });
+  }, [openCreditOrderIds]);
+
+  useEffect(() => {
+    if (creditView !== "detail" || !creditDetailClientId) return;
+    if (creditDetailClient) return;
+
+    setCreditView("list");
+    setCreditDetailClientId(null);
+  }, [creditDetailClient, creditDetailClientId, creditView]);
+
+  useEffect(() => {
+    if (!selectedOrder?.id) return;
+    const freshOrder = ordersById[selectedOrder.id];
+    if (freshOrder && freshOrder !== selectedOrder) {
+      setSelectedOrder(freshOrder);
+    }
+  }, [ordersById, selectedOrder]);
+
+  const toggleCreditOrderSelection = (clientId, orderId) => {
+    if (!clientId || !orderId) return;
+    setSelectedCreditOrderIds(prev => {
+      const current = new Set(prev[clientId] || []);
+      if (current.has(orderId)) current.delete(orderId);
+      else current.add(orderId);
+      return { ...prev, [clientId]: [...current] };
+    });
+  };
+
+  const toggleAllCreditOrdersForClient = (clientId, invoices) => {
+    if (!clientId) return;
+    const openOrderIds = invoices.filter(item => isOpenCreditReceivable(item) && item.order_id).map(item => item.order_id);
+    setSelectedCreditOrderIds(prev => {
+      const selected = prev[clientId] || [];
+      const allSelected = openOrderIds.length > 0 && openOrderIds.every(orderId => selected.includes(orderId));
+      return { ...prev, [clientId]: allSelected ? [] : openOrderIds };
+    });
+  };
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
@@ -2251,6 +3255,7 @@ export default function Dashboard() {
     { label: "En entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length, icon: <Icons.Truck />, accentIdx: 8 },
     { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length, icon: <Icons.Check />, accentIdx: 4 },
     { label: "Clientes Registrados", value: clients.length, icon: <Icons.User />, accentIdx: 9 },
+    { label: "Crédito pendiente", value: receivablesTotal, icon: <Icons.Money />, accentIdx: 5 },
   ];
 
   const typeMetrics = [
@@ -2267,12 +3272,15 @@ export default function Dashboard() {
     { label: "Archivadas", value: orders.filter(order => order.is_archived_admin).length },
   ];
 
+  const getSidebarBadge = (loading, value) => (loading ? "..." : value);
+
   const menuItems = [
     { id: "overview", label: "Resumen", icon: <Icons.Dashboard /> },
-    { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: orders.length },
-    { id: "clients", label: "Clientes", icon: <Icons.User />, badge: clients.length },
+    { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loadingOrders, orders.length) },
+    { id: "credits", label: "Créditos", icon: <Icons.Receipt />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
+    { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clients.length) },
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
-    { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: profiles.length },
+    { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
   ];
 
   const isQuotationCompletingPartialPayment = isPaymentPartial(quotationOrder?.payment_status);
@@ -2286,14 +3294,14 @@ export default function Dashboard() {
         <header className="pa-header">
           <div className="pa-header-left">
             <button className="pa-mobile-toggle" onClick={() => setSidebarOpen(prev => !prev)} aria-label="Abrir menú"><Icons.Menu /></button>
-            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
+            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
             <NotificationCenter
-              notifications={notif.notifications}
-              unreadCount={notif.unreadCount}
-              toasts={notif.toasts}
+              notifications={adminVisibleNotifications}
+              unreadCount={adminUnreadCount}
+              toasts={adminVisibleToasts}
               onMarkAsRead={notif.markAsRead}
               onMarkAllAsRead={notif.markAllAsRead}
               onArchive={notif.archive}
@@ -2322,6 +3330,19 @@ export default function Dashboard() {
                 );
               })}
             </div>
+            {creditPendingInvoicesCount > 0 && (
+              <div className="pa-credit-dashboard-alert" role="status">
+                <span className="pa-credit-dashboard-alert-icon"><Icons.Receipt /></span>
+                <div>
+                  <span className="pa-section-kicker">Créditos pendientes</span>
+                  <strong>{creditPendingInvoicesCount} factura{creditPendingInvoicesCount === 1 ? "" : "s"} a crédito pendiente{creditPendingInvoicesCount === 1 ? "" : "s"}</strong>
+                  <p>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento administrativo.</p>
+                </div>
+                <button className="pa-btn primary pa-btn-sm" onClick={() => { setActiveTab("credits"); setCreditStatusFilter("open"); setCreditView("list"); }}>
+                  Revisar créditos pendientes
+                </button>
+              </div>
+            )}
             <div className="pa-two-col">
               <div className="pa-panel pa-overview-panel">
                 <div className="pa-panel-stripe" />
@@ -2391,7 +3412,7 @@ export default function Dashboard() {
             <div className="pa-toolbar pa-toolbar-orders">
               <div className="pa-search-box pa-toolbar-search">
                 <Icons.Search />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por cliente, descripción, material o usuario..." />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por cliente, facturacion, descripcion, material o usuario..." />
               </div>
               <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                 <option value="all">Todos los estados</option>
@@ -2444,14 +3465,15 @@ export default function Dashboard() {
                 <table className="ps-table">
                   <thead>
                     <tr>
-                      {["ID", "Cliente", "Descripción", "Material", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}
+                      {["ID", "Cliente", "Facturación", "Descripción", "Material", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
-                    {loadingOrders ? <tr><td colSpan={9} className="ps-table-empty">Cargando órdenes...</td></tr> : loadOrdersError ? <tr><td colSpan={9} className="ps-table-empty">{loadOrdersError}</td></tr> : filteredOrders.length === 0 ? <tr><td colSpan={9} className="ps-table-empty">No hay órdenes disponibles.</td></tr> : paginatedOrders.map(order =>
+                    {loadingOrders ? <tr><td colSpan={10} className="ps-table-empty">Cargando órdenes...</td></tr> : loadOrdersError ? <tr><td colSpan={10} className="ps-table-empty">{loadOrdersError}</td></tr> : filteredOrders.length === 0 ? <tr><td colSpan={10} className="ps-table-empty">No hay órdenes disponibles.</td></tr> : paginatedOrders.map(order =>
                           <tr key={order.id} className="row-hover">
                             <td className="td-pad td-id">{order.id?.slice(0, 8) || "---"}</td>
                             <td className="td-pad td-name">{order.client_name || "Sin cliente"}</td>
+                            <td className="td-pad">{order.invoice_number || "---"}</td>
                             <td className="td-pad td-desc">{order.description || "Sin descripción"}</td>
                             <td className="td-pad td-mat">{order.material || "---"}</td>
                             <td className="td-pad"><StatusBadge status={order.status} className="ps-badge" showDot bordered /></td>
@@ -2504,6 +3526,168 @@ export default function Dashboard() {
           </section>
         }
 
+        {activeTab === "credits" && creditView === "list" && (
+          <section className="pa-section">
+            <div className="pa-toolbar">
+              <div className="pa-search-box pa-toolbar-search">
+                <Icons.Search />
+                <input
+                  value={creditSearch}
+                  onChange={(event) => setCreditSearch(event.target.value)}
+                  placeholder="Buscar por cliente, telefono, factura u orden..."
+                />
+              </div>
+              <select value={creditStatusFilter} onChange={(event) => setCreditStatusFilter(event.target.value)}>
+                <option value="all">Todos</option>
+                <option value="open">Pendientes</option>
+                <option value="paid">Saldadas</option>
+              </select>
+            </div>
+
+            <div className="pa-credit-metrics" aria-label="Resumen de créditos">
+              <div className="pa-credit-summary-item">
+                <span className="pa-credit-summary-icon client"><Icons.User /></span>
+                <div><strong>{creditClientGroups.length}</strong><span>Clientes filtrados</span></div>
+              </div>
+              <div className="pa-credit-summary-item">
+                <span className="pa-credit-summary-icon pending"><Icons.Receipt /></span>
+                <div><strong>{creditPendingInvoicesCount}</strong><span>Pendientes</span></div>
+              </div>
+              <div className="pa-credit-summary-item">
+                <span className="pa-credit-summary-icon followup"><Icons.AlertCircle /></span>
+                <div><strong>{creditPendingClientCount}</strong><span>Clientes con pendientes</span></div>
+              </div>
+            </div>
+
+            {creditPendingInvoicesCount > 0 && (
+              <div className="pa-credit-pending-banner" role="status">
+                <span className="pa-credit-pending-banner-icon"><Icons.AlertCircle /></span>
+                <div>
+                  <strong>{creditPendingInvoicesCount} factura{creditPendingInvoicesCount === 1 ? "" : "s"} a crédito pendiente{creditPendingInvoicesCount === 1 ? "" : "s"}</strong>
+                  <span>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento administrativo.</span>
+                </div>
+                <button className="pa-btn secondary pa-btn-sm" onClick={() => setCreditStatusFilter("open")}>
+                  Revisar créditos pendientes
+                </button>
+              </div>
+            )}
+
+            <div className="pa-panel pa-credit-panel">
+              <div className="pa-panel-stripe" />
+              <div className="pa-panel-head pa-panel-head-results">
+                <div>
+                  <span className="pa-section-kicker">Seguimiento</span>
+                  <h2>Créditos agrupados por cliente</h2>
+                </div>
+                <span className="pa-results-count">
+                  {creditClientGroups.length} cliente{creditClientGroups.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="ps-table-wrap">
+                <table className="ps-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Facturas</th>
+                      <th>Fechas</th>
+                      <th>Estado</th>
+                      <th className="pa-credit-actions-col"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditClientGroups.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="ps-table-empty">No hay créditos que coincidan con los filtros.</td>
+                      </tr>
+                    ) : (
+                      creditClientGroups.map(group => {
+                        const clientId = group.client?.id;
+                        const openInvoices = group.invoices.filter(item => isOpenCreditReceivable(item));
+                        return (
+                          <tr key={clientId} className="row-hover pa-credit-client-row" style={{ cursor: "pointer" }} onClick={() => { setCreditDetailClientId(clientId); setCreditView("detail"); }}>
+                            <td className="td-pad td-name">
+                              <div className="pa-credit-client-cell">
+                                <div className="pa-credit-client-meta">
+                                  <strong>{group.client?.name || "Cliente sin nombre"}</strong>
+                                  <span>{group.client?.phone || "Sin telefono"}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="td-pad">
+                              <div className="pa-credit-badge-stack">
+                                <span className="ps-badge" style={{ background: "#FEF3C7", color: "#92400E", border: "1px solid #F59E0B40" }}>
+                                  {group.pendingCount} factura{group.pendingCount === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="td-pad">
+                              <div className="pa-credit-date-stack">
+                                <span>Antigua: <strong>{formatCreditDate(group.oldestIssuedAt)}</strong></span>
+                                <span>Reciente: <strong>{formatCreditDate(group.newestIssuedAt)}</strong></span>
+                              </div>
+                            </td>
+                            <td className="td-pad">
+                              <span className="ps-badge" style={group.pendingCount > 0 ? getCreditReceivableStatusStyle("open") : getCreditReceivableStatusStyle("paid")}>
+                                {group.pendingCount > 0 ? "Con saldo pendiente" : "Sin pendientes"}
+                              </span>
+                            </td>
+                            <td className="td-pad td-actions pa-credit-row-actions" onClick={(event) => event.stopPropagation()}>
+                              <div className="table-actions">
+                                <button
+                                  className="table-action-btn view"
+                                  onClick={() => { setCreditDetailClientId(clientId); setCreditView("detail"); }}
+                                  title="Ver facturas del cliente"
+                                >
+                                  <Icons.Eye />
+                                </button>
+                                {openInvoices.length > 0 && (
+                                  <button
+                                    className="table-action-btn"
+                                    onClick={() => openCreditReminderModal(group.client, openInvoices)}
+                                    title="Crear recordatorio"
+                                  >
+                                    <Icons.Clock />
+                                  </button>
+                                )}
+                                {openInvoices.length > 0 && (
+                                  <button
+                                    className="table-action-btn"
+                                    onClick={() => handleOpenCreditSettleAll(group.client, openInvoices)}
+                                    title="Marcar todas como saldadas"
+                                  >
+                                    <Icons.Check />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "credits" && creditView === "detail" && creditDetailClient && (
+          <CreditClientDetailView
+            group={creditDetailClient}
+            selectedCreditOrderIds={selectedCreditOrderIds}
+            onToggleSelection={toggleCreditOrderSelection}
+            onToggleAll={toggleAllCreditOrdersForClient}
+            onSettle={openCreditSettlementModal}
+            onCreateReminder={openCreditReminderModal}
+            onViewOrder={setSelectedOrder}
+            onBack={() => { setCreditView("list"); setCreditDetailClientId(null); }}
+            isOpenCreditReceivable={isOpenCreditReceivable}
+            getCreditReceivableStatusLabel={getCreditReceivableStatusLabel}
+            getCreditReceivableStatusStyle={getCreditReceivableStatusStyle}
+            formatCreditDate={formatCreditDate}
+          />
+        )}
+
         {activeTab === "clients" && (
           <section className="pa-section">
             <div className="pa-section-heading">
@@ -2547,17 +3731,18 @@ export default function Dashboard() {
                       <th>Contacto</th>
                       <th>Registro</th>
                       <th>Estado</th>
+                      <th>Crédito</th>
                       <th style={{ width: 120 }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {clientsLoading ? (
                       <tr>
-                        <td colSpan={6} className="ps-table-empty">Cargando clientes...</td>
+                        <td colSpan={7} className="ps-table-empty">Cargando clientes...</td>
                       </tr>
                     ) : filteredClients.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="ps-table-empty">
+                        <td colSpan={7} className="ps-table-empty">
                           No hay clientes que coincidan con la búsqueda.
                         </td>
                       </tr>
@@ -2568,6 +3753,7 @@ export default function Dashboard() {
                           !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) &&
                           !isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)
                         ).length;
+                        const receivableSummary = receivablesByClient[client.id];
                         return (
                           <tr key={client.id} className="row-hover" onClick={() => handleClientClick(client)}>
                             <td className="td-pad td-id">{client.id?.slice(0, 8) || "---"}</td>
@@ -2592,8 +3778,24 @@ export default function Dashboard() {
                                 </span>
                               )}
                             </td>
+                            <td className="td-pad">
+                              {receivableSummary ? (
+                                <span className="ps-badge" style={{ background: "#F3E8FF", color: "#6D28D9", border: "1px solid #A855F740" }}>
+                                  {receivableSummary.count} factura{receivableSummary.count !== 1 ? "s" : ""}
+                                </span>
+                              ) : (
+                                <span className="ps-badge" style={{ background: "#F1F5F9", color: "#64748B", border: "1px solid #E2E8F040" }}>
+                                  Sin crédito
+                                </span>
+                              )}
+                            </td>
                             <td className="td-pad td-actions" onClick={(e) => e.stopPropagation()}>
                               <div className="table-actions">
+                                {receivableSummary && (
+                                  <button className="table-action-btn" onClick={() => openRecordPaymentModal(client)} title="Marcar crédito saldado">
+                                    <Icons.Money />
+                                  </button>
+                                )}
                                 <button className="table-action-btn view" onClick={() => handleEditClient(client)} title="Ver detalle">
                                   <Icons.Eye />
                                 </button>
@@ -2623,6 +3825,92 @@ export default function Dashboard() {
             </div>
           </section>
         )}
+
+        <ModalShell open={!!recordPaymentClient} onClose={() => setRecordPaymentClient(null)} title="Marcar crédito saldado" size="compact">
+          <div style={{ minWidth: 320 }}>
+            <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
+              {recordPaymentClient?.name}
+            </p>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 18 }}>
+              Facturas pendientes: {receivablesByClient[recordPaymentClient?.id]?.count || 0}
+            </p>
+
+            {(receivablesByClient[recordPaymentClient?.id]?.invoices || []).length > 0 && (
+              <div className="pa-field">
+                <span>Numeros de facturacion</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {receivablesByClient[recordPaymentClient?.id].invoices.map((invoiceNumber) => (
+                    <span key={invoiceNumber} className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>
+                      {invoiceNumber}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <label className="pa-field">
+              <span>Nota de cierre</span>
+              <textarea
+                value={recordPaymentForm.notes}
+                onChange={(event) => setRecordPaymentForm(prev => ({ ...prev, notes: event.target.value }))}
+                rows={3}
+                placeholder="Ej: Verificado en el sistema financiero externo"
+              />
+            </label>
+
+            <div className="pa-modal-actions">
+              <button className="pa-btn secondary" onClick={() => setRecordPaymentClient(null)} disabled={recordPaymentLoading}>
+                Cancelar
+              </button>
+              <button className="pa-btn primary" onClick={handleRecordClientPayment} disabled={recordPaymentLoading}>
+                {recordPaymentLoading ? "Cerrando..." : "Marcar saldado"}
+              </button>
+            </div>
+          </div>
+        </ModalShell>
+
+        <ModalShell open={!!creditSettlementTarget} onClose={() => setCreditSettlementTarget(null)} title="Marcar crédito saldado" size="compact">
+          <div style={{ minWidth: 320 }}>
+            <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
+              {creditSettlementTarget?.client?.name || "Cliente sin nombre"}
+            </p>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 18 }}>
+              Facturas a cerrar: {creditSettlementTarget?.orderIds?.length || 0}
+            </p>
+
+            {(creditSettlementTarget?.invoices || []).length > 0 && (
+              <div className="pa-field">
+                <span>Numeros de facturacion</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {creditSettlementTarget.invoices.map((invoiceNumber) => (
+                    <span key={invoiceNumber} className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>
+                      {invoiceNumber}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <label className="pa-field">
+              <span>Nota de cierre</span>
+              <textarea
+                value={creditSettlementNotes}
+                onChange={(event) => setCreditSettlementNotes(event.target.value)}
+                rows={3}
+                placeholder="Ej: Factura saldada en el sistema financiero externo"
+              />
+            </label>
+
+            <div className="pa-modal-actions">
+              <button className="pa-btn secondary" onClick={() => setCreditSettlementTarget(null)} disabled={creditSettlementLoading}>
+                Cancelar
+              </button>
+              <button className="pa-btn primary" onClick={handleConfirmCreditSettlement} disabled={creditSettlementLoading}>
+                {creditSettlementLoading ? "Cerrando..." : "Marcar saldado"}
+              </button>
+            </div>
+          </div>
+        </ModalShell>
 
         {showClientModal && (
           <div className="pa-overlay" onClick={() => setShowClientModal(false)}>
@@ -2942,18 +4230,27 @@ export default function Dashboard() {
         onClientSearch={handleClientSearch}
         clientsLoading={clientsLoading}
       />
-      <AdminOrderDetailModal
-        open={!!selectedOrder}
-        order={selectedOrder}
-        usersById={usersById}
-        userId={user?.id}
-        onClose={() => setSelectedOrder(null)}
-        onEdit={openEditOrder}
-        onCancel={openCancelModal}
-        onAssign={openAssignModal}
-        onArchive={openArchiveModal}
-        onDelete={openDeleteOrderModal}
-      />
+      {activeTab === "credits" ? (
+        <CreditOrderDetailModal
+          open={!!selectedOrder}
+          order={selectedOrder}
+          usersById={usersById}
+          onClose={() => setSelectedOrder(null)}
+        />
+      ) : (
+        <AdminOrderDetailModal
+          open={!!selectedOrder}
+          order={selectedOrder}
+          usersById={usersById}
+          userId={user?.id}
+          onClose={() => setSelectedOrder(null)}
+          onEdit={openEditOrder}
+          onCancel={openCancelModal}
+          onAssign={openAssignModal}
+          onArchive={openArchiveModal}
+          onDelete={openDeleteOrderModal}
+        />
+      )}
       <AssignModal
         open={!!assigningOrder}
         order={assigningOrder}
@@ -2989,9 +4286,17 @@ export default function Dashboard() {
             >
               <option value={PAYMENT_STATUS.PENDING} disabled={isPaymentPartial(quotationOrder?.payment_status)}>Pendiente</option>
               <option value={PAYMENT_STATUS.PARTIAL}>Pago parcial</option>
+              <option value={PAYMENT_STATUS.CREDIT}>Pago a crédito</option>
               <option value={PAYMENT_STATUS.PAID}>Pagado</option>
             </select>
           </div>
+
+          {quotationPaymentStatus === PAYMENT_STATUS.CREDIT && (
+            <div className="pa-field" style={{ marginBottom: 16 }}>
+              <span>Numero de facturacion</span>
+              <strong>{quotationOrder?.invoice_number || "No definido"}</strong>
+            </div>
+          )}
 
           {quotationPaymentStatus === PAYMENT_STATUS.PAID && (
             <div className="pa-field" style={{ marginBottom: 20 }}>
@@ -3005,7 +4310,7 @@ export default function Dashboard() {
               />
               {quotationInvoice && (
                 <p style={{ fontSize: 12, color: "var(--success)", marginTop: 8 }}>
-                  ✓ {quotationInvoice.name}
+                  {quotationInvoice.name}
                 </p>
               )}
             </div>
@@ -3035,7 +4340,7 @@ export default function Dashboard() {
             <h4>Cancelar orden</h4>
             <p className="pa-confirm-order-name">{cancelOrderData?.client_name}</p>
             <p className="pa-confirm-order-desc">{cancelOrderData?.description?.slice(0, 60)}{cancelOrderData?.description?.length > 60 ? "..." : ""}</p>
-            <p className="pa-confirm-warning">⚠️ Esta acción no se puede deshacer</p>
+            <p className="pa-confirm-warning">Esta accion no se puede deshacer</p>
           </div>
           <div className="pa-modal-actions">
             <button className="pa-btn secondary" onClick={() => setCancelModalOpen(false)}>
@@ -3076,7 +4381,384 @@ export default function Dashboard() {
       <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} />
       <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />
+      <SettleCreditModal
+        open={!!creditSettleAllTarget}
+        onClose={() => { setCreditSettleAllTarget(null); setCreditSettleAllNotes(""); }}
+        onConfirm={handleConfirmCreditSettleAll}
+        clientName={creditSettleAllTarget?.client?.name}
+        invoiceCount={creditSettleAllTarget?.orderIds?.length}
+        invoices={creditSettleAllTarget?.invoices}
+        loading={creditSettleAllLoading}
+        notes={creditSettleAllNotes}
+        onNotesChange={setCreditSettleAllNotes}
+      />
+      <CreditReminderCreateModal
+        open={!!creditReminderTarget}
+        variant="admin"
+        target={creditReminderTarget}
+        form={creditReminderForm}
+        visibilityOptions={CREDIT_REMINDER_VISIBILITY_OPTIONS}
+        visibilityScope={creditReminderForm.visibilityScope}
+        onFormChange={setCreditReminderForm}
+        onVisibilityScopeChange={(visibilityScope) => setCreditReminderForm(prev => ({ ...prev, visibilityScope }))}
+        onToggleOrder={toggleCreditReminderOrder}
+        onClose={closeCreditReminderModal}
+        onSubmit={handleSaveCreditReminder}
+        saving={creditReminderSaving}
+        minReminderAt={minimumCreditReminderAt}
+        formatCreditDate={formatCreditDate}
+        isOpenCreditReceivable={isOpenCreditReceivable}
+      />
+      <CreditPendingAlertModalPolished
+        open={shouldShowCreditPendingAlert}
+        invoiceCount={creditPendingInvoicesCount}
+        clientCount={creditPendingClientCount}
+        clients={creditPendingClientPreview}
+        saving={creditAlertSaving}
+        onClose={() => acknowledgeCreditPendingAlert()}
+        onReview={() => acknowledgeCreditPendingAlert({ review: true })}
+      />
+      <CreditCustomReminderDueModal
+        open={!shouldShowCreditPendingAlert && dueCreditCustomReminders.length > 0}
+        variant="admin"
+        reminders={dueCreditCustomReminders}
+        completingId={creditReminderCompletingId}
+        onClose={() => dismissDueCreditReminders()}
+        onAcknowledge={handleAcknowledgeCreditReminder}
+        onReview={handleReviewCreditReminder}
+        formatCreditDate={formatCreditDate}
+      />
     </div>
+  );
+}
+
+function CreditPendingAlertModal({ open, invoiceCount, clientCount, clients, saving, onClose, onReview }) {
+  return (
+    <ModalShell open={open} onClose={onClose} title="Créditos pendientes" size="compact">
+      <div className="pa-credit-alert-modal">
+        <div className="pa-credit-alert-hero">
+          <span className="pa-credit-alert-hero-icon"><Icons.Receipt /></span>
+          <div>
+            <strong>{invoiceCount} factura{invoiceCount === 1 ? "" : "s"} a crédito pendiente{invoiceCount === 1 ? "" : "s"}</strong>
+            <p>{clientCount} cliente{clientCount === 1 ? "" : "s"} tiene{clientCount === 1 ? "" : "n"} facturas pendientes de pago.</p>
+          </div>
+        </div>
+
+        {clients.length > 0 && (
+          <div className="pa-credit-alert-client-list">
+            {clients.map((group) => (
+              <div key={group.client?.id || group.client?.name} className="pa-credit-alert-client">
+                <div>
+                  <strong>{group.client?.name || "Cliente sin nombre"}</strong>
+                  <span>{group.client?.phone || "Sin telefono"}</span>
+                </div>
+                <span>{group.pendingCount} pendiente{group.pendingCount === 1 ? "" : "s"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="pa-credit-alert-note">
+          Este aviso se mostrara una vez al mes mientras existan créditos pendientes.
+        </p>
+
+        <div className="pa-modal-actions">
+          <button className="pa-btn secondary" onClick={onClose} disabled={saving}>
+            {saving ? "Guardando..." : "Entendido"}
+          </button>
+          <button className="pa-btn primary" onClick={onReview} disabled={saving}>
+            Revisar créditos pendientes
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+function CreditPendingAlertModalPolished({ open, invoiceCount, clientCount, clients, saving, onClose, onReview }) {
+  return (
+    <ModalShell open={open} onClose={onClose} title="Créditos pendientes" size="compact">
+      <div className="pa-credit-alert-modal polished">
+        <div className="pa-credit-alert-hero polished">
+          <span className="pa-credit-alert-hero-icon"><Icons.Receipt /></span>
+          <div className="pa-credit-alert-hero-copy">
+            <span className="pa-credit-alert-kicker">Seguimiento administrativo</span>
+            <strong>{invoiceCount} factura{invoiceCount === 1 ? "" : "s"} a crédito pendiente{invoiceCount === 1 ? "" : "s"}</strong>
+            <p>{clientCount} cliente{clientCount === 1 ? "" : "s"} requiere{clientCount === 1 ? "" : "n"} seguimiento de pago.</p>
+          </div>
+        </div>
+
+        <div className="pa-credit-alert-stats" aria-label="Resumen de créditos pendientes">
+          <div>
+            <span>Facturas</span>
+            <strong>{invoiceCount}</strong>
+          </div>
+          <div>
+            <span>Clientes</span>
+            <strong>{clientCount}</strong>
+          </div>
+        </div>
+
+        {clients.length > 0 && (
+          <div className="pa-credit-alert-section">
+            <span className="pa-credit-alert-section-title">Clientes por revisar</span>
+            <div className="pa-credit-alert-client-list">
+              {clients.map((group) => (
+                <div key={group.client?.id || group.client?.name} className="pa-credit-alert-client polished">
+                  <div>
+                    <strong>{group.client?.name || "Cliente sin nombre"}</strong>
+                    <span>{group.client?.phone || "Sin telefono"}</span>
+                  </div>
+                  <span className="pa-credit-alert-client-count">{group.pendingCount} pendiente{group.pendingCount === 1 ? "" : "s"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <p className="pa-credit-alert-note polished">
+          Este aviso se mostrara una vez al mes mientras existan créditos pendientes.
+        </p>
+
+        <div className="pa-modal-actions pa-credit-alert-actions">
+          <button className="pa-btn secondary" onClick={onClose} disabled={saving}>
+            {saving ? "Guardando..." : "Entendido"}
+          </button>
+          <button className="pa-btn primary" onClick={onReview} disabled={saving}>
+            Revisar créditos pendientes
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+function CreditClientDetailView({
+  group,
+  selectedCreditOrderIds,
+  onToggleSelection,
+  onToggleAll,
+  onSettle,
+  onCreateReminder,
+  onViewOrder,
+  onBack,
+  isOpenCreditReceivable,
+  getCreditReceivableStatusLabel,
+  getCreditReceivableStatusStyle,
+  formatCreditDate,
+}) {
+  const clientId = group.client?.id;
+  const openInvoices = group.invoices.filter((item) => isOpenCreditReceivable(item));
+  const settledInvoicesCount = group.invoices.filter((item) => item.status === "paid").length;
+  const selectedIds = selectedCreditOrderIds[clientId] || [];
+  const allOpenSelected = openInvoices.length > 0 && openInvoices.every((item) => selectedIds.includes(item.order_id));
+  const [detailSearch, setDetailSearch] = useState("");
+  const [detailFilter, setDetailFilter] = useState("all");
+
+  const filteredInvoices = useMemo(() => {
+    const q = detailSearch.toLowerCase().trim();
+    return group.invoices.filter((item) => {
+      if (detailFilter === "open" && !isOpenCreditReceivable(item)) return false;
+      if (detailFilter === "paid" && item.status !== "paid") return false;
+      if (!q) return true;
+      return (
+        (item.invoiceNumber || "").toLowerCase().includes(q) ||
+        (item.order_id || "").toLowerCase().includes(q)
+      );
+    });
+  }, [group.invoices, detailFilter, detailSearch, isOpenCreditReceivable]);
+
+  return (
+    <section className="pa-section pa-credit-layout">
+      <div className="pa-credit-detail-view">
+        <div className="pa-credit-detail-header">
+          <button className="pa-credit-detail-back" onClick={onBack}>
+            <Icons.ChevronLeft />
+            Volver a lista de créditos
+          </button>
+          <button
+            className="pa-btn secondary pa-btn-sm"
+            onClick={() => onCreateReminder(group.client, openInvoices)}
+            disabled={openInvoices.length === 0}
+          >
+            <Icons.Clock />
+            Crear recordatorio
+          </button>
+        </div>
+
+        <div className="pa-credit-detail-client-card">
+          <div className="pa-credit-detail-client-avatar">
+            {group.client?.name?.charAt(0)?.toUpperCase() || "?"}
+          </div>
+          <div className="pa-credit-detail-client-info">
+            <h3>{group.client?.name || "Cliente sin nombre"}</h3>
+            <span>{group.client?.phone || "Sin telefono"}</span>
+          </div>
+          <div className="pa-credit-detail-client-stats">
+            <div className="pa-credit-detail-stat">
+              <strong>{group.pendingCount}</strong>
+              <span>Pendientes</span>
+            </div>
+            <div className="pa-credit-detail-stat">
+              <strong>{group.invoices.length}</strong>
+              <span>Total</span>
+            </div>
+            <div className="pa-credit-detail-stat settled">
+              <strong>{settledInvoicesCount}</strong>
+              <span>Saldadas</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="pa-panel pa-credit-panel">
+          <div className="pa-panel-stripe" />
+          <div className="pa-panel-head pa-panel-head-results">
+            <div>
+              <span className="pa-section-kicker">Facturas</span>
+              <h2>Facturas del cliente</h2>
+            </div>
+          </div>
+          <div style={{ padding: "0 14px 14px" }}>
+            <div className="pa-credit-detail-toolbar">
+              <div className="pa-search-box pa-toolbar-search">
+                <Icons.Search />
+                <input
+                  value={detailSearch}
+                  onChange={(e) => setDetailSearch(e.target.value)}
+                  placeholder="Buscar por factura u orden..."
+                />
+              </div>
+              <select value={detailFilter} onChange={(e) => setDetailFilter(e.target.value)}>
+                <option value="all">Todos</option>
+                <option value="open">Pendientes</option>
+                <option value="paid">Saldadas</option>
+              </select>
+            </div>
+          </div>
+          <div className="ps-table-wrap pa-credit-invoice-wrap">
+            <table className="ps-table">
+              <thead>
+                <tr>
+                  <th className="pa-credit-check-cell">
+                    <input
+                      type="checkbox"
+                      checked={allOpenSelected}
+                      disabled={openInvoices.length === 0}
+                      onChange={() => onToggleAll(clientId, group.invoices)}
+                      aria-label="Seleccionar facturas pendientes"
+                    />
+                  </th>
+                  <th>Factura</th>
+                  <th>Orden</th>
+                  <th>Emision</th>
+                  <th>Estado</th>
+                  <th className="pa-credit-invoice-actions-col"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="ps-table-empty">
+                      {detailSearch || detailFilter !== "all"
+                        ? "No hay facturas que coincidan con los filtros."
+                        : "No hay facturas registradas para este cliente."}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredInvoices.map((item) => {
+                    const itemOpen = isOpenCreditReceivable(item);
+                    const selected = selectedIds.includes(item.order_id);
+                    return (
+                      <tr key={item.id || item.order_id} className="row-hover" style={{ cursor: "pointer" }} onClick={() => { if (item.order) onViewOrder(item.order); }}>
+                        <td className="td-pad pa-credit-check-cell">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            disabled={!itemOpen || !item.order_id}
+                            onChange={() => onToggleSelection(clientId, item.order_id)}
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`Seleccionar factura ${item.invoiceNumber}`}
+                          />
+                        </td>
+                        <td className="td-pad td-name">{item.invoiceNumber}</td>
+                        <td className="td-pad td-id">{item.order_id?.slice(0, 8) || "---"}</td>
+                        <td className="td-pad">{formatCreditDate(item.creditIssuedAt)}</td>
+                        <td className="td-pad">
+                          <span className="ps-badge" style={getCreditReceivableStatusStyle(item.status)}>
+                            {getCreditReceivableStatusLabel(item.status)}
+                          </span>
+                        </td>
+                        <td className="td-pad td-actions">
+                          <div className="table-actions">
+                            {item.order && (
+                              <button className="table-action-btn view" onClick={(e) => { e.stopPropagation(); onViewOrder(item.order); }} title="Ver orden">
+                                <Icons.Eye />
+                              </button>
+                            )}
+                            {itemOpen && (
+                              <button
+                                className="table-action-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onCreateReminder(group.client, [item]);
+                                }}
+                                title="Crear recordatorio"
+                              >
+                                <Icons.Clock />
+                              </button>
+                            )}
+                            {itemOpen && (
+                              <button
+                                className="table-action-btn"
+                                onClick={(e) => { e.stopPropagation(); onSettle({
+                                  client: group.client,
+                                  orderIds: [item.order_id],
+                                  invoices: [item.invoiceNumber],
+                                  mode: "single",
+                                }); }}
+                                title="Marcar factura saldada"
+                              >
+                                <Icons.Check />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="pa-credit-detail-actions-bar">
+            <span className="pa-credit-selection-count">
+              {selectedIds.length} seleccionada{selectedIds.length === 1 ? "" : "s"}
+            </span>
+            <div className="pa-credit-detail-actions">
+              <button
+                className="pa-btn secondary pa-btn-sm"
+                onClick={() => onToggleAll(clientId, group.invoices)}
+                disabled={openInvoices.length === 0}
+              >
+                {allOpenSelected ? "Limpiar seleccion" : "Seleccionar pendientes"}
+              </button>
+              <button
+                className="pa-btn primary pa-btn-sm"
+                onClick={() => onSettle({
+                  client: group.client,
+                  orderIds: selectedIds,
+                  invoices: group.invoices.filter((item) => selectedIds.includes(item.order_id)).map((item) => item.invoiceNumber),
+                  mode: "selected",
+                })}
+                disabled={selectedIds.length === 0}
+              >
+                Marcar saldadas
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -3166,7 +4848,7 @@ function AdminTrackingLinkField({ orderId }) {
               fontFamily: "'Poppins', sans-serif",
             }}
           >
-            {copied ? "✓ Copiado" : "Copiar"}
+            {copied ? "Copiado" : "Copiar"}
           </button>
         </div>
       ) : (

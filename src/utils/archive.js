@@ -1,5 +1,5 @@
 import { supabase } from "../../supabaseClient";
-import { ARCHIVE_MODULE_CONFIG, ARCHIVE_MODULES, isPaymentPaid, isPaymentPartial } from "./constants";
+import { ARCHIVE_MODULE_CONFIG, ARCHIVE_MODULES, isPaymentCredit, isPaymentPaid, isPaymentPartial } from "./constants";
 
 export const getArchiveConfig = (module) => ARCHIVE_MODULE_CONFIG[module] || null;
 
@@ -21,7 +21,7 @@ export const isOrderArchivableByStatus = (order, module) => {
   if (isPaymentPartial(order?.payment_status)) return false;
 
   if (config.requiresPaymentPaid) {
-    return isPaymentPaid(order?.payment_status);
+    return isPaymentPaid(order?.payment_status) || isPaymentCredit(order?.payment_status);
   }
 
   return config.archivableStatuses.includes(order?.status);

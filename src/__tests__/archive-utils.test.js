@@ -31,4 +31,12 @@ describe("archive payment guards", () => {
       is_archived_quote: false,
     }, ARCHIVE_MODULES.QUOTE, "user-1")).toBe(true);
   });
+
+  it("allows quote archiving for credit orders without treating partial as archivable", () => {
+    expect(canArchiveOrder({
+      id: "order-1",
+      payment_status: PAYMENT_STATUS.CREDIT,
+      is_archived_quote: false,
+    }, ARCHIVE_MODULES.QUOTE, "user-1")).toBe(true);
+  });
 });

@@ -7,6 +7,7 @@ import {
   PRODUCTION_FILE_STATUS,
   PRODUCTION_FILE_STATUS_LABELS,
   isPaymentPaid,
+  isPaymentCredit,
   isPaymentPartial,
   normalizeOrderStatus,
   formatDate,
@@ -97,6 +98,7 @@ export function FlowTrackClient({ status, events, order, designType, productionF
   const paymentStatus = order?.payment_status;
   const isPaymentPending = paymentStatus === PAYMENT_STATUS.PENDING;
   const isPartialPayment = isPaymentPartial(paymentStatus);
+  const isCreditPayment = isPaymentCredit(paymentStatus);
   const productionFiles = normalizePublicProductionFiles(productionFilesProp ?? order?.production_files);
   const productionFilesByStep = groupProductionFilesByStep(productionFiles);
   const productionPartColumns = PRODUCTION_PART_COLUMNS.map((column) => ({
@@ -123,7 +125,8 @@ export function FlowTrackClient({ status, events, order, designType, productionF
     const isQuoteBlocked = isActive && step.key === ORDER_STATUS.IN_QUOTE && isPaymentPending;
     const isQuoteConfirmed = step.key === ORDER_STATUS.IN_QUOTE && i <= currentStepIdx && isPaymentPaid(paymentStatus);
     const isQuotePartial = step.key === ORDER_STATUS.IN_QUOTE && i <= currentStepIdx && isPartialPayment;
-    return { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed, isQuotePartial };
+    const isQuoteCredit = step.key === ORDER_STATUS.IN_QUOTE && i <= currentStepIdx && isCreditPayment;
+    return { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed, isQuotePartial, isQuoteCredit };
   };
 
   return (
@@ -150,7 +153,7 @@ export function FlowTrackClient({ status, events, order, designType, productionF
         <div className={`ftc-timeline-horizontal ${productionFiles.length > 0 ? "with-files" : ""}`}>
           <div className="ftc-h-track">
             {steps.map((step, i) => {
-              const { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed, isQuotePartial } = getStepState(step, i);
+              const { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed, isQuotePartial, isQuoteCredit } = getStepState(step, i);
               const hasDate = !!eventDates[step.key];
 
               return (
@@ -189,6 +192,12 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                       <span className="ftc-h-badge partial">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" /></svg>
                         Pago parcial
+                      </span>
+                    )}
+                    {isQuoteCredit && (
+                      <span className="ftc-h-badge partial">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" /></svg>
+                        Pago a crédito
                       </span>
                     )}
                   </div>
@@ -239,7 +248,7 @@ export function FlowTrackClient({ status, events, order, designType, productionF
       {!isCancelled && currentStepIdx >= 0 && (
         <div className="ftc-timeline-vertical">
           {steps.map((step, i) => {
-            const { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed, isQuotePartial } = getStepState(step, i);
+            const { isCompleted, isActive, isQuoteBlocked, isQuoteConfirmed, isQuotePartial, isQuoteCredit } = getStepState(step, i);
             const hasDate = !!eventDates[step.key];
 
             return (
@@ -283,6 +292,12 @@ export function FlowTrackClient({ status, events, order, designType, productionF
                       <span className="ftc-v-badge partial">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" /></svg>
                         Pago parcial
+                      </span>
+                    )}
+                    {isQuoteCredit && (
+                      <span className="ftc-v-badge partial">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" /></svg>
+                        Pago a crédito
                       </span>
                     )}
                   </div>

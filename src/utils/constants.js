@@ -20,6 +20,7 @@ export const PAYMENT_STATUS = {
   PENDING: "Pending_Payment",
   PARTIAL: "parcial",
   PAID: "pagado",
+  CREDIT: "credito",
 };
 
 export const PRODUCTION_AREAS = [
@@ -164,6 +165,9 @@ export const PAYMENT_STATUS_ALIASES = {
   partial: PAYMENT_STATUS.PARTIAL,
   pagado: PAYMENT_STATUS.PAID,
   paid: PAYMENT_STATUS.PAID,
+  credito: PAYMENT_STATUS.CREDIT,
+  crédito: PAYMENT_STATUS.CREDIT,
+  credit: PAYMENT_STATUS.CREDIT,
 };
 
 export const normalizePaymentStatus = (value) => {
@@ -175,11 +179,16 @@ export const normalizePaymentStatus = (value) => {
 export const isPaymentStatus = (value, expectedStatus) => normalizePaymentStatus(value) === expectedStatus;
 export const isPaymentPaid = (value) => isPaymentStatus(value, PAYMENT_STATUS.PAID);
 export const isPaymentPartial = (value) => isPaymentStatus(value, PAYMENT_STATUS.PARTIAL);
+export const isPaymentCredit = (value) => isPaymentStatus(value, PAYMENT_STATUS.CREDIT);
 export const isPaymentProductionEligible = (value) => (
-  isPaymentPaid(value) || isPaymentPartial(value)
+  isPaymentPaid(value) || isPaymentPartial(value) || isPaymentCredit(value)
 );
+export const isPaymentDeliveryEligible = (value) => (
+  isPaymentPaid(value) || isPaymentCredit(value)
+);
+export const isPaymentFinanciallySettled = (value) => isPaymentPaid(value);
 
-export const PAYMENT_OPTIONS = [PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL, PAYMENT_STATUS.PAID];
+export const PAYMENT_OPTIONS = [PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL, PAYMENT_STATUS.CREDIT, PAYMENT_STATUS.PAID];
 
 export const UI_TERMS = {
   cotizacion: "Caja",
@@ -226,6 +235,7 @@ export const STATUS_LABELS = {
 export const PAYMENT_LABELS = {
   [PAYMENT_STATUS.PENDING]: "Pendiente",
   [PAYMENT_STATUS.PARTIAL]: "Pago parcial",
+  [PAYMENT_STATUS.CREDIT]: "Pago a crédito",
   [PAYMENT_STATUS.PAID]: "Pagado",
 };
 
@@ -309,6 +319,7 @@ export const PAYMENT_COLORS = {
   [PAYMENT_STATUS.PAID]: { label: "Pagado", color: "#14532D", bg: "#DCFCE7" },
   [PAYMENT_STATUS.PENDING]: { label: "Pago Pendiente", color: "#92620A", bg: "#FEF3C7" },
   [PAYMENT_STATUS.PARTIAL]: { label: "Pago parcial", color: "#0369A1", bg: "#E0F2FE" },
+  [PAYMENT_STATUS.CREDIT]: { label: "Pago a crédito", color: "#6D28D9", bg: "#F3E8FF" },
 };
 
 // FUNCIONES UTILIDAD PARA FORMATEO

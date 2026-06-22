@@ -39,7 +39,7 @@ const makeNotification = (overrides = {}) => ({
   ...overrides,
 });
 
-const setupSupabase = ({ persistedNotification = makeNotification() } = {}) => {
+const setupSupabase = ({ persistedNotification = makeNotification(), notificationRows = [] } = {}) => {
   const subscriptions = {};
   const channel = {
     on: vi.fn((event, filter, callback) => {
@@ -58,7 +58,7 @@ const setupSupabase = ({ persistedNotification = makeNotification() } = {}) => {
       or: vi.fn(() => builder),
       is: vi.fn(() => builder),
       order: vi.fn(() => builder),
-      limit: vi.fn(async () => ({ data: [], error: null })),
+      limit: vi.fn(async () => ({ data: notificationRows, error: null })),
       single: vi.fn(async () => ({ data: persistedNotification, error: null })),
     };
     return builder;
@@ -129,5 +129,139 @@ describe("useNotifications", () => {
     expect(result.current.toasts).toHaveLength(1);
     expect(result.current.toasts[0].id).toMatch(/^local-toast-/);
     expect(result.current.notifications).toHaveLength(0);
+  });
+
+  it("filters archived and deleted notifications on initial load", async () => {
+    setupSupabase({
+      notificationRows: [
+        makeNotification({ id: "active-notification" }),
+        makeNotification({ id: "archived-notification", is_archived: true }),
+        makeNotification({ id: "deleted-notification", deleted_at: "2026-06-17T13:00:00Z" }),
+      ],
+    });
+
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+    expect(result.current.notifications[0].id).toBe("active-notification");
+    expect(result.current.unreadCount).toBe(1);
+  });
+
+  it("keeps an archived notification hidden after remounting the hook", async () => {
+    supabase.rpc.mockResolvedValue({ data: 1, error: null });
+    setupSupabase({ notificationRows: [makeNotification()] });
+    const first = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(first.result.current.notifications).toHaveLength(1);
+    });
+
+    await act(async () => {
+      await first.result.current.archive("notification-1");
+    });
+    expect(first.result.current.notifications).toHaveLength(0);
+    first.unmount();
+
+    setupSupabase({ notificationRows: [makeNotification({ is_archived: true })] });
+    const second = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(second.result.current.loading).toBe(false);
+    });
+    expect(second.result.current.notifications).toHaveLength(0);
+  });
+
+  it("keeps a deleted notification hidden after remounting the hook", async () => {
+    supabase.rpc.mockResolvedValue({ data: 1, error: null });
+    setupSupabase({ notificationRows: [makeNotification()] });
+    const first = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(first.result.current.notifications).toHaveLength(1);
+    });
+
+    await act(async () => {
+      await first.result.current.deleteNotification("notification-1");
+    });
+    expect(first.result.current.notifications).toHaveLength(0);
+    first.unmount();
+
+    setupSupabase({ notificationRows: [makeNotification({ deleted_at: "2026-06-17T13:00:00Z" })] });
+    const second = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(second.result.current.loading).toBe(false);
+    });
+    expect(second.result.current.notifications).toHaveLength(0);
+  });
+
+  it("ignores realtime inserts that are already archived or deleted", async () => {
+    const { subscriptions } = setupSupabase();
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    act(() => {
+      subscriptions.INSERT({ new: makeNotification({ is_archived: true }) });
+      subscriptions.INSERT({
+        new: makeNotification({
+          id: "deleted-notification",
+          deleted_at: "2026-06-17T13:00:00Z",
+        }),
+      });
+    });
+
+    expect(result.current.notifications).toHaveLength(0);
+    expect(result.current.toasts).toHaveLength(0);
+  });
+
+  it("removes notifications and toasts when realtime marks them archived or deleted", async () => {
+    const { subscriptions } = setupSupabase();
+    const { result } = renderHook(() => useNotifications(userId));
+
+    act(() => {
+      subscriptions.INSERT({ new: makeNotification() });
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+      expect(result.current.toasts).toHaveLength(1);
+    });
+
+    act(() => {
+      subscriptions.UPDATE({ new: makeNotification({ is_archived: true }) });
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(0);
+      expect(result.current.toasts).toHaveLength(0);
+    });
+
+    act(() => {
+      subscriptions.INSERT({ new: makeNotification({ id: "notification-2" }) });
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+      expect(result.current.toasts).toHaveLength(1);
+    });
+
+    act(() => {
+      subscriptions.UPDATE({
+        new: makeNotification({
+          id: "notification-2",
+          deleted_at: "2026-06-17T13:00:00Z",
+        }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(0);
+      expect(result.current.toasts).toHaveLength(0);
+    });
   });
 });

@@ -1,0 +1,238 @@
+.settle-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 30, 64, 0.35);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.settle-modal {
+  background: #ffffff;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Poppins', sans-serif;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  animation: settleSlideUp 0.25s ease;
+}
+
+@keyframes settleSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.settle-modal-stripe {
+  height: 3px;
+  background: linear-gradient(90deg, #06B6D4, #10B981, #F59E0B);
+  flex-shrink: 0;
+}
+
+.settle-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.settle-modal-title h3 {
+  font-size: 17px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.settle-modal-close {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f9fafb;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: all 0.15s;
+}
+
+.settle-modal-close:hover {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.settle-modal-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.settle-modal-body p {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.settle-modal-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px !important;
+  padding: 6px 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  font-size: 13px !important;
+  font-weight: 600;
+  color: #166534 !important;
+}
+
+.settle-modal-count svg {
+  width: 15px;
+  height: 15px;
+}
+
+.settle-modal-invoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.settle-modal-invoice-badge {
+  display: inline-flex;
+  padding: 4px 10px;
+  background: #e8edf8;
+  border: 1px solid #0f1e4020;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #0f1e40;
+}
+
+.settle-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.settle-modal-field span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.settle-modal-field small {
+  font-weight: 400;
+  color: #9ca3af;
+}
+
+.settle-modal-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: 'Poppins', sans-serif;
+  color: #374151;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.settle-modal-field textarea:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.settle-modal-field textarea::placeholder {
+  color: #9ca3af;
+}
+
+.settle-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.settle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'Poppins', sans-serif;
+}
+
+.settle-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.settle-btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1.5px solid #e5e7eb;
+}
+
+.settle-btn-secondary:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.settle-btn-primary {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+}
+
+.settle-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669, #047857);
+}
+
+.settle-btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: settleSpin 0.6s linear infinite;
+  display: inline-block;
+}
+
+@keyframes settleSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.settle-btn-primary svg,
+.settle-btn svg {
+  width: 15px;
+  height: 15px;
+}

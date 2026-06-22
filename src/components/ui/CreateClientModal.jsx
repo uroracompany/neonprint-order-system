@@ -1,15 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icons } from "../../utils/icons";
-import { formatDominicanPhone } from "../../utils/clients";
+import { formatDominicanPhone, normalizeClientPhone, searchClients } from "../../utils/clients";
 import "./CreateClientModal.css";
 
 const EMPTY_FORM = { name: "", phone: "", email: "", address: "", notes: "" };
 
-export default function CreateClientModal({ open, onClose, onCreated, supabase, userId }) {
+export default function CreateClientModal({ open, onClose, onCreated, supabase, userId, initialValues = null }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      ...EMPTY_FORM,
+      ...Object.fromEntries(
+        Object.entries(initialValues || {}).map(([key, value]) => [
+          key,
+          key === "phone" ? formatDominicanPhone(value || "") : value || "",
+        ])
+      ),
+    });
+    setError("");
+    setFieldErrors({});
+  }, [initialValues, open]);
 
   if (!open) return null;
 
@@ -44,12 +59,25 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
     try {
       const payload = {
         name: form.name.trim(),
-        phone: form.phone.trim(),
+        phone: formatDominicanPhone(form.phone.trim()),
         email: form.email.trim() || null,
         address: form.address.trim() || null,
         notes: form.notes.trim() || null,
         created_by: userId || null,
       };
+
+      const phoneDigits = normalizeClientPhone(payload.phone);
+      if (phoneDigits.length >= 3) {
+        const existingClients = await searchClients(supabase, payload.phone, 10);
+        const existingClient = existingClients.find(client => normalizeClientPhone(client.phone) === phoneDigits);
+
+        if (existingClient) {
+          setForm(EMPTY_FORM);
+          await onCreated?.(existingClient, { reusedExisting: true });
+          onClose();
+          return;
+        }
+      }
 
       const { data, error: insertError } = await supabase
         .from("clients")
@@ -60,7 +88,7 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
       if (insertError) throw insertError;
 
       setForm(EMPTY_FORM);
-      onCreated?.(data);
+      await onCreated?.(data, { reusedExisting: false });
       onClose();
     } catch (err) {
       setError(err.message || "No se pudo guardar el cliente.");

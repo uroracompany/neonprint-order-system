@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../../supabaseClient";
+import { filterActiveNotifications, getActiveUnreadCount, isActiveNotification } from "../utils/notifications";
 
 // ============= HOOK USENOTIFICATIONS =============
 // Este hook gestiona todo el sistema de notificaciones de la aplicación
@@ -16,9 +17,6 @@ const LOCAL_TOAST_PREFIX = "local-toast";
 
 const getNotificationEventKind = (notification) =>
   notification?.metadata?.event_kind || "";
-
-const isVisibleNotification = (notification) =>
-  notification && !notification.is_archived && !notification.deleted_at;
 
 const sameNotificationFingerprint = (notification, target) =>
   notification?.user_id === target?.user_id &&
@@ -50,7 +48,7 @@ export default function useNotifications(userId) {
   const channelRef = useRef(null);
 
   // Contar notificaciones no leídas (excluyendo archivadas)
-  const unreadCount = notifications.filter((n) => !n.is_read && isVisibleNotification(n)).length;
+  const unreadCount = getActiveUnreadCount(notifications);
 
   // ============= FUNCIÓN: CERRAR TOAST =============
   // Elimina un toast de la pantalla y limpia su timeout
@@ -66,7 +64,7 @@ export default function useNotifications(userId) {
   // ============= FUNCIÓN: CARGAR NOTIFICACIONES =============
   // Consulta las últimas 50 notificaciones del usuario desde BD
   const enqueueToast = useCallback((notification) => {
-    if (!isVisibleNotification(notification)) return;
+    if (!isActiveNotification(notification)) return;
 
     const toastId = `${notification.id}-toast`;
     if (toastTimeouts.current[toastId]) return;
@@ -102,7 +100,7 @@ export default function useNotifications(userId) {
       .order("created_at", { ascending: false })
       .limit(50);
     if (!error && data) {
-      const visibleNotifications = data.filter(isVisibleNotification);
+      const visibleNotifications = filterActiveNotifications(data);
       const previousIds = new Set(notificationsRef.current.map((notification) => notification.id));
       const newNotifications = showNewToasts
         ? visibleNotifications.filter((notification) => !previousIds.has(notification.id))
@@ -145,7 +143,7 @@ export default function useNotifications(userId) {
         (payload) => {
           // Cuando llega una notificación nueva
           const newNotif = payload.new;
-          if (!isVisibleNotification(newNotif)) return;
+          if (!isActiveNotification(newNotif)) return;
           
           // Actualizar lista de notificaciones (máximo 50)
           setNotifications((prev) => {
@@ -167,7 +165,7 @@ export default function useNotifications(userId) {
         (payload) => {
           // Cuando se actualiza una notificación (leída, archivada, etc.)
           const updatedNotif = payload.new;
-          if (!isVisibleNotification(updatedNotif)) {
+          if (!isActiveNotification(updatedNotif)) {
             setNotifications((prev) => removeNotificationFamily(prev, updatedNotif.id));
             setToasts((prev) => removeNotificationFamily(prev, updatedNotif.id));
             return;
@@ -233,7 +231,7 @@ export default function useNotifications(userId) {
         return null;
       }
 
-      if (!isVisibleNotification(notification)) {
+      if (!isActiveNotification(notification)) {
         return null;
       }
 
@@ -261,7 +259,7 @@ export default function useNotifications(userId) {
 
   const markAllAsRead = useCallback(async () => {
     const unreadIds = notifications
-      .filter((n) => !n.is_read && isVisibleNotification(n))
+      .filter((n) => !n.is_read && isActiveNotification(n))
       .map((n) => n.id);
     if (unreadIds.length === 0) return;
 
