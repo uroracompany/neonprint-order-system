@@ -19,6 +19,12 @@ describe("getPaymentConfirmButtonLabel", () => {
     expect(getPaymentConfirmButtonLabel(PAYMENT_STATUS.PARTIAL)).toBe("Confirmar pago parcial");
   });
 
+  it("permite pago parcial para produccion pero no para entrega", () => {
+    expect(isPaymentProductionEligible(PAYMENT_STATUS.PARTIAL)).toBe(true);
+    expect(isPaymentDeliveryEligible(PAYMENT_STATUS.PARTIAL)).toBe(false);
+    expect(isPaymentFinanciallySettled(PAYMENT_STATUS.PARTIAL)).toBe(false);
+  });
+
   it("muestra el texto de pago completo cuando el selector esta en pagado", () => {
     expect(getPaymentConfirmButtonLabel(PAYMENT_STATUS.PAID)).toBe("Confirmar pago");
   });

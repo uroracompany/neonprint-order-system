@@ -1866,9 +1866,18 @@ export default function PageQuote() {
       return;
     }
 
-    // Actualizamos la orden seleccionada
-    setSelectedOrder(updatedOrder);
+    const nextOrder = {
+      ...forwardToProductionOrder,
+      ...updatedOrder,
+      order_production_files: updatedOrder.order_production_files || forwardToProductionOrder.order_production_files,
+    };
+
+    setOrders(prev => prev.map(item => item.id === nextOrder.id ? { ...item, ...nextOrder } : item));
+    setSelectedOrder(nextOrder);
     setForwardToProductionOrder(null);
+    if (user?.id) {
+      await fetchOrdersRef.current(user.id, true);
+    }
   };
 
   // Archiva órdenes en el campo específico del rol Quote.
