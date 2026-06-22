@@ -30,4 +30,17 @@ describe("flujo de produccion en caja", () => {
     expect(handler).toContain("setForwardToProductionOrder(null)");
     expect(handler).toContain("fetchOrdersRef.current(user.id, true)");
   });
+
+  it("mantiene visibles las acciones correctas en las tarjetas de caja", () => {
+    const quote = readProjectFile("src/pages/page-quote.jsx");
+    const cardStart = quote.indexOf('<div className="pq-order-footer">');
+    const cardEnd = quote.indexOf("</article>", cardStart);
+    const cardActions = quote.slice(cardStart, cardEnd);
+
+    expect(cardActions).toContain("Ver detalles");
+    expect(cardActions).toContain("handleViewOrder(order)");
+    expect(cardActions).toContain("canArchiveQuoteOrder(order, user?.id)");
+    expect(cardActions).toContain("setArchivingOrder(order)");
+    expect(cardActions).toContain("Archivar");
+  });
 });

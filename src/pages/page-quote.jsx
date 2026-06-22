@@ -2409,8 +2409,6 @@ export default function PageQuote() {
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
-  const shouldEnableOrdersScroll = filteredOrders.length > 7;
-
   const metrics = [
     { label: "Órdenes asignadas", value: orders.length, icon: <Icons.Orders /> },
     { label: "Pendientes de pago", value: orders.filter(order => order.payment_status !== "pagado" && !order.is_archived_quote).length, icon: <Icons.Money /> },
@@ -2776,14 +2774,14 @@ export default function PageQuote() {
             ) : filteredOrders.length === 0 ? (
               <div className="pq-empty-panel">No hay órdenes que coincidan con los filtros.</div>
             ) : (
-              <div className={`pq-orders-grid ${shouldEnableOrdersScroll ? "pq-orders-scroll" : ""}`}>
+              <div className="pq-orders-grid">
                 {paginatedOrders.map(order => (
                   <article key={order.id} className="pq-order-card">
                     <div className="pq-order-top">
                       <div className="pq-order-identity">
-                        <span className="pq-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                        <span className="pq-order-id">#{order.id ? order.id.slice(0, 8).toUpperCase() : "---"}</span>
                         <span className="pq-order-date">
-                          <Icons.Clock /> {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}
+                          <Icons.Clock /> {order.created_at ? new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" }) : "---"}
                         </span>
                       </div>
                       <div className="pq-order-badges">

@@ -40,11 +40,11 @@ describe('page-quote.css - reglas de scroll', () => {
     expect(style.flexDirection).toBe('column')
   })
 
-  test('.pq-orders-scroll tiene overflow-y: auto con max-height', () => {
-    const style = findCssRule('.pq-orders-scroll')
+  test('.pq-orders-grid NO tiene max-height ni overflow-y', () => {
+    const style = findCssRule('.pq-orders-grid')
     expect(style).not.toBeNull()
-    expect(style.overflowY).toBe('auto')
-    expect(style.maxHeight).toBe('760px')
+    expect(style.maxHeight).toBe('')
+    expect(style.overflowY).toBe('')
   })
 
   test('scrollbar global usa estilo del seller: gradiente en el thumb', () => {
@@ -52,18 +52,5 @@ describe('page-quote.css - reglas de scroll', () => {
     expect(style).not.toBeNull()
     expect(style.background).toContain('linear-gradient')
     expect(style.borderRadius).toBe('4px')
-  })
-
-  test('.pq-orders-scroll thumb hereda estilo seller con gradiente', () => {
-    const style = findCssRule('.pq-orders-scroll::-webkit-scrollbar-thumb')
-    expect(style).not.toBeNull()
-    expect(style.background).toContain('linear-gradient')
-    expect(style.borderRadius).toBe('4px')
-  })
-
-  test('.pq-orders-scroll hover thumb tiene estilo seller', () => {
-    const style = findCssRule('.pq-orders-scroll::-webkit-scrollbar-thumb:hover')
-    expect(style).not.toBeNull()
-    expect(style.background).toContain('linear-gradient')
   })
 })
