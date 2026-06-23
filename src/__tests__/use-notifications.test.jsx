@@ -13,6 +13,7 @@ vi.mock("../../supabaseClient", () => ({
 }));
 
 const userId = "11111111-1111-4111-8111-111111111111";
+const secondUserId = "22222222-2222-4222-8222-222222222222";
 
 const deferred = () => {
   let resolve;
@@ -39,8 +40,9 @@ const makeNotification = (overrides = {}) => ({
   ...overrides,
 });
 
-const setupSupabase = ({ persistedNotification = makeNotification(), notificationRows = [] } = {}) => {
+const setupSupabase = ({ persistedNotification = makeNotification(), notificationRows = [], notificationResults = null } = {}) => {
   const subscriptions = {};
+  const queuedNotificationResults = Array.isArray(notificationResults) ? [...notificationResults] : null;
   const channel = {
     on: vi.fn((event, filter, callback) => {
       subscriptions[filter.event] = callback;
@@ -52,13 +54,22 @@ const setupSupabase = ({ persistedNotification = makeNotification(), notificatio
   supabase.channel.mockReturnValue(channel);
   supabase.removeChannel.mockResolvedValue({});
   supabase.from.mockImplementation(() => {
+    const resolveLimit = () => {
+      if (queuedNotificationResults?.length) {
+        return queuedNotificationResults.shift();
+      }
+      return Promise.resolve({ data: notificationRows, error: null });
+    };
+
     const builder = {
       select: vi.fn(() => builder),
+      update: vi.fn(() => builder),
       eq: vi.fn(() => builder),
+      in: vi.fn(() => builder),
       or: vi.fn(() => builder),
       is: vi.fn(() => builder),
       order: vi.fn(() => builder),
-      limit: vi.fn(async () => ({ data: notificationRows, error: null })),
+      limit: vi.fn(resolveLimit),
       single: vi.fn(async () => ({ data: persistedNotification, error: null })),
     };
     return builder;
@@ -195,6 +206,60 @@ describe("useNotifications", () => {
       expect(second.result.current.loading).toBe(false);
     });
     expect(second.result.current.notifications).toHaveLength(0);
+  });
+
+  it("clears visible notifications immediately when the authenticated user changes", async () => {
+    setupSupabase({ notificationRows: [makeNotification()] });
+    const { result, rerender } = renderHook(({ id }) => useNotifications(id), {
+      initialProps: { id: userId },
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+    expect(result.current.unreadCount).toBe(1);
+
+    setupSupabase({ notificationRows: [] });
+    rerender({ id: secondUserId });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(0);
+    });
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.toasts).toHaveLength(0);
+  });
+
+  it("ignores stale notification loads from a previous authenticated user", async () => {
+    const staleLoad = deferred();
+    setupSupabase({
+      notificationResults: [
+        staleLoad.promise,
+        Promise.resolve({ data: [], error: null }),
+      ],
+    });
+
+    const { result, rerender } = renderHook(({ id }) => useNotifications(id), {
+      initialProps: { id: userId },
+    });
+
+    await waitFor(() => {
+      expect(supabase.from).toHaveBeenCalled();
+    });
+
+    rerender({ id: secondUserId });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(result.current.notifications).toHaveLength(0);
+
+    await act(async () => {
+      staleLoad.resolve({ data: [makeNotification()], error: null });
+      await staleLoad.promise;
+    });
+
+    expect(result.current.notifications).toHaveLength(0);
+    expect(result.current.unreadCount).toBe(0);
   });
 
   it("ignores realtime inserts that are already archived or deleted", async () => {

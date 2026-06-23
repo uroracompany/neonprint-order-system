@@ -1,5 +1,5 @@
 /* global process */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,6 +9,11 @@ import {
 } from "../utils/constants";
 
 const readProjectFile = (path) => readFileSync(join(process.cwd(), path), "utf8");
+const readLatestMigration = (suffix) => {
+  const dir = join(process.cwd(), "supabase", "migrations");
+  const file = readdirSync(dir).filter((name) => name.endsWith(suffix)).sort().at(-1);
+  return readFileSync(join(dir, file), "utf8");
+};
 
 describe("flujo de produccion en caja", () => {
   it("permite pago parcial hacia produccion y mantiene bloqueo solo para entrega", () => {
@@ -29,6 +34,40 @@ describe("flujo de produccion en caja", () => {
     expect(handler).toContain("setSelectedOrder(nextOrder)");
     expect(handler).toContain("setForwardToProductionOrder(null)");
     expect(handler).toContain("fetchOrdersRef.current(user.id, true)");
+  });
+
+  it("muestra solo areas participantes en el modal de asignacion de produccion", () => {
+    const quote = readProjectFile("src/pages/page-quote.jsx");
+    const modalStart = quote.indexOf("function ProductionAssignmentModal");
+    const modalEnd = quote.indexOf("function QuoteOrderDetailModal", modalStart);
+    const modal = quote.slice(modalStart, modalEnd);
+
+    expect(modal).toContain("getParticipatingProductionAreaCodes");
+    expect(modal).toContain("activeAreas.filter((area) => participatingAreaCodes.includes(area.code))");
+    expect(modal).toContain("hasUnclassifiedProductionFiles");
+    expect(modal).toContain("Todos los archivos deben tener tipo de produccion antes de enviar.");
+  });
+
+  it("define el envio a produccion desde areas participantes y rechaza areas extra", () => {
+    const migration = readLatestMigration("_dynamic_production_participating_areas.sql");
+    const fnStart = migration.indexOf("create or replace function public.send_order_to_production");
+    const fnEnd = migration.indexOf("revoke all on function public.send_order_to_production", fnStart);
+    const fn = migration.slice(fnStart, fnEnd);
+
+    expect(fn).toContain("select distinct pa.code, pa.label, pa.producer_role");
+    expect(fn).toContain("from public.order_production_files opf");
+    expect(fn).toContain("jsonb_object_keys(v_area_assignments)");
+    expect(fn).toContain("El area % no participa en esta orden.");
+    expect(fn).not.toContain("from public.production_areas\n    where is_active = true\n    order by code");
+  });
+
+  it("limpia solo asignaciones activas sin archivos y no notifica roles genericos de produccion", () => {
+    const migration = readLatestMigration("_dynamic_production_participating_areas.sql");
+
+    expect(migration).toContain("o.status in ('in_Production', 'in_Termination')");
+    expect(migration).toContain("not exists (\n    select 1\n    from public.order_production_files opf");
+    expect(migration).toContain("public.handle_order_change_notification()");
+    expect(migration).toContain("Could not remove generic printer recipients");
   });
 
   it("mantiene visibles las acciones correctas en las tarjetas de caja", () => {

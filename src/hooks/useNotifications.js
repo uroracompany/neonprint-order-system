@@ -44,6 +44,7 @@ export default function useNotifications(userId) {
   const notificationsRef = useRef([]);
   const toastTimeouts = useRef({});
   const localToastCounter = useRef(0);
+  const fetchVersionRef = useRef(0);
   // Referencia al canal de Supabase para suscripción en tiempo real
   const channelRef = useRef(null);
 
@@ -59,6 +60,11 @@ export default function useNotifications(userId) {
       clearTimeout(toastTimeouts.current[toastId]);
       delete toastTimeouts.current[toastId];
     }
+  }, []);
+
+  const clearToastTimeouts = useCallback(() => {
+    Object.values(toastTimeouts.current).forEach(clearTimeout);
+    toastTimeouts.current = {};
   }, []);
 
   // ============= FUNCIÓN: CARGAR NOTIFICACIONES =============
@@ -84,9 +90,12 @@ export default function useNotifications(userId) {
   }, [notifications]);
 
   const fetchNotifications = useCallback(async ({ showNewToasts = false } = {}) => {
+    const fetchVersion = ++fetchVersionRef.current;
     if (!userId) {
       setNotifications([]);
       notificationsRef.current = [];
+      setToasts([]);
+      clearToastTimeouts();
       setLoading(false);
       return;
     }
@@ -99,6 +108,9 @@ export default function useNotifications(userId) {
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(50);
+
+    if (fetchVersion !== fetchVersionRef.current) return;
+
     if (!error && data) {
       const visibleNotifications = filterActiveNotifications(data);
       const previousIds = new Set(notificationsRef.current.map((notification) => notification.id));
@@ -112,17 +124,23 @@ export default function useNotifications(userId) {
       [...newNotifications].reverse().forEach(enqueueToast);
     }
     setLoading(false);
-  }, [enqueueToast, userId]);
+  }, [clearToastTimeouts, enqueueToast, userId]);
 
   // ============= EFECTO 1: CARGA INICIAL =============
   // Se ejecuta cuando cambia el userId
   useEffect(() => {
+    fetchVersionRef.current += 1;
+    notificationsRef.current = [];
+    setNotifications([]);
+    setToasts([]);
+    clearToastTimeouts();
+
     const timer = setTimeout(() => {
       fetchNotifications();
     }, 0);
 
     return () => clearTimeout(timer);
-  }, [fetchNotifications]);
+  }, [clearToastTimeouts, fetchNotifications, userId]);
 
   // ============= EFECTO 2: SUSCRIPCIÓN EN TIEMPO REAL =============
   // Se suscribe a cambios en la tabla "notifications"
@@ -197,11 +215,11 @@ export default function useNotifications(userId) {
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
-      Object.values(toastTimeouts.current).forEach(clearTimeout);
-      toastTimeouts.current = {};
+      clearToastTimeouts();
     };
-  }, [userId, enqueueToast]);
+  }, [clearToastTimeouts, userId, enqueueToast]);
 
   const createNotification = useCallback(
     async ({ type, title, message, orderId = null, metadata = {} }) => {
@@ -246,18 +264,21 @@ export default function useNotifications(userId) {
   );
 
   const markAsRead = useCallback(async (id) => {
+    if (!userId) return;
     const { error } = await supabase
       .from("notifications")
       .update({ is_read: true })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("user_id", userId);
     if (!error) {
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
     }
-  }, []);
+  }, [userId]);
 
   const markAllAsRead = useCallback(async () => {
+    if (!userId) return;
     const unreadIds = notifications
       .filter((n) => !n.is_read && isActiveNotification(n))
       .map((n) => n.id);
@@ -266,11 +287,12 @@ export default function useNotifications(userId) {
     const { error } = await supabase
       .from("notifications")
       .update({ is_read: true })
-      .in("id", unreadIds);
+      .in("id", unreadIds)
+      .eq("user_id", userId);
     if (!error) {
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     }
-  }, [notifications]);
+  }, [notifications, userId]);
 
   const archive = useCallback(async (id) => {
     const { error } = await supabase.rpc("archive_notification", {

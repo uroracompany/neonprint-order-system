@@ -29,7 +29,11 @@ import {
   formatDate,
 } from "../utils/constants";
 import { getReferenceImages } from "../utils/orderAssets";
-import { getProductionFiles } from "../utils/production";
+import {
+  getParticipatingProductionAreaCodes,
+  getProductionFiles,
+  hasUnclassifiedProductionFiles,
+} from "../utils/production";
 import { useAuth } from "../hooks/useAuth";
 import { showCreditActionFeedback } from "../utils/notifications";
 import useNotifications from "../hooks/useNotifications";
@@ -70,9 +74,6 @@ const isOrderAssignedToQuote = (order, quoteUserId) => Boolean(order?.id) && has
 const canArchiveQuoteOrder = (order, userId) => canArchiveOrder(order, ARCHIVE_MODULES.QUOTE, userId);
 // Verifica si una orden fue devuelta (tiene estado de diseño/pendiente Y razón de devolución)
 const isReturnedOrder = (order) => isOrderStatusIn(order?.status, [ORDER_STATUS.IN_DESIGN, ORDER_STATUS.PENDING]) && Boolean(String(order?.return_reason || "").trim());
-const getOpenCreditReceivables = (items = []) => items.filter((item) => (
-  item?.client_id && ["open", "partial"].includes(item.status)
-));
 const isOpenCreditReceivable = (item) => ["open", "partial"].includes(item?.status);
 const formatCreditDate = (value) => (value ? formatDate(value) : "---");
 const getCreditIssuedAt = (item) => item?.issued_at || item?.created_at || item?.order?.created_at || null;
@@ -279,6 +280,12 @@ function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading })
   const [error, setError] = useState("");
 
   const productionFiles = useMemo(() => getProductionFiles(order), [order]);
+  const participatingAreaCodes = useMemo(() => (
+    getParticipatingProductionAreaCodes(productionFiles)
+  ), [productionFiles]);
+  const hasUnclassifiedFiles = useMemo(() => (
+    hasUnclassifiedProductionFiles(productionFiles)
+  ), [productionFiles]);
   const areaCounts = useMemo(() => (
     productionFiles.reduce((acc, file) => {
       if (file.production_area_code) {
@@ -297,21 +304,14 @@ function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading })
     setLoadingOptions(true);
 
     const loadOptions = async () => {
-      const [{ data: areaData, error: areaError }, { data: userData, error: userError }] = await Promise.all([
-        supabase
-          .from("production_areas")
-          .select("code, label, producer_role, is_active")
-          .eq("is_active", true),
-        supabase
-          .from("profiles")
-          .select("id, name, role, employment_status")
-          .in("role", PRODUCTION_AREAS.map((area) => area.role))
-          .eq("employment_status", true),
-      ]);
+      const { data: areaData, error: areaError } = await supabase
+        .from("production_areas")
+        .select("code, label, producer_role, is_active")
+        .eq("is_active", true);
 
       if (!active) return;
 
-      const nextAreas = areaError || !Array.isArray(areaData) || areaData.length === 0
+      const activeAreas = areaError || !Array.isArray(areaData) || areaData.length === 0
         ? PRODUCTION_AREAS
         : areaData
             .map((area) => ({
@@ -324,12 +324,32 @@ function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading })
               const bIndex = PRODUCTION_AREAS.findIndex((item) => item.code === b.code);
               return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex);
             });
+      const nextAreas = activeAreas.filter((area) => participatingAreaCodes.includes(area.code));
+      const roles = [...new Set(nextAreas.map((area) => area.role).filter(Boolean))];
+      let userData = [];
+      let userError = null;
+
+      if (roles.length > 0) {
+        const userResult = await supabase
+          .from("profiles")
+          .select("id, name, role, employment_status")
+          .in("role", roles)
+          .eq("employment_status", true);
+        userData = userResult.data;
+        userError = userResult.error;
+      }
+
+      if (!active) return;
 
       setAreas(nextAreas);
       setUsers(Array.isArray(userData) && !userError ? userData : []);
       setLoadingOptions(false);
 
-      if (userError) {
+      if (hasUnclassifiedFiles) {
+        setError("Todos los archivos deben tener tipo de produccion antes de enviar.");
+      } else if (nextAreas.length === 0) {
+        setError("La orden no tiene archivos clasificados para produccion.");
+      } else if (userError) {
         setError("No se pudieron cargar los usuarios de produccion.");
       }
     };
@@ -339,7 +359,7 @@ function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading })
     return () => {
       active = false;
     };
-  }, [open]);
+  }, [hasUnclassifiedFiles, open, participatingAreaCodes]);
 
   if (!open || !order) return null;
 
@@ -347,9 +367,18 @@ function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading })
     acc[userItem.role] = [...(acc[userItem.role] || []), userItem];
     return acc;
   }, {});
-  const allAreasAssigned = areas.every((area) => Boolean(assignments[area.code]));
+  const canAssignAreas = areas.length > 0 && !hasUnclassifiedFiles;
+  const allAreasAssigned = canAssignAreas && areas.every((area) => Boolean(assignments[area.code]));
 
   const handleConfirm = () => {
+    if (hasUnclassifiedFiles) {
+      setError("Todos los archivos deben tener tipo de produccion antes de enviar.");
+      return;
+    }
+    if (areas.length === 0) {
+      setError("La orden no tiene archivos clasificados para produccion.");
+      return;
+    }
     if (!allAreasAssigned) {
       setError("Debes seleccionar un responsable para cada area.");
       return;
@@ -375,6 +404,12 @@ function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading })
 
         {loadingOptions ? (
           <div className="pq-production-loading">Cargando responsables...</div>
+        ) : areas.length === 0 ? (
+          <div className="pq-production-loading">
+            {hasUnclassifiedFiles
+              ? "Clasifica todos los archivos antes de enviar a produccion."
+              : "No hay areas de produccion participantes."}
+          </div>
         ) : (
           <div className="pq-production-assignment-list">
             {areas.map((area) => {

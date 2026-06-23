@@ -116,6 +116,32 @@ export const filterProductionFilesForRole = (orderOrFiles, role) => {
   return files.filter((file) => file.production_area_code === areaCode);
 };
 
+export const getParticipatingProductionAreaCodes = (orderOrFiles) => {
+  const files = Array.isArray(orderOrFiles) ? orderOrFiles : getProductionFiles(orderOrFiles);
+  return [...new Set(files
+    .map((file) => file.production_area_code)
+    .filter(Boolean))];
+};
+
+export const hasUnclassifiedProductionFiles = (orderOrFiles) => {
+  const files = Array.isArray(orderOrFiles) ? orderOrFiles : getProductionFiles(orderOrFiles);
+  return files.some((file) => !file.production_area_code);
+};
+
+export const isOrderParticipatingInProductionRole = (order, role, userId) => {
+  const areaFiles = filterProductionFilesForRole(order, role);
+  return areaFiles.length > 0 && isOrderAssignedToProductionRole(order, role, userId);
+};
+
+export const filterProductionOrdersForRoleParticipation = (orders, role, userId) => {
+  const areaCode = getProductionAreaForRole(role);
+  if (!areaCode) return orders || [];
+
+  return (orders || []).filter((order) => (
+    isOrderParticipatingInProductionRole(order, role, userId)
+  ));
+};
+
 export const getProductionFileStatusLabel = (status) => (
   PRODUCTION_FILE_STATUS_LABELS[status] || "Pendiente"
 );

@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-production.css";
@@ -27,6 +27,7 @@ import {
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { getReferenceImages } from "../utils/orderAssets";
 import {
+  filterProductionOrdersForRoleParticipation,
   filterProductionOrdersByArchiveState,
   filterProductionFilesForRole,
   getNextProductionFileStatus,
@@ -575,7 +576,7 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus,
             </div>
           ) : (
             <div className="pp-modal-card" style={{ marginTop: 18 }}>
-              Esta orden no contiene archivos relacionados con tu area. No se requiere tu participacion en este proceso.
+              No hay archivos disponibles para tu area en esta orden.
             </div>
           )}
         </div>
@@ -711,6 +712,16 @@ export default function PageProduction() {
     if (!silent) setLoading(false);
   }, [user?.id]);
 
+  const refreshOrdersRef = useRef(refreshOrders);
+
+  useEffect(() => {
+    refreshOrdersRef.current = refreshOrders;
+  }, [refreshOrders]);
+
+  const refreshProductionOrdersSilently = useCallback(() => {
+    refreshOrdersRef.current(true);
+  }, []);
+
   const handleArchiveOrder = (order) => {
     if (!canArchiveOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id)) return;
     setArchivingOrder(order);
@@ -774,48 +785,71 @@ export default function PageProduction() {
   useEffect(() => {
     if (!user?.id) return;
 
+    const refreshFilesAndOrders = () => {
+      setTeamRefreshKey((value) => value + 1);
+      refreshProductionOrdersSilently();
+    };
+
     const channel = supabase
       .channel(`production-orders-${user.id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
-        () => refreshOrders(true)
+        refreshProductionOrdersSilently
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "order_production_files" },
-        () => {
-          setTeamRefreshKey((value) => value + 1);
-          refreshOrders(true);
-        }
+        refreshFilesAndOrders
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "order_production_assignments" },
-        () => {
-          setTeamRefreshKey((value) => value + 1);
-          refreshOrders(true);
-        }
+        refreshProductionOrdersSilently
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "order_production_user_archives" },
-        () => refreshOrders(true)
+        refreshProductionOrdersSilently
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          refreshProductionOrdersSilently();
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, refreshOrders]);
+  }, [user?.id, refreshProductionOrdersSilently]);
+
+  useEffect(() => {
+    if (!user?.id || typeof window === "undefined" || typeof document === "undefined") return;
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "hidden") return;
+      refreshProductionOrdersSilently();
+    };
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    window.addEventListener("online", refreshProductionOrdersSilently);
+
+    return () => {
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
+      window.removeEventListener("online", refreshProductionOrdersSilently);
+    };
+  }, [user?.id, refreshProductionOrdersSilently]);
 
   const handleLogout = async () => {
     await signOut();
     navigate("/");
   };
 
-  const activeOrders = filterProductionOrdersByArchiveState(orders, user?.id, "active");
-  const archiveScopedOrders = filterProductionOrdersByArchiveState(orders, user?.id, filterArchive);
+  const participatingOrders = filterProductionOrdersForRoleParticipation(orders, profileRole, user?.id);
+  const activeOrders = filterProductionOrdersByArchiveState(participatingOrders, user?.id, "active");
+  const archiveScopedOrders = filterProductionOrdersByArchiveState(participatingOrders, user?.id, filterArchive);
 
   const filteredOrders = archiveScopedOrders.filter(order => {
     const q = search.toLowerCase();

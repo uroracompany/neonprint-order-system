@@ -3,12 +3,16 @@ import { getProductionAreaForRole, PRODUCTION_FILE_STATUS } from "../utils/const
 import {
   buildProductionFileRows,
   filterProductionFilesForRole,
+  filterProductionOrdersForRoleParticipation,
   filterProductionOrdersByArchiveState,
+  getParticipatingProductionAreaCodes,
   getProductionAssignmentForRole,
   getProductionAssignments,
   getProductionFiles,
   getProductionSummary,
   getProductionUserArchives,
+  hasUnclassifiedProductionFiles,
+  isOrderParticipatingInProductionRole,
   isProductionOrderArchivedForUser,
   isOrderAssignedToProductionRole,
 } from "../utils/production";
@@ -32,6 +36,18 @@ describe("production file helpers", () => {
     expect(filterProductionFilesForRole(order, "digital_producer")).toHaveLength(1);
     expect(filterProductionFilesForRole(order, "digital_producer")[0].url).toContain("digital");
     expect(filterProductionFilesForRole(order, "ploteo_producer")).toEqual([]);
+  });
+
+  it("detects participating production areas from classified files only", () => {
+    const files = [
+      { id: "1", url: "https://example.com/digital.pdf", production_area_code: "digital" },
+      { id: "2", url: "https://example.com/digital-2.pdf", production_area_code: "digital" },
+      { id: "3", url: "https://example.com/dtf.pdf", production_area_code: "dtf" },
+      { id: "4", url: "https://example.com/unclassified.pdf", production_area_code: null },
+    ];
+
+    expect(getParticipatingProductionAreaCodes(files)).toEqual(["digital", "dtf"]);
+    expect(hasUnclassifiedProductionFiles(files)).toBe(true);
   });
 
   it("normalizes legacy order files when no production rows exist", () => {
@@ -103,9 +119,10 @@ describe("production file helpers", () => {
     );
     expect(isOrderAssignedToProductionRole(order, "digital_producer", "user-1")).toBe(true);
     expect(filterProductionFilesForRole(order, "digital_producer")).toHaveLength(1);
+    expect(isOrderParticipatingInProductionRole(order, "digital_producer", "user-1")).toBe(true);
   });
 
-  it("keeps an assignment even when the producer area has no files", () => {
+  it("does not treat an assignment without area files as active participation", () => {
     const order = {
       order_production_assignments: [
         { id: "a1", order_id: "order-1", production_area_code: "ploteo", assigned_to: "user-3" },
@@ -117,6 +134,7 @@ describe("production file helpers", () => {
 
     expect(isOrderAssignedToProductionRole(order, "ploteo_producer", "user-3")).toBe(true);
     expect(filterProductionFilesForRole(order, "ploteo_producer")).toEqual([]);
+    expect(isOrderParticipatingInProductionRole(order, "ploteo_producer", "user-3")).toBe(false);
   });
 
   it("does not match another user from the same production area", () => {
@@ -169,5 +187,42 @@ describe("production file helpers", () => {
 
     expect(order.id).toBe("order-1");
     expect(filterProductionOrdersByArchiveState([{ id: "order-1" }], "user-1", "archived")).toEqual([]);
+  });
+
+  it("filters production orders to the current assigned area with files", () => {
+    const orders = [
+      {
+        id: "order-1",
+        order_production_assignments: [
+          { order_id: "order-1", production_area_code: "digital", assigned_to: "digital-user" },
+        ],
+        order_production_files: [
+          { id: "f1", url: "https://example.com/digital.pdf", production_area_code: "digital" },
+        ],
+      },
+      {
+        id: "order-2",
+        order_production_assignments: [
+          { order_id: "order-2", production_area_code: "ploteo", assigned_to: "ploteo-user" },
+        ],
+        order_production_files: [
+          { id: "f2", url: "https://example.com/digital.pdf", production_area_code: "digital" },
+        ],
+      },
+      {
+        id: "order-3",
+        order_production_assignments: [
+          { order_id: "order-3", production_area_code: "digital", assigned_to: "other-user" },
+        ],
+        order_production_files: [
+          { id: "f3", url: "https://example.com/digital.pdf", production_area_code: "digital" },
+        ],
+      },
+    ];
+
+    expect(filterProductionOrdersForRoleParticipation(orders, "digital_producer", "digital-user").map((order) => order.id))
+      .toEqual(["order-1"]);
+    expect(filterProductionOrdersForRoleParticipation(orders, "admin", "admin-user").map((order) => order.id))
+      .toEqual(["order-1", "order-2", "order-3"]);
   });
 });
