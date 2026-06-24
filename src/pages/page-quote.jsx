@@ -7,7 +7,7 @@ import { PAYMENT_RECEIPT_HINT, validateReceiptFile } from "../utils/receiptValid
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
-import { ClientFilterSelect } from "../components/ui/ClientCombobox";
+import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
 import FileUploadZone from "../components/ui/FileUploadZone";
 import CreateClientModal from "../components/ui/CreateClientModal";
 import SettleCreditModal from "../components/ui/SettleCreditModal";
@@ -39,7 +39,7 @@ import { showCreditActionFeedback } from "../utils/notifications";
 import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
-import { loadClients, orderMatchesClientFilter } from "../utils/clients";
+import { loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import "../css-components/page-quote.css";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import {
@@ -879,6 +879,9 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
             {localError && <div className="pq-inline-error">{localError}</div>}
             {creditClientRequired && paymentStatus === PAYMENT_STATUS.CREDIT && !order.client_id && (
               <div className="pq-credit-client-action">
+                <p className="pq-upload-hint">
+                  Esta es una orden heredada sin cliente registrado. Vincula un cliente existente antes de aprobar credito.
+                </p>
                 <button
                   type="button"
                   className="pq-btn pq-btn-secondary"
@@ -886,7 +889,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                   disabled={paymentSaving}
                 >
                   <Icons.User />
-                  Registrar Cliente {order.client_name || "sin nombre"}
+                  Vincular cliente registrado
                 </button>
               </div>
             )}
@@ -911,6 +914,68 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegisteredClientLinkModal({
+  open,
+  order,
+  clients,
+  clientsLoading,
+  selectedClient,
+  onSelectClient,
+  onSearchClient,
+  onClose,
+  onConfirm,
+  loading,
+}) {
+  if (!open || !order) return null;
+
+  return (
+    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && !loading && onClose()}>
+      <div className="pq-modal pq-modal-compact">
+        <div className="pq-modal-header">
+          <div>
+            <span className="pq-modal-kicker">Orden heredada</span>
+            <h2 className="pq-modal-title">Vincular cliente registrado</h2>
+          </div>
+          <button className="pq-icon-btn" onClick={onClose} aria-label="Cerrar vinculacion" disabled={loading}>
+            <Icons.X />
+          </button>
+        </div>
+
+        <div className="pq-modal-body">
+          <div className="pq-inline-error">
+            Esta orden no tiene un cliente registrado. Selecciona un cliente existente para continuar con credito y otros flujos criticos.
+          </div>
+
+          <div className="pq-info-list">
+            <div className="pq-info-row"><span>Dato heredado</span><strong>{order.client_name || "Sin nombre"}</strong></div>
+            <div className="pq-info-row"><span>Telefono heredado</span><strong>{order.client_contact || order.client_phone || "No definido"}</strong></div>
+          </div>
+
+          <div className="pq-payment-field">
+            <label>Cliente registrado</label>
+            <ClientSelect
+              clients={clients}
+              value={selectedClient?.id || null}
+              onSelect={onSelectClient}
+              onSearch={onSearchClient}
+              loading={clientsLoading}
+              placeholder="Seleccionar cliente registrado"
+              emptyText="No hay clientes registrados con esa busqueda."
+            />
+          </div>
+        </div>
+
+        <div className="pq-dialog-actions">
+          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button className="pq-btn pq-btn-primary" onClick={onConfirm} disabled={loading || !selectedClient?.id}>
+            {loading ? "Vinculando..." : "Vincular cliente"}
+          </button>
         </div>
       </div>
     </div>
@@ -1106,6 +1171,19 @@ function CreditClientDetailView({
   );
 }
 
+const mergeOrderWithProductionFiles = (baseOrder, nextOrder) => {
+  const mergedOrder = {
+    ...(baseOrder || {}),
+    ...(nextOrder || {}),
+  };
+
+  if (!Array.isArray(mergedOrder.order_production_files) && Array.isArray(baseOrder?.order_production_files)) {
+    mergedOrder.order_production_files = baseOrder.order_production_files;
+  }
+
+  return mergedOrder;
+};
+
 export default function PageQuote() {
   const navigate = useNavigate();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
@@ -1148,8 +1226,9 @@ export default function PageQuote() {
   const [clients, setClients] = useState([]);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
-  const [clientInitialValues, setClientInitialValues] = useState(null);
-  const [creditPendingOrder, setCreditPendingOrder] = useState(null);
+  const [clientLinkOrder, setClientLinkOrder] = useState(null);
+  const [clientLinkSelection, setClientLinkSelection] = useState(null);
+  const [clientLinkLoading, setClientLinkLoading] = useState(false);
   const [accountsReceivable, setAccountsReceivable] = useState([]);
   const [accountsReceivableLoading, setAccountsReceivableLoading] = useState(true);
   const [creditOrders, setCreditOrders] = useState([]);
@@ -1217,6 +1296,8 @@ export default function PageQuote() {
       setClientsLoading(false);
     }
   }, []);
+
+  const handleClientSearch = useCallback(async (query) => searchClients(supabase, query), []);
 
   const fetchAccountsReceivable = useCallback(async () => {
     setAccountsReceivableLoading(true);
@@ -1359,6 +1440,60 @@ export default function PageQuote() {
     };
   }, [syncCreditReminderServerTime, user?.id]);
 
+  const handleConfirmClientLink = async () => {
+    if (!clientLinkOrder?.id || !clientLinkSelection?.id) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Cliente requerido",
+        orderTitle: clientLinkOrder?.client_name || clientLinkOrder?.description || "Orden heredada",
+        message: "Debes seleccionar un cliente registrado.",
+      });
+      return;
+    }
+
+    const orderToLink = orders.find(item => item.id === clientLinkOrder.id) || selectedOrder || clientLinkOrder;
+    if (orderToLink?.client_id) {
+      setClientLinkOrder(null);
+      setClientLinkSelection(null);
+      setSelectedOrder(orderToLink);
+      return;
+    }
+
+    setClientLinkLoading(true);
+    const { data: linkedOrder, error } = await supabase
+      .from("orders")
+      .update({
+        client_id: clientLinkSelection.id,
+        client_name: clientLinkSelection.name || "",
+        client_contact: clientLinkSelection.phone || null,
+      })
+      .eq("id", orderToLink.id)
+      .select("*, order_production_files(*)")
+      .single();
+    setClientLinkLoading(false);
+
+    if (error || !linkedOrder) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Cliente no vinculado",
+        orderTitle: clientLinkOrder.client_name || clientLinkOrder.description || `Orden #${clientLinkOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: error?.message || "No se pudo vincular la orden al cliente registrado.",
+      });
+      return;
+    }
+
+    setOrders(prev => prev.map(item => item.id === linkedOrder.id ? linkedOrder : item));
+    setSelectedOrder(linkedOrder);
+    setClientLinkOrder(null);
+    setClientLinkSelection(null);
+    notif.showActionNotification({
+      type: "info",
+      title: "Cliente vinculado",
+      message: `Orden vinculada a "${linkedOrder.client_name}" correctamente.`,
+      metadata: { event_kind: "order_client_linked", order_id: linkedOrder.id, client_id: linkedOrder.client_id, variant: "success" },
+    });
+  };
+
   useEffect(() => {
     if (!user?.id) return undefined;
 
@@ -1386,6 +1521,23 @@ export default function PageQuote() {
   const fetchOrders = async (...args) => fetchOrdersImpl(...args);
   const fetchOrdersRef = useRef(fetchOrders);
 
+  const fetchOrderWithProductionFiles = useCallback(async (orderId) => {
+    if (!orderId) return null;
+
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*, order_production_files(*)")
+      .eq("id", orderId)
+      .single();
+
+    if (error) {
+      console.warn("No se pudo hidratar la orden con archivos de produccion:", error?.message || error);
+      return null;
+    }
+
+    return data || null;
+  }, []);
+
   useEffect(() => {
     fetchOrdersRef.current = fetchOrders;
   });
@@ -1404,9 +1556,8 @@ export default function PageQuote() {
     setPaymentSaving(true);
     const { data: updatedOrder, error } = await supabase
       .rpc("mark_order_as_credit", { p_order_id: order.id, p_due_date: null });
-    setPaymentSaving(false);
-
     if (error || !updatedOrder) {
+      setPaymentSaving(false);
       notif.showActionNotification({
         type: "order_cancelled",
         label: "Crédito no aprobado",
@@ -1416,22 +1567,20 @@ export default function PageQuote() {
       return { ok: false };
     }
 
-    setOrders(prev => prev.map(item => item.id === updatedOrder.id ? updatedOrder : item));
-    setSelectedOrder(updatedOrder);
+    const hydratedOrder = await fetchOrderWithProductionFiles(updatedOrder.id);
+    setPaymentSaving(false);
+
+    const nextOrder = mergeOrderWithProductionFiles(order, hydratedOrder || updatedOrder);
+    setOrders(prev => prev.map(item => item.id === nextOrder.id ? mergeOrderWithProductionFiles(item, nextOrder) : item));
+    setSelectedOrder(nextOrder);
     await fetchAccountsReceivable();
-    return { ok: true, order: updatedOrder };
+    return { ok: true, order: nextOrder };
   };
 
   const openCreditClientRegistration = (order) => {
-    setCreditPendingOrder(order);
-    setClientInitialValues({
-      name: order?.client_name || "",
-      phone: order?.client_contact || order?.client_phone || "",
-      email: order?.client_email || "",
-      address: order?.client_address || "",
-      notes: "",
-    });
-    setShowNewClientModal(true);
+    setClientLinkOrder(order);
+    setClientLinkSelection(null);
+    fetchClients();
   };
 
   const handleNewClientCreated = async (newClient, options = {}) => {
@@ -1448,54 +1597,6 @@ export default function PageQuote() {
       metadata: { event_kind: options.reusedExisting ? "client_reused" : "client_created", client_id: newClient.id, variant: "success" },
     });
 
-    if (!creditPendingOrder?.id) return;
-
-    const orderToLink = orders.find(item => item.id === creditPendingOrder.id) || selectedOrder || creditPendingOrder;
-    if (orderToLink?.client_id === newClient.id) {
-      setCreditPendingOrder(null);
-      setClientInitialValues(null);
-      setSelectedOrder(orderToLink);
-      return;
-    }
-
-    if (orderToLink?.client_id) {
-      setCreditPendingOrder(null);
-      setClientInitialValues(null);
-      setSelectedOrder(orderToLink);
-      notif.showActionNotification({
-        type: "info",
-        label: "Cliente ya vinculado",
-        orderTitle: orderToLink.client_name || orderToLink.description || `Orden #${orderToLink.id?.slice(0, 8).toUpperCase()}`,
-        message: "La orden ya fue vinculada a un cliente registrado.",
-      });
-      return;
-    }
-
-    const { data: linkedOrder, error } = await supabase
-      .from("orders")
-      .update({
-        client_id: newClient.id,
-        client_name: newClient.name || orderToLink.client_name,
-        client_contact: newClient.phone || orderToLink.client_contact || null,
-      })
-      .eq("id", orderToLink.id)
-      .select("*, order_production_files(*)")
-      .single();
-
-    if (error || !linkedOrder) {
-      notif.showActionNotification({
-        type: "order_cancelled",
-        label: "Cliente no vinculado",
-        orderTitle: creditPendingOrder.client_name || creditPendingOrder.description || `Orden #${creditPendingOrder.id?.slice(0, 8).toUpperCase()}`,
-        message: error?.message || "El cliente se creó, pero no se pudo vincular la orden.",
-      });
-      return;
-    }
-
-    setOrders(prev => prev.map(item => item.id === linkedOrder.id ? linkedOrder : item));
-    setSelectedOrder(linkedOrder);
-    setCreditPendingOrder(null);
-    setClientInitialValues(null);
   };
 
   // ============= EFECTO 2: SUSCRIPCIÓN EN TIEMPO REAL Y REFRESCO =============
@@ -1872,8 +1973,15 @@ export default function PageQuote() {
   };
 
   // Abre el modal para seleccionar un impresor antes de enviar a producción.
-  const handleOpenProductionModal = (order) => {
-    setForwardToProductionOrder(order);
+  const handleOpenProductionModal = async (order) => {
+    if (!order?.id) return;
+
+    const hydratedOrder = await fetchOrderWithProductionFiles(order?.id);
+    const nextOrder = mergeOrderWithProductionFiles(order, hydratedOrder);
+
+    setOrders(prev => prev.map(item => item.id === nextOrder.id ? mergeOrderWithProductionFiles(item, nextOrder) : item));
+    setSelectedOrder(prev => prev?.id === nextOrder.id ? mergeOrderWithProductionFiles(prev, nextOrder) : prev);
+    setForwardToProductionOrder(nextOrder);
   };
 
   // Envía la orden a producción asignándola al impresor seleccionado.
@@ -2903,13 +3011,26 @@ export default function PageQuote() {
         open={showNewClientModal}
         onClose={() => {
           setShowNewClientModal(false);
-          setClientInitialValues(null);
-          setCreditPendingOrder(null);
         }}
         onCreated={handleNewClientCreated}
         supabase={supabase}
         userId={user?.id}
-        initialValues={clientInitialValues}
+      />
+
+      <RegisteredClientLinkModal
+        open={!!clientLinkOrder}
+        order={clientLinkOrder}
+        clients={clients}
+        clientsLoading={clientsLoading}
+        selectedClient={clientLinkSelection}
+        onSelectClient={setClientLinkSelection}
+        onSearchClient={handleClientSearch}
+        onClose={() => {
+          setClientLinkOrder(null);
+          setClientLinkSelection(null);
+        }}
+        onConfirm={handleConfirmClientLink}
+        loading={clientLinkLoading}
       />
 
       <SettleCreditModal

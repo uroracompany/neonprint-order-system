@@ -20,7 +20,7 @@ import {
   CreditReminderCreateModal,
 } from "../components/ui/CreditReminderModals";
 import { Pagination } from "../components/ui/Pagination";
-import { ClientFilterSelect, ClientNameAutocomplete, ClientSelect } from "../components/ui/ClientCombobox";
+import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
 import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   ORDER_STATUS,
@@ -50,7 +50,7 @@ import {
 } from "../utils/archive";
 import { getPaymentConfirmButtonLabel } from "../utils/paymentUi";
 import { getReferenceImages } from "../utils/orderAssets";
-import { clientMatchesQuery, formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
+import { clientMatchesQuery, formatDominicanPhone, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
 import { filterActiveNotifications, getActiveUnreadCount, showCreditActionFeedback } from "../utils/notifications";
 import { useAuth } from "../hooks/useAuth";
@@ -313,8 +313,8 @@ function OrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit
   return (
     <ModalShell open={open} onClose={onClose} title={mode === "create" ? "Crear orden" : "Editar orden"} size="large">
       <div className="pa-form-grid">
-        <label className="pa-field"><span>Cliente</span><input value={orderForm.client_name} onChange={(e) => setOrderForm(prev => ({ ...prev, client_name: e.target.value }))} /></label>
-        <label className="pa-field"><span>Teléfono</span><input value={orderForm.client_contact} onChange={(e) => setOrderForm(prev => ({ ...prev, client_contact: e.target.value }))} /></label>
+        <label className="pa-field"><span>Cliente</span><input value={orderForm.client_name} readOnly disabled placeholder="Selecciona un cliente registrado" /></label>
+        <label className="pa-field"><span>Teléfono</span><input value={orderForm.client_contact} readOnly disabled placeholder="Contacto del cliente registrado" /></label>
         <label className="pa-field full"><span>Descripción</span><textarea rows={3} value={orderForm.description} onChange={(e) => setOrderForm(prev => ({ ...prev, description: e.target.value }))} /></label>
         <label className="pa-field"><span>Material</span><select value={orderForm.material} onChange={(e) => setOrderForm(prev => ({ ...prev, material: e.target.value }))}><option value="">Seleccionar material</option>{simpleMaterials.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}</select></label>
         <label className="pa-field"><span>Tipo de orden</span><select value={orderForm.order_type} onChange={(e) => setOrderForm(prev => ({ ...prev, order_type: e.target.value }))}><option value="normal">Normal</option><option value="orden 911">Orden 911</option></select></label>
@@ -746,19 +746,18 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
     setOrderForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const setClientField = (field, value) => {
-    setOrderForm((prev) => ({ ...prev, ...getManualClientEditFields(field, value) }));
-  };
-
   const applySelectedClient = (client) => {
     if (!client) {
       setOrderForm((prev) => ({ ...prev, ...getSelectedClientOrderFields(null, "client_contact") }));
       return;
     }
 
+    const fields = getSelectedClientOrderFields(client, "client_contact");
+    if (fields.client_contact) fields.client_contact = formatDominicanPhone(fields.client_contact);
+
     setOrderForm((prev) => ({
       ...prev,
-      ...getSelectedClientOrderFields(client, "client_contact"),
+      ...fields,
     }));
   };
 
@@ -830,24 +829,16 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
                 onSearch={onClientSearch}
                 loading={clientsLoading}
                 placeholder="Seleccionar cliente registrado"
-                emptyLabel="No hay clientes registrados. Puedes escribir el cliente manualmente."
+                emptyText="No hay clientes registrados. Registra el cliente antes de crear la orden."
               />
             </div>
             <label className="pa-field">
               <span>Cliente</span>
-              <ClientNameAutocomplete
-                clients={clients}
-                value={orderForm.client_name}
-                onChange={(value) => setClientField("client_name", value)}
-                onSelect={applySelectedClient}
-                onSearch={onClientSearch}
-                loading={clientsLoading}
-                placeholder="Nombre del cliente"
-              />
+              <input value={orderForm.client_name} readOnly disabled placeholder="Selecciona un cliente registrado" />
             </label>
             <label className="pa-field">
               <span>Teléfono</span>
-              <input value={orderForm.client_contact} onChange={(event) => setClientField("client_contact", event.target.value)} placeholder="Contacto principal" />
+              <input value={orderForm.client_contact} readOnly disabled placeholder="Contacto del cliente registrado" />
             </label>
             <label className="pa-field">
               <span>Numero de facturacion</span>
@@ -1990,10 +1981,13 @@ export default function Dashboard() {
   };
 
   const handleSaveOrder = async () => {
-    if (!orderForm.client_name.trim() || !orderForm.description.trim()) return showFeedback("error", "Cliente y descripción son obligatorios.");
+    if (!orderForm.client_id) return showFeedback("error", "Debes seleccionar un cliente registrado.");
+    if (!orderForm.client_name.trim()) return showFeedback("error", "Selecciona un cliente registrado para completar el nombre.");
+    if (!orderForm.client_contact.trim()) return showFeedback("error", "Selecciona un cliente registrado con telefono.");
+    if (!orderForm.description.trim()) return showFeedback("error", "La descripcion es obligatoria.");
 
     const payload = {
-      client_id: orderForm.client_id || null,
+      client_id: orderForm.client_id,
       client_name: orderForm.client_name.trim(),
       client_contact: orderForm.client_contact.trim() || null,
       invoice_number: orderForm.invoice_number.trim() || null,

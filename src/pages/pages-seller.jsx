@@ -40,7 +40,7 @@ import useNotifications from "../hooks/useNotifications";
 import NotificationCenter from "../components/NotificationCenter";
 import { buildStorageSafeFileName, formatFileSize, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
 import { validateReferenceImages, compressImage, canDecodeAsImage, REF_IMAGE_CONFIG } from "../utils/imageValidation";
-import { formatDominicanPhone, getManualClientEditFields, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
+import { formatDominicanPhone, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 
 const isReturnedOrder = (order) => {
   if (!order || !order.return_reason) return false;
@@ -70,7 +70,7 @@ const isSellerVisibleNotification = (notification) => {
   return !SELLER_HIDDEN_NOTIFICATION_EVENTS.has(eventKind);
 };
 
-const PHONE_PLACEHOLDER = "Ej: 809-555-1234";
+const PHONE_PLACEHOLDER = "Seleccionar Cliente";
 
 function ProductionAreaSelect({ value, onChange, className = "ps-form-input", isError }) {
   return (
@@ -288,7 +288,19 @@ const EMPTY_FORM = {
   reference_images: [], // imágenes de referencia (opcional)
 };
 
-function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, clients = [], clientsLoading = false, onClientSearch, onAddNewClient }) {
+function CreateOrderModal({
+  open,
+  onClose,
+  onCreated,
+  userId,
+  materialOptions,
+  clients = [],
+  clientsLoading = false,
+  onClientSearch,
+  onAddNewClient,
+  clientToSelect = null,
+  onClientToSelectConsumed,
+}) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
   const refImagesInputRef = useRef(null);
@@ -312,18 +324,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
     }
   };
 
-  const setClientField = (k, v) => {
-    setForm(p => ({ ...p, ...getManualClientEditFields(k, v) }));
-    if (fieldErrors[k]) {
-      setFieldErrors(p => {
-        const next = { ...p };
-        delete next[k];
-        return next;
-      });
-    }
-  };
-
-  const applySelectedClient = (client) => {
+  const applySelectedClient = useCallback((client) => {
     if (!client) {
       setForm(p => ({ ...p, ...getSelectedClientOrderFields(null) }));
       return;
@@ -339,14 +340,26 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
       delete next.client_phone;
       return next;
     });
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!open || !clientToSelect?.id) return;
+    applySelectedClient(clientToSelect);
+    onClientToSelectConsumed?.();
+  }, [applySelectedClient, clientToSelect, onClientToSelectConsumed, open]);
 
   // Función de validación que retorna objeto de errores por campo
   const validateForm = () => {
     const errors = {};
     
+    if (!form.client_id) {
+      errors.client_id = "Debes seleccionar un cliente registrado.";
+    }
     if (!form.client_name.trim()) {
-      errors.client_name = "El nombre del cliente es requerido.";
+      errors.client_name = "Selecciona un cliente registrado para completar el nombre.";
+    }
+    if (!form.client_phone.trim()) {
+      errors.client_phone = "Selecciona un cliente registrado con telefono.";
     }
     if (!form.description.trim()) {
       errors.description = "La descripción del trabajo es requerida.";
@@ -518,7 +531,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
         // Now insert the order with URLs already included
         const payload = {
           id: orderId,
-          client_id: form.client_id || null,
+          client_id: form.client_id,
           client_name: form.client_name.trim(),
           client_contact: form.client_phone.trim() || null,
           invoice_number: form.invoice_number.trim(),
@@ -604,7 +617,7 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
       </div>
       <div className="ps-form-grid">
         <div className="col-full">
-          <Field label="Cliente registrado" optional hint="Busca y selecciona un cliente registrado.">
+          <Field label="Cliente registrado" required hint="Busca y selecciona un cliente registrado.">
             <ClientSelect
               clients={clients}
               loading={clientsLoading}
@@ -618,16 +631,16 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
         </div>
         <div className="col-full">
           <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
-            <input className="ps-form-input" placeholder="Ej: Empresa ABC"
-              value={form.client_name} onChange={e => setClientField("client_name", e.target.value)} />
+            <input className="ps-form-input" placeholder="Seleccionar cliente"
+              value={form.client_name} readOnly disabled />
           </Field>
         </div>
         <div className="col-full">
-          <Field label="Telefono / Contacto" optional hint="WhatsApp o numero de contacto del cliente" error={fieldErrors.client_phone}>
+          <Field label="Telefono / Contacto" required hint="Se completa desde el cliente registrado" error={fieldErrors.client_phone}>
             <div className="ps-input-icon-wrap">
               <span className="ps-input-icon"><Icons.Phone /></span>
               <input className="ps-form-input with-icon" placeholder={PHONE_PLACEHOLDER}
-                value={form.client_phone} onChange={e => setClientField("client_phone", formatDominicanPhone(e.target.value))} maxLength="12" />
+                value={form.client_phone} readOnly disabled maxLength="12" />
             </div>
           </Field>
         </div>
@@ -916,12 +929,22 @@ function CreateOrderModal({ open, onClose, onCreated, userId, materialOptions, c
 }
 
 // ─── EDIT ORDER MODAL ─────────────────────────────────────────────────────────
-function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] }) {
+function EditOrderModal({
+  open,
+  onClose,
+  order,
+  onUpdated,
+  materialOptions = [],
+  clients = [],
+  clientsLoading = false,
+  onClientSearch,
+}) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
   const refImagesInputRef = useRef(null);
 
   const [form, setForm] = useState({
+    client_id: null,
     client_name: "",
     client_contact: "",
     invoice_number: "",
@@ -949,6 +972,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
   useEffect(() => {
     if (order) {
       setForm({
+        client_id: order.client_id || null,
         client_name: order.client_name || "",
         client_contact: order.client_contact || "",
         invoice_number: order.invoice_number || "",
@@ -990,11 +1014,36 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
   };
 
   // Función de validación que retorna objeto de errores por campo
+  const applySelectedClient = (client) => {
+    if (!client) {
+      setForm(p => ({ ...p, ...getSelectedClientOrderFields(null, "client_contact") }));
+      return;
+    }
+
+    const fields = getSelectedClientOrderFields(client, "client_contact");
+    if (fields.client_contact) fields.client_contact = formatDominicanPhone(fields.client_contact);
+
+    setForm(p => ({ ...p, ...fields }));
+    setFieldErrors(p => {
+      const next = { ...p };
+      delete next.client_id;
+      delete next.client_name;
+      delete next.client_contact;
+      return next;
+    });
+  };
+
   const validateForm = () => {
     const errors = {};
     
+    if (!form.client_id) {
+      errors.client_id = "Debes seleccionar un cliente registrado.";
+    }
     if (!form.client_name.trim()) {
-      errors.client_name = "El nombre del cliente es requerido.";
+      errors.client_name = "Selecciona un cliente registrado para completar el nombre.";
+    }
+    if (!form.client_contact.trim()) {
+      errors.client_contact = "Selecciona un cliente registrado con telefono.";
     }
     if (!form.description.trim()) {
       errors.description = "La descripción es requerida.";
@@ -1189,6 +1238,7 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
     const { error: err } = await supabase
       .from("orders")
       .update({
+        client_id: form.client_id,
         client_name: form.client_name.trim(),
         client_contact: form.client_contact.trim() || null,
         invoice_number: form.invoice_number.trim(),
@@ -1260,13 +1310,25 @@ function EditOrderModal({ open, onClose, order, onUpdated, materialOptions = [] 
       </div>
       <div className="ps-form-grid">
         <div className="col-full">
-          <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
-            <input className="ps-form-input" value={form.client_name} onChange={e => set("client_name", e.target.value)} />
+          <Field label="Cliente registrado" required error={fieldErrors.client_id} hint="Selecciona el cliente registrado de esta orden.">
+            <ClientSelect
+              clients={clients}
+              loading={clientsLoading}
+              value={form.client_id}
+              onSelect={applySelectedClient}
+              onSearch={onClientSearch}
+              placeholder="Seleccionar cliente registrado"
+            />
           </Field>
         </div>
         <div className="col-full">
-          <Field label="Contacto" optional hint="Telefono opcional. Si lo completas, debe ser un numero de Republica Dominicana." error={fieldErrors.client_contact}>
-            <input className="ps-form-input" placeholder={PHONE_PLACEHOLDER} value={form.client_contact} onChange={e => set("client_contact", formatDominicanPhone(e.target.value))} maxLength="12" />
+          <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
+            <input className="ps-form-input" value={form.client_name} readOnly disabled />
+          </Field>
+        </div>
+        <div className="col-full">
+          <Field label="Contacto" required hint="Se completa desde el cliente registrado." error={fieldErrors.client_contact}>
+            <input className="ps-form-input" placeholder={PHONE_PLACEHOLDER} value={form.client_contact} readOnly disabled maxLength="12" />
           </Field>
         </div>
       </div>
@@ -2023,6 +2085,7 @@ export default function PageSeller() {
   const [viewMode, setViewMode] = useState("table");
   const [showCreate, setShowCreate] = useState(false);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [materialOptions, setMaterialOptions] = useState([]);
@@ -2142,6 +2205,9 @@ export default function PageSeller() {
       const exists = prev.some(c => c.id === newClient.id);
       return exists ? prev : [...prev, newClient].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
     });
+    if (showCreate) {
+      setClientToSelectInOrderForm(newClient);
+    }
     showToast("Cliente creado correctamente.");
   };
 
@@ -2827,8 +2893,19 @@ export default function PageSeller() {
         clientsLoading={clientsLoading}
         onClientSearch={handleClientSearch}
         onAddNewClient={() => setShowNewClientModal(true)}
+        clientToSelect={clientToSelectInOrderForm}
+        onClientToSelectConsumed={() => setClientToSelectInOrderForm(null)}
       />
-      <EditOrderModal open={!!editingOrder} onClose={() => setEditingOrder(null)} order={editingOrder} onUpdated={() => fetchOrders(user?.id)} materialOptions={materialOptions} />
+      <EditOrderModal
+        open={!!editingOrder}
+        onClose={() => setEditingOrder(null)}
+        order={editingOrder}
+        onUpdated={() => fetchOrders(user?.id)}
+        materialOptions={materialOptions}
+        clients={clients}
+        clientsLoading={clientsLoading}
+        onClientSearch={handleClientSearch}
+      />
       <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} onSendToQuotation={handleSendToQuotation} />
       <AssignModal
         open={!!sendingToDesigner}

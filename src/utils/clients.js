@@ -60,11 +60,6 @@ export const getSelectedClientOrderFields = (client, phoneField = "client_phone"
   };
 };
 
-export const getManualClientEditFields = (field, value) => ({
-  [field]: value,
-  client_id: null,
-});
-
 export const loadClients = async (supabase) => {
   const { data, error } = await supabase
     .from("clients")

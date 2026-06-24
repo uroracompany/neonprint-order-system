@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Icons } from "../../utils/icons";
-import { formatDominicanPhone, normalizeClientPhone, searchClients } from "../../utils/clients";
+import { formatDominicanPhone, normalizeClientPhone, normalizeClientText, searchClients } from "../../utils/clients";
 import "./CreateClientModal.css";
 
 const EMPTY_FORM = { name: "", phone: "", email: "", address: "", notes: "" };
@@ -10,6 +10,7 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
+  const [matchingNameClient, setMatchingNameClient] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -24,7 +25,39 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
     });
     setError("");
     setFieldErrors({});
+    setMatchingNameClient(null);
   }, [initialValues, open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const normalizedName = normalizeClientText(form.name);
+    if (normalizedName.length < 2) {
+      setMatchingNameClient(null);
+      return undefined;
+    }
+
+    let active = true;
+    const timeout = setTimeout(async () => {
+      try {
+        const matches = await searchClients(supabase, form.name, 10);
+        if (!active) return;
+
+        const exactMatch = matches.find((client) => normalizeClientText(client?.name) === normalizedName) || null;
+        setMatchingNameClient(exactMatch);
+      } catch (err) {
+        if (active) {
+          console.warn("No se pudo validar el nombre del cliente:", err?.message || err);
+          setMatchingNameClient(null);
+        }
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [form.name, open, supabase]);
 
   if (!open) return null;
 
@@ -101,6 +134,7 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
     setForm(EMPTY_FORM);
     setError("");
     setFieldErrors({});
+    setMatchingNameClient(null);
     onClose();
   };
 
@@ -131,6 +165,11 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
               autoFocus
             />
             {fieldErrors.name && <p className="crm-field-error">{fieldErrors.name}</p>}
+            {!fieldErrors.name && matchingNameClient && (
+              <p className="crm-field-warning">
+                Ya existe un cliente con este nombre: {matchingNameClient.name} - {formatDominicanPhone(matchingNameClient.phone) || "sin telefono"}. Puedes continuar si es otra persona.
+              </p>
+            )}
           </label>
           <label className="crm-field">
             <span className="crm-field-label">Teléfono <strong className="crm-required">*</strong></span>

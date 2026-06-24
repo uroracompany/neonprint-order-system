@@ -30,14 +30,20 @@ describe("registro de cliente desde credito en cotizacion", () => {
     expect(source).toContain("const [creditClientRequired, setCreditClientRequired] = useState(false)");
     expect(source).toContain("setCreditClientRequired(true)");
     expect(source).toContain("Para crear una orden a crédito, el cliente debe estar registrado.");
-    expect(source).toContain('Registrar Cliente {order.client_name || "sin nombre"}');
+    expect(source).toContain("Vincular cliente registrado");
+    expect(source).toContain("Esta es una orden heredada sin cliente registrado");
+    expect(source).not.toContain('Registrar Cliente {order.client_name || "sin nombre"}');
     expect(source).toContain("onClick={() => onCreditClientRequired?.(order)}");
     expect(source).not.toContain("onCreditClientRequired?.(order);\n      if (onValidationError)");
   });
 
-  it("vincula el cliente creado sin aprobar credito automaticamente", () => {
+  it("vincula un cliente registrado sin aprobar credito automaticamente", () => {
     const source = readProjectFile("src/pages/page-quote.jsx");
 
+    expect(source).toContain("function RegisteredClientLinkModal");
+    expect(source).toContain("ClientSelect");
+    expect(source).toContain("setClientLinkOrder(order)");
+    expect(source).toContain("client_id: clientLinkSelection.id");
     expect(source).toContain("setOrders(prev => prev.map(item => item.id === linkedOrder.id ? linkedOrder : item))");
     expect(source).toContain("setSelectedOrder(linkedOrder)");
     expect(source).not.toContain("await applyCreditToOrder(linkedOrder)");
@@ -49,7 +55,8 @@ describe("registro de cliente desde credito en cotizacion", () => {
     const creditRpc = source.indexOf('rpc("mark_order_as_credit"', applyCreditStart);
     const clientGuard = source.indexOf("if (!order?.client_id)", applyCreditStart);
 
-    expect(source).toContain('notes: ""');
+    expect(source).not.toContain("setClientInitialValues");
+    expect(source).not.toContain("creditPendingOrder");
     expect(source).not.toContain("notes: order?.description");
     expect(clientGuard).toBeGreaterThan(applyCreditStart);
     expect(creditRpc).toBeGreaterThan(clientGuard);
@@ -106,6 +113,107 @@ describe("registro de cliente desde credito en cotizacion", () => {
       expect(onCreated).toHaveBeenCalledWith(existingClient, { reusedExisting: true });
     });
     expect(searchBuilder.insert).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("advierte cuando el nombre exacto ya existe y limpia la advertencia al cambiarlo", async () => {
+    const existingClient = {
+      id: "client-1",
+      name: "Cliente Ámbar",
+      phone: "809-555-1234",
+    };
+    const searchBuilder = {
+      select: vi.fn(() => searchBuilder),
+      order: vi.fn(() => searchBuilder),
+      limit: vi.fn(() => searchBuilder),
+      or: vi.fn()
+        .mockResolvedValueOnce({ data: [existingClient], error: null })
+        .mockResolvedValueOnce({ data: [], error: null }),
+    };
+    const supabase = {
+      from: vi.fn(() => searchBuilder),
+    };
+
+    render(
+      <CreateClientModal
+        open
+        onClose={vi.fn()}
+        onCreated={vi.fn()}
+        supabase={supabase}
+        userId="user-1"
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Nombre del cliente"), { target: { value: "cliente ambar" } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ya existe un cliente con este nombre: Cliente Ámbar - 809-555-1234/i)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Nombre del cliente"), { target: { value: "Cliente Nuevo" } });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Ya existe un cliente con este nombre/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it("permite guardar un cliente con nombre repetido cuando el telefono es nuevo", async () => {
+    const existingClient = {
+      id: "client-1",
+      name: "Cliente Repetido",
+      phone: "809-555-1234",
+    };
+    const createdClient = {
+      id: "client-2",
+      name: "Cliente Repetido",
+      phone: "829-555-9999",
+    };
+    const insertBuilder = {
+      select: vi.fn(() => insertBuilder),
+      single: vi.fn(async () => ({ data: createdClient, error: null })),
+    };
+    const searchBuilder = {
+      select: vi.fn(() => searchBuilder),
+      order: vi.fn(() => searchBuilder),
+      limit: vi.fn(() => searchBuilder),
+      or: vi.fn()
+        .mockResolvedValueOnce({ data: [existingClient], error: null })
+        .mockResolvedValueOnce({ data: [], error: null })
+        .mockResolvedValueOnce({ data: [], error: null }),
+      insert: vi.fn(() => insertBuilder),
+    };
+    const supabase = {
+      from: vi.fn(() => searchBuilder),
+    };
+    const onCreated = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <CreateClientModal
+        open
+        onClose={onClose}
+        onCreated={onCreated}
+        supabase={supabase}
+        userId="user-1"
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Nombre del cliente"), { target: { value: "Cliente Repetido" } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ya existe un cliente con este nombre/i)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("809-555-1234"), { target: { value: "8295559999" } });
+    fireEvent.click(screen.getByRole("button", { name: "Agregar cliente" }));
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalledWith(createdClient, { reusedExisting: false });
+    });
+    expect(searchBuilder.insert).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Cliente Repetido",
+      phone: "829-555-9999",
+    }));
     expect(onClose).toHaveBeenCalled();
   });
 });

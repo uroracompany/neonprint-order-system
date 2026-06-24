@@ -48,6 +48,25 @@ describe("flujo de produccion en caja", () => {
     expect(modal).toContain("Todos los archivos deben tener tipo de produccion antes de enviar.");
   });
 
+  it("rehidrata archivos de produccion despues de credito y antes de abrir el modal", () => {
+    const quote = readProjectFile("src/pages/page-quote.jsx");
+    const applyCreditStart = quote.indexOf("const applyCreditToOrder = async");
+    const applyCreditEnd = quote.indexOf("const openCreditClientRegistration", applyCreditStart);
+    const applyCredit = quote.slice(applyCreditStart, applyCreditEnd);
+    const openModalStart = quote.indexOf("const handleOpenProductionModal = async");
+    const openModalEnd = quote.indexOf("const handleConfirmSendToProduction", openModalStart);
+    const openModal = quote.slice(openModalStart, openModalEnd);
+
+    expect(quote).toContain("const fetchOrderWithProductionFiles = useCallback(async (orderId) => {");
+    expect(quote).toContain('.select("*, order_production_files(*)")');
+    expect(quote).toContain("const mergeOrderWithProductionFiles = (baseOrder, nextOrder) => {");
+    expect(applyCredit).toContain('rpc("mark_order_as_credit"');
+    expect(applyCredit).toContain("const hydratedOrder = await fetchOrderWithProductionFiles(updatedOrder.id);");
+    expect(applyCredit).toContain("mergeOrderWithProductionFiles(order, hydratedOrder || updatedOrder)");
+    expect(openModal).toContain("const hydratedOrder = await fetchOrderWithProductionFiles(order?.id);");
+    expect(openModal).toContain("setForwardToProductionOrder(nextOrder)");
+  });
+
   it("define el envio a produccion desde areas participantes y rechaza areas extra", () => {
     const migration = readLatestMigration("_dynamic_production_participating_areas.sql");
     const fnStart = migration.indexOf("create or replace function public.send_order_to_production");

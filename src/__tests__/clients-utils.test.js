@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   NO_CLIENT_FILTER_VALUE,
   clientMatchesQuery,
-  getManualClientEditFields,
   getSelectedClientOrderFields,
   normalizeClientPhone,
   orderMatchesClientFilter,
@@ -45,10 +44,9 @@ describe("client utilities", () => {
     });
   });
 
-  it("limpia client_id cuando se edita manualmente un campo de cliente", () => {
-    expect(getManualClientEditFields("client_name", "Cliente manual")).toEqual({
+  it("limpia solo client_id cuando se quita el cliente seleccionado", () => {
+    expect(getSelectedClientOrderFields(null, "client_contact")).toEqual({
       client_id: null,
-      client_name: "Cliente manual",
     });
   });
 });
