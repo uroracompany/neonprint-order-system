@@ -11,7 +11,7 @@ import {
   canArchiveOrder,
   archiveOrder,
 } from "../utils/archive";
-import { ORDER_STATUS, PRODUCTION_AREAS, isOrderStatus, isOrderStatusIn, ARCHIVE_MODULES } from "../utils/constants";
+import { ORDER_STATUS, PRODUCTION_AREAS, isOrderStatus, isOrderStatusIn, ARCHIVE_MODULES, getFileNameFromUrl } from "../utils/constants";
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
@@ -21,7 +21,7 @@ import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
 import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
-import { getReferenceImages } from "../utils/orderAssets";
+import { getOrderFiles, getPreviewImage, getReferenceImages } from "../utils/orderAssets";
 import { buildProductionFileRows } from "../utils/production";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
@@ -91,19 +91,9 @@ function ReturnedBadge({ compact = false }) {
 
 
 
-const getFilesCountFromDB = (order) => {
-  if (!order?.order_file_url) return 0;
-  try {
-    const urls = JSON.parse(order.order_file_url);
-    return Array.isArray(urls) ? urls.length : 1;
-  } catch {
-    return 1;
-  }
-};
-
 const hasFiles = (order, orderFiles) => {
   const storageFiles = orderFiles?.[order?.id]?.length || 0;
-  const dbFiles = getFilesCountFromDB(order);
+  const dbFiles = getOrderFiles(order).length;
   return storageFiles > 0 || dbFiles > 0;
 };
 
@@ -149,6 +139,13 @@ const buildDesignerAssetPath = (orderId, folder, file, prefix = "") => {
 
 const DESIGNER_FILES_BUCKET = "order-docs";
 const DESIGNER_PREVIEW_BUCKET = "order-previews";
+
+const getDesignerFilesFromOrder = (order) => (
+  getOrderFiles(order).map((url) => ({
+    name: getFileNameFromUrl(url),
+    url,
+  }))
+);
 
 const CARD_ACCENTS = [
   { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
@@ -1103,45 +1100,18 @@ export default function PageDesigner() {
 
   const shouldEnableOrdersScroll = filteredOrders.length > 7;
 
-  const fetchOrderFiles = async (orderId) => {
-    try {
-      const { data, error } = await supabase.storage
-        .from("order-docs")
-        .list(`orders/${orderId}/files/`);
-
-      if (!error && data) {
-        const files = data.map(f => ({
-          name: f.name,
-          url: supabase.storage.from("order-docs").getPublicUrl(`orders/${orderId}/files/${f.name}`).data.publicUrl
-        }));
-        setOrderFiles(prev => ({ ...prev, [orderId]: files }));
-      }
-    } catch (err) {
-      console.error("Error fetching files:", err);
-    }
-  };
-
-  const fetchOrderPreview = async (orderId) => {
-    try {
-      const { data, error } = await supabase.storage
-        .from("order-previews")
-        .list(`orders/${orderId}/preview/`);
-
-      if (!error && data && data.length > 0) {
-        const latest = data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-        const url = supabase.storage.from("order-previews").getPublicUrl(`orders/${orderId}/preview/${latest.name}`).data.publicUrl;
-        setOrderPreviews(prev => ({ ...prev, [orderId]: url }));
-      }
-    } catch (err) {
-      console.error("Error fetching preview:", err);
-    }
-  };
-
   useEffect(() => {
+    const nextFiles = {};
+    const nextPreviews = {};
+
     orders.forEach(order => {
-      fetchOrderFiles(order.id);
-      fetchOrderPreview(order.id);
+      nextFiles[order.id] = getDesignerFilesFromOrder(order);
+      const preview = getPreviewImage(order);
+      if (preview) nextPreviews[order.id] = preview;
     });
+
+    setOrderFiles(nextFiles);
+    setOrderPreviews(nextPreviews);
   }, [orders]);
 
   const refreshOrderFromDB = async (orderId) => {
@@ -1592,7 +1562,6 @@ export default function PageDesigner() {
         quotationSending={quotationSending}
         onRefresh={() => {
           if (selectedOrder) {
-            fetchOrderFiles(selectedOrder.id);
             refreshOrderFromDB(selectedOrder.id);
           }
         }}

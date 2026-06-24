@@ -6,6 +6,43 @@ La implementacion base ya quedo preparada en el codigo, pero R2 NO queda activo
 hasta completar estos pasos externos.
 
 
+0. Estado actual
+----------------
+
+Codigo local preparado:
+
+- Gateway server-side para decidir Supabase vs R2.
+- Uploads grandes de order-docs enviados a R2 cuando STORAGE_PROVIDER="hybrid".
+- URLs internas persistidas como r2://bucket/key, no como URLs firmadas temporales.
+- Descarga de R2 mediante URL firmada generada por el servidor.
+- Borrado seguro de archivos Supabase + R2 desde el endpoint administrativo.
+- Modulo Disenador ajustado para leer archivos desde order_file_url y preview_image,
+  sin depender de listar solamente Supabase Storage.
+- Migracion formal agregada:
+  supabase/migrations/20260624050859_activate_r2_storage_gateway.sql
+- Pruebas locales ejecutadas correctamente:
+  npm test, npm run lint, npm run build.
+
+Bloqueo actual:
+
+- El cliente aun no ha podido invitar al desarrollador a Cloudflare.
+- Se necesita acceso a la cuenta Cloudflare del cliente, idealmente como
+  Superadministrador temporal o Administrador si permite gestionar R2.
+- Sin ese acceso no se pueden configurar CORS, lifecycle ni crear/verificar
+  credenciales R2.
+- Faltan todavia:
+  R2_ACCESS_KEY_ID
+  R2_SECRET_ACCESS_KEY
+
+Recomendacion de acceso:
+
+- No usar correo/contrasena del cliente.
+- El cliente debe invitar al desarrollador como miembro de Cloudflare.
+- Usar Superadministrador solo temporalmente si Administrador no permite crear
+  tokens R2 o configurar buckets.
+- Al terminar, bajar permisos a Administrador o revocar acceso.
+
+
 1. Crear buckets en Cloudflare R2
 ---------------------------------
 
@@ -32,6 +69,11 @@ Guardar estos valores:
 - R2_ACCESS_KEY_ID
 - R2_SECRET_ACCESS_KEY
 
+Cuenta ya identificada:
+
+- R2_ACCOUNT_ID="ad020a03ba5e769d8340331e3640c2f7"
+- API S3="https://ad020a03ba5e769d8340331e3640c2f7.r2.cloudflarestorage.com"
+
 Importante:
 
 - Estas claves son solo del servidor.
@@ -46,17 +88,46 @@ Agregar estas variables en el entorno del servidor:
 
 STORAGE_PROVIDER="hybrid"
 R2_UPLOAD_THRESHOLD_MB="25"
-R2_ACCOUNT_ID="valor_de_cloudflare"
+R2_ACCOUNT_ID="ad020a03ba5e769d8340331e3640c2f7"
 R2_ACCESS_KEY_ID="valor_de_cloudflare"
 R2_SECRET_ACCESS_KEY="valor_de_cloudflare"
 R2_BUCKET_DEV="neonprint-order-files-dev"
 R2_BUCKET_PROD="neonprint-order-files-prod"
+R2_BUCKET="neonprint-order-files-dev"
 
 Notas:
 
 - Mientras STORAGE_PROVIDER sea "supabase", el sistema sigue usando Supabase Storage.
 - Con STORAGE_PROVIDER="hybrid", los archivos grandes de order-docs pasan a R2.
 - El umbral inicial recomendado es 25 MB.
+- Usar R2_BUCKET para elegir el bucket activo del entorno.
+- En pruebas usar R2_BUCKET="neonprint-order-files-dev".
+- En produccion, despues de validar, usar R2_BUCKET="neonprint-order-files-prod".
+- R2_ACCESS_KEY_ID y R2_SECRET_ACCESS_KEY no deben guardarse en git.
+
+
+3.1. Configurar CORS en Cloudflare R2
+-------------------------------------
+
+Como el navegador sube directamente a URLs firmadas de R2, cada bucket debe
+permitir CORS para el dominio local y el dominio real de la app.
+
+Plantilla recomendada:
+
+[
+  {
+    "AllowedOrigins": [
+      "http://localhost:5173",
+      "https://DOMINIO-DE-PRODUCCION"
+    ],
+    "AllowedMethods": ["GET", "PUT", "HEAD"],
+    "AllowedHeaders": ["content-type", "x-amz-*"],
+    "ExposeHeaders": ["etag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+
+Mantener los buckets privados. No activar public bucket access.
 
 
 4. Aplicar migracion en Supabase
@@ -70,7 +141,7 @@ integrado con las ordenes, la auditoria ni la limpieza automatica.
 
 Aplicar la migracion:
 
-supabase/20260613_order_files_storage_gateway.sql
+supabase/migrations/20260624050859_activate_r2_storage_gateway.sql
 
 Esta migracion crea:
 
@@ -82,6 +153,8 @@ Esta migracion crea:
 
 Nota:
 
+- El archivo historico supabase/20260613_order_files_storage_gateway.sql queda como
+  referencia, pero la migracion formal nueva es la ruta que debe aplicarse.
 - Si R2 no se va a usar todavia, esta migracion puede esperar.
 - Cuando se decida activar R2, debe aplicarse antes de cambiar
   STORAGE_PROVIDER a "hybrid".

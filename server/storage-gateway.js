@@ -27,6 +27,8 @@ const PRODUCER_AREA_BY_ROLE = {
   ploteo_producer: "ploteo",
 };
 
+const PREORDER_R2_ROLES = new Set(["admin", "seller", "designer"]);
+
 const ORDER_FILE_BUCKET_LIMITS = {
   "order-docs": 200 * MB,
   "order-previews": 10 * MB,
@@ -106,6 +108,11 @@ const getOrderIdFromPath = (path = "") => {
   return parts[0] === "orders" ? parts[1] : parts[0];
 };
 
+const isOrderScopedPath = ({ orderId, path }) => (
+  Boolean(orderId) &&
+  String(path || "").split("/").filter(Boolean).slice(0, 2).join("/") === `orders/${orderId}`
+);
+
 const inferCategory = ({ bucket, path, category }) => {
   if (category) return category;
   if (bucket === "payment-invoice") return "payment";
@@ -114,7 +121,7 @@ const inferCategory = ({ bucket, path, category }) => {
   return "design";
 };
 
-const getR2Config = (env = process.env) => {
+export const getR2Config = (env = process.env) => {
   const accountId = getEnvValue(env, "R2_ACCOUNT_ID");
   const accessKeyId = getEnvValue(env, "R2_ACCESS_KEY_ID");
   const secretAccessKey = getEnvValue(env, "R2_SECRET_ACCESS_KEY");
@@ -139,7 +146,7 @@ const getR2Config = (env = process.env) => {
   };
 };
 
-const shouldUseR2 = ({ bucket, sizeBytes, env = process.env }) => {
+export const shouldUseR2 = ({ bucket, sizeBytes, env = process.env }) => {
   const provider = String(getEnvValue(env, "STORAGE_PROVIDER") || "supabase").toLowerCase();
   if (provider === "supabase") return false;
   if (bucket !== "order-docs") return false;
@@ -185,17 +192,18 @@ export const parseR2Url = (url = "") => {
 
 export const buildR2Url = ({ bucket, key }) => `${R2_SCHEME}${bucket}/${encodeURI(key)}`;
 
-const presignR2Url = ({ method, key, expiresIn = DEFAULT_SIGNED_URL_TTL, env = process.env }) => {
+const presignR2Url = ({ method, key, bucket, expiresIn = DEFAULT_SIGNED_URL_TTL, env = process.env }) => {
   const r2 = getR2Config(env);
   if (!r2.configured) {
     throw new Error("Cloudflare R2 no esta configurado en el servidor.");
   }
 
+  const targetBucket = bucket || r2.bucket;
   const { amzDate, dateStamp } = formatAmzDate();
   const host = `${r2.accountId}.r2.cloudflarestorage.com`;
   const credentialScope = `${dateStamp}/${r2.region}/${r2.service}/aws4_request`;
   const credential = `${r2.accessKeyId}/${credentialScope}`;
-  const canonicalUri = `/${normalizePath(r2.bucket)}/${normalizePath(key)}`;
+  const canonicalUri = `/${normalizePath(targetBucket)}/${normalizePath(key)}`;
   const params = {
     "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
     "X-Amz-Credential": credential,
@@ -230,15 +238,16 @@ const presignR2Url = ({ method, key, expiresIn = DEFAULT_SIGNED_URL_TTL, env = p
   return `${r2.endpoint}${canonicalUri}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
 };
 
-const signedR2Fetch = async ({ method, key, env = process.env }) => {
+const signedR2Fetch = async ({ method, key, bucket, env = process.env }) => {
   const r2 = getR2Config(env);
   if (!r2.configured) {
     throw new Error("Cloudflare R2 no esta configurado en el servidor.");
   }
 
+  const targetBucket = bucket || r2.bucket;
   const { amzDate, dateStamp } = formatAmzDate();
   const host = `${r2.accountId}.r2.cloudflarestorage.com`;
-  const canonicalUri = `/${normalizePath(r2.bucket)}/${normalizePath(key)}`;
+  const canonicalUri = `/${normalizePath(targetBucket)}/${normalizePath(key)}`;
   const payloadHash = sha256Hex("");
   const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
   const canonicalHeaders = [
@@ -478,35 +487,46 @@ const removeR2Targets = async ({ targets, env = process.env }) => {
   targets.forEach((target) => {
     const key = target?.object_key || target?.key;
     if (!key) return;
-    deduped.set(`${target?.bucket || r2.bucket}:${key}`, key);
+    const bucket = target?.bucket || r2.bucket;
+    deduped.set(`${bucket}:${key}`, { bucket, key });
   });
 
   if (!deduped.size) return { removed, errors };
   if (!r2.configured) {
     return {
       removed,
-      errors: [...deduped.values()].map((key) => ({
+      errors: [...deduped.values()].map(({ bucket, key }) => ({
         provider: "r2",
-        bucket: targetBucketName(targets, r2.bucket),
+        bucket,
         key,
         message: "R2 no esta configurado.",
       })),
     };
   }
 
-  for (const key of deduped.values()) {
+  for (const { bucket, key } of deduped.values()) {
     try {
-      await signedR2Fetch({ method: "DELETE", key, env });
+      await signedR2Fetch({ method: "DELETE", bucket, key, env });
       removed += 1;
     } catch (error) {
-      errors.push({ provider: "r2", bucket: r2.bucket, key, message: error?.message || "No se pudo borrar en R2." });
+      errors.push({ provider: "r2", bucket, key, message: error?.message || "No se pudo borrar en R2." });
     }
   }
 
   return { removed, errors };
 };
 
-const targetBucketName = (targets, fallback) => targets.find((target) => target?.bucket)?.bucket || fallback || "";
+const buildR2UploadResponse = ({ bucket, key, contentType, fileRecord = null, shouldRegister = true, env = process.env }) => ({
+  provider: "r2",
+  shouldRegister,
+  upload: {
+    method: "PUT",
+    url: presignR2Url({ method: "PUT", bucket, key, expiresIn: DEFAULT_SIGNED_URL_TTL, env }),
+    headers: contentType ? { "Content-Type": contentType } : {},
+  },
+  storedUrl: buildR2Url({ bucket, key }),
+  file: fileRecord,
+});
 
 const isPrivateAddress = (address = "") => {
   const ipVersion = isIP(address);
@@ -638,9 +658,22 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
 
   const access = await loadOrderForAccess({ supabaseAdmin, orderId, userId: user.id, role: profile.role });
   if (access.error) {
-    // Some existing create-order flows upload files before the order row exists.
-    // Keep those legacy flows on Supabase until the order creation flow is made transactional.
     if (access.error.status === 404) {
+      if (
+        shouldUseR2({ bucket, sizeBytes, env }) &&
+        PREORDER_R2_ROLES.has(profile.role) &&
+        isOrderScopedPath({ orderId, path })
+      ) {
+        const r2 = getR2Config(env);
+        return jsonResponse(200, buildR2UploadResponse({
+          bucket: r2.bucket,
+          key: path,
+          contentType,
+          shouldRegister: false,
+          env,
+        }));
+      }
+
       return jsonResponse(200, {
         provider: "supabase",
         bucket,
@@ -662,8 +695,6 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
 
   const r2 = getR2Config(env);
   const objectKey = `orders/${orderId}/${category}/${Date.now()}-${fileName}`;
-  const uploadUrl = presignR2Url({ method: "PUT", key: objectKey, expiresIn: DEFAULT_SIGNED_URL_TTL, env });
-  const storedUrl = buildR2Url({ bucket: r2.bucket, key: objectKey });
 
   const { data: fileRecord, error: insertError } = await supabaseAdmin
     .from("order_files")
@@ -686,16 +717,13 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
     return jsonResponse(500, { error: `No se pudo registrar el archivo: ${insertError.message}` });
   }
 
-  return jsonResponse(200, {
-    provider: "r2",
-    upload: {
-      method: "PUT",
-      url: uploadUrl,
-      headers: contentType ? { "Content-Type": contentType } : {},
-    },
-    storedUrl,
-    file: fileRecord,
-  });
+  return jsonResponse(200, buildR2UploadResponse({
+    bucket: r2.bucket,
+    key: objectKey,
+    contentType,
+    fileRecord,
+    env,
+  }));
 }
 
 export async function handleCompleteFileUpload(payload = {}, env = process.env) {
@@ -713,16 +741,17 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
   if (provider === "r2") {
     const fileId = String(payload?.fileId || payload?.file?.id || "").trim();
     if (!fileId) return jsonResponse(400, { error: "Falta fileId." });
+    const nextStatus = payload?.status === "failed" ? "failed" : "uploaded";
 
     const { data, error } = await supabaseAdmin
       .from("order_files")
-      .update({ status: "uploaded", updated_at: new Date().toISOString() })
+      .update({ status: nextStatus, updated_at: new Date().toISOString() })
       .eq("id", fileId)
       .eq("order_id", orderId)
       .select("*")
       .single();
 
-    if (error) return jsonResponse(500, { error: `No se pudo completar el archivo: ${error.message}` });
+    if (error) return jsonResponse(500, { error: `No se pudo actualizar el archivo: ${error.message}` });
     return jsonResponse(200, { file: data, storedUrl: buildR2Url({ bucket: data.bucket, key: data.object_key }) });
   }
 
@@ -793,15 +822,17 @@ export async function handleFileDownloadUrl(payload = {}, env = process.env) {
     .maybeSingle();
 
   if (error) return jsonResponse(500, { error: `No se pudo consultar el archivo: ${error.message}` });
-  if (!fileRecord) return jsonResponse(404, { error: "No se encontro el archivo." });
+  const orderId = fileRecord?.order_id || getOrderIdFromPath(r2Ref.key);
+  if (!orderId) return jsonResponse(404, { error: "No se encontro el archivo." });
 
-  const access = await loadOrderForAccess({ supabaseAdmin, orderId: fileRecord.order_id, userId: user.id, role: profile.role });
+  const access = await loadOrderForAccess({ supabaseAdmin, orderId, userId: user.id, role: profile.role });
   if (access.error) return access.error;
 
   return jsonResponse(200, {
     url: presignR2Url({
       method: "GET",
-      key: fileRecord.object_key,
+      bucket: fileRecord?.bucket || r2Ref.bucket,
+      key: fileRecord?.object_key || r2Ref.key,
       expiresIn: Number(payload?.expiresIn) || DEFAULT_SIGNED_URL_TTL,
       env,
     }),

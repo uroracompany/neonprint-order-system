@@ -35,9 +35,10 @@ SUPABASE_SERVICE_ROLE_KEY="your_service_role_key"
 ORDER_PURGE_CRON_SECRET="optional_long_random_token"
 STORAGE_PROVIDER="supabase"
 R2_UPLOAD_THRESHOLD_MB="25"
-R2_ACCOUNT_ID=""
+R2_ACCOUNT_ID="ad020a03ba5e769d8340331e3640c2f7"
 R2_ACCESS_KEY_ID=""
 R2_SECRET_ACCESS_KEY=""
+R2_BUCKET="neonprint-order-files-dev"
 R2_BUCKET_DEV="neonprint-order-files-dev"
 R2_BUCKET_PROD="neonprint-order-files-prod"
 ```
@@ -49,6 +50,7 @@ Reglas importantes:
 - `ORDER_PURGE_CRON_SECRET` es opcional si el cron invoca la Edge Function con `SUPABASE_SERVICE_ROLE_KEY` como Bearer token.
 - La autorizacion debe venir de `public.profiles.role`, no de `user_metadata`.
 - `STORAGE_PROVIDER=supabase` conserva el flujo actual; `hybrid` envia archivos grandes de `order-docs` a Cloudflare R2 si las credenciales R2 estan configuradas.
+- `R2_BUCKET` define el bucket activo del entorno. Usar `neonprint-order-files-dev` para validacion y cambiar a `neonprint-order-files-prod` solo despues de probar el flujo completo.
 - Las claves R2 son solo server-side. Nunca deben usar prefijo `VITE_`.
 
 ## Scripts
@@ -125,6 +127,8 @@ Contrato de seguridad:
 - `order-previews`: previews asociados a ordenes.
 - `payment-invoice`: comprobantes de pago.
 - Cloudflare R2 opcional para archivos grandes de `order-docs` cuando `STORAGE_PROVIDER=hybrid` o `r2`.
+
+Estado R2: el codigo local y la migracion `supabase/migrations/20260624050859_activate_r2_storage_gateway.sql` estan preparados. La activacion remota queda pendiente hasta tener invitacion/permisos en la cuenta Cloudflare del cliente, configurar CORS/lifecycle y cargar `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` como variables server-side.
 
 La politica esperada para `payment-invoice` es privada con signed URLs. La migracion `supabase/20260526_harden_tracking_and_payment_assets.sql` actualiza el bucket y agrega politicas para lectura, subida, reemplazo y borrado segun rol/departamento.
 

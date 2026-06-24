@@ -100,6 +100,21 @@ const registerCompletedUpload = async ({ provider, bucket, path, file, storedUrl
   return result;
 };
 
+const markR2UploadFailed = async ({ orderId, fileId }) => {
+  if (!orderId || !fileId) return;
+
+  try {
+    await adminApiFetch("/api/files-complete-upload", {
+      provider: "r2",
+      orderId,
+      fileId,
+      status: "failed",
+    });
+  } catch (error) {
+    console.warn("No se pudo marcar el archivo R2 como fallido:", error);
+  }
+};
+
 export const uploadOrderAsset = async ({ bucket, path, file }) => {
   if (!bucket || !path || !file) {
     throw new Error("Faltan parametros requeridos: bucket, path, file");
@@ -132,14 +147,24 @@ export const uploadOrderAsset = async ({ bucket, path, file }) => {
       }
 
       if (response.ok && result?.provider === "r2") {
-        await putFileToSignedUrl({ upload: result.upload, file });
+        try {
+          await putFileToSignedUrl({ upload: result.upload, file });
+        } catch (uploadError) {
+          await markR2UploadFailed({ orderId, fileId: result.file?.id });
+          throw uploadError;
+        }
+
+        if (result.shouldRegister === false || !result.file?.id) {
+          return result.storedUrl || null;
+        }
+
         const completed = await registerCompletedUpload({
           provider: "r2",
-          bucket: result.file?.bucket || bucket,
-          path: result.file?.object_key || path,
+          bucket: result.file.bucket || bucket,
+          path: result.file.object_key || path,
           file,
           storedUrl: result.storedUrl,
-          fileId: result.file?.id,
+          fileId: result.file.id,
         });
 
         return completed?.storedUrl || result.storedUrl || null;
