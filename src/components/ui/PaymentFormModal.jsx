@@ -128,29 +128,31 @@ export default function PaymentFormModal({
 
   return (
     <div className="pa-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="pa-modal compact pfm-modal">
+      <div className="pa-modal compact pfm-modal" role="dialog" aria-modal="true" aria-labelledby="pfm-title">
         <div className="pa-modal-head">
           <div className="pa-modal-copy">
             <span className="pa-modal-kicker">Registro de pago</span>
-            <h3>Gestionar pago</h3>
+            <h3 id="pfm-title">Gestionar pago</h3>
           </div>
           <button className="pa-icon-btn pa-modal-close" onClick={onClose} aria-label="Cerrar">
             <Icons.Close />
           </button>
         </div>
         <div className="pa-modal-body">
-          <div className="pfm-order-info">
-            <span className="pfm-client-name">{order.client_name}</span>
-            {order.description && (
-              <span className="pfm-desc">
-                {order.description.length > 60 ? `${order.description.slice(0, 60)}…` : order.description}
-              </span>
-            )}
-          </div>
-
-          <div className="pfm-current-badge">
-            <span className="pfm-label">Estado actual</span>
-            <PaymentBadge status={order.payment_status} className="ps-badge" bordered />
+          <div className="pfm-order-summary">
+            <span className="pfm-summary-icon"><Icons.Receipt /></span>
+            <div className="pfm-order-info">
+              <span className="pfm-client-name">{order.client_name}</span>
+              {order.description && (
+                <span className="pfm-desc">
+                  {order.description.length > 60 ? `${order.description.slice(0, 60)}…` : order.description}
+                </span>
+              )}
+            </div>
+            <div className="pfm-current-badge">
+              <span className="pfm-label">Estado actual</span>
+              <PaymentBadge status={order.payment_status} className="ps-badge" bordered />
+            </div>
           </div>
 
           <div className="pfm-field">

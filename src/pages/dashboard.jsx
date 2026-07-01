@@ -5,7 +5,7 @@ import Sidebar from "../components/Sidebar";
 import CreateOrderModal from "../components/orders/CreateOrderModal";
 import SharedEditOrderModal from "../components/orders/EditOrderModal";
 import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
-import AdminAdvancedOrderModal from "../components/orders/AdminAdvancedOrderModal";
+import AdminAdvancedSettings from "../components/orders/AdminAdvancedSettings";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import PaymentFormModal from "../components/ui/PaymentFormModal";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
@@ -1496,7 +1496,13 @@ export default function Dashboard() {
   const [roleFilter, setRoleFilter] = useState("all");
   // userViewMode eliminado: solo vista tabla
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [advancedOrder, setAdvancedOrder] = useState(null);
+  const [settingsView, setSettingsView] = useState("list");
+  const [settingsOrder, setSettingsOrder] = useState(null);
+  useEffect(() => {
+    if (settingsView === "detail" && !settingsOrder) {
+      setSettingsView("list");
+    }
+  }, [settingsOrder, settingsView]);
   const [advancedActionLoading, setAdvancedActionLoading] = useState(false);
   const [advancedProduction, setAdvancedProduction] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -1671,7 +1677,7 @@ export default function Dashboard() {
         orders: result?.orders,
         setOrders,
         setSelectedOrder,
-        openOrderSetters: [setAdvancedOrder, setPaymentModalOrder],
+        openOrderSetters: [setSettingsOrder, setPaymentModalOrder],
         openOrderContainers: [{ setter: setAdvancedProduction }],
       });
       if (!silent) setLoadingOrders(false);
@@ -2321,9 +2327,9 @@ export default function Dashboard() {
   }, []);
 
   const handleAdvancedAction = async ({ action, targetUserId, reasonCategory, reasonDetail, expectedUpdatedAt, areaAssignments }) => {
-    if (!advancedOrder) return;
+    if (!settingsOrder) return;
     if (action === "route_production" || action === "reassign_production") {
-      const freshOrder = orders.find((item) => item.id === advancedOrder.id) || advancedOrder;
+      const freshOrder = orders.find((item) => item.id === settingsOrder.id) || settingsOrder;
       setAdvancedActionLoading(true);
       const hydratedOrder = await fetchAdvancedOrderForProduction(freshOrder);
       setAdvancedActionLoading(false);
@@ -2335,12 +2341,11 @@ export default function Dashboard() {
         action,
         areaAssignments,
       });
-      setAdvancedOrder(null);
       return;
     }
     setAdvancedActionLoading(true);
     const { data, error } = await supabase.rpc("admin_manage_order", {
-      p_order_id: advancedOrder.id,
+      p_order_id: settingsOrder.id,
       p_action: action,
       p_reason_category: reasonCategory,
       p_reason_detail: reasonDetail,
@@ -2349,8 +2354,14 @@ export default function Dashboard() {
       p_area_assignments: areaAssignments || {},
     });
     setAdvancedActionLoading(false);
-    if (error) return showFeedback("error", error.message || "No se pudo aplicar el ajuste.");
-    setAdvancedOrder(null);
+    if (error) {
+      const message = error.message || "No se pudo aplicar el ajuste.";
+      showFeedback("error", message);
+      throw new Error(message);
+    }
+    if (data?.id) {
+      setSettingsOrder((current) => current?.id === data.id ? { ...current, ...data } : current);
+    }
     await loadOrders();
     const successMsg = data?.last_admin_intervention_kind === "route_quote" ? "Orden enviada a Caja"
       : data?.last_admin_intervention_kind === "return_to_quote" ? "Orden regresada a Caja"
@@ -2363,6 +2374,7 @@ export default function Dashboard() {
       : data?.last_admin_intervention_kind === "design_assets_updated" ? "Archivos de diseño guardados"
       : "Ajuste guardado";
     showFeedback("success", `${successMsg} correctamente.`);
+    return data;
   };
 
   const handleAdvancedProductionConfirm = async (assignments) => {
@@ -2370,7 +2382,7 @@ export default function Dashboard() {
     const productionAction = advancedProduction.action || "route_production";
     const mergedAssignments = { ...(advancedProduction.areaAssignments || {}), ...assignments };
     setAdvancedActionLoading(true);
-    const { error } = await supabase.rpc("admin_manage_order", {
+    const { data, error } = await supabase.rpc("admin_manage_order", {
       p_order_id: advancedProduction.order.id,
       p_action: productionAction,
       p_reason_category: advancedProduction.reasonCategory,
@@ -2382,6 +2394,9 @@ export default function Dashboard() {
     setAdvancedActionLoading(false);
     if (error) return showFeedback("error", error.message || "No se pudo completar la operación.");
     setAdvancedProduction(null);
+    if (data?.id) {
+      setSettingsOrder((current) => current?.id === data.id ? { ...current, ...data } : current);
+    }
     await loadOrders();
     const msg = productionAction === "reassign_production" ? "Producción reasignada correctamente." : "Orden enviada a Producción correctamente.";
     showFeedback("success", msg);
@@ -3396,12 +3411,20 @@ export default function Dashboard() {
     { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
   ];
 
+  const handleAdminTabChange = (nextTab) => {
+    setActiveTab(nextTab);
+    setSettingsOrder(null);
+    setSettingsView("list");
+  };
+
+  const advancedSettingsOpen = settingsView === "detail" && Boolean(settingsOrder);
+
   // payment label is handled inside PaymentFormModal component
 
   return (
     // Apartado principal totalmente flexible
     <div className="pa-root">
-      <Sidebar isOpen={sidebarOpen} activeTab={activeTab} onTabChange={setActiveTab} role="Admin" userName={getUserDisplayName(profile)} menuItems={menuItems} onLogout={handleLogout} onCreateNew={openCreateOrder} showCreateButton />
+      <Sidebar isOpen={sidebarOpen} activeTab={activeTab} onTabChange={handleAdminTabChange} role="Admin" userName={getUserDisplayName(profile)} menuItems={menuItems} onLogout={handleLogout} onCreateNew={openCreateOrder} showCreateButton />
       <main className="pa-main">
         <header className="pa-header">
           <div className="pa-header-left">
@@ -3526,7 +3549,7 @@ export default function Dashboard() {
           </section>
         }
 
-        {activeTab === "orders" &&
+        {activeTab === "orders" && !advancedSettingsOpen &&
           <section className="pa-section">
             <div className="pa-toolbar pa-toolbar-orders">
               <div className="pa-search-box pa-toolbar-search">
@@ -3626,7 +3649,7 @@ export default function Dashboard() {
                                   <Icons.Edit />
                                 </button>
                                 {["EXTERNAL_DESING", "INTERNAL_DESING"].includes(order.order_design_type) && (
-                                  <button className="table-action-btn advanced" onClick={() => setAdvancedOrder(order)} title="Configuración avanzada">
+                                  <button className="table-action-btn advanced" onClick={() => { setSettingsOrder(order); setSettingsView("detail"); }} title="Configuración avanzada">
                                     <Icons.Settings />
                                   </button>
                                 )}
@@ -3658,6 +3681,18 @@ export default function Dashboard() {
             </div>
           </section>
         }
+
+        {activeTab === "orders" && advancedSettingsOpen && (
+          <AdminAdvancedSettings
+            order={settingsOrder}
+            profiles={profiles}
+            loading={advancedActionLoading}
+            onClose={() => { setSettingsOrder(null); setSettingsView("list"); }}
+            onRunAction={handleAdvancedAction}
+            onRefreshOrder={loadOrders}
+            currentUserId={authUser?.id}
+          />
+        )}
 
         {activeTab === "credits" && creditView === "list" && (
           <section className="pa-section">
@@ -4423,15 +4458,6 @@ export default function Dashboard() {
         onClose={() => { setAssigningOrder(null); setAssigningRole(null); }}
         onConfirm={handleAssignOrder}
         loading={assigningLoading}
-      />
-      <AdminAdvancedOrderModal
-        open={!!advancedOrder}
-        order={advancedOrder}
-        profiles={profiles}
-        loading={advancedActionLoading}
-        onClose={() => setAdvancedOrder(null)}
-        onRunAction={handleAdvancedAction}
-        currentUserId={authUser?.id}
       />
       <ProductionAssignmentModal
         open={!!advancedProduction}

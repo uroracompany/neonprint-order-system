@@ -45,10 +45,11 @@ describe("payment state integration source guards", () => {
     expect(source).not.toContain("isCompletingPartialPayment");
     expect(source).toContain("<PaymentBadge status={order.payment_status}");
     expect(source).toContain('setPaymentStatus(orderPaymentStatus || "Pending_Payment")');
-    expect(source).toContain("<option value={PAYMENT_STATUS.PENDING}>Pendiente</option>");
-    expect(source).toContain("<option value={PAYMENT_STATUS.PARTIAL}>Pago parcial</option>");
-    expect(source).toContain("<option value={PAYMENT_STATUS.CREDIT}>Pago a crédito</option>");
-    expect(source).toContain("<option value={PAYMENT_STATUS.PAID}>Pagado</option>");
+    expect(source).toContain('{ value: PAYMENT_STATUS.PENDING, label: "Pendiente" }');
+    expect(source).toContain('{ value: PAYMENT_STATUS.PARTIAL, label: "Pago parcial" }');
+    expect(source).toContain('{ value: PAYMENT_STATUS.CREDIT, label: "Pago a crédito" }');
+    expect(source).toContain('{ value: PAYMENT_STATUS.PAID, label: "Pagado" }');
+    expect(source).toContain("paymentOptions.map((opt) => <option");
   });
 
   it("muestra comprobante de pago condicional en PAID con preview y boton estilo caja", () => {

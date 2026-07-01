@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import AdminAdvancedOrderModal from "../components/orders/AdminAdvancedOrderModal";
+import AdminAdvancedSettings from "../components/orders/AdminAdvancedSettings";
+import AdminManageFilesModal from "../components/orders/AdminManageFilesModal";
 
 const { rpc, from } = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock("../../supabaseClient", () => ({ supabase: { rpc, from } }));
@@ -19,11 +20,11 @@ const sampleOrder = {
 const productionOrder = { ...sampleOrder, status: "in_Production" };
 
 const defaultProps = {
-  open: false,
   order: null,
   profiles: [],
   onClose: vi.fn(),
   onRunAction: vi.fn(),
+  onRefreshOrder: vi.fn(),
 };
 
 const mockDataSources = ({ files = [], areas = [], productionUsers = [] } = {}) => {
@@ -51,24 +52,7 @@ const mockDataSources = ({ files = [], areas = [], productionUsers = [] } = {}) 
   });
 };
 
-const renderManageFiles = async ({ files, areas = [], productionUsers = [], profiles = [], rpcHandler }) => {
-  mockDataSources({ files, areas, productionUsers });
-  rpc.mockImplementation((name, params) => {
-    if (name === "get_admin_order_actions") {
-      return Promise.resolve({
-        data: { design_type: "EXTERNAL_DESING", expected_updated_at: productionOrder.updated_at, actions: [{ key: "manage_files", label: "Gestionar archivos" }] },
-        error: null,
-      });
-    }
-    return rpcHandler?.(name, params) || Promise.resolve({ data: null, error: null });
-  });
-  const user = userEvent.setup();
-  render(<AdminAdvancedOrderModal {...defaultProps} open order={productionOrder} profiles={profiles} />);
-  await user.click(await screen.findByRole("button", { name: /Gestionar archivos/ }));
-  return user;
-};
-
-describe("AdminAdvancedOrderModal", () => {
+describe("AdminAdvancedSettings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDataSources();
@@ -76,12 +60,11 @@ describe("AdminAdvancedOrderModal", () => {
   });
 
   it("does not crash when order is null", () => {
-    expect(() => render(<AdminAdvancedOrderModal {...defaultProps} />)).not.toThrow();
-    expect(() => render(<AdminAdvancedOrderModal {...defaultProps} open />)).not.toThrow();
+    expect(() => render(<AdminAdvancedSettings {...defaultProps} />)).not.toThrow();
   });
 
   it("renders order details when order is valid", async () => {
-    render(<AdminAdvancedOrderModal {...defaultProps} open order={sampleOrder} />);
+    render(<AdminAdvancedSettings {...defaultProps} order={sampleOrder} />);
     expect(await screen.findByText("Configuración avanzada")).toBeInTheDocument();
     expect(screen.getByText(/ORD-001/)).toBeInTheDocument();
   });
@@ -94,35 +77,105 @@ describe("AdminAdvancedOrderModal", () => {
       ] },
       error: null,
     });
-    render(<AdminAdvancedOrderModal {...defaultProps} open order={productionOrder} />);
+    render(<AdminAdvancedSettings {...defaultProps} order={productionOrder} />);
     expect(await screen.findByText("Regresar a Caja")).toBeInTheDocument();
     expect(screen.getByText("Reasignar Producción")).toBeInTheDocument();
   });
 
-  it("uses only per-file actions inside manage files", async () => {
-    await renderManageFiles({
+  it("uses back navigation semantics instead of modal close controls", async () => {
+    render(<AdminAdvancedSettings {...defaultProps} order={sampleOrder} />);
+
+    expect(await screen.findByRole("button", { name: "Volver a órdenes" })).toBeInTheDocument();
+    expect(screen.getByText("Volver a órdenes")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cerrar configuración" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the settings view mounted and refreshes actions after a successful modal action", async () => {
+    rpc.mockResolvedValue({
+      data: { design_type: "EXTERNAL_DESING", expected_updated_at: sampleOrder.updated_at, actions: [
+        { key: "return_to_quote", label: "Regresar a Caja" },
+      ] },
+      error: null,
+    });
+    const onRunAction = vi.fn().mockResolvedValue({ ...sampleOrder, status: "Pending" });
+    const user = userEvent.setup();
+    render(<AdminAdvancedSettings {...defaultProps} order={sampleOrder} onRunAction={onRunAction} />);
+
+    await user.click(await screen.findByRole("button", { name: /Regresar a Caja/i }));
+    await user.type(screen.getByRole("textbox"), "Corrección operativa de prueba");
+    await user.click(screen.getByRole("button", { name: "Confirmar cambio" }));
+
+    await waitFor(() => expect(onRunAction).toHaveBeenCalledOnce());
+    expect(screen.getByText("Configuración avanzada")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(rpc.mock.calls.filter(([name]) => name === "get_admin_order_actions").length).toBeGreaterThan(1);
+  });
+
+  it("keeps an action modal open when the action fails", async () => {
+    rpc.mockResolvedValue({
+      data: { design_type: "EXTERNAL_DESING", expected_updated_at: sampleOrder.updated_at, actions: [
+        { key: "return_to_quote", label: "Regresar a Caja" },
+      ] },
+      error: null,
+    });
+    const onRunAction = vi.fn().mockRejectedValue(new Error("La orden cambió mientras la editabas."));
+    const user = userEvent.setup();
+    render(<AdminAdvancedSettings {...defaultProps} order={sampleOrder} onRunAction={onRunAction} />);
+
+    await user.click(await screen.findByRole("button", { name: /Regresar a Caja/i }));
+    await user.type(screen.getByRole("textbox"), "Corrección operativa de prueba");
+    await user.click(screen.getByRole("button", { name: "Confirmar cambio" }));
+
+    expect(await screen.findByText("La orden cambió mientras la editabas.")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("reloads available actions when the order timestamp changes", async () => {
+    const { rerender } = render(<AdminAdvancedSettings {...defaultProps} order={sampleOrder} />);
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+
+    rerender(<AdminAdvancedSettings {...defaultProps} order={{ ...sampleOrder, updated_at: "order-server-2" }} />);
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("AdminManageFilesModal", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDataSources();
+    rpc.mockResolvedValue({ data: null, error: null });
+  });
+
+  it("does not render manage_files reasons or confirm button", async () => {
+    mockDataSources({
       files: [{ id: "file-1", public_label: "Frente", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "file-server-1" }],
     });
+    render(<AdminManageFilesModal open order={productionOrder} profiles={[]} onClose={vi.fn()} />);
 
-    expect(screen.getByText("Frente")).toBeInTheDocument();
+    expect(await screen.findByText("Frente")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirmar cambio" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Detalle")).not.toBeInTheDocument();
   });
 
   it("requires Delivery for the last file and reuses the server timestamp", async () => {
     const file = { id: "file-1", public_label: "Frente", status: "in_termination", production_area_code: "digital", assigned_to: "producer-1", updated_at: "file-server-1" };
-    const user = await renderManageFiles({
+    mockDataSources({
       files: [file],
       profiles: [{ id: "delivery-1", name: "Delivery Uno", role: "delivery", employment_status: true }],
-      rpcHandler: (name, params) => {
-        if (name !== "admin_force_file_status") return Promise.resolve({ data: null, error: null });
-        return Promise.resolve({
-          data: { ...file, status: params.p_new_status, updated_at: params.p_new_status === "completed" ? "file-server-2" : "file-server-3" },
-          error: null,
-        });
-      },
+    });
+    rpc.mockImplementation((name, params) => {
+      if (name !== "admin_force_file_status") return Promise.resolve({ data: null, error: null });
+      return Promise.resolve({
+        data: { ...file, status: params.p_new_status, updated_at: params.p_new_status === "completed" ? "file-server-2" : "file-server-3" },
+        error: null,
+      });
     });
 
+    const user = userEvent.setup();
+    render(<AdminManageFilesModal open order={productionOrder} profiles={[{ id: "delivery-1", name: "Delivery Uno", role: "delivery", employment_status: true }]} onClose={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByLabelText("Cambiar estado")).toBeInTheDocument());
     await user.selectOptions(screen.getByLabelText("Cambiar estado"), "completed");
     const saveButton = screen.getByRole("button", { name: "Guardar estado" });
     expect(saveButton).toBeDisabled();
@@ -150,21 +203,25 @@ describe("AdminAdvancedOrderModal", () => {
 
   it("uses the file returned by the area reassignment RPC", async () => {
     const file = { id: "file-1", public_label: "Frente", status: "pending", production_area_code: "digital", assigned_to: "producer-1", updated_at: "file-server-1" };
-    const user = await renderManageFiles({
+    mockDataSources({
       files: [file],
       areas: [
         { code: "digital", label: "Digital", producer_role: "production" },
         { code: "dtf", label: "DTF", producer_role: "dtf" },
       ],
       productionUsers: [{ id: "producer-2", name: "Productor DTF", role: "dtf", employment_status: true }],
-      rpcHandler: (name) => name === "admin_reassign_file_production_area"
-        ? Promise.resolve({ data: { ...file, production_area_code: "dtf", assigned_to: "producer-2", updated_at: "file-server-2" }, error: null })
-        : Promise.resolve({ data: null, error: null }),
     });
+    rpc.mockImplementation((name) => name === "admin_reassign_file_production_area"
+      ? Promise.resolve({ data: { ...file, production_area_code: "dtf", assigned_to: "producer-2", updated_at: "file-server-2" }, error: null })
+      : Promise.resolve({ data: null, error: null }));
 
-    await user.selectOptions(screen.getByLabelText("Nueva área"), "dtf");
+    const user = userEvent.setup();
+    render(<AdminManageFilesModal open order={productionOrder} profiles={[]} onClose={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByLabelText("Nueva area")).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Nueva area"), "dtf");
     await user.selectOptions(screen.getByLabelText("Nuevo responsable (obligatorio)"), "producer-2");
-    await user.click(screen.getByRole("button", { name: "Guardar cambio de área" }));
+    await user.click(screen.getByRole("button", { name: "Guardar cambio de area" }));
 
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("admin_reassign_file_production_area", {
       p_file_id: "file-1",
@@ -176,12 +233,13 @@ describe("AdminAdvancedOrderModal", () => {
   }, 15000);
 
   it("shows an add-file button and form inside manage_files", async () => {
-    await renderManageFiles({
+    mockDataSources({
       files: [{ id: "file-1", public_label: "Frente", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "file-server-1" }],
       areas: [{ code: "digital", label: "Digital", producer_role: "production" }],
     });
+    render(<AdminManageFilesModal open order={productionOrder} profiles={[]} onClose={vi.fn()} />);
 
-    const addBtn = screen.getByRole("button", { name: /Anadir archivo/i });
+    const addBtn = await screen.findByRole("button", { name: /Anadir archivo/i });
     expect(addBtn).toBeInTheDocument();
 
     await userEvent.setup().click(addBtn);
@@ -190,92 +248,74 @@ describe("AdminAdvancedOrderModal", () => {
     expect(screen.getByLabelText("Etiqueta")).toBeInTheDocument();
     expect(screen.getByLabelText("Area de produccion")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Anadir archivo$/i })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /Cancelar/i })).toHaveLength(2);
   });
 
   it("shows a delete-file button on each file card", async () => {
-    await renderManageFiles({
+    mockDataSources({
       files: [
         { id: "file-1", public_label: "Frente", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "file-server-1" },
         { id: "file-2", public_label: "Dorso", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "file-server-2" },
       ],
     });
+    render(<AdminManageFilesModal open order={productionOrder} profiles={[]} onClose={vi.fn()} />);
 
-    const deleteButtons = screen.getAllByTitle("Eliminar archivo");
-    expect(deleteButtons).toHaveLength(2);
+    await waitFor(() => {
+      const deleteButtons = screen.getAllByTitle("Eliminar archivo");
+      expect(deleteButtons).toHaveLength(2);
+    });
   });
 
   it("shows a payment-locked notice and hides add/delete when order is in_Quote and pagado", async () => {
     const quoteOrder = { ...sampleOrder, status: "in_Quote", payment_status: "pagado", id: "quote-paid-1" };
-
     mockDataSources({ files: [{ id: "f1", public_label: "File", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "ts" }] });
-    rpc.mockResolvedValue({
-      data: { design_type: "EXTERNAL_DESING", expected_updated_at: "ts", actions: [{ key: "manage_files", label: "Gestionar archivos" }] },
-      error: null,
+
+    render(<AdminManageFilesModal open order={quoteOrder} profiles={[]} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/pago esta completo/i)).toBeInTheDocument();
     });
-
-    const user = userEvent.setup();
-    const { rerender } = render(<AdminAdvancedOrderModal {...defaultProps} open order={quoteOrder} />);
-    await user.click(await screen.findByRole("button", { name: /Gestionar archivos/ }));
-
-    expect(screen.getByText(/pago esta completo/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Anadir archivo/i })).not.toBeInTheDocument();
     expect(screen.queryByTitle("Eliminar archivo")).not.toBeInTheDocument();
   });
 
   it("hides delete button on the last file from in_Quote onwards", async () => {
-    await renderManageFiles({
-      files: [{ id: "f1", public_label: "Unico", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "ts" }],
-    });
+    mockDataSources({ files: [{ id: "f1", public_label: "Unico", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "ts" }] });
+    render(<AdminManageFilesModal open order={productionOrder} profiles={[]} onClose={vi.fn()} />);
 
+    await waitFor(() => {
+      expect(screen.getByText("Unico")).toBeInTheDocument();
+    });
     expect(screen.queryByTitle("Eliminar archivo")).not.toBeInTheDocument();
   });
 
   it("shows delete button on the last file when status is before in_Quote", async () => {
     const designOrder = { ...sampleOrder, status: "in_Design", id: "design-order-1" };
-
     mockDataSources({ files: [{ id: "f1", public_label: "Unico", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "ts" }] });
-    rpc.mockResolvedValue({
-      data: { design_type: "EXTERNAL_DESING", expected_updated_at: "ts", actions: [{ key: "manage_files", label: "Gestionar archivos" }] },
-      error: null,
+
+    render(<AdminManageFilesModal open order={designOrder} profiles={[]} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Eliminar archivo")).toBeInTheDocument();
     });
-
-    const user = userEvent.setup();
-    render(<AdminAdvancedOrderModal {...defaultProps} open order={designOrder} />);
-    await user.click(await screen.findByRole("button", { name: /Gestionar archivos/ }));
-
-    expect(screen.getByTitle("Eliminar archivo")).toBeInTheDocument();
   });
 
   it("hides preview trash button when preview_image is saved and order is from in_Quote onwards", async () => {
     const quoteOrder = { ...sampleOrder, status: "in_Quote", preview_image: "https://example.com/preview.jpg", id: "quote-preview-1" };
-
     mockDataSources({ files: [{ id: "f1", public_label: "File", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "ts" }] });
-    rpc.mockResolvedValue({
-      data: { design_type: "EXTERNAL_DESING", expected_updated_at: "ts", actions: [{ key: "manage_files", label: "Gestionar archivos" }] },
-      error: null,
+
+    render(<AdminManageFilesModal open order={quoteOrder} profiles={[]} onClose={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.queryByTitle("Quitar imagen")).not.toBeInTheDocument();
     });
-
-    const user = userEvent.setup();
-    render(<AdminAdvancedOrderModal {...defaultProps} open order={quoteOrder} />);
-    await user.click(await screen.findByRole("button", { name: /Gestionar archivos/ }));
-
-    expect(screen.queryByTitle("Quitar imagen")).not.toBeInTheDocument();
   });
 
   it("shows preview trash button when status is before in_Quote even with saved preview", async () => {
     const designOrder = { ...sampleOrder, status: "in_Design", preview_image: "https://example.com/preview.jpg", id: "design-preview-1" };
-
     mockDataSources({ files: [{ id: "f1", public_label: "File", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "ts" }] });
-    rpc.mockResolvedValue({
-      data: { design_type: "EXTERNAL_DESING", expected_updated_at: "ts", actions: [{ key: "manage_files", label: "Gestionar archivos" }] },
-      error: null,
+
+    render(<AdminManageFilesModal open order={designOrder} profiles={[]} onClose={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByTitle("Quitar imagen")).toBeInTheDocument();
     });
-
-    const user = userEvent.setup();
-    render(<AdminAdvancedOrderModal {...defaultProps} open order={designOrder} />);
-    await user.click(await screen.findByRole("button", { name: /Gestionar archivos/ }));
-
-    expect(screen.getByTitle("Quitar imagen")).toBeInTheDocument();
   });
 });

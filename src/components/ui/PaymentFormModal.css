@@ -1,21 +1,57 @@
+.pfm-modal {
+  max-width: 600px !important;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 22px;
+  box-shadow: 0 32px 90px rgba(15, 23, 42, 0.34);
+}
+
+.pfm-modal::before {
+  z-index: 20;
+}
+
 .pfm-modal .pa-modal-head {
+  position: relative;
+  padding: 28px 30px 22px;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(216, 226, 243, 0.8);
 }
 
 .pfm-modal .pa-modal-body {
   display: flex;
   flex-direction: column;
   gap: 0;
+  padding: 24px 30px 30px;
+}
+
+.pfm-order-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid #dbe5f2;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.pfm-summary-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: #ecfdf5;
+  color: #10b981;
 }
 
 .pfm-order-info {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
 
 .pfm-client-name {
@@ -25,30 +61,42 @@
 }
 
 .pfm-desc {
+  overflow: hidden;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pfm-current-badge {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 18px;
+  display: grid;
+  justify-items: end;
+  gap: 7px;
 }
 
 .pfm-label {
   display: block;
-  margin-bottom: 7px;
+  margin-bottom: 8px;
   color: var(--text-sub);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 750;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+}
+
+.pfm-current-badge .pfm-label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .pfm-field {
-  margin-bottom: 18px;
+  margin-bottom: 22px;
+  padding: 17px;
+  border: 1px solid #dbe5f2;
+  border-radius: 14px;
+  background: #fbfdff;
 }
 
 .pfm-select-wrap {
@@ -57,10 +105,10 @@
 
 .pfm-select-wrap select {
   width: 100%;
-  height: 44px;
+  height: 48px;
   padding: 0 42px 0 13px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   background: var(--surface);
   color: var(--text);
   font: 500 13px "Poppins", sans-serif;
@@ -91,9 +139,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 11px 13px;
+  padding: 14px 16px;
   border: 1px solid #fde68a;
-  border-radius: var(--radius-sm);
+  border-radius: 12px;
   background: #fffbeb;
   color: #92400e;
   font-size: 12px;
@@ -108,12 +156,16 @@
 }
 
 .pfm-receipt-section {
-  margin-bottom: 18px;
+  margin-bottom: 22px;
+  padding: 17px;
+  border: 1px solid #dbe5f2;
+  border-radius: 14px;
+  background: #fbfdff;
 }
 
 .pfm-receipt-card {
   border: 1.5px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   padding: 16px;
   background: var(--surface);
 }
@@ -234,15 +286,19 @@
 
 .pfm-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 2px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
 }
 
 .pfm-btn {
-  flex: 1;
-  min-height: 42px;
-  padding: 0 18px;
-  border-radius: var(--radius-sm);
+  flex: 0 1 auto;
+  min-width: 142px;
+  min-height: 44px;
+  padding: 0 22px;
+  border-radius: 11px;
   font: 700 12px "Poppins", sans-serif;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -260,7 +316,7 @@
 }
 
 .pfm-btn--primary {
-  flex: 2;
+  min-width: 210px;
   border: 1px solid var(--cyan);
   background: var(--cyan);
   color: #fff;
@@ -275,6 +331,49 @@
 .pfm-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.pfm-btn:focus-visible,
+.pfm-receipt-btn:focus-visible {
+  outline: 3px solid rgba(6, 182, 212, 0.2);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .pfm-modal {
+    max-height: 94vh;
+    border-radius: 22px 22px 0 0;
+  }
+
+  .pfm-modal .pa-modal-head,
+  .pfm-modal .pa-modal-body {
+    padding-inline: 20px;
+  }
+
+  .pfm-order-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .pfm-current-badge {
+    grid-column: 1 / -1;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    justify-items: start;
+    width: 100%;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .pfm-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .pfm-btn,
+  .pfm-btn--primary {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 .pfm-btn--primary:disabled {
