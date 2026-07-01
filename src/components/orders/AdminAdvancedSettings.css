@@ -1,11 +1,24 @@
 .aas-container {
+  position: relative;
   width: 100%;
   background: var(--surface);
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   color: var(--text);
   font-family: "Poppins", sans-serif;
+}
+
+.aas-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--gradient);
+  z-index: 1;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 .aas-header {
@@ -26,7 +39,7 @@
 
 .aas-header p {
   margin: 8px 0 0;
-  color: #56709f;
+  color: var(--text-sub);
   font-size: 14px;
   font-weight: 600;
 }
@@ -37,23 +50,29 @@
   gap: 6px;
   flex: none;
   padding: 8px 14px;
-  border: 1.5px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: #56709f;
-  font: 600 13px "Poppins", sans-serif;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: 600 12px "Poppins", sans-serif;
   cursor: pointer;
-  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .aas-back-btn:hover {
-  border-color: var(--border);
-  background: #f2f5fa;
-  color: var(--text);
+  border-color: var(--border-hov);
+  box-shadow: var(--shadow-sm);
 }
 
 .aas-back-btn:active {
   transform: scale(0.97);
+}
+
+.aas-back-btn svg {
+  width: 15px;
+  height: 15px;
 }
 
 .aas-summary-card {
@@ -61,10 +80,10 @@
   grid-template-columns: 1.2fr 0.7fr 1.65fr 1.35fr;
   margin: 0 32px;
   padding: 20px 22px;
-  border: 1.5px solid #d8e2f3;
-  border-radius: 11px;
-  background: #fff;
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .aas-summary-item {
@@ -73,7 +92,7 @@
   gap: 10px;
   min-width: 0;
   padding: 0 12px;
-  border-right: 1px solid #d9e3f4;
+  border-right: 1px solid var(--border);
 }
 
 .aas-summary-item:first-child {
@@ -92,7 +111,7 @@
   width: 40px;
   height: 40px;
   border-radius: 999px;
-  background: #f2f5fa;
+  background: var(--surface-alt);
   color: var(--text);
 }
 
@@ -115,7 +134,7 @@
 
 .aas-summary-copy small {
   overflow: hidden;
-  color: #7890ba;
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -169,7 +188,7 @@
   min-height: 76px;
   padding: 14px 18px;
   border: 1.5px solid var(--border);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   text-align: left;
   cursor: pointer;
@@ -177,14 +196,14 @@
 }
 
 .aas-action:first-child {
-  border-color: #1d7cff;
-  box-shadow: 0 0 0 1px rgba(29, 124, 255, 0.05);
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.08);
 }
 
 .aas-action:hover {
   transform: translateY(-2px);
-  border-color: #1d7cff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  border-color: var(--cyan);
+  box-shadow: var(--shadow-lg);
 }
 
 .aas-action:active {
@@ -208,7 +227,7 @@
   width: 48px;
   height: 48px;
   border-radius: 999px;
-  background: #f2f5fa;
+  background: var(--surface-alt);
   color: var(--text);
   transition: transform 0.16s ease;
 }
@@ -220,12 +239,12 @@
 .aas-action-icon.is-route_sales,
 .aas-action-icon.is-assign_seller {
   background: #fff4ed;
-  color: #f97316;
+  color: var(--orange);
 }
 
 .aas-action-icon.is-register_payment {
   background: #ecfdf5;
-  color: #10b981;
+  color: var(--green);
 }
 
 .aas-action-icon.is-route_production {
@@ -241,7 +260,7 @@
 
 .aas-action-icon.is-reassign_production {
   background: #fef3c7;
-  color: #d97706;
+  color: var(--amber);
 }
 
 .aas-action-icon.is-manage_files {
@@ -251,7 +270,7 @@
 
 .aas-action-icon.is-mark_delivered {
   background: #dcfce7;
-  color: #16a34a;
+  color: var(--green);
 }
 
 .aas-action-copy {
@@ -270,7 +289,7 @@
 .aas-action-copy small {
   display: block;
   margin-top: 6px;
-  color: #7890ba;
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -284,7 +303,7 @@
   border: 1px solid #fdba74;
   border-radius: 999px;
   background: #fff7ed;
-  color: #f97316;
+  color: var(--orange);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
@@ -302,10 +321,10 @@
   gap: 8px;
   margin-top: 8px;
   padding: 11px 13px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--danger);
   border-radius: var(--radius-sm);
   background: #fef2f2;
-  color: #b91c1c;
+  color: var(--danger);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -322,15 +341,15 @@
   gap: 18px;
   padding: 16px 32px;
   border-top: 1px solid var(--border);
-  background: #f8fbff;
-  border-radius: 0 0 12px 12px;
+  background: var(--surface-alt);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
 }
 
 .aas-footer > span {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #7890ba;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -343,7 +362,7 @@
   min-height: 42px;
   padding: 0 22px;
   border: 1.5px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--text-sub);
   font: 700 12px "Poppins", sans-serif;
@@ -386,9 +405,22 @@
     border-right: none;
   }
 
+  .aas-container::before {
+    border-radius: 0;
+  }
+
   .aas-header,
   .aas-body {
     padding-inline: 20px;
+  }
+
+  .aas-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .aas-back-btn {
+    align-self: flex-start;
   }
 
   .aas-summary-card {
@@ -400,7 +432,7 @@
   .aas-summary-item {
     padding: 13px 0;
     border-right: 0;
-    border-bottom: 1px solid #d9e3f4;
+    border-bottom: 1px solid var(--border);
   }
 
   .aas-summary-item:first-child {
@@ -448,5 +480,17 @@
 
   .aas-button {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aas-container,
+  .aas-container::before,
+  .aas-action,
+  .aas-action-icon,
+  .aas-back-btn,
+  .aas-button {
+    transition: none !important;
+    animation: none !important;
   }
 }
