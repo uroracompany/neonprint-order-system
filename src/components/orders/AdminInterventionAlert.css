@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+
 .admin-intervention-alert-overlay {
   position: fixed;
   inset: 0;
@@ -7,6 +9,7 @@
   padding: 20px;
   background: rgba(15, 23, 42, .55);
   backdrop-filter: blur(5px);
+  font-family: "Poppins", sans-serif;
 }
 
 .admin-intervention-alert {
@@ -17,6 +20,7 @@
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 24px 70px rgba(15, 23, 42, .35);
+  font-family: "Poppins", sans-serif;
 }
 
 .admin-intervention-alert-title span { color: #7c3aed; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
