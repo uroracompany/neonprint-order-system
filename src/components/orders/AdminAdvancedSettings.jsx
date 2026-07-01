@@ -173,7 +173,7 @@ export default function AdminAdvancedSettings({
 
   return (
     <>
-      <section className="aas-container">
+      <section className={`aas-container${loading ? ' is-loading' : ''}`} aria-labelledby="aas-title" aria-busy={loading || loadingActions}>
         <header className="aas-header">
           <div>
             <h2 id="aas-title">Configuración avanzada</h2>
@@ -220,9 +220,34 @@ export default function AdminAdvancedSettings({
             <h3>Acciones disponibles</h3>
           </div>
           {loadingActions ? (
-            <div className="aas-empty">Cargando acciones disponibles…</div>
+            <div className="aas-skeleton" aria-hidden="true">
+              <div className="aas-skeleton-row">
+                <div className="aas-skeleton-icon" />
+                <div className="aas-skeleton-lines">
+                  <div className="aas-skeleton-line" />
+                  <div className="aas-skeleton-line short" />
+                </div>
+              </div>
+              <div className="aas-skeleton-row">
+                <div className="aas-skeleton-icon" />
+                <div className="aas-skeleton-lines">
+                  <div className="aas-skeleton-line" />
+                  <div className="aas-skeleton-line short" />
+                </div>
+              </div>
+              <div className="aas-skeleton-row">
+                <div className="aas-skeleton-icon" />
+                <div className="aas-skeleton-lines">
+                  <div className="aas-skeleton-line" />
+                  <div className="aas-skeleton-line short" />
+                </div>
+              </div>
+            </div>
           ) : actionItems.length === 0 ? (
-            <div className="aas-empty">No hay ajustes avanzados disponibles en esta etapa.</div>
+            <div className="aas-empty">
+              <Icons.Settings className="aas-empty-icon" />
+              <span>No hay ajustes avanzados disponibles en esta etapa.</span>
+            </div>
           ) : (
             <div className="aas-action-list">
               {actionItems.map((item) => {

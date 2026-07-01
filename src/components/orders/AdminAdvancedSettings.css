@@ -6,7 +6,12 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   color: var(--text);
-  font-family: "Poppins", sans-serif;
+  animation: aas-fade-in 0.3s ease both;
+}
+
+.aas-container.is-loading {
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .aas-container::before {
@@ -61,6 +66,10 @@
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
+.aas-back-btn:hover svg {
+  transform: translateX(-2px);
+}
+
 .aas-back-btn:hover {
   border-color: var(--border-hov);
   box-shadow: var(--shadow-sm);
@@ -73,11 +82,12 @@
 .aas-back-btn svg {
   width: 15px;
   height: 15px;
+  transition: transform 0.2s ease;
 }
 
 .aas-summary-card {
   display: grid;
-  grid-template-columns: 1.2fr 0.7fr 1.65fr 1.35fr;
+  grid-template-columns: repeat(4, 1fr);
   margin: 0 32px;
   padding: 20px 22px;
   border: 1.5px solid var(--border);
@@ -192,18 +202,14 @@
   background: var(--surface);
   text-align: left;
   cursor: pointer;
-  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
-}
-
-.aas-action:first-child {
-  border-color: var(--cyan);
-  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.08);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .aas-action:hover {
   transform: translateY(-2px);
   border-color: var(--cyan);
   box-shadow: var(--shadow-lg);
+  background: var(--surface-hov);
 }
 
 .aas-action:active {
@@ -211,13 +217,18 @@
 }
 
 .aas-action:focus-visible {
-  outline: 3px solid rgba(6, 182, 212, 0.22);
+  outline: 3px solid color-mix(in srgb, var(--cyan) 22%, transparent);
   outline-offset: 2px;
 }
 
 .aas-action > svg:last-child {
   flex: none;
   color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.aas-action:hover > svg:last-child {
+  transform: translateX(3px);
 }
 
 .aas-action-icon {
@@ -229,7 +240,7 @@
   border-radius: 999px;
   background: var(--surface-alt);
   color: var(--text);
-  transition: transform 0.16s ease;
+  transition: transform 0.2s ease, background 0.2s ease;
 }
 
 .aas-action:hover .aas-action-icon {
@@ -238,38 +249,38 @@
 
 .aas-action-icon.is-route_sales,
 .aas-action-icon.is-assign_seller {
-  background: #fff4ed;
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
   color: var(--orange);
 }
 
 .aas-action-icon.is-register_payment {
-  background: #ecfdf5;
+  background: color-mix(in srgb, var(--green) 12%, transparent);
   color: var(--green);
 }
 
 .aas-action-icon.is-route_production {
-  background: #f0efff;
-  color: #4f46e5;
+  background: color-mix(in srgb, var(--violet) 12%, transparent);
+  color: var(--violet);
 }
 
 .aas-action-icon.is-set_quote_assignee,
 .aas-action-icon.is-set_designer_assignee {
-  background: #f3f0ff;
-  color: #6d5dfc;
+  background: color-mix(in srgb, var(--violet) 12%, transparent);
+  color: var(--violet);
 }
 
 .aas-action-icon.is-reassign_production {
-  background: #fef3c7;
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
   color: var(--amber);
 }
 
 .aas-action-icon.is-manage_files {
-  background: #e0f2fe;
-  color: #0284c7;
+  background: color-mix(in srgb, var(--cyan) 12%, transparent);
+  color: var(--cyan);
 }
 
 .aas-action-icon.is-mark_delivered {
-  background: #dcfce7;
+  background: color-mix(in srgb, var(--green) 12%, transparent);
   color: var(--green);
 }
 
@@ -300,9 +311,9 @@
   align-items: center;
   flex: none;
   padding: 7px 13px;
-  border: 1px solid #fdba74;
+  border: 1px solid color-mix(in srgb, var(--orange) 40%, transparent);
   border-radius: 999px;
-  background: #fff7ed;
+  background: color-mix(in srgb, var(--orange) 10%, transparent);
   color: var(--orange);
   font-size: 12px;
   font-weight: 800;
@@ -310,9 +321,60 @@
 }
 
 .aas-empty {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  padding: 32px 16px;
+  text-align: center;
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.aas-empty-icon {
+  width: 32px;
+  height: 32px;
+  color: var(--border);
+}
+
+.aas-skeleton {
+  display: grid;
+  gap: 10px;
+}
+
+.aas-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 18px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  animation: aas-shimmer 1.5s ease-in-out infinite;
+}
+
+.aas-skeleton-icon {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+}
+
+.aas-skeleton-lines {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+}
+
+.aas-skeleton-line {
+  height: 14px;
+  background: var(--surface-alt);
+  border-radius: 999px;
+}
+
+.aas-skeleton-line.short {
+  width: 60%;
 }
 
 .aas-error {
@@ -323,7 +385,7 @@
   padding: 11px 13px;
   border: 1px solid var(--danger);
   border-radius: var(--radius-sm);
-  background: #fef2f2;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
   color: var(--danger);
   font-size: 11px;
   line-height: 1.45;
@@ -367,7 +429,7 @@
   color: var(--text-sub);
   font: 700 12px "Poppins", sans-serif;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
 }
 
 .aas-button:hover {
@@ -394,8 +456,19 @@
 }
 
 .aas-button:focus-visible {
-  outline: 3px solid rgba(6, 182, 212, 0.22);
+  outline: 3px solid color-mix(in srgb, var(--cyan) 22%, transparent);
   outline-offset: 2px;
+}
+
+@keyframes aas-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes aas-shimmer {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
 }
 
 @media (max-width: 640px) {
@@ -489,7 +562,8 @@
   .aas-action,
   .aas-action-icon,
   .aas-back-btn,
-  .aas-button {
+  .aas-button,
+  .aas-skeleton-row {
     transition: none !important;
     animation: none !important;
   }
