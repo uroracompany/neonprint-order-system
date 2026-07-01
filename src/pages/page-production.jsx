@@ -7,11 +7,16 @@ import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
+import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
+import OrderReviewCard from "../components/orders/OrderReviewCard";
+import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import { Icons } from "../utils/icons";
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import { AssignModal } from "../components/ui/AssignModal";
 import {
   ORDER_STATUS,
   PAYMENT_COLORS,
@@ -26,11 +31,11 @@ import {
 } from "../utils/constants";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { getReferenceImages } from "../utils/orderAssets";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import {
   filterProductionOrdersForRoleParticipation,
   filterProductionOrdersByArchiveState,
   filterProductionFilesForRole,
-  getNextProductionFileStatus,
   getProductionFileStatusLabel,
   getProductionSummary,
 } from "../utils/production";
@@ -76,12 +81,24 @@ function getProductionTeamStatusLabel(status) {
   return "Pendiente";
 }
 
-export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus, teamRefreshKey = 0 }) {
+export function OrderDetailModal({
+  onClose,
+  order,
+  producerRole,
+  onUpdateStatus,
+  teamRefreshKey = 0,
+  pendingReview,
+  onAcknowledgeReview,
+  reviewAcknowledging,
+  reviewError,
+}) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const [showLastFileConfirm, setShowLastFileConfirm] = useState(false);
   const [pendingLastFile, setPendingLastFile] = useState(null);
+  const [assignDeliveryOpen, setAssignDeliveryOpen] = useState(false);
+  const [assignDeliveryLoading, setAssignDeliveryLoading] = useState(false);
   const [designerName, setDesignerName] = useState("");
   const [quoteName, setQuoteName] = useState("");
   const [sellerName, setSellerName] = useState("");
@@ -143,7 +160,27 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus,
   const handleConfirmLastFile = () => {
     if (!pendingLastFile) return;
     setShowLastFileConfirm(false);
-    executeFileUpdate(pendingLastFile.fileId, pendingLastFile.nextStatus);
+    setAssignDeliveryOpen(true);
+  };
+
+  const handleAssignDelivery = async (userId) => {
+    if (!pendingLastFile || !order) return;
+    setAssignDeliveryLoading(true);
+    try {
+      const { error: assignError } = await supabase
+        .from("orders")
+        .update({ delivery_id: userId })
+        .eq("id", order.id);
+      if (assignError) throw assignError;
+      setAssignDeliveryOpen(false);
+      setAssignDeliveryLoading(false);
+      executeFileUpdate(pendingLastFile.fileId, pendingLastFile.nextStatus);
+    } catch (err) {
+      console.error("Error assigning delivery:", err);
+      setAssignDeliveryOpen(false);
+      setAssignDeliveryLoading(false);
+      setUpdateError("No se pudo asignar el delivery.");
+    }
   };
   const handleUpdateStatus = () => {};
   const onCompleteOrder = null;
@@ -274,6 +311,13 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus,
               {updateError}
             </div>
           )}
+
+          <OrderReviewCard
+            pendingReview={pendingReview}
+            onAcknowledge={onAcknowledgeReview}
+            acknowledging={reviewAcknowledging}
+            error={reviewError}
+          />
 
           <div className="pp-modal-grid">
             <div>
@@ -521,15 +565,32 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus,
                     </p>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {areaFiles.map((file) => {
-                        const nextStatus = getNextProductionFileStatus(file.status);
                         const actions = [];
-                        if (nextStatus) {
-                          actions.push({
-                            icon: nextStatus === PRODUCTION_FILE_STATUS.COMPLETED ? <Icons.Check /> : <Icons.Play />,
-                            onClick: () => handleUpdateFileStatus(file.id, nextStatus),
-                            disabled: updating,
-                            title: nextStatus === PRODUCTION_FILE_STATUS.COMPLETED ? "Marcar completado" : "Marcar en terminacion",
-                          });
+                        if (file.status !== PRODUCTION_FILE_STATUS.COMPLETED) {
+                          if (file.status === PRODUCTION_FILE_STATUS.IN_TERMINATION) {
+                            actions.push({
+                              icon: <Icons.Refresh />,
+                              label: "Volver a producción",
+                              onClick: () => handleUpdateFileStatus(file.id, PRODUCTION_FILE_STATUS.IN_PRODUCTION),
+                              disabled: updating,
+                              title: "Volver a producción",
+                            });
+                            actions.push({
+                              icon: <Icons.Check />,
+                              label: "Completado",
+                              onClick: () => handleUpdateFileStatus(file.id, PRODUCTION_FILE_STATUS.COMPLETED),
+                              disabled: updating,
+                              title: "Marcar completado",
+                            });
+                          } else {
+                            actions.push({
+                              icon: <Icons.Play />,
+                              label: "Terminación",
+                              onClick: () => handleUpdateFileStatus(file.id, PRODUCTION_FILE_STATUS.IN_TERMINATION),
+                              disabled: updating,
+                              title: "Marcar en terminación",
+                            });
+                          }
                         }
                         return (
                           <FileCard
@@ -670,6 +731,14 @@ export function OrderDetailModal({ onClose, order, producerRole, onUpdateStatus,
         </div>
       </div>
     )}
+    <AssignModal
+      open={assignDeliveryOpen}
+      order={order}
+      role="delivery"
+      onClose={() => { setAssignDeliveryOpen(false); setPendingLastFile(null); }}
+      onConfirm={handleAssignDelivery}
+      loading={assignDeliveryLoading}
+    />
   </>);
 }
 
@@ -696,6 +765,9 @@ export default function PageProduction() {
   const [filterArchive, setFilterArchive] = useState("active");
   const [clients, setClients] = useState([]);
   const notif = useNotifications(user?.id);
+  const orderReviews = useOrderEventReviews(user?.id);
+  const pendingOrderReviews = orderReviews.pendingByOrder;
+  const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
 
   const refreshOrders = useCallback(async (silent = false) => {
     if (!user?.id) return;
@@ -707,7 +779,7 @@ export default function PageProduction() {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      setOrders(data);
+      applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
     }
     if (!silent) setLoading(false);
   }, [user?.id]);
@@ -719,8 +791,14 @@ export default function PageProduction() {
   }, [refreshOrders]);
 
   const refreshProductionOrdersSilently = useCallback(() => {
-    refreshOrdersRef.current(true);
+    return refreshOrdersRef.current(true);
   }, []);
+
+  useOrdersRealtimeSync({
+    userId: user?.id,
+    scope: "production",
+    refreshOrders: refreshProductionOrdersSilently,
+  });
 
   const handleArchiveOrder = (order) => {
     if (!canArchiveOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id)) return;
@@ -794,11 +872,6 @@ export default function PageProduction() {
       .channel(`production-orders-${user.id}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        refreshProductionOrdersSilently
-      )
-      .on(
-        "postgres_changes",
         { event: "*", schema: "public", table: "order_production_files" },
         refreshFilesAndOrders
       )
@@ -820,25 +893,6 @@ export default function PageProduction() {
 
     return () => {
       supabase.removeChannel(channel);
-    };
-  }, [user?.id, refreshProductionOrdersSilently]);
-
-  useEffect(() => {
-    if (!user?.id || typeof window === "undefined" || typeof document === "undefined") return;
-
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "hidden") return;
-      refreshProductionOrdersSilently();
-    };
-
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    window.addEventListener("focus", refreshWhenVisible);
-    window.addEventListener("online", refreshProductionOrdersSilently);
-
-    return () => {
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-      window.removeEventListener("focus", refreshWhenVisible);
-      window.removeEventListener("online", refreshProductionOrdersSilently);
     };
   }, [user?.id, refreshProductionOrdersSilently]);
 
@@ -993,7 +1047,12 @@ export default function PageProduction() {
                         activeOrders.slice(0, 5).map(order => (
                           <tr key={order.id} className="row-hover" onClick={() => handleViewOrder(order)}>
                             <td className="td-pad td-id">#{order.id?.slice(0, 8).toUpperCase()}</td>
-                            <td className="td-pad td-client">{order.client_name}</td>
+                            <td className="td-pad td-client">
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <span>{order.client_name}</span>
+                                <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                              </div>
+                            </td>
                             <td className="td-pad td-desc">{order.description}</td>
                             <td className="td-pad td-material">{order.material}</td>
                             <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered /></td>
@@ -1110,7 +1169,12 @@ export default function PageProduction() {
                         {paginatedOrders.map(order => (
                           <tr key={order.id} className="row-hover">
                             <td className="td-pad td-id">#{order.id?.slice(0, 8).toUpperCase()}</td>
-                            <td className="td-pad td-client">{order.client_name}</td>
+                            <td className="td-pad td-client">
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <span>{order.client_name}</span>
+                                <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                              </div>
+                            </td>
                             <td className="td-pad td-desc">{order.description?.substring(0, 40)}</td>
                             <td className="td-pad td-material">{order.material}</td>
                             <td className="td-pad td-qty">{order.quantity || "-"}</td>
@@ -1173,6 +1237,7 @@ export default function PageProduction() {
                         <div className="pp-order-card-header">
                           <span className="pp-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
                           <div className="pp-order-card-badges">
+                            <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                             <StatusBadge status={order.status} className="pp-badge" bordered />
                           </div>
                         </div>
@@ -1237,6 +1302,10 @@ export default function PageProduction() {
         producerRole={profileRole}
         onUpdateStatus={refreshOrders}
         teamRefreshKey={teamRefreshKey}
+        pendingReview={selectedOrderReview}
+        onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
+        reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
+        reviewError={orderReviews.acknowledgeError}
       />
 
       <ArchiveOrderModal

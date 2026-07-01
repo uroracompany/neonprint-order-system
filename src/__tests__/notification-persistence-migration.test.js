@@ -24,6 +24,15 @@ describe("notification persistence migration", () => {
     expect(migration).toContain("grant execute on function public.dismiss_notification(uuid) to authenticated");
   });
 
+  it("keeps event-scoped notifications from suppressing later events", () => {
+    const migration = readProjectFile("supabase/migrations/20260626162000_fix_seller_admin_edit_notifications.sql");
+
+    expect(migration).toContain("event_id text := coalesce(p_metadata->>'event_id', '')");
+    expect(migration).toMatch(/coalesce\(metadata->>'event_id', ''\) = event_id/g);
+    expect(migration).toContain("create or replace function public.notify_many");
+    expect(migration).toContain("create or replace function public.create_notification");
+  });
+
   it("soft-deletes older active duplicates without reactivating managed notifications", () => {
     const migration = readProjectFile("supabase/migrations/20260620013000_harden_admin_notification_persistence.sql");
 

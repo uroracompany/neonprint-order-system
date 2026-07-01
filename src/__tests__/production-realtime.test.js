@@ -23,14 +23,16 @@ describe("realtime de produccion", () => {
 
   it("refresca produccion ante asignaciones, archivos, SUBSCRIBED y recuperacion de pestana", () => {
     const source = readProjectFile("src/pages/page-production.jsx");
+    const sharedHook = readProjectFile("src/hooks/useOrdersRealtimeSync.js");
 
     expect(source).toContain('table: "order_production_assignments"');
     expect(source).toContain("refreshProductionOrdersSilently");
     expect(source).toContain('.subscribe((status) =>');
     expect(source).toContain('status === "SUBSCRIBED"');
     expect(source).toContain("refreshFilesAndOrders");
-    expect(source).toContain('document.addEventListener("visibilitychange", refreshWhenVisible)');
-    expect(source).toContain('window.addEventListener("focus", refreshWhenVisible)');
-    expect(source).toContain('window.addEventListener("online", refreshProductionOrdersSilently)');
+    expect(source).toContain("useOrdersRealtimeSync({");
+    expect(sharedHook).toContain('document.addEventListener("visibilitychange", refreshWhenVisible)');
+    expect(sharedHook).toContain('window.addEventListener("focus", refreshWhenVisible)');
+    expect(sharedHook).toContain('window.addEventListener("online", requestRefresh)');
   });
 });

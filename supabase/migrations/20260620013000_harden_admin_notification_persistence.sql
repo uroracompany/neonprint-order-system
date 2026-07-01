@@ -25,6 +25,7 @@ declare
   nid uuid;
   caller uuid := auth.uid();
   event_kind text := coalesce(p_metadata->>'event_kind', '');
+  event_id text := coalesce(p_metadata->>'event_id', '');
 begin
   if p_user_id is null then
     raise exception 'Notification user_id is required';
@@ -42,6 +43,7 @@ begin
     and title = p_title
     and message = p_message
     and coalesce(metadata->>'event_kind', '') = event_kind
+    and coalesce(metadata->>'event_id', '') = event_id
     and (deleted_at is not null or coalesce(is_archived, false) = true)
   order by created_at desc
   limit 1;
@@ -58,6 +60,7 @@ begin
     and title = p_title
     and message = p_message
     and coalesce(metadata->>'event_kind', '') = event_kind
+    and coalesce(metadata->>'event_id', '') = event_id
     and deleted_at is null
     and coalesce(is_archived, false) = false
     and created_at > now() - interval '10 minutes'
@@ -94,6 +97,7 @@ declare
   recipient uuid;
   nid uuid;
   event_kind text := coalesce(p_metadata->>'event_kind', '');
+  event_id text := coalesce(p_metadata->>'event_id', '');
 begin
   foreach recipient in array coalesce(p_recipients, array[]::uuid[]) loop
     if recipient is not null then
@@ -105,6 +109,7 @@ begin
         and title = p_title
         and message = p_message
         and coalesce(metadata->>'event_kind', '') = event_kind
+        and coalesce(metadata->>'event_id', '') = event_id
         and (deleted_at is not null or coalesce(is_archived, false) = true)
       order by created_at desc
       limit 1;
@@ -118,6 +123,7 @@ begin
           and title = p_title
           and message = p_message
           and coalesce(metadata->>'event_kind', '') = event_kind
+          and coalesce(metadata->>'event_id', '') = event_id
           and deleted_at is null
           and coalesce(is_archived, false) = false
           and created_at > now() - interval '10 minutes'

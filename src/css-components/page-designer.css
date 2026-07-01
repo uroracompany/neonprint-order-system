@@ -1094,11 +1094,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 10px;
-  border-radius: 6px;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
@@ -1108,8 +1105,13 @@
 }
 
 .pd-badge-edited {
-  background: rgba(245, 158, 11, 0.12);
-  color: #d97706;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid #FED7AA;
+  background: #FFF7ED;
+  color: #9A3412;
+  line-height: 1;
+  letter-spacing: normal;
 }
 
 .pd-card-client {
@@ -1361,6 +1363,9 @@
 }
 
 .pd-modal {
+  --pd-modal-section-gap: 16px;
+  --pd-modal-section-gutter: 20px;
+  --pd-modal-section-padding: 20px;
   max-width: 720px;
   max-height: min(88vh, 860px);
   overflow: auto;
@@ -1517,12 +1522,17 @@
 }
 
 .pd-modal-card {
-  margin: 16px 20px 0;
-  padding: 20px;
+  margin: var(--pd-modal-section-gap) var(--pd-modal-section-gutter) 0;
+  padding: var(--pd-modal-section-padding);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
   border: 1px solid rgba(226, 232, 240, 0.92);
   border-radius: var(--pd-radius-md);
   box-shadow: 0 8px 22px rgba(15, 30, 64, 0.05);
+}
+
+.pd-modal-body > .order-review-card {
+  margin: var(--pd-modal-section-gap) var(--pd-modal-section-gutter) 0;
+  padding: var(--pd-modal-section-padding);
 }
 
 .pd-modal-card-title {

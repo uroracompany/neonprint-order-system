@@ -7,12 +7,14 @@ import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
+import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import { Icons } from "../utils/icons";
 import { ORDER_STATUS, DELIVERY_STATUS_OPTIONS, isPaymentCredit, isPaymentDeliveryEligible, isPaymentPartial, isOrderStatus, ARCHIVE_MODULES, PRODUCTION_AREAS, PRODUCTION_AREA_LABELS, resolveSellerId } from "../utils/constants";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import {
   canArchiveOrder,
@@ -430,7 +432,7 @@ export default function PageDelivery() {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      setOrders(data);
+      applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
     }
     if (!silent) setLoading(false);
   }, [user?.id]);
@@ -469,22 +471,12 @@ export default function PageDelivery() {
       });
   }, [orders, sellerDirectory]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channel = supabase
-      .channel(`delivery-orders-${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        () => refreshOrders(true)
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, refreshOrders]);
+  const refreshDeliveryOrdersSilently = useCallback(() => refreshOrders(true), [refreshOrders]);
+  useOrdersRealtimeSync({
+    userId: user?.id,
+    scope: "delivery",
+    refreshOrders: refreshDeliveryOrdersSilently,
+  });
 
   const handleLogout = async () => {
     await signOut();
@@ -554,7 +546,7 @@ export default function PageDelivery() {
         .order("created_at", { ascending: false });
 
       if (!fetchError && data) {
-        setOrders(data);
+        applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
       }
     } catch (err) {
       console.error("Error marking order as delivered:", err);

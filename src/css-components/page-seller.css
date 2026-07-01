@@ -1730,13 +1730,21 @@ select option { background: var(--surface); color: var(--text); }
 }
 
 .ps-order-card-client {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
   margin-bottom: 6px;
-  white-space: nowrap;
+}
+
+.ps-order-card-client > span:first-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ps-order-card-desc {
@@ -2078,6 +2086,21 @@ select option { background: var(--surface); color: var(--text); }
 .ps-returned-badge.compact {
   padding: 3px 8px;
   font-size: 10px;
+}
+
+.ps-order-review-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid #FED7AA;
+  background: #FFF7ED;
+  color: #9A3412;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .ps-notification-close {

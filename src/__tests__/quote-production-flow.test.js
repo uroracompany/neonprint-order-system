@@ -37,15 +37,12 @@ describe("flujo de produccion en caja", () => {
   });
 
   it("muestra solo areas participantes en el modal de asignacion de produccion", () => {
-    const quote = readProjectFile("src/pages/page-quote.jsx");
-    const modalStart = quote.indexOf("function ProductionAssignmentModal");
-    const modalEnd = quote.indexOf("function QuoteOrderDetailModal", modalStart);
-    const modal = quote.slice(modalStart, modalEnd);
+    const modal = readProjectFile("src/components/orders/ProductionAssignmentModal.jsx");
 
     expect(modal).toContain("getParticipatingProductionAreaCodes");
-    expect(modal).toContain("activeAreas.filter((area) => participatingAreaCodes.includes(area.code))");
+    expect(modal).toContain("source.filter((item) => participating.includes(item.code))");
     expect(modal).toContain("hasUnclassifiedProductionFiles");
-    expect(modal).toContain("Todos los archivos deben tener tipo de produccion antes de enviar.");
+    expect(modal).toContain("Clasifica todos los archivos antes de continuar.");
   });
 
   it("rehidrata archivos de produccion despues de credito y antes de abrir el modal", () => {

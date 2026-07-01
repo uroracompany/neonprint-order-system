@@ -239,6 +239,11 @@ export const PAYMENT_LABELS = {
   [PAYMENT_STATUS.PAID]: "Pagado",
 };
 
+// Resuelve el texto visible de un estado de pago sin exponer claves internas.
+export const getPaymentStatusLabel = (value) => (
+  PAYMENT_LABELS[normalizePaymentStatus(value)] || "Estado de pago no disponible"
+);
+
 // Campos relevantes para asignación de cotizaciones, usados en lógica de negocio y formularios de asignación
 export const QUOTE_ASSIGNMENT_FIELDS = ["quote_id", "quotation_id", "quote_user_id"];
 

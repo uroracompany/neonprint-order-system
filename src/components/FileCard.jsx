@@ -10,6 +10,7 @@ export default function FileCard({
   onRemove,
   actions = [],
   children,
+  hideDownload = false,
 }) {
   const handleOpen = async (event) => {
     if (!isR2OrderAssetUrl(url)) return;
@@ -34,7 +35,7 @@ export default function FileCard({
         </div>
         {hasActions && (
           <div className="fc-file-actions">
-            {url && (
+            {url && !hideDownload && (
               <a
                 href={url}
                 onClick={handleOpen}
@@ -55,6 +56,7 @@ export default function FileCard({
                 title={action.title}
               >
                 {action.icon}
+                {action.label && <span>{action.label}</span>}
               </button>
             ))}
             {onRemove && (

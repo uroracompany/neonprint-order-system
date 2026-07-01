@@ -36,12 +36,43 @@ describe("payment state integration source guards", () => {
     expect(source).not.toContain("<th>Pago</th>");
   });
 
-  it("prepara el modal admin para completar pagos parciales como pagados", () => {
-    const source = readSource("src/pages/dashboard.jsx");
+  it("permite al admin elegir cualquier estado de pago sin restriccion de parcial", () => {
+    const dashboard = readSource("src/pages/dashboard.jsx");
+    const source = readSource("src/components/ui/PaymentFormModal.jsx");
 
-    expect(source).toContain("setQuotationPaymentStatus(isPaymentPartial(order.payment_status) ? PAYMENT_STATUS.PAID");
-    expect(source).toContain("const isQuotationCompletingPartialPayment = isPaymentPartial(quotationOrder?.payment_status)");
-    expect(source).toContain("disabled={quotationLoading || isQuotationCompletingPartialPayment}");
-    expect(source).toContain("<PaymentBadge status={quotationOrder.payment_status}");
+    expect(dashboard).toContain("<PaymentFormModal");
+    expect(source).not.toContain("isPaymentPartial(order.payment_status) ? PAYMENT_STATUS.PAID");
+    expect(source).not.toContain("isCompletingPartialPayment");
+    expect(source).toContain("<PaymentBadge status={order.payment_status}");
+    expect(source).toContain('setPaymentStatus(orderPaymentStatus || "Pending_Payment")');
+    expect(source).toContain("<option value={PAYMENT_STATUS.PENDING}>Pendiente</option>");
+    expect(source).toContain("<option value={PAYMENT_STATUS.PARTIAL}>Pago parcial</option>");
+    expect(source).toContain("<option value={PAYMENT_STATUS.CREDIT}>Pago a crédito</option>");
+    expect(source).toContain("<option value={PAYMENT_STATUS.PAID}>Pagado</option>");
+  });
+
+  it("muestra comprobante de pago condicional en PAID con preview y boton estilo caja", () => {
+    const source = readSource("src/components/ui/PaymentFormModal.jsx");
+
+    expect(source).toContain("existingReceiptUrl");
+    expect(source).toContain("receiptPreviewUrl");
+    expect(source).toContain("receiptPreviewAvailable");
+    expect(source).toContain("receiptZoneError");
+    expect(source).toContain("receiptZoneErrorKey");
+    expect(source).toContain("handleReceiptAccepted");
+    expect(source).toContain("handleRemoveReceipt");
+    expect(source).toContain("Comprobante de pago");
+    expect(source).toContain("PAYMENT_RECEIPT_HINT");
+    expect(source).toContain("file-upload-zone--hidden-picker");
+    expect(source).toContain("> Cambiar");
+    expect(source).toContain("Seleccionar desde el ordenador");
+    expect(source).toContain("URL.createObjectURL(receiptFile)");
+    expect(source).toContain("URL.revokeObjectURL");
+    expect(source).toContain("!receiptFile && !order?.invoice_payment");
+    expect(source).toContain("validateReceiptFile");
+    expect(source).toContain("{paymentStatus === PAYMENT_STATUS.PAID && (");
+    expect(source).not.toContain("No existe un comprobante de pago");
+    expect(source).not.toContain("Imagen de Recibo/Factura");
+    expect(source).not.toContain("variant=\"compact\"");
   });
 });

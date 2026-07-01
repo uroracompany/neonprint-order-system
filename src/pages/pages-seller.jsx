@@ -37,10 +37,20 @@ import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import FileCard from "../components/FileCard";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
+import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
+import SharedCreateOrderModal from "../components/orders/CreateOrderModal";
+import SharedEditOrderModal from "../components/orders/EditOrderModal";
+import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
+import OrderReviewBadge from "../components/orders/OrderReviewBadge";
+import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
 import { buildStorageSafeFileName, formatFileSize, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
 import { validateReferenceImages, compressImage, canDecodeAsImage, REF_IMAGE_CONFIG } from "../utils/imageValidation";
 import { formatDominicanPhone, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
+
+export { default as OrderDetailModal } from "../components/orders/OrderDetailModal";
 
 const isReturnedOrder = (order) => {
   if (!order || !order.return_reason) return false;
@@ -51,6 +61,7 @@ const isReturnedOrder = (order) => {
 };
 
 const SELLER_HIDDEN_NOTIFICATION_EVENTS = new Set([
+  "admin_edited_order",
   "designer_assigned",
   "quote_assigned",
 ]);
@@ -929,7 +940,7 @@ function CreateOrderModal({
 }
 
 // ─── EDIT ORDER MODAL ─────────────────────────────────────────────────────────
-function EditOrderModal({
+function LegacyEditOrderModal({
   open,
   onClose,
   order,
@@ -1552,7 +1563,7 @@ function EditOrderModal({
 }
 
 // ─── ORDER DETAIL MODAL ───────────────────────────────────────────────────────
-export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSendToQuotation }) {
+function LegacyOrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSendToQuotation }) {
   const hasOrder = Boolean(order);
   const created = hasOrder ? new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" }) : "";
   const statusConfig = hasOrder ? getOrderStatusConfig(order.status) : getOrderStatusConfig(ORDER_STATUS.PENDING);
@@ -1758,57 +1769,12 @@ export function OrderDetailModal({ open, onClose, order, user, onSendToDesigner,
             {/* Botón Enviar a Diseño / Cotización */}
             {!isOrderStatusIn(order.status, ACTIVE_WORKFLOW_STATUSES_FOR_SELLER) && (
               <div style={{ marginTop: 16 }}>
-                {order.order_design_type === "EXTERNAL_DESING" ? (
-                  <button
-                    onClick={() => onSendToQuotation(order)}
-                    style={{
-                      width: "100%",
-                      padding: "14px 20px",
-                      background: "linear-gradient(135deg, #0369A1 0%, #0284C7 100%)",
-                      border: "none",
-                      borderRadius: "var(--radius-md)",
-                      color: "#fff",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      fontFamily: "'Poppins', sans-serif",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      boxShadow: "0 4px 12px rgba(2, 132, 199, 0.3)",
-                      transition: "all 0.2s"
-                    }}
-                  >
-                    <Icons.Edit style={{ width: 18, height: 18 }} />
-                    Enviar a Caja
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => onSendToDesigner(order)}
-                    style={{
-                      width: "100%",
-                      padding: "14px 20px",
-                      background: "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)",
-                      border: "none",
-                      borderRadius: "var(--radius-md)",
-                      color: "#fff",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      fontFamily: "'Poppins', sans-serif",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      boxShadow: "0 4px 12px rgba(139, 92, 246, 0.3)",
-                      transition: "all 0.2s"
-                    }}
-                  >
-                    <Icons.Edit style={{ width: 18, height: 18 }} />
-                    Enviar a Diseño
-                  </button>
-                )}
+                <OrderAssignmentAction
+                  order={order}
+                  label={order.order_design_type === "EXTERNAL_DESING" ? "Enviar a Caja" : "Enviar a Diseño"}
+                  onClick={order.order_design_type === "EXTERNAL_DESING" ? onSendToQuotation : onSendToDesigner}
+                  bare
+                />
               </div>
             )}
           </div>
@@ -2070,7 +2036,7 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
 export default function PageSeller() {
   const navigate = useNavigate();
   const { user: authUser, signOut } = useAuth();
-  const RELEVANT_COLUMNS = "id,client_id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token,reference_images";
+  const RELEVANT_COLUMNS = "id,client_id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,invoice_number,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token,reference_images";
   const [activeTab, setActiveTab] = useState("dashboard");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -2102,6 +2068,9 @@ export default function PageSeller() {
   const [sendingLoading, setSendingLoading] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
   const notif = useNotifications(user?.id);
+  const orderReviews = useOrderEventReviews(user?.id);
+  const pendingOrderReviews = orderReviews.pendingByOrder;
+  const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
   const showToast = (message, type = "success") => {
     setToastMsg({ message, type });
     setTimeout(() => setToastMsg(null), 1500);
@@ -2122,12 +2091,16 @@ export default function PageSeller() {
       .limit(100);
 
     if (!error && Array.isArray(data)) {
-      setOrders(data);
+      applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
     } else {
       setOrders([]);
     }
     setLoading(false);
   };
+
+  const openOrderDetail = useCallback((order) => {
+    setSelectedOrder(order);
+  }, []);
 
 
 
@@ -2151,32 +2124,26 @@ export default function PageSeller() {
   }, [authUser]);
 
   // Sincronización en tiempo real + refresco al volver a la página
-  useEffect(() => {
-    if (!user?.id) return;
+  const sellerUserId = user?.id;
+  const refreshSellerOrdersSilently = useCallback(async () => {
+    if (!sellerUserId) return;
+    const { data, error } = await supabase
+      .from("orders")
+      .select(RELEVANT_COLUMNS)
+      .eq("seller_id", sellerUserId)
+      .order("created_at", { ascending: false })
+      .limit(100);
 
-    const refreshOrders = async () => {
-      const { data } = await supabase
-        .from("orders")
-        .select(RELEVANT_COLUMNS)
-        .eq("seller_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(100);
-      if (data) setOrders(data);
-    };
+    if (!error && data) {
+      applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
+    }
+  }, [sellerUserId]);
 
-    const channel = supabase
-      .channel(`orders-realtime-${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        refreshOrders
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
+  useOrdersRealtimeSync({
+    userId: sellerUserId,
+    scope: "seller",
+    refreshOrders: refreshSellerOrdersSilently,
+  });
 
   useEffect(() => {
     supabase.from("materials").select("name").order("name").then(({ data }) => {
@@ -2273,9 +2240,9 @@ export default function PageSeller() {
       .single();
     
     if (data) {
-      setSelectedOrder(data);
+      openOrderDetail(data);
     } else {
-      setSelectedOrder(order);
+      openOrderDetail(order);
     }
   };
 
@@ -2603,14 +2570,19 @@ export default function PageSeller() {
                         </tr>
                       ) : (
                         orders.slice(0, 5).map(o => (
-                          <tr key={o.id} className="row-hover" onClick={() => setSelectedOrder(o)}>
-                            <td className="td-pad td-name">{o.client_name}</td>
+                          <tr key={o.id} className="row-hover" onClick={() => openOrderDetail(o)}>
+                            <td className="td-pad td-name">
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <span>{o.client_name}</span>
+                                <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                              </div>
+                            </td>
                             <td className="td-pad td-desc">{o.description}</td>
                             <td className="td-pad td-mat">{o.material}</td>
                             <td className="td-pad"><StatusBadge status={o.status} /></td>
                             <td className="td-pad">
                               <div className="table-actions">
-                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); setSelectedOrder(o); }} title="Ver detalles">
+                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); openOrderDetail(o); }} title="Ver detalles">
                                   <Icons.Eye />
                                 </button>
                                 {!o.is_archived && (
@@ -2751,7 +2723,8 @@ export default function PageSeller() {
                               <td className="td-pad td-name">
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                                   <span>{o.client_name}</span>
-{isReturnedOrder(o) && <ReturnedBadge compact />}
+                                  <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                                  {isReturnedOrder(o) && <ReturnedBadge compact />}
                                 </div>
                               </td>
                               <td className="td-pad td-desc">{o.description}</td>
@@ -2825,7 +2798,10 @@ export default function PageSeller() {
                               {isReturnedOrder(o) && <ReturnedBadge compact />}
                             </div>
                           </div>
-                          <div className="ps-order-card-client">{o.client_name}</div>
+                          <div className="ps-order-card-client">
+                            <span>{o.client_name}</span>
+                            <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                          </div>
                           <div className="ps-order-card-desc">{o.description}</div>
                           <div className="ps-order-card-meta">
                             <span className="ps-order-card-material">{o.material}</span>
@@ -2880,7 +2856,7 @@ export default function PageSeller() {
         </main>
       </div>
 
-      <CreateOrderModal
+      <SharedCreateOrderModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onCreated={async () => {
@@ -2896,7 +2872,7 @@ export default function PageSeller() {
         clientToSelect={clientToSelectInOrderForm}
         onClientToSelectConsumed={() => setClientToSelectInOrderForm(null)}
       />
-      <EditOrderModal
+      <SharedEditOrderModal
         open={!!editingOrder}
         onClose={() => setEditingOrder(null)}
         order={editingOrder}
@@ -2906,7 +2882,18 @@ export default function PageSeller() {
         clientsLoading={clientsLoading}
         onClientSearch={handleClientSearch}
       />
-      <OrderDetailModal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} order={selectedOrder} user={user} onSendToDesigner={handleSendToDesigner} onSendToQuotation={handleSendToQuotation} />
+      <SharedOrderDetailModal
+        open={!!selectedOrder}
+        onClose={() => setSelectedOrder(null)}
+        order={selectedOrder}
+        user={user}
+        pendingReview={selectedOrderReview}
+        onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
+        reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
+        reviewError={orderReviews.acknowledgeError}
+        onSendToDesigner={handleSendToDesigner}
+        onSendToQuotation={handleSendToQuotation}
+      />
       <AssignModal
         open={!!sendingToDesigner}
         onClose={() => setSendingToDesigner(null)}

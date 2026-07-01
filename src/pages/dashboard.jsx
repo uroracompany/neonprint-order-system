@@ -1,8 +1,16 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
-import { validateImage } from "../utils/imageValidation";
+import CreateOrderModal from "../components/orders/CreateOrderModal";
+import SharedEditOrderModal from "../components/orders/EditOrderModal";
+import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
+import AdminAdvancedOrderModal from "../components/orders/AdminAdvancedOrderModal";
+import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
+import PaymentFormModal from "../components/ui/PaymentFormModal";
+import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
+import CreateClientModal from "../components/ui/CreateClientModal";
+import { validateReceiptFile } from "../utils/receiptValidation";
 import {
   buildPaymentReceiptPath,
   buildStorageSafeFileName,
@@ -26,7 +34,7 @@ import {
   ORDER_STATUS,
   PAYMENT_STATUS,
   STATUS_LABELS,
-  PAYMENT_LABELS,
+  getPaymentStatusLabel,
   MATERIAL_OPTIONS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
@@ -48,14 +56,15 @@ import {
   canArchiveOrder,
   archiveOrder,
 } from "../utils/archive";
-import { getPaymentConfirmButtonLabel } from "../utils/paymentUi";
 import { getReferenceImages } from "../utils/orderAssets";
 import { clientMatchesQuery, formatDominicanPhone, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
 import { filterActiveNotifications, getActiveUnreadCount, showCreditActionFeedback } from "../utils/notifications";
 import { useAuth } from "../hooks/useAuth";
+import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
 import "../css-components/page-admin.css";
@@ -332,7 +341,7 @@ function OrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit
 
 
 // Shared order info rendering (used by both modals)
-function OrderDetailInfo({ order, usersById }) {
+function OrderDetailInfo({ order, usersById, assignmentAction = null }) {
   const [paymentInvoiceUrl, setPaymentInvoiceUrl] = useState("");
 
   useEffect(() => {
@@ -575,7 +584,7 @@ function OrderDetailInfo({ order, usersById }) {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 13, color: "var(--text-sub)" }}>Pago:</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{PAYMENT_LABELS[order.payment_status] || order.payment_status}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{getPaymentStatusLabel(order.payment_status)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 13, color: "var(--text-sub)" }}>Archivada en admin:</span>
@@ -602,6 +611,7 @@ function OrderDetailInfo({ order, usersById }) {
                 </div>
               )}
             </div>
+            {assignmentAction && <div style={{ marginTop: 16 }}>{assignmentAction}</div>}
           </div>
 
           {isPaymentPaid(order.payment_status) && paymentInvoice && (
@@ -659,43 +669,27 @@ function OrderDetailInfo({ order, usersById }) {
 }
 
 // Modal de detalles de orden para admin (con botones de accion)
-function AdminOrderDetailModal({ open, order, usersById, userId, onClose, onEdit, onCancel, onAssign, onArchive, onDelete }) {
+function AdminOrderDetailModal({ open, order, usersById, onClose, onAssign }) {
   if (!open || !order) return null;
+
+  const isExternalDesign = order.order_design_type === "EXTERNAL_DESING";
+  const canAssign = !isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED, ORDER_STATUS.IN_DESIGN]);
+  const assignRole = isExternalDesign ? "quote" : "designer";
+  const assignmentAction = canAssign ? (
+    <OrderAssignmentAction
+      order={order}
+      label="Asignar Orden"
+      onClick={() => {
+        onClose();
+        onAssign(order, assignRole);
+      }}
+      bare
+    />
+  ) : null;
 
   return (
     <ModalShell open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} size="large">
-      <OrderDetailInfo order={order} usersById={usersById} />
-      <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-        <button className="pa-btn primary" style={{ flex: 1 }} onClick={() => { onClose(); onEdit(order); }}>
-          <Icons.Edit />Editar
-        </button>
-      </div>
-      {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, userId) && (
-        <button className="pa-btn" style={{ width: "100%", marginTop: 8, background: "#F59E0B", color: "#fff", border: "none" }} onClick={() => onArchive(order)}>
-          <Icons.Archive />Archivar orden
-        </button>
-      )}
-      {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED, ORDER_STATUS.IN_DESIGN]) && (
-        <div style={{ marginTop: 8 }}>
-          {order.order_design_type === "EXTERNAL_DESING" ? (
-            <button className="pa-btn" style={{ width: "100%", background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => onAssign(order, "quote")}>
-              Enviar a Caja
-            </button>
-          ) : (
-            <button className="pa-btn" style={{ width: "100%", background: "#8B5CF6", color: "#fff", border: "none" }} onClick={() => onAssign(order, "designer")}>
-              Asignar a Diseñador
-            </button>
-          )}
-        </div>
-      )}
-      {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED]) && (
-        <button className="pa-btn danger" style={{ width: "100%", marginTop: 8 }} onClick={() => onCancel(order)}>
-          <Icons.Trash />Cancelar Orden
-        </button>
-      )}
-      <button className="pa-btn danger" style={{ width: "100%", marginTop: 8 }} onClick={() => onDelete(order)}>
-        <Icons.Trash />Eliminar orden y archivos
-      </button>
+      <OrderDetailInfo order={order} usersById={usersById} assignmentAction={assignmentAction} />
     </ModalShell>
   );
 }
@@ -1444,10 +1438,27 @@ const CARD_ACCENTS = [
   { color: "#14B8A6", bg: "#CCFBF1", glow: "#CCFBF1" },
 ];
 
+const ADMIN_SIDEBAR_STORAGE_KEY = "neonprint_admin_sidebar_open";
+
+const getInitialAdminSidebarOpen = () => {
+  if (typeof window === "undefined") return true;
+
+  try {
+    const savedValue = window.localStorage.getItem(ADMIN_SIDEBAR_STORAGE_KEY);
+    return savedValue === null ? true : savedValue === "true";
+  } catch {
+    return true;
+  }
+};
+
+const isInteractiveOrderRowTarget = (target) => Boolean(
+  target?.closest?.("button, a, input, select, textarea, [data-row-action]")
+);
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(getInitialAdminSidebarOpen);
   const [activeTab, setActiveTab] = useState("overview");
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -1457,19 +1468,16 @@ export default function Dashboard() {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadOrdersError, setLoadOrdersError] = useState(null);
   const [loadUsersError, setLoadUsersError] = useState(null);
-  const [savingOrder, setSavingOrder] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
   const [assigningOrder, setAssigningOrder] = useState(null);
   const [assigningRole, setAssigningRole] = useState(null);
   const [assigningLoading, setAssigningLoading] = useState(false);
-  const [quotationModalOpen, setQuotationModalOpen] = useState(false);
-  const [quotationOrder, setQuotationOrder] = useState(null);
+  const [paymentModalOrder, setPaymentModalOrder] = useState(null);
+  const [paymentModalLoading, setPaymentModalLoading] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelOrderData, setCancelOrderData] = useState(null);
+  const [_savingOrder, setSavingOrder] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
-  const [quotationPaymentStatus, setQuotationPaymentStatus] = useState("Pending_Payment");
-  const [quotationInvoice, setQuotationInvoice] = useState(null);
-  const [quotationLoading, setQuotationLoading] = useState(false);
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [deletingOrder, setDeletingOrder] = useState(null);
@@ -1482,11 +1490,16 @@ export default function Dashboard() {
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [archiveFilter, setArchiveFilter] = useState("active");
+  const [interventionFilter, setInterventionFilter] = useState("all");
   const notif = useNotifications(user?.id);
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   // userViewMode eliminado: solo vista tabla
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [advancedOrder, setAdvancedOrder] = useState(null);
+  const [advancedActionLoading, setAdvancedActionLoading] = useState(false);
+  const [advancedProduction, setAdvancedProduction] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [orderModalMode, setOrderModalMode] = useState("create");
   const [orderForm, setOrderForm] = useState(DEFAULT_ORDER_FORM);
@@ -1546,6 +1559,8 @@ export default function Dashboard() {
   const creditReminderServerClockRef = useRef(null);
   const [clientSearch, setClientSearch] = useState("");
   const [showClientModal, setShowClientModal] = useState(false);
+  const [showOrderClientModal, setShowOrderClientModal] = useState(false);
+  const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
   const [editingClient, setEditingClient] = useState(null);
   const [clientForm, setClientForm] = useState(DEFAULT_CLIENT_FORM);
   const [clientFormError, setClientFormError] = useState("");
@@ -1575,6 +1590,14 @@ export default function Dashboard() {
     const timeout = setTimeout(() => setFeedback(null), 2800);
     return () => clearTimeout(timeout);
   }, [feedback]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ADMIN_SIDEBAR_STORAGE_KEY, String(sidebarOpen));
+    } catch {
+      // LocalStorage can be unavailable in private browsing or tests.
+    }
+  }, [sidebarOpen]);
 
   useEffect(() => {
     setUser(authUser || null);
@@ -1644,7 +1667,13 @@ export default function Dashboard() {
         throw new Error(result?.error || "No se pudieron cargar ordenes.");
       }
 
-      setOrders(Array.isArray(result?.orders) ? result.orders : []);
+      applyOrdersSnapshot({
+        orders: result?.orders,
+        setOrders,
+        setSelectedOrder,
+        openOrderSetters: [setAdvancedOrder, setPaymentModalOrder],
+        openOrderContainers: [{ setter: setAdvancedProduction }],
+      });
       if (!silent) setLoadingOrders(false);
       return;
     } catch (error) {
@@ -1710,6 +1739,13 @@ export default function Dashboard() {
       setClientsLoading(false);
     }
   }, []);
+
+  const refreshAdminOrdersSilently = useCallback(() => loadOrders(true), [loadOrders]);
+  useOrdersRealtimeSync({
+    userId: authUser?.id,
+    scope: "admin",
+    refreshOrders: refreshAdminOrdersSilently,
+  });
 
   const fetchAccountsReceivable = useCallback(async () => {
     setAccountsReceivableLoading(true);
@@ -1817,12 +1853,8 @@ export default function Dashboard() {
     dispatchDueCreditReminderNotifications();
     fetchCreditCustomReminders();
 
-    const ordersChannel = supabase
-      .channel(`admin-realtime-${authUser.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        loadOrders(true);
-        fetchAccountsReceivable();
-      })
+    const relatedDataChannel = supabase
+      .channel(`admin-related-data-${authUser.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts_receivable' }, () => {
         loadOrders(true);
         fetchAccountsReceivable();
@@ -1839,7 +1871,7 @@ export default function Dashboard() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(ordersChannel);
+      supabase.removeChannel(relatedDataChannel);
     };
   }, [authUser?.id, dispatchDueCreditReminderNotifications, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, loadOrders, loadProfiles]);
 
@@ -1914,6 +1946,11 @@ export default function Dashboard() {
     return results;
   }, []);
 
+  const handleOrderClientCreated = useCallback(async (client) => {
+    await fetchClients();
+    setClientToSelectInOrderForm(client || null);
+  }, [fetchClients]);
+
   useEffect(() => {
     if (activeTab === "materials") {
       fetchMaterials();
@@ -1935,7 +1972,7 @@ export default function Dashboard() {
   };
 
   // Funcionalidad para  resetea el formulario de ordenes
-  const resetOrderForm = (order = null) => {
+  const _resetOrderForm = (order = null) => {
     if (!order) {
       setOrderForm({ ...DEFAULT_ORDER_FORM, id: "" });
       return;
@@ -1967,20 +2004,22 @@ export default function Dashboard() {
 
   const openCreateOrder = () => {
     setOrderModalMode("create");
-    resetOrderForm();
+    setEditingOrder(null);
     fetchClients();
+    fetchMaterials();
     setOrderModalOpen(true);
   };
 
   const openEditOrder = (order) => {
     setSelectedOrder(null); // Cerrar detail modal primero
     setOrderModalMode("edit");
-    resetOrderForm(order);
+    setEditingOrder(order);
     fetchClients();
+    fetchMaterials();
     setOrderModalOpen(true);
   };
 
-  const handleSaveOrder = async () => {
+  const _handleSaveOrder = async () => {
     if (!orderForm.client_id) return showFeedback("error", "Debes seleccionar un cliente registrado.");
     if (!orderForm.client_name.trim()) return showFeedback("error", "Selecciona un cliente registrado para completar el nombre.");
     if (!orderForm.client_contact.trim()) return showFeedback("error", "Selecciona un cliente registrado con telefono.");
@@ -2066,7 +2105,7 @@ export default function Dashboard() {
 
     setOrderModalOpen(false);
     setSelectedOrder(null);
-    resetOrderForm();
+    _resetOrderForm();
     await loadOrders();
     showFeedback("success", orderModalMode === "create" ? "Orden creada correctamente." : "Orden actualizada correctamente.");
   };
@@ -2143,10 +2182,6 @@ export default function Dashboard() {
     showFeedback("success", "La orden fue archivada correctamente.");
   };
 
-  const openDeleteOrderModal = (order) => {
-    setDeletingOrder(order);
-  };
-
   const handleConfirmDeleteOrder = async () => {
     if (!deletingOrder?.id) return;
     setDeleteLoading(true);
@@ -2191,100 +2226,165 @@ export default function Dashboard() {
     showFeedback("success", `Orden asignada a ${isDesigner ? "diseñador" : "caja"} correctamente.`);
   };
 
-  const openQuotationModal = (order) => {
-    setQuotationOrder(order);
-    setQuotationPaymentStatus(isPaymentPartial(order.payment_status) ? PAYMENT_STATUS.PAID : order.payment_status || PAYMENT_STATUS.PENDING);
-    setQuotationInvoice(null);
-    setQuotationModalOpen(true);
+  const openPaymentModal = (order) => {
+    setPaymentModalOrder(order);
   };
 
-  const handleQuotationOrder = async () => {
-    if (!quotationOrder) return;
+  const handlePaymentConfirm = async ({ paymentStatus, receiptFile }) => {
+    const currentOrder = paymentModalOrder;
+    if (!currentOrder) return;
 
-    if (isPaymentPartial(quotationOrder.payment_status) && quotationPaymentStatus === PAYMENT_STATUS.PENDING) {
-      return showFeedback("error", "Una orden con pago parcial solo puede mantenerse parcial o cambiarse a pagado.");
-    }
-
-    if (quotationPaymentStatus === PAYMENT_STATUS.CREDIT) {
-      if (!String(quotationOrder.invoice_number || "").trim()) {
-        return showFeedback("error", "La orden debe tener un numero de facturacion para vender a crédito.");
-      }
-
-      if (!quotationOrder.client_id) {
-        return showFeedback("error", "Para vender a crédito debes registrar y vincular este cliente.");
-      }
-
-      setQuotationLoading(true);
+    if (paymentStatus === PAYMENT_STATUS.CREDIT) {
+      setPaymentModalLoading(true);
       const { error } = await supabase.rpc("mark_order_as_credit", {
-        p_order_id: quotationOrder.id,
+        p_order_id: currentOrder.id,
         p_due_date: null,
       });
-      setQuotationLoading(false);
+      setPaymentModalLoading(false);
 
       if (error) {
-        return showFeedback("error", error.message || "No se pudo aprobar el crédito.");
+        throw new Error(error.message || "No se pudo aprobar el crédito.");
       }
 
-      setQuotationModalOpen(false);
-      setQuotationOrder(null);
+      setPaymentModalOrder(null);
       await Promise.all([loadOrders(), fetchAccountsReceivable()]);
       return;
     }
 
-    if (quotationPaymentStatus === PAYMENT_STATUS.PAID && !quotationInvoice) {
-      return showFeedback("error", "Debe subir la imagen de pago para marcar como pagado.");
-    }
-
-    setQuotationLoading(true);
+    setPaymentModalLoading(true);
 
     let paymentInvoiceUrl = null;
 
-    if (quotationInvoice) {
-      // Validar imagen antes de subir
-      const validation = await validateImage(quotationInvoice);
-      
+    if (receiptFile) {
+      const validation = await validateReceiptFile(receiptFile);
       if (!validation.isValid) {
-        setQuotationLoading(false);
-        return showFeedback("error", validation.error || "La imagen no es válida.");
+        setPaymentModalLoading(false);
+        throw new Error(validation.error || "La imagen no es válida.");
       }
 
       try {
-        const filePath = buildPaymentReceiptPath(quotationOrder.id, quotationInvoice.name);
+        const filePath = buildPaymentReceiptPath(currentOrder.id, receiptFile.name);
         const publicUrl = await uploadOrderAsset({
           bucket: "payment-invoice",
           path: filePath,
-          file: quotationInvoice,
+          file: receiptFile,
         });
         if (publicUrl) {
           paymentInvoiceUrl = publicUrl;
         } else {
-          setQuotationLoading(false);
-          return showFeedback("error", "Error al subir la imagen de pago.");
+          setPaymentModalLoading(false);
+          throw new Error("Error al subir la imagen de pago.");
         }
       } catch (uploadError) {
-        setQuotationLoading(false);
-        return showFeedback("error", uploadError?.message || "Error al subir la imagen de pago.");
+        setPaymentModalLoading(false);
+        throw new Error(uploadError?.message || "Error al subir la imagen de pago.");
       }
     }
 
     const { error } = await supabase
       .from("orders")
       .update({
-        payment_status: quotationPaymentStatus,
-        invoice_payment: quotationPaymentStatus === PAYMENT_STATUS.PARTIAL ? null : paymentInvoiceUrl,
+        payment_status: paymentStatus,
+        invoice_payment: paymentStatus === PAYMENT_STATUS.PARTIAL ? null : paymentInvoiceUrl,
       })
-      .eq("id", quotationOrder.id);
+      .eq("id", currentOrder.id);
 
-    setQuotationLoading(false);
+    setPaymentModalLoading(false);
 
     if (error) {
-      return showFeedback("error", "Error al actualizar la orden.");
+      throw new Error("Error al actualizar la orden.");
     }
 
-    setQuotationModalOpen(false);
-    setQuotationOrder(null);
+    setPaymentModalOrder(null);
     await loadOrders();
-    showFeedback("success", quotationPaymentStatus === PAYMENT_STATUS.PARTIAL ? "Pago parcial registrado correctamente." : "Orden cotizada correctamente.");
+    showFeedback("success", paymentStatus === PAYMENT_STATUS.PARTIAL ? "Pago parcial registrado correctamente." : "Orden cotizada correctamente.");
+  };
+
+  const fetchAdvancedOrderForProduction = useCallback(async (order) => {
+    if (!order?.id) return order;
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*, order_production_files(*)")
+      .eq("id", order.id)
+      .single();
+    if (error || !data) {
+      console.warn("No se pudieron cargar los archivos de produccion para Administracion:", error?.message || error);
+      return order;
+    }
+    return {
+      ...order,
+      ...data,
+      order_production_files: Array.isArray(data.order_production_files)
+        ? data.order_production_files
+        : order.order_production_files,
+    };
+  }, []);
+
+  const handleAdvancedAction = async ({ action, targetUserId, reasonCategory, reasonDetail, expectedUpdatedAt, areaAssignments }) => {
+    if (!advancedOrder) return;
+    if (action === "route_production" || action === "reassign_production") {
+      const freshOrder = orders.find((item) => item.id === advancedOrder.id) || advancedOrder;
+      setAdvancedActionLoading(true);
+      const hydratedOrder = await fetchAdvancedOrderForProduction(freshOrder);
+      setAdvancedActionLoading(false);
+      setAdvancedProduction({
+        order: hydratedOrder,
+        reasonCategory,
+        reasonDetail,
+        expectedUpdatedAt: hydratedOrder?.updated_at || expectedUpdatedAt,
+        action,
+        areaAssignments,
+      });
+      setAdvancedOrder(null);
+      return;
+    }
+    setAdvancedActionLoading(true);
+    const { data, error } = await supabase.rpc("admin_manage_order", {
+      p_order_id: advancedOrder.id,
+      p_action: action,
+      p_reason_category: reasonCategory,
+      p_reason_detail: reasonDetail,
+      p_expected_updated_at: expectedUpdatedAt,
+      p_target_user_id: targetUserId,
+      p_area_assignments: areaAssignments || {},
+    });
+    setAdvancedActionLoading(false);
+    if (error) return showFeedback("error", error.message || "No se pudo aplicar el ajuste.");
+    setAdvancedOrder(null);
+    await loadOrders();
+    const successMsg = data?.last_admin_intervention_kind === "route_quote" ? "Orden enviada a Caja"
+      : data?.last_admin_intervention_kind === "return_to_quote" ? "Orden regresada a Caja"
+      : data?.last_admin_intervention_kind === "mark_delivered" ? "Orden marcada como Entregada"
+      : data?.last_admin_intervention_kind === "return_to_completed" ? "Orden regresada a Completado"
+      : data?.last_admin_intervention_kind === "route_design" ? "Orden enviada a Diseño"
+      : data?.last_admin_intervention_kind === "set_designer_assignee" ? "Diseñador actualizado"
+      : data?.last_admin_intervention_kind === "return_to_design" ? "Orden regresada a Diseño"
+      : data?.last_admin_intervention_kind === "assign_seller" ? "Vendedor reasignado"
+      : data?.last_admin_intervention_kind === "design_assets_updated" ? "Archivos de diseño guardados"
+      : "Ajuste guardado";
+    showFeedback("success", `${successMsg} correctamente.`);
+  };
+
+  const handleAdvancedProductionConfirm = async (assignments) => {
+    if (!advancedProduction?.order) return;
+    const productionAction = advancedProduction.action || "route_production";
+    const mergedAssignments = { ...(advancedProduction.areaAssignments || {}), ...assignments };
+    setAdvancedActionLoading(true);
+    const { error } = await supabase.rpc("admin_manage_order", {
+      p_order_id: advancedProduction.order.id,
+      p_action: productionAction,
+      p_reason_category: advancedProduction.reasonCategory,
+      p_reason_detail: advancedProduction.reasonDetail,
+      p_expected_updated_at: advancedProduction.expectedUpdatedAt,
+      p_target_user_id: null,
+      p_area_assignments: mergedAssignments,
+    });
+    setAdvancedActionLoading(false);
+    if (error) return showFeedback("error", error.message || "No se pudo completar la operación.");
+    setAdvancedProduction(null);
+    await loadOrders();
+    const msg = productionAction === "reassign_production" ? "Producción reasignada correctamente." : "Orden enviada a Producción correctamente.";
+    showFeedback("success", msg);
   };
 
   const openCreateUserModal = () => {
@@ -2953,9 +3053,12 @@ export default function Dashboard() {
         || (archiveFilter === "archived" && order.is_archived_admin);
       const createdAt = new Date(order.created_at);
       const matchesDate = dateFilter === "all" || (dateFilter === "today" && createdAt >= startOfToday) || (dateFilter === "week" && createdAt >= startOfWeek);
-      return matchesSearch && matchesStatus && matchesOwner && matchesClient && matchesArchive && matchesDate;
+      const matchesIntervention = interventionFilter === "all"
+        || (interventionFilter === "intervened" && Boolean(order.last_admin_intervention_at))
+        || (interventionFilter === "not_intervened" && !order.last_admin_intervention_at);
+      return matchesSearch && matchesStatus && matchesOwner && matchesClient && matchesArchive && matchesDate && matchesIntervention;
     });
-  }, [orders, search, statusFilter, ownerFilter, clientFilter, archiveFilter, dateFilter, usersById]);
+  }, [orders, search, statusFilter, ownerFilter, clientFilter, archiveFilter, dateFilter, interventionFilter, usersById]);
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
@@ -3184,6 +3287,22 @@ export default function Dashboard() {
     }
   }, [ordersById, selectedOrder]);
 
+  const toggleAdminSidebar = useCallback(() => {
+    setSidebarOpen(previous => !previous);
+  }, []);
+
+  const handleOrderRowClick = useCallback((event, order) => {
+    if (isInteractiveOrderRowTarget(event.target)) return;
+    setSelectedOrder(order);
+  }, []);
+
+  const handleOrderRowKeyDown = useCallback((event, order) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    if (isInteractiveOrderRowTarget(event.target)) return;
+    event.preventDefault();
+    setSelectedOrder(order);
+  }, []);
+
   const toggleCreditOrderSelection = (clientId, orderId) => {
     if (!clientId || !orderId) return;
     setSelectedCreditOrderIds(prev => {
@@ -3277,8 +3396,7 @@ export default function Dashboard() {
     { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
   ];
 
-  const isQuotationCompletingPartialPayment = isPaymentPartial(quotationOrder?.payment_status);
-  const quotationConfirmButtonLabel = quotationLoading ? "Guardando..." : getPaymentConfirmButtonLabel(quotationPaymentStatus);
+  // payment label is handled inside PaymentFormModal component
 
   return (
     // Apartado principal totalmente flexible
@@ -3287,7 +3405,14 @@ export default function Dashboard() {
       <main className="pa-main">
         <header className="pa-header">
           <div className="pa-header-left">
-            <button className="pa-mobile-toggle" onClick={() => setSidebarOpen(prev => !prev)} aria-label="Abrir menú"><Icons.Menu /></button>
+            <button
+              className="pa-icon-btn pa-sidebar-toggle"
+              onClick={toggleAdminSidebar}
+              aria-label={sidebarOpen ? "Contraer menu lateral" : "Expandir menu lateral"}
+              title={sidebarOpen ? "Contraer menu lateral" : "Expandir menu lateral"}
+            >
+              {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
+            </button>
             <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -3436,6 +3561,11 @@ export default function Dashboard() {
                 <option value="all">Todas</option>
                 <option value="archived">Archivadas</option>
               </select>
+              <select value={interventionFilter} onChange={(e) => setInterventionFilter(e.target.value)}>
+                <option value="all">Todas las intervenciones</option>
+                <option value="intervened">Intervenidas por Admin</option>
+                <option value="not_intervened">Sin intervención avanzada</option>
+              </select>
               <button className="pa-btn primary pa-toolbar-create" onClick={openCreateOrder}><Icons.Plus />
                 Nueva orden
               </button>
@@ -3464,7 +3594,14 @@ export default function Dashboard() {
                   </thead>
                   <tbody>
                     {loadingOrders ? <tr><td colSpan={10} className="ps-table-empty">Cargando órdenes...</td></tr> : loadOrdersError ? <tr><td colSpan={10} className="ps-table-empty">{loadOrdersError}</td></tr> : filteredOrders.length === 0 ? <tr><td colSpan={10} className="ps-table-empty">No hay órdenes disponibles.</td></tr> : paginatedOrders.map(order =>
-                          <tr key={order.id} className="row-hover">
+                          <tr
+                            key={order.id}
+                            className="row-hover pa-orders-clickable-row"
+                            tabIndex={0}
+                            onClick={(event) => handleOrderRowClick(event, order)}
+                            onKeyDown={(event) => handleOrderRowKeyDown(event, order)}
+                            aria-label={`Ver detalles de la orden ${order.id?.slice(0, 8) || ""} de ${order.client_name || "cliente sin nombre"}`}
+                          >
                             <td className="td-pad td-id">{order.id?.slice(0, 8) || "---"}</td>
                             <td className="td-pad td-name">{order.client_name || "Sin cliente"}</td>
                             <td className="td-pad">{order.invoice_number || "---"}</td>
@@ -3481,15 +3618,20 @@ export default function Dashboard() {
                             </td>
                             <td className="td-pad td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
                             <td className="td-pad td-actions">
-                              <div className="table-actions">
+                              <div className="table-actions" data-row-action>
                                 <button className="table-action-btn view" onClick={() => setSelectedOrder(order)} title="Ver detalles">
                                   <Icons.Eye />
                                 </button>
                                 <button className="table-action-btn edit" onClick={() => openEditOrder(order)} title="Editar orden">
                                   <Icons.Edit />
                                 </button>
-                                {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED]) && (
-                                  <button className="table-action-btn" style={{ background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => openQuotationModal(order)} title="Caja">
+                                {["EXTERNAL_DESING", "INTERNAL_DESING"].includes(order.order_design_type) && (
+                                  <button className="table-action-btn advanced" onClick={() => setAdvancedOrder(order)} title="Configuración avanzada">
+                                    <Icons.Settings />
+                                  </button>
+                                )}
+                                {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED]) && (
+                                  <button className="table-action-btn" style={{ background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => openPaymentModal(order)} title="Caja">
                                     <Icons.Money />
                                   </button>
                                 )}
@@ -3506,9 +3648,6 @@ export default function Dashboard() {
                                     <Icons.Archive />
                                   </button>
                                 ) : null}
-                                <button className="table-action-btn cancel" onClick={() => openDeleteOrderModal(order)} title="Eliminar orden y archivos">
-                                  <Icons.X />
-                                </button>
                               </div>
                             </td>
                           </tr>)}
@@ -4212,17 +4351,43 @@ export default function Dashboard() {
         }
       </main>
 
-      <AdminOrderFormModal
-        open={orderModalOpen}
-        mode={orderModalMode}
-        orderForm={orderForm}
-        setOrderForm={setOrderForm}
-        onClose={() => { setOrderModalOpen(false); setSelectedOrder(null); resetOrderForm(); }}
-        onSubmit={handleSaveOrder}
-        saving={savingOrder}
-        clients={clients}
-        onClientSearch={handleClientSearch}
-        clientsLoading={clientsLoading}
+      {orderModalMode === "create" ? (
+        <CreateOrderModal
+          open={orderModalOpen}
+          onClose={() => { setOrderModalOpen(false); setEditingOrder(null); }}
+          onCreated={async () => {
+            await Promise.all([loadOrders(), fetchClients(), fetchAccountsReceivable()]);
+            await notif.refresh?.({ showNewToasts: true });
+            showFeedback("success", "Orden creada correctamente.");
+          }}
+          userId={user?.id}
+          materialOptions={materials.map(item => item.name)}
+          clients={clients}
+          clientsLoading={clientsLoading}
+          onClientSearch={handleClientSearch}
+          onAddNewClient={() => setShowOrderClientModal(true)}
+          clientToSelect={clientToSelectInOrderForm}
+          onClientToSelectConsumed={() => setClientToSelectInOrderForm(null)}
+        />
+      ) : (
+        <SharedEditOrderModal
+          open={orderModalOpen}
+          onClose={() => { setOrderModalOpen(false); setSelectedOrder(null); setEditingOrder(null); }}
+          order={editingOrder}
+          onUpdated={async () => {
+            await Promise.all([loadOrders(), fetchAccountsReceivable()]);
+            showFeedback("success", "Orden actualizada correctamente.");
+          }}
+          materialOptions={materials.map(item => item.name)}
+          clients={clients}
+          onClientSearch={handleClientSearch}
+          clientsLoading={clientsLoading}
+        />
+      )}
+      <CreateClientModal
+        open={showOrderClientModal}
+        onClose={() => setShowOrderClientModal(false)}
+        onCreated={handleOrderClientCreated}
       />
       {activeTab === "credits" ? (
         <CreditOrderDetailModal
@@ -4232,17 +4397,22 @@ export default function Dashboard() {
           onClose={() => setSelectedOrder(null)}
         />
       ) : (
-        <AdminOrderDetailModal
+        <SharedOrderDetailModal
           open={!!selectedOrder}
           order={selectedOrder}
-          usersById={usersById}
-          userId={user?.id}
           onClose={() => setSelectedOrder(null)}
-          onEdit={openEditOrder}
-          onCancel={openCancelModal}
-          onAssign={openAssignModal}
-          onArchive={openArchiveModal}
-          onDelete={openDeleteOrderModal}
+          responsibleName={selectedOrder ? getUserDisplayName(usersById[resolveSellerId(selectedOrder)]) : "---"}
+          designerName={selectedOrder?.designer_id ? getUserDisplayName(usersById[selectedOrder.designer_id]) : ""}
+          primaryActionLabel="Asignar Orden"
+          showPrimaryAction={false}
+          onSendToDesigner={(order) => {
+            setSelectedOrder(null);
+            openAssignModal(order, "designer");
+          }}
+          onSendToQuotation={(order) => {
+            setSelectedOrder(null);
+            openAssignModal(order, "quote");
+          }}
         />
       )}
       <AssignModal
@@ -4254,77 +4424,30 @@ export default function Dashboard() {
         onConfirm={handleAssignOrder}
         loading={assigningLoading}
       />
-      <ModalShell open={quotationModalOpen} onClose={() => setQuotationModalOpen(false)} title="Caja de orden" size="compact">
-        <div style={{ minWidth: 320 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
-            {quotationOrder?.client_name}
-          </p>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20, lineHeight: 1.5 }}>
-            {quotationOrder?.description?.slice(0, 60)}{quotationOrder?.description?.length > 60 ? "..." : ""}
-          </p>
-
-          {quotationOrder && (
-            <div className="pa-field" style={{ marginBottom: 16 }}>
-              <span>Estado real actual</span>
-              <PaymentBadge status={quotationOrder.payment_status} className="ps-badge" bordered />
-            </div>
-          )}
-
-          <div className="pa-field" style={{ marginBottom: 16 }}>
-            <span>Estado de Pago</span>
-            <select
-              value={quotationPaymentStatus}
-              onChange={(e) => setQuotationPaymentStatus(e.target.value)}
-              disabled={quotationLoading || isQuotationCompletingPartialPayment}
-              style={{ width: "100%" }}
-            >
-              <option value={PAYMENT_STATUS.PENDING} disabled={isPaymentPartial(quotationOrder?.payment_status)}>Pendiente</option>
-              <option value={PAYMENT_STATUS.PARTIAL}>Pago parcial</option>
-              <option value={PAYMENT_STATUS.CREDIT}>Pago a crédito</option>
-              <option value={PAYMENT_STATUS.PAID}>Pagado</option>
-            </select>
-          </div>
-
-          {quotationPaymentStatus === PAYMENT_STATUS.CREDIT && (
-            <div className="pa-field" style={{ marginBottom: 16 }}>
-              <span>Numero de facturacion</span>
-              <strong>{quotationOrder?.invoice_number || "No definido"}</strong>
-            </div>
-          )}
-
-          {quotationPaymentStatus === PAYMENT_STATUS.PAID && (
-            <div className="pa-field" style={{ marginBottom: 20 }}>
-              <span>Imagen de Recibo/Factura <span style={{ color: "#ef4444" }}>*</span></span>
-              <FileUploadZone
-                mode="image"
-                replaceMode
-                variant="compact"
-                buttonLabel={quotationInvoice ? "Cambiar recibo/factura" : "Subir recibo/factura"}
-                onFilesAccepted={([file]) => setQuotationInvoice(file)}
-              />
-              {quotationInvoice && (
-                <p style={{ fontSize: 12, color: "var(--success)", marginTop: 8 }}>
-                  {quotationInvoice.name}
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="pa-modal-actions">
-            <button className="pa-btn secondary" onClick={() => setQuotationModalOpen(false)}>
-              Cancelar
-            </button>
-            <button
-              className="pa-btn primary"
-              style={{ background: "#06B6D4", borderColor: "#06B6D4", flex: 2 }}
-              onClick={handleQuotationOrder}
-              disabled={quotationLoading || (quotationPaymentStatus === PAYMENT_STATUS.PAID && !quotationInvoice)}
-            >
-              {quotationConfirmButtonLabel}
-            </button>
-          </div>
-        </div>
-      </ModalShell>
+      <AdminAdvancedOrderModal
+        open={!!advancedOrder}
+        order={advancedOrder}
+        profiles={profiles}
+        loading={advancedActionLoading}
+        onClose={() => setAdvancedOrder(null)}
+        onRunAction={handleAdvancedAction}
+        currentUserId={authUser?.id}
+      />
+      <ProductionAssignmentModal
+        open={!!advancedProduction}
+        order={advancedProduction?.order}
+        loading={advancedActionLoading}
+        title={advancedProduction?.action === "reassign_production" ? "Reasignar Producción" : undefined}
+        onClose={() => setAdvancedProduction(null)}
+        onConfirm={handleAdvancedProductionConfirm}
+      />
+      <PaymentFormModal
+        open={!!paymentModalOrder}
+        order={paymentModalOrder}
+        loading={paymentModalLoading}
+        onClose={() => setPaymentModalOrder(null)}
+        onConfirm={handlePaymentConfirm}
+      />
       <ModalShell open={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Confirmar Cancelación" size="compact">
         <div className="pa-confirm-modal-body">
           <div className="pa-confirm-icon cancel">

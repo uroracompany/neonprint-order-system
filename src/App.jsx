@@ -3,6 +3,7 @@ import { Routes, Route, BrowserRouter } from 'react-router-dom'
 import ProtectedRoute from './ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AuthProvider } from './contexts/AuthProvider'
+import AdminInterventionAlert from './components/orders/AdminInterventionAlert'
 import './App.css'
 
 const Lobby = lazy(() => import('./pages/lobby'))
@@ -19,6 +20,7 @@ function App() {
     <ErrorBoundary>
       <AuthProvider>
         <BrowserRouter>
+          <AdminInterventionAlert />
           <Suspense fallback={<div className="app-route-loading">Cargando...</div>}>
             <Routes>
               <Route path="/" element={<Lobby />} />

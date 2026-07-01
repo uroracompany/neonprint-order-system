@@ -4,11 +4,25 @@ import { OrderDetailModal } from "../pages/page-production.jsx";
 import { ORDER_STATUS, PRODUCTION_FILE_STATUS } from "../utils/constants";
 import { supabase } from "../../supabaseClient";
 
-vi.mock("../../supabaseClient", () => ({
-  supabase: {
-    rpc: vi.fn(),
-  },
-}));
+vi.mock("../../supabaseClient", () => {
+  const mockEqProfiles = vi.fn(() => ({
+    then: (resolve) => resolve({ data: [{ id: "delivery-user-1", name: "Carlos Delivery", role: "delivery" }], error: null }),
+  }));
+  const mockSelect = vi.fn(() => ({ eq: mockEqProfiles }));
+  const mockUpdateEq = vi.fn(() => Promise.resolve({ error: null }));
+  const mockUpdate = vi.fn(() => ({ eq: mockUpdateEq }));
+
+  return {
+    supabase: {
+      rpc: vi.fn(),
+      from: vi.fn((table) => {
+        if (table === "orders") return { update: mockUpdate };
+        if (table === "profiles") return { select: mockSelect };
+        return { select: vi.fn(() => ({ eq: vi.fn(() => ({ then: (resolve) => resolve({ data: [], error: null }) })) })) };
+      }),
+    },
+  };
+});
 
 const baseOrder = {
   id: "12345678-1234-1234-1234-123456789abc",
@@ -49,7 +63,7 @@ describe("Production last pending file confirmation", () => {
     vi.clearAllMocks();
   });
 
-  it("does not show the modal when another order file is still pending, even if it is outside the visible area", async () => {
+  it("does not show the modal when another order file is still pending", async () => {
     supabase.rpc.mockImplementation(async (fnName) => {
       if (fnName === "will_complete_production_order") {
         return { data: false, error: null };
@@ -80,7 +94,49 @@ describe("Production last pending file confirmation", () => {
     expect(screen.queryByText(/Finalizar orden/i)).not.toBeInTheDocument();
   });
 
-  it("only shows the modal for the last pending file in a five-file order", async () => {
+  it("opens delivery assignment modal after confirming last file, then completes on assign", async () => {
+    supabase.rpc.mockImplementation(async (fnName) => {
+      if (fnName === "will_complete_production_order") {
+        return { data: true, error: null };
+      }
+      if (fnName === "update_production_file_status") {
+        return { data: { id: "file-1" }, error: null };
+      }
+      return { data: null, error: null };
+    });
+
+    renderProductionModal({
+      ...baseOrder,
+      order_production_files: [
+        makeFile("file-1", "ploteo"),
+      ],
+    });
+
+    fireEvent.click(screen.getByTitle("Marcar completado"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Finalizar orden/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Confirmar y completar orden"));
+
+    await waitFor(() => {
+      const select = screen.getByRole("combobox");
+      expect(select).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "delivery-user-1" } });
+    fireEvent.click(screen.getByText("Asignar Orden"));
+
+    await waitFor(() => {
+      expect(supabase.rpc).toHaveBeenCalledWith("update_production_file_status", {
+        p_file_id: "file-1",
+        p_next_status: PRODUCTION_FILE_STATUS.COMPLETED,
+      });
+    });
+  });
+
+  it("only shows confirmation modal for the last pending file among several", async () => {
     const willCompleteResponses = [false, true];
     supabase.rpc.mockImplementation(async (fnName) => {
       if (fnName === "will_complete_production_order") {
@@ -144,6 +200,13 @@ describe("Production last pending file confirmation", () => {
     ).toHaveLength(1);
 
     fireEvent.click(screen.getByText("Confirmar y completar orden"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "delivery-user-1" } });
+    fireEvent.click(screen.getByText("Asignar Orden"));
 
     await waitFor(() => {
       expect(supabase.rpc).toHaveBeenCalledWith("update_production_file_status", {

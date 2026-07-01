@@ -1,0 +1,419 @@
+.admin-intervention-panel {
+  margin: 18px 0;
+  padding: 20px;
+  border: 1px solid #d8def0;
+  border-radius: 14px;
+  background: #fff;
+  color: #172033;
+}
+
+.admin-intervention-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-intervention-head h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.admin-intervention-head p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.admin-intervention-head > strong {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 11px;
+}
+
+.admin-intervention-step-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.admin-intervention-step-heading > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #4338ca;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.admin-intervention-step-heading strong,
+.admin-intervention-step-heading p {
+  display: block;
+}
+
+.admin-intervention-step-heading strong {
+  color: #1e293b;
+  font-size: 13px;
+}
+
+.admin-intervention-step-heading p {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.admin-intervention-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.admin-intervention-actions button {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid #d7dce7;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.admin-intervention-actions button:hover {
+  border-color: #a5b4fc;
+  background: #fafaff;
+}
+
+.admin-intervention-actions button:focus-visible,
+.admin-intervention-panel select:focus-visible,
+.admin-intervention-panel textarea:focus-visible,
+.admin-intervention-panel button:focus-visible,
+.admin-production-files summary:focus-visible {
+  outline: 3px solid rgb(99 102 241 / 22%);
+  outline-offset: 2px;
+}
+
+.admin-intervention-actions button.selected {
+  border-color: #4f46e5;
+  background: #f7f7ff;
+  box-shadow: 0 0 0 1px #4f46e5;
+}
+
+.admin-intervention-actions button:disabled,
+.admin-intervention-submit:disabled,
+.admin-production-file-list article button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
+.admin-action-copy,
+.admin-action-copy strong,
+.admin-action-copy span {
+  display: block;
+}
+
+.admin-action-copy strong {
+  margin-bottom: 3px;
+  color: #1e293b;
+  font-size: 13px;
+}
+
+.admin-action-copy span {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.admin-action-check {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  border: 1px solid #d7dce7;
+  border-radius: 50%;
+  color: transparent;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.admin-intervention-actions button.selected .admin-action-check {
+  border-color: #4f46e5;
+  background: #4f46e5;
+  color: #fff;
+}
+
+.admin-intervention-empty {
+  margin: 12px 0 0;
+  padding: 14px;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.admin-intervention-editor {
+  margin-top: 18px;
+  padding-top: 2px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.admin-intervention-form,
+.admin-intervention-reason,
+.admin-area-assignments {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.admin-intervention-reason {
+  grid-template-columns: minmax(180px, .72fr) minmax(250px, 1.28fr);
+}
+
+.admin-intervention-panel label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-intervention-panel select,
+.admin-intervention-panel textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #fff;
+  color: #1e293b;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-intervention-panel select {
+  min-height: 43px;
+  padding: 9px 38px 9px 11px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+.admin-intervention-panel textarea {
+  min-height: 84px;
+  padding: 11px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.admin-intervention-panel select:hover,
+.admin-intervention-panel textarea:hover {
+  border-color: #a5b4fc;
+}
+
+.admin-intervention-panel label > small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.admin-intervention-reason label:last-child small {
+  text-align: right;
+}
+
+.admin-intervention-submit {
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 9px;
+  background: #4338ca;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.admin-intervention-submit:hover:not(:disabled) {
+  background: #3730a3;
+}
+
+.admin-intervention-submit:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.admin-production-files {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.admin-production-files summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  color: #1e293b;
+  cursor: pointer;
+  list-style: none;
+}
+
+.admin-production-files summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-production-files summary > span:first-child,
+.admin-production-files summary strong,
+.admin-production-files summary small {
+  display: block;
+}
+
+.admin-production-files summary strong {
+  font-size: 13px;
+}
+
+.admin-production-files summary small {
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.admin-production-files summary > span:last-child {
+  color: #64748b;
+  font-size: 18px;
+  transition: transform 160ms ease;
+}
+
+.admin-production-files[open] summary > span:last-child {
+  transform: rotate(180deg);
+}
+
+.admin-production-files-body {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.admin-production-file-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-production-file-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.admin-production-file-list article strong,
+.admin-production-file-list article span {
+  display: block;
+}
+
+.admin-production-file-list article strong {
+  color: #1e293b;
+  font-size: 12px;
+}
+
+.admin-production-file-list article span {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.admin-production-file-list article > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.admin-production-file-list article button {
+  padding: 7px 9px;
+  border: 1px solid #a5b4fc;
+  border-radius: 7px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-intervention-error,
+.admin-intervention-success {
+  margin: 12px 0 0;
+  padding: 10px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.admin-intervention-error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.admin-intervention-success {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+@media (max-width: 700px) {
+  .admin-intervention-panel {
+    padding: 16px;
+  }
+
+  .admin-intervention-actions,
+  .admin-intervention-reason {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-production-file-list article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-production-file-list article > div:last-child {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-intervention-panel * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}

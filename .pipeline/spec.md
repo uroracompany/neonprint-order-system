@@ -1,54 +1,111 @@
-# Pipeline Spec: Resolver Bloqueos de Supabase Auth por Concurrencia
+# Spec: Extraer PaymentFormModal + Rediseño Visual AdminAdvancedOrderModal
 
-## Planner
+## Objetivo
 
-### Diagnóstico
+Extraer el formulario de pago actualmente inline en `dashboard.jsx` a un componente reutilizable `PaymentFormModal`, integrarlo en `AdminAdvancedOrderModal` (que hoy delega al dashboard), y rediseñar visualmente el modal de Configuración Avanzada para que sea más profesional y coherente con el design system existente.
 
-El problema no venía de múltiples instancias frontend de Supabase. La instancia principal sigue centralizada en `supabaseClient.js`.
+## Archivos a crear
 
-La causa raíz era la concurrencia de operaciones Auth:
+### 1. `src/components/ui/PaymentFormModal.jsx`
 
-- `ProtectedRoute` ejecutaba `supabase.auth.getUser()` al montar y también en `focus`.
-- Cada página protegida volvía a ejecutar `supabase.auth.getUser()` en su propio `useEffect`.
-- `Dashboard` disparaba `loadOrders()` y `loadProfiles()` en paralelo; ambas usaban `adminApiFetch`, que llamaba `getSession()` y a veces `refreshSession()`.
-- `pages-seller` registraba un listener adicional `onAuthStateChange`.
-- En desarrollo, React StrictMode duplicaba los efectos, aumentando la ráfaga.
+Componente autónomo de pago con las siguientes características:
 
-Ese patrón podía saturar el lock interno de GoTrue para la key `sb-dnzouxbbmkgcpyvexmoy-auth-token`, generando:
+**Props:**
+- `open` (boolean) — controla visibilidad
+- `order` (object) — `{ id, client_name, description, payment_status, invoice_number, client_id, invoice_payment }`
+- `loading` (boolean) — estado de guardado externo
+- `onClose` (function) — cierra el modal
+- `onConfirm` (async function `({ paymentStatus, receiptFile })`) — ejecuta la lógica de pago; debe lanzar error si falla
 
-- `Lock ... was not released within 5000ms`
-- `DOMException: The lock request is aborted`
-- estados falsos de sesión inválida o módulos vacíos.
+**Estado interno:**
+- `paymentStatus` — enum: Pending_Payment | parcial | pagado | credito
+- `receiptFile` — File | null (para pagado)
+- `receiptPreviewUrl` — derived de `URL.createObjectURL(receiptFile)` con cleanup
+- `existingReceiptUrl` — signed URL desde `order.invoice_payment`
+- `receiptZoneError` / `receiptZoneErrorKey` — errores de FileUploadZone
+- `receiptPreviewAvailable` — controla preview de HEIC/HEIF
 
-### Archivos involucrados
+**Validaciones inline (antes de onConfirm):**
+- `pagado`: requiere receiptFile nuevo o `order.invoice_payment` existente
+- `credito`: requiere `order.invoice_number` y `order.client_id`
+- `parcial`: no requiere comprobante
 
-- `supabaseClient.js`
-- `src/utils/adminApi.js`
-- `src/ProtectedRoute.jsx`
-- `src/App.jsx`
-- `src/pages/dashboard.jsx`
-- `src/pages/page-quote.jsx`
-- `src/pages/pages-seller.jsx`
-- `src/pages/page-production.jsx`
-- `src/pages/page-designer.jsx`
-- `src/pages/page-delivery.jsx`
-- `src/pages/lobby.jsx`
+**UI:**
+- Header: "Registro de pago" con descripción breve de la orden
+- Badge del estado actual de pago (solo lectura)
+- Selector de estado de pago (Pendiente → Parcial → Crédito → Pagado)
+- Si `credito`: muestra número de facturación
+- Si `pagado`: FileUploadZone + preview del receipt + botones cambiar/eliminar
+- Si ya existe `invoice_payment` y no se seleccionó archivo nuevo: muestra preview del receipt existente
+- Botón cancelar + botón confirmar con label dinámico (`getPaymentConfirmButtonLabel`)
+- Animación de entrada consistente con el sistema
 
-### Plan de corrección
+### 2. `src/components/ui/PaymentFormModal.css`
 
-1. Crear `authManager` para serializar y deduplicar `getSession`, `refreshSession`, `getUser` y `signOut`.
-2. Crear `AuthProvider` con un solo `onAuthStateChange` global.
-3. Crear `useAuth` para que `ProtectedRoute` y páginas protegidas consuman `user/profile/session`.
-4. Refactorizar páginas para eliminar llamadas directas a `getUser`, `getSession`, `refreshSession`, `signOut` y listeners duplicados.
-5. Mantener `signInWithPassword` solo en Login.
-6. Mantener APIs admin existentes sin cambiar contratos ni RLS.
-7. Agregar tests de concurrencia para token y refresh.
+Estilos del modal, usando variables CSS del sistema (`--surface`, `--border`, `--text`, `--cyan`, `--radius-md`, etc.).
 
-### Riesgos y mitigaciones
+---
 
-- Riesgo: Fast Refresh si un archivo exporta provider y hook juntos.
-  - Mitigación: separar `AuthProvider`, `AuthContext` y `useAuth`.
-- Riesgo: intentar refrescar sesión inexistente después de logout.
-  - Mitigación: `getFreshAccessToken` falla limpio si no hay token y no se pidió refresh forzado.
-- Riesgo: ocultar problemas reales de permisos.
-  - Mitigación: `ProtectedRoute` sigue validando rol y estado laboral desde `profile`.
+## Archivos a modificar
+
+### 3. `src/pages/dashboard.jsx`
+
+**Eliminar:**
+- 10 estados `quotation*`: `quotationModalOpen`, `quotationOrder`, `quotationPaymentStatus`, `quotationInvoice`, `quotationExistingReceiptUrl`, `quotationReceiptInputRef`, `quotationLoading`, `quotationReceiptPreviewAvailable`, `quotationReceiptZoneError`, `quotationReceiptZoneErrorKey`
+- `quotationConfirmButtonLabel` (línea 3432)
+- `quotationReceiptPreviewUrl` (línea 1597)
+- useEffect de signed URL (línea 1580)
+- `handleQuotationOrder`, `handleQuotationReceiptAccepted`, `handleQuotationRemoveReceipt`
+- `showQuotationReceiptZoneError`
+
+**Conservar:**
+- `openQuotationModal` -> mantener simplificada, que solo setea el order
+- `handleQuotationOrder` -> convertir en `handlePaymentConfirm` que llama al RPC + upload
+
+**Reemplazar:**
+- ModalShell inline (4479-4673) por `<PaymentFormModal>`
+- Importar `PaymentFormModal`
+
+### 4. `src/components/orders/AdminAdvancedOrderModal.jsx`
+
+**Cambios:**
+- Importar `PaymentFormModal`
+- Añadir estado `paymentOrder` y `paymentLoading`
+- En `beginAction`, cuando `key === "register_payment"`, setear `paymentOrder` en vez de llamar `onOpenPayment`
+- Renderizar `<PaymentFormModal>` dentro del modal
+- Eliminar prop `onOpenPayment` (ya no se necesita)
+- Añadir `handlePaymentInAdvanced` que sube receipt, llama a `admin_manage_external_order` con `register_payment`, y refresca la orden
+
+### 5. `src/components/orders/AdminAdvancedOrderModal.css`
+
+**Reescritura completa del CSS usando variables del sistema:**
+
+- Migrar todos los colores a `var(--...)` desde `page-admin.css`
+- Añadir `::before` gradient bar como el `.pa-modal`
+- Summary en 2×2 grid en desktop, 1 col en mobile, sin bordes verticales
+- Action cards: border-radius 12px, hover más pronunciado (translateY(-2px) + shadow), active scale(0.98)
+- Icon containers: 44×44, border-radius 12px, fondos con opacidad de colores del sistema
+- Focus-visible consistente en todos los elementos
+- Animación `scaleIn` de entrada
+- Loading state con skeleton cards animados (pulse)
+- Footer con `box-shadow: 0 -4px 12px rgba(15,30,64,0.04)` para separación
+- Form grid más balanceado
+- CSS expandido a multi-línea para mantenibilidad
+
+---
+
+## Lo que NO cambia
+
+- Dashboard mantiene su botón de icono de dinero que abre PaymentFormModal
+- No se elimina funcionalidad existente
+- No se requieren migraciones de base de datos
+- No se modifican RPCs
+
+## Pruebas necesarias
+
+1. PaymentFormModal renderiza correctamente en dashboard
+2. PaymentFormModal renderiza correctamente desde AdminAdvancedOrderModal
+3. Validación de pago (pagado requiere receipt, crédito requiere invoice_number + client_id)
+4. Receipt upload y preview funcionan
+5. Estados de carga y error se muestran correctamente
+6. El modal avanzado mantiene todas sus acciones existentes

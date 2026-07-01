@@ -218,6 +218,11 @@
   display: inline-flex;
 }
 
+.pa-sidebar-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
 .pa-mobile-toggle:hover,
 .pa-icon-btn:hover {
   transform: translateY(-1px);
@@ -676,10 +681,37 @@
   gap: 8px;
 }
 
+.pa-orders-clickable-row {
+  cursor: pointer;
+}
+
+.pa-orders-clickable-row:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+  background: rgba(6, 182, 212, 0.08);
+}
+
+.pa-orders-clickable-row .td-actions,
+.pa-orders-clickable-row .table-actions {
+  cursor: default;
+}
+
 .table-action-btn.activate {
   color: #059669;
   border-color: #A7F3D0;
   background: #ECFDF5;
+}
+
+.table-action-btn.advanced {
+  border: 1px solid rgba(15, 30, 64, .12);
+  background: #e8edf8;
+  color: #0f1e40;
+}
+
+.table-action-btn.advanced:hover {
+  border-color: #06b6d4;
+  background: #ecfeff;
+  color: #0e7490;
 }
 
 .table-action-btn.activate:hover {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-designer.css";
@@ -7,6 +7,8 @@ import { Icons } from "../utils/icons";
 import { AssignModal } from "../components/ui/AssignModal";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import FileUploadZone from "../components/ui/FileUploadZone";
+import OrderReviewCard from "../components/orders/OrderReviewCard";
+import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import {
   canArchiveOrder,
   archiveOrder,
@@ -17,12 +19,15 @@ import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
+import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
 import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { getOrderFiles, getPreviewImage, getReferenceImages } from "../utils/orderAssets";
 import { buildProductionFileRows } from "../utils/production";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const PER_PAGE = 15;
@@ -182,7 +187,19 @@ function ProductionAreaSelect({ value, onChange, isError }) {
   );
 }
 
-function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRefresh, onSendToQuotation, quotationSending }) {
+function OrderDetailModal({
+  onClose,
+  order,
+  designerFiles,
+  designerPreview,
+  onRefresh,
+  onSendToQuotation,
+  quotationSending,
+  pendingReview,
+  onAcknowledgeReview,
+  reviewAcknowledging,
+  reviewError,
+}) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingFileAreas, setPendingFileAreas] = useState([]);
   const [pendingFileLabels, setPendingFileLabels] = useState([]);
@@ -543,7 +560,14 @@ function OrderDetailModal({ onClose, order, designerFiles, designerPreview, onRe
               </div>
             </div>
           </div>
-          
+
+          <OrderReviewCard
+            pendingReview={pendingReview}
+            onAcknowledge={onAcknowledgeReview}
+            acknowledging={reviewAcknowledging}
+            error={reviewError}
+          />
+
           <div className="pd-modal-card">
             <div className="pd-modal-card-title">
               <Icons.Package />
@@ -846,6 +870,8 @@ export default function PageDesigner() {
   const [orderFiles, setOrderFiles] = useState({});
   const [orderPreviews, setOrderPreviews] = useState({});
   const notif = useNotifications(user?.id);
+  const orderReviews = useOrderEventReviews(user?.id);
+  const pendingOrderReviews = orderReviews.pendingByOrder;
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
   const [originalQuoterId, setOriginalQuoterId] = useState(null);
   const [quotationSending, setQuotationSending] = useState(false);
@@ -860,7 +886,7 @@ export default function PageDesigner() {
   const ordersInitializedRef = useRef(false);
   const mainScrollRef = useRef(null);
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     if (!userRef.current) return;
 
     const { data, error } = await supabase
@@ -881,7 +907,7 @@ export default function PageDesigner() {
         }, {});
         ordersInitializedRef.current = true;
         ordersRef.current = data;
-        setOrders(data);
+        applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
         setLoading(false);
         return;
       }
@@ -905,10 +931,10 @@ export default function PageDesigner() {
         return acc;
       }, {});
       ordersRef.current = data;
-      setOrders(data);
+      applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadClients(supabase).then(setClients);
@@ -925,6 +951,10 @@ export default function PageDesigner() {
   useEffect(() => {
     localStorage.setItem(EDITED_ORDERS_STORAGE_KEY, JSON.stringify(editedOrders));
   }, [editedOrders]);
+
+  const pendingReviewForDesigner = selectedOrder
+    ? pendingOrderReviews[selectedOrder.id] || null
+    : null;
 
   useEffect(() => {
     const mainNode = mainScrollRef.current;
@@ -976,24 +1006,13 @@ export default function PageDesigner() {
   useEffect(() => {
     if (!user?.id) return;
     fetchOrders();
-  }, [user?.id]);
+  }, [fetchOrders, user?.id]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channel = supabase
-      .channel(`designer-orders-${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        () => fetchOrders()
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
+  useOrdersRealtimeSync({
+    userId: user?.id,
+    scope: "designer",
+    refreshOrders: fetchOrders,
+  });
 
   useEffect(() => {
     return () => {
@@ -1008,8 +1027,9 @@ export default function PageDesigner() {
     return hoursAgo;
   };
 
-  const isEditedOrder = (order) => {
-    return !!editedOrders[order.id];
+  const getEditLabel = (order) => {
+    if (editedOrders[order.id] && !pendingOrderReviews[order.id]) return "Editada";
+    return null;
   };
 
   const _canArchiveDesignerOrder = (order) => (
@@ -1337,7 +1357,8 @@ export default function PageDesigner() {
                                 {isReturnedOrder(order) && <ReturnedBadge compact />}
                                 {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
                                 {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
-                                {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
+                                <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                {getEditLabel(order) && <span className="pd-badge-edited">{getEditLabel(order)}</span>}
                                 <StatusBadge status={order.status} className="pd-badge" bordered />
                               </div>
                             </td>
@@ -1467,7 +1488,8 @@ export default function PageDesigner() {
                                   {isReturnedOrder(order) && <ReturnedBadge compact />}
                                   {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
                                   {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
-                                  {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
+                                  <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                  {getEditLabel(order) && <span className="pd-badge-edited">{getEditLabel(order)}</span>}
                                 </div>
                               </div>
                             </td>
@@ -1510,7 +1532,8 @@ export default function PageDesigner() {
                             {isReturnedOrder(order) && <ReturnedBadge compact />}
                             {hasFiles(order, orderFiles) && <AttachmentIndicator compact />}
                             {isNewOrder(order) && <span className="pd-badge-new">Nuevo</span>}
-                            {isEditedOrder(order) && <span className="pd-badge-edited">Editada</span>}
+                            <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                            {getEditLabel(order) && <span className="pd-badge-edited">{getEditLabel(order)}</span>}
                             <StatusBadge status={order.status} className="pd-badge" bordered />
                           </div>
                         </div>
@@ -1565,6 +1588,10 @@ export default function PageDesigner() {
             refreshOrderFromDB(selectedOrder.id);
           }
         }}
+        pendingReview={pendingReviewForDesigner}
+        onAcknowledgeReview={pendingReviewForDesigner ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
+        reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
+        reviewError={orderReviews.acknowledgeError}
       />
       <AssignModal
         open={!!sendingToQuotation}

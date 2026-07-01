@@ -87,7 +87,8 @@ declare
 begin
   if tg_op = 'UPDATE'
     and old.payment_status = 'parcial'
-    and new.payment_status not in ('parcial', 'pagado') then
+    and new.payment_status not in ('parcial', 'pagado')
+    and v_role <> 'admin' then
     raise exception 'Una orden con pago parcial solo puede mantenerse parcial o cambiarse a pagado.';
   end if;
 

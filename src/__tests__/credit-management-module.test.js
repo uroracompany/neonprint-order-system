@@ -68,9 +68,12 @@ describe("modulo de gestion de creditos", () => {
 
   it("sincroniza creditos en tiempo real sin dejar detalle o seleccion congelados", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
+    const sharedHook = readProjectFile("src/hooks/useOrdersRealtimeSync.js");
 
-    expect(dashboard).toContain("admin-realtime");
-    expect(dashboard).toContain("table: 'orders'");
+    expect(dashboard).toContain("useOrdersRealtimeSync({");
+    expect(dashboard).toContain("admin-related-data");
+    expect(sharedHook).toContain('{ event: "*", schema: "public", table: "orders" }');
+    expect(sharedHook).toContain("orders:user:${userId}");
     expect(dashboard).toContain("table: 'accounts_receivable'");
     expect(dashboard).toContain("table: 'clients'");
     expect(dashboard).toContain("loadOrders(true)");
@@ -83,7 +86,7 @@ describe("modulo de gestion de creditos", () => {
   it("precarga los contadores del sidebar administrativo desde el montaje inicial", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
     const initialLoadStart = dashboard.indexOf("if (!authUser?.id) return undefined;");
-    const initialLoadEnd = dashboard.indexOf("const ordersChannel", initialLoadStart);
+    const initialLoadEnd = dashboard.indexOf("const relatedDataChannel", initialLoadStart);
     const initialLoadBlock = dashboard.slice(initialLoadStart, initialLoadEnd);
 
     expect(initialLoadBlock).toContain("loadOrders();");

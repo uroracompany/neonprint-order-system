@@ -14,7 +14,6 @@ import SettleCreditModal from "../components/ui/SettleCreditModal";
 import {
   ORDER_STATUS,
   PAYMENT_STATUS,
-  PRODUCTION_AREAS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   ARCHIVE_MODULES,
@@ -29,17 +28,19 @@ import {
   formatDate,
 } from "../utils/constants";
 import { getReferenceImages } from "../utils/orderAssets";
-import {
-  getParticipatingProductionAreaCodes,
-  getProductionFiles,
-  hasUnclassifiedProductionFiles,
-} from "../utils/production";
+import { getProductionFiles } from "../utils/production";
 import { useAuth } from "../hooks/useAuth";
 import { showCreditActionFeedback } from "../utils/notifications";
 import useNotifications from "../hooks/useNotifications";
+import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
+import OrderReviewCard from "../components/orders/OrderReviewCard";
+import OrderReviewBadge from "../components/orders/OrderReviewBadge";
+import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import FileCard from "../components/FileCard";
 import { loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import "../css-components/page-quote.css";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import {
@@ -272,198 +273,23 @@ function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
 // 5. Enviar la orden a producción cuando está lista
 // 6. Archivar órdenes completadas
 
-function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading }) {
-  const [areas, setAreas] = useState(PRODUCTION_AREAS);
-  const [users, setUsers] = useState([]);
-  const [assignments, setAssignments] = useState({});
-  const [loadingOptions, setLoadingOptions] = useState(false);
-  const [error, setError] = useState("");
 
-  const productionFiles = useMemo(() => getProductionFiles(order), [order]);
-  const participatingAreaCodes = useMemo(() => (
-    getParticipatingProductionAreaCodes(productionFiles)
-  ), [productionFiles]);
-  const hasUnclassifiedFiles = useMemo(() => (
-    hasUnclassifiedProductionFiles(productionFiles)
-  ), [productionFiles]);
-  const areaCounts = useMemo(() => (
-    productionFiles.reduce((acc, file) => {
-      if (file.production_area_code) {
-        acc[file.production_area_code] = (acc[file.production_area_code] || 0) + 1;
-      }
-      return acc;
-    }, {})
-  ), [productionFiles]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    let active = true;
-    setAssignments({});
-    setError("");
-    setLoadingOptions(true);
-
-    const loadOptions = async () => {
-      const { data: areaData, error: areaError } = await supabase
-        .from("production_areas")
-        .select("code, label, producer_role, is_active")
-        .eq("is_active", true);
-
-      if (!active) return;
-
-      const activeAreas = areaError || !Array.isArray(areaData) || areaData.length === 0
-        ? PRODUCTION_AREAS
-        : areaData
-            .map((area) => ({
-              code: area.code,
-              label: area.label,
-              role: area.producer_role,
-            }))
-            .sort((a, b) => {
-              const aIndex = PRODUCTION_AREAS.findIndex((item) => item.code === a.code);
-              const bIndex = PRODUCTION_AREAS.findIndex((item) => item.code === b.code);
-              return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex);
-            });
-      const nextAreas = activeAreas.filter((area) => participatingAreaCodes.includes(area.code));
-      const roles = [...new Set(nextAreas.map((area) => area.role).filter(Boolean))];
-      let userData = [];
-      let userError = null;
-
-      if (roles.length > 0) {
-        const userResult = await supabase
-          .from("profiles")
-          .select("id, name, role, employment_status")
-          .in("role", roles)
-          .eq("employment_status", true);
-        userData = userResult.data;
-        userError = userResult.error;
-      }
-
-      if (!active) return;
-
-      setAreas(nextAreas);
-      setUsers(Array.isArray(userData) && !userError ? userData : []);
-      setLoadingOptions(false);
-
-      if (hasUnclassifiedFiles) {
-        setError("Todos los archivos deben tener tipo de produccion antes de enviar.");
-      } else if (nextAreas.length === 0) {
-        setError("La orden no tiene archivos clasificados para produccion.");
-      } else if (userError) {
-        setError("No se pudieron cargar los usuarios de produccion.");
-      }
-    };
-
-    loadOptions();
-
-    return () => {
-      active = false;
-    };
-  }, [hasUnclassifiedFiles, open, participatingAreaCodes]);
-
-  if (!open || !order) return null;
-
-  const usersByRole = users.reduce((acc, userItem) => {
-    acc[userItem.role] = [...(acc[userItem.role] || []), userItem];
-    return acc;
-  }, {});
-  const canAssignAreas = areas.length > 0 && !hasUnclassifiedFiles;
-  const allAreasAssigned = canAssignAreas && areas.every((area) => Boolean(assignments[area.code]));
-
-  const handleConfirm = () => {
-    if (hasUnclassifiedFiles) {
-      setError("Todos los archivos deben tener tipo de produccion antes de enviar.");
-      return;
-    }
-    if (areas.length === 0) {
-      setError("La orden no tiene archivos clasificados para produccion.");
-      return;
-    }
-    if (!allAreasAssigned) {
-      setError("Debes seleccionar un responsable para cada area.");
-      return;
-    }
-    setError("");
-    onConfirm(assignments);
-  };
-
-  return (
-    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-      <div className="pq-dialog pq-production-dialog">
-        <div className="pq-dialog-icon return">
-          <Icons.Users />
-        </div>
-        <h3 className="pq-dialog-title">Asignar produccion</h3>
-        <p className="pq-dialog-text">
-          Selecciona un responsable por area antes de enviar la orden a produccion.
-        </p>
-        <div className="pq-dialog-order">
-          <span className="pq-dialog-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-          <span className="pq-dialog-order-name">{order.client_name || order.description || "Orden sin titulo"}</span>
-        </div>
-
-        {loadingOptions ? (
-          <div className="pq-production-loading">Cargando responsables...</div>
-        ) : areas.length === 0 ? (
-          <div className="pq-production-loading">
-            {hasUnclassifiedFiles
-              ? "Clasifica todos los archivos antes de enviar a produccion."
-              : "No hay areas de produccion participantes."}
-          </div>
-        ) : (
-          <div className="pq-production-assignment-list">
-            {areas.map((area) => {
-              const options = usersByRole[area.role] || [];
-              const count = areaCounts[area.code] || 0;
-              return (
-                <label className="pq-production-assignment-row" key={area.code}>
-                  <span className="pq-production-area-copy">
-                    <strong>{area.label}</strong>
-                    <small>{count} archivo{count === 1 ? "" : "s"} relacionado{count === 1 ? "" : "s"}</small>
-                  </span>
-                  <select
-                    className="pq-input"
-                    value={assignments[area.code] || ""}
-                    onChange={(event) => {
-                      setAssignments(prev => ({ ...prev, [area.code]: event.target.value }));
-                      setError("");
-                    }}
-                    disabled={loading || options.length === 0}
-                  >
-                    <option value="">Seleccionar responsable</option>
-                    {options.map((userItem) => (
-                      <option key={userItem.id} value={userItem.id}>
-                        {userItem.name || "Usuario de produccion"}
-                      </option>
-                    ))}
-                  </select>
-                  {options.length === 0 && (
-                    <span className="pq-production-row-error">No hay usuarios activos para esta area.</span>
-                  )}
-                </label>
-              );
-            })}
-          </div>
-        )}
-
-        {error && <div className="pq-production-error">{error}</div>}
-
-        <div className="pq-dialog-actions">
-          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
-          <button
-            className="pq-btn pq-btn-return"
-            onClick={handleConfirm}
-            disabled={loading || loadingOptions || !allAreasAssigned}
-          >
-            {loading ? "Enviando..." : "Enviar a produccion"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, paymentSaving, sellerDirectory, onOpenReturnModal, onValidationError, onOpenProductionModal, onCreditClientRequired }) {
+function QuoteOrderDetailModal({
+  open,
+  onClose,
+  order,
+  onConfirmPayment,
+  paymentSaving,
+  sellerDirectory,
+  onOpenReturnModal,
+  onValidationError,
+  onOpenProductionModal,
+  onCreditClientRequired,
+  pendingReview,
+  onAcknowledgeReview,
+  reviewAcknowledging,
+  reviewError,
+}) {
   const [receiptFile, setReceiptFile] = useState(null);
   const [receiptPreviewAvailable, setReceiptPreviewAvailable] = useState(true);
   const [receiptZoneError, setReceiptZoneError] = useState("");
@@ -636,6 +462,13 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
             <span className="pq-flow-date"><Icons.Clock /> {createdAt}</span>
           </div>
 
+          <OrderReviewCard
+            pendingReview={pendingReview}
+            onAcknowledge={onAcknowledgeReview}
+            acknowledging={reviewAcknowledging}
+            error={reviewError}
+          />
+
           <div className="pq-detail-grid">
             <div className="pq-panel">
               <div className="pq-panel-title">Información de la orden</div>
@@ -664,6 +497,7 @@ function QuoteOrderDetailModal({ open, onClose, order, onConfirmPayment, payment
                       key={`${fileUrl}-${index}`}
                       name={getFileNameFromUrl(fileUrl)}
                       url={fileUrl}
+                      hideDownload
                     />
                   ))}
                 </div>
@@ -1258,6 +1092,9 @@ export default function PageQuote() {
 
   // Hook personalizado para notificaciones y alertas
   const notif = useNotifications(user?.id);
+  const orderReviews = useOrderEventReviews(user?.id);
+  const pendingOrderReviews = orderReviews.pendingByOrder;
+  const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
 
   // Referencias mutables para rastrear cambios sin causar re-renders
   const previousAssignedIdsRef = useRef(new Set());
@@ -1542,6 +1379,17 @@ export default function PageQuote() {
     fetchOrdersRef.current = fetchOrders;
   });
 
+  const refreshQuoteOrdersSilently = useCallback(() => {
+    if (!user?.id) return Promise.resolve();
+    return fetchOrdersRef.current(user.id, true);
+  }, [user?.id]);
+
+  useOrdersRealtimeSync({
+    userId: user?.id,
+    scope: "quote",
+    refreshOrders: refreshQuoteOrdersSilently,
+  });
+
   const applyCreditToOrder = async (order) => {
     if (!order?.client_id) {
       notif.showActionNotification({
@@ -1617,26 +1465,9 @@ export default function PageQuote() {
     dispatchDueCreditReminderNotifications();
     fetchCreditCustomReminders();
     
-    // SUSCRIPCIÓN EN TIEMPO REAL: escucha cambios en la tabla "orders"
+    // Datos relacionados conservan sus propios canales; las órdenes usan el hook híbrido compartido.
     const channel = supabase
-      .channel(`quote-orders-${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        async (payload) => {
-          const nextOrder = payload.new;
-          const previousOrder = payload.old;
-          fetchAccountsReceivable();
-
-          // Solo recarga si la orden cambió pertenece a este usuario
-          if (
-            isOrderAssignedToQuote(nextOrder, user.id)
-            || isOrderAssignedToQuote(previousOrder, user.id)
-          ) {
-            await fetchOrdersRef.current(user.id, true); // true = sin mostrar loading spinner
-          }
-        }
-      )
+      .channel(`quote-related-data-${user.id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "accounts_receivable" },
@@ -1747,7 +1578,9 @@ export default function PageQuote() {
     }
 
     if (fetchError) {
-      setOrders([]);
+      if (!silent) {
+        applyOrdersSnapshot({ orders: [], setOrders, setSelectedOrder, additionalOrders: creditOrders });
+      }
       if (!silent) setLoading(false);
       notif.showActionNotification({
         type: "order_cancelled",
@@ -1758,7 +1591,12 @@ export default function PageQuote() {
       return;
     }
 
-    setOrders(fetchedOrders);
+    applyOrdersSnapshot({
+      orders: fetchedOrders,
+      setOrders,
+      setSelectedOrder,
+      additionalOrders: creditOrders,
+    });
     await syncSellerDirectory(fetchedOrders);
     registerNewAssignments(fetchedOrders);
     if (!silent) setLoading(false);
@@ -2655,6 +2493,7 @@ export default function PageQuote() {
                       </div>
                       <div className="pq-recent-item-footer">
                         <div className="pq-recent-badges">
+                          <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                           {isReturnedOrder(order) && <ReturnedBadge compact />}
                           <StatusBadge status={order.status} className="pq-badge" />
                           <PaymentBadge status={order.payment_status} className="pq-badge" />
@@ -2928,6 +2767,7 @@ export default function PageQuote() {
                         </span>
                       </div>
                       <div className="pq-order-badges">
+                        <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                         {isReturnedOrder(order) && <ReturnedBadge compact />}
                         <StatusBadge status={order.status} className="pq-badge" />
                         <PaymentBadge status={order.payment_status} className="pq-badge" />
@@ -2981,6 +2821,10 @@ export default function PageQuote() {
         onValidationError={handlePaymentValidationError}
         onOpenProductionModal={handleOpenProductionModal}
         onCreditClientRequired={openCreditClientRegistration}
+        pendingReview={selectedOrderReview}
+        onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
+        reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
+        reviewError={orderReviews.acknowledgeError}
       />
 
       <ArchiveOrderModal

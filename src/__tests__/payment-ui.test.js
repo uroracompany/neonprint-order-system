@@ -3,6 +3,7 @@ import {
   PAYMENT_COLORS,
   PAYMENT_LABELS,
   PAYMENT_STATUS,
+  getPaymentStatusLabel,
   isPaymentDeliveryEligible,
   isPaymentFinanciallySettled,
   isPaymentProductionEligible,
@@ -10,6 +11,13 @@ import {
 import { getPaymentConfirmButtonLabel } from "../utils/paymentUi";
 
 describe("getPaymentConfirmButtonLabel", () => {
+  it("resuelve estados de pago canonicos y heredados sin exponer claves internas", () => {
+    expect(getPaymentStatusLabel(PAYMENT_STATUS.PENDING)).toBe("Pendiente");
+    expect(getPaymentStatusLabel("pending payment")).toBe("Pendiente");
+    expect(getPaymentStatusLabel("paid")).toBe("Pagado");
+    expect(getPaymentStatusLabel("future_internal_key")).toBe("Estado de pago no disponible");
+  });
+
   it("usa Pago parcial como etiqueta operativa global", () => {
     expect(PAYMENT_LABELS[PAYMENT_STATUS.PARTIAL]).toBe("Pago parcial");
     expect(PAYMENT_COLORS[PAYMENT_STATUS.PARTIAL].label).toBe("Pago parcial");

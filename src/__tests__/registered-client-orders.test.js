@@ -47,15 +47,31 @@ describe("registered client order enforcement", () => {
   it("sales and admin forms require a selected registered client and keep visible fields read-only", () => {
     const seller = readProjectFile("src/pages/pages-seller.jsx");
     const admin = readProjectFile("src/pages/dashboard.jsx");
+    const createOrderModal = readProjectFile("src/components/orders/CreateOrderModal.jsx");
 
-    expect(seller).toContain("Debes seleccionar un cliente registrado.");
-    expect(seller).toContain("client_id: form.client_id");
-    expect(seller).toContain("value={form.client_name} readOnly disabled");
-    expect(seller).toContain("value={form.client_phone} readOnly disabled");
-    expect(admin).toContain("Debes seleccionar un cliente registrado.");
-    expect(admin).toContain("client_id: orderForm.client_id");
-    expect(admin).toContain("value={orderForm.client_name} readOnly disabled");
-    expect(admin).toContain("value={orderForm.client_contact} readOnly disabled");
+    expect(seller).toContain('import SharedCreateOrderModal from "../components/orders/CreateOrderModal";');
+    expect(seller).toContain("<SharedCreateOrderModal");
+    expect(admin).toContain('import CreateOrderModal from "../components/orders/CreateOrderModal";');
+    expect(admin).toContain('import CreateClientModal from "../components/ui/CreateClientModal";');
+    expect(admin).toContain('orderModalMode === "create"');
+    expect(admin).toContain("clientToSelect={clientToSelectInOrderForm}");
+    expect(admin).toContain("onClientToSelectConsumed={() => setClientToSelectInOrderForm(null)}");
+    expect(createOrderModal).toContain("Debes seleccionar un cliente registrado.");
+    expect(createOrderModal).toContain("client_id: form.client_id");
+    expect(createOrderModal).toContain("value={form.client_name} readOnly disabled");
+    expect(createOrderModal).toContain("value={form.client_phone} readOnly disabled");
+  });
+
+  it("shared create order flow keeps sales upload, production, and audit defaults for admin", () => {
+    const createOrderModal = readProjectFile("src/components/orders/CreateOrderModal.jsx");
+
+    expect(createOrderModal).toContain("const orderId = crypto.randomUUID()");
+    expect(createOrderModal).toContain("path: `orders/${orderId}/files/${fileName}`");
+    expect(createOrderModal).toContain('.from("order_production_files")');
+    expect(createOrderModal).toContain('payment_status: "Pending_Payment"');
+    expect(createOrderModal).toContain("status: ORDER_STATUS.PENDING");
+    expect(createOrderModal).toContain("seller_id: userId");
+    expect(createOrderModal).toContain("created_by: userId");
   });
 
   it("order forms no longer use manual client edit helpers", () => {
