@@ -93,10 +93,16 @@
   color: var(--text);
 }
 
+.pa-main-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .pa-main {
   flex: 1;
   min-width: 0;
-  height: 100vh;
   padding: 26px;
   overflow-y: auto;
 }
@@ -132,21 +138,30 @@
 .pa-recent-item,
 .pa-recent-meta,
 .pa-search-box,
-.pa-header-left {
+.pa-header-left,
+.pa-header-right {
   display: flex;
   align-items: center;
 }
 
+.pa-header-left {
+  gap: 14px;
+}
+
 .pa-header {
-  margin-bottom: 26px;
-  padding: 0 24px;
+  padding: 0 26px;
   height: 62px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   box-shadow: var(--shadow-sm);
-  animation: slideUp 0.3s ease;
   justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.pa-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .pa-feedback {
@@ -175,7 +190,14 @@
   border: 1px solid var(--cyan);
 }
 
-.pa-header h1,
+.pa-header h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 1px;
+}
+
 .pa-panel-head h2,
 .pa-modal-head h3 {
   margin: 0;
@@ -221,6 +243,28 @@
 .pa-sidebar-toggle {
   display: inline-flex;
   flex-shrink: 0;
+}
+
+.pa-header .pa-icon-btn {
+  width: auto;
+  height: auto;
+  background: transparent;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 8px;
+  color: var(--text-sub);
+  display: flex;
+  align-items: center;
+  position: relative;
+  transition: all 0.15s;
+}
+
+.pa-header .pa-icon-btn:hover {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: none;
+  box-shadow: none;
 }
 
 .pa-mobile-toggle:hover,
@@ -1996,9 +2040,6 @@
   .pa-toolbar-users > :nth-child(2) { grid-column: span 3; }
   .pa-toolbar-users > :nth-child(3) { grid-column: span 3; }
 
-  .pa-header {
-    padding: 18px 20px;
-  }
 }
 
 @media (max-width: 768px) {
@@ -2010,12 +2051,6 @@
     padding: 16px;
   }
 
-  .pa-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .pa-header,
   .pa-toolbar,
   .pa-panel,
   .pa-metric-card {

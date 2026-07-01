@@ -3425,7 +3425,7 @@ export default function Dashboard() {
     // Apartado principal totalmente flexible
     <div className="pa-root">
       <Sidebar isOpen={sidebarOpen} activeTab={activeTab} onTabChange={handleAdminTabChange} role="Admin" userName={getUserDisplayName(profile)} menuItems={menuItems} onLogout={handleLogout} onCreateNew={openCreateOrder} showCreateButton />
-      <main className="pa-main">
+      <div className="pa-main-wrap">
         <header className="pa-header">
           <div className="pa-header-left">
             <button
@@ -3438,7 +3438,7 @@ export default function Dashboard() {
             </button>
             <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="pa-header-right">
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
             <NotificationCenter
               notifications={adminVisibleNotifications}
@@ -3452,6 +3452,7 @@ export default function Dashboard() {
             />
           </div>
         </header>
+        <main className="pa-main">
 
         {activeTab === "overview" &&
           <section className="pa-section">
@@ -4384,7 +4385,8 @@ export default function Dashboard() {
             </div>
           </section>
         }
-      </main>
+        </main>
+      </div>
 
       {orderModalMode === "create" ? (
         <CreateOrderModal
