@@ -11,6 +11,7 @@ import PaymentFormModal from "../components/ui/PaymentFormModal";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
 import CreateClientModal from "../components/ui/CreateClientModal";
 import { validateReceiptFile } from "../utils/receiptValidation";
+import { executeAdminOrderCommand } from "../utils/adminOrderCommands";
 import {
   buildPaymentReceiptPath,
   buildStorageSafeFileName,
@@ -67,8 +68,8 @@ import useNotifications from "../hooks/useNotifications";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
-import "../css-components/page-admin.css";
 import "../css-components/page-seller.css";
+import "../css-components/page-admin.css";
 
 
 const DEFAULT_ORDER_FORM = {
@@ -1478,6 +1479,7 @@ export default function Dashboard() {
   const [cancelOrderData, setCancelOrderData] = useState(null);
   const [_savingOrder, setSavingOrder] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [deletingOrder, setDeletingOrder] = useState(null);
@@ -1485,12 +1487,13 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const PER_PAGE = 20;
+  const PER_PAGE = 7;
   const [dateFilter, setDateFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [archiveFilter, setArchiveFilter] = useState("active");
   const [interventionFilter, setInterventionFilter] = useState("all");
+  const [operationalFilter, setOperationalFilter] = useState("all");
   const notif = useNotifications(user?.id);
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -1604,6 +1607,17 @@ export default function Dashboard() {
       // LocalStorage can be unavailable in private browsing or tests.
     }
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    const mobileSidebarQuery = window.matchMedia("(max-width: 768px)");
+    const collapseSidebarOnMobile = (event) => {
+      if (event.matches) setSidebarOpen(false);
+    };
+
+    collapseSidebarOnMobile(mobileSidebarQuery);
+    mobileSidebarQuery.addEventListener("change", collapseSidebarOnMobile);
+    return () => mobileSidebarQuery.removeEventListener("change", collapseSidebarOnMobile);
+  }, []);
 
   useEffect(() => {
     setUser(authUser || null);
@@ -2127,11 +2141,16 @@ export default function Dashboard() {
       return;
     }
     setCancelOrderData(order);
+    setCancelReason("");
     setCancelModalOpen(true);
   };
 
   const handleConfirmCancelOrder = async () => {
     if (!cancelOrderData) return;
+    if (cancelReason.trim().length < 10) {
+      showFeedback("error", "Explica el motivo de cancelación con al menos 10 caracteres.");
+      return;
+    }
     if (isPaymentPartial(cancelOrderData.payment_status)) {
       showFeedback("error", "No se puede cancelar una orden con pago parcial.");
       setCancelModalOpen(false);
@@ -2141,15 +2160,24 @@ export default function Dashboard() {
 
     setCancelLoading(true);
 
-    const { error } = await supabase
-      .from("orders")
-      .update({ status: ORDER_STATUS.CANCELLED })
-      .eq("id", cancelOrderData.id);
+    let commandError;
+    try {
+      await executeAdminOrderCommand(supabase, {
+        orderId: cancelOrderData.id,
+        action: "cancel_order",
+        payload: {},
+        reasonCategory: "workflow_correction",
+        reasonDetail: cancelReason.trim(),
+        expectedUpdatedAt: cancelOrderData.updated_at,
+      });
+    } catch (error) {
+      commandError = error;
+    }
 
     setCancelLoading(false);
 
-    if (error) {
-      return showFeedback("error", "No se pudo cancelar la orden.");
+    if (commandError) {
+      return showFeedback("error", commandError.message || "No se pudo cancelar la orden.");
     }
 
     setCancelModalOpen(false);
@@ -2213,16 +2241,24 @@ export default function Dashboard() {
     setAssigningLoading(true);
 
     const isDesigner = assigningRole === "designer";
-    const payload = isDesigner
-      ? { status: ORDER_STATUS.IN_DESIGN, designer_id: userId }
-      : { status: ORDER_STATUS.IN_QUOTE, quote_id: userId };
-
-    const { error } = await supabase.from("orders").update(payload).eq("id", assigningOrder.id);
+    let commandError;
+    try {
+      await executeAdminOrderCommand(supabase, {
+        orderId: assigningOrder.id,
+        action: isDesigner ? "route_design" : "route_quote",
+        payload: { target_user_id: userId },
+        reasonCategory: "assignment_correction",
+        reasonDetail: "Asignación realizada por Administración desde el detalle de la orden.",
+        expectedUpdatedAt: assigningOrder.updated_at,
+      });
+    } catch (error) {
+      commandError = error;
+    }
 
     setAssigningLoading(false);
 
-    if (error) {
-      showFeedback("error", "No se pudo asignar la orden.");
+    if (commandError) {
+      showFeedback("error", commandError.message || "No se pudo asignar la orden.");
       return;
     }
 
@@ -2287,18 +2323,24 @@ export default function Dashboard() {
       }
     }
 
-    const { error } = await supabase
-      .from("orders")
-      .update({
-        payment_status: paymentStatus,
-        invoice_payment: paymentStatus === PAYMENT_STATUS.PARTIAL ? null : paymentInvoiceUrl,
-      })
-      .eq("id", currentOrder.id);
+    let commandError;
+    try {
+      await executeAdminOrderCommand(supabase, {
+        orderId: currentOrder.id,
+        action: "register_payment",
+        payload: { payment_status: paymentStatus, invoice_payment: paymentInvoiceUrl },
+        reasonCategory: "workflow_correction",
+        reasonDetail: "Pago registrado por Administración desde el listado de órdenes.",
+        expectedUpdatedAt: currentOrder.updated_at,
+      });
+    } catch (error) {
+      commandError = error;
+    }
 
     setPaymentModalLoading(false);
 
-    if (error) {
-      throw new Error("Error al actualizar la orden.");
+    if (commandError) {
+      throw new Error(commandError.message || "Error al actualizar la orden.");
     }
 
     setPaymentModalOrder(null);
@@ -2326,7 +2368,7 @@ export default function Dashboard() {
     };
   }, []);
 
-  const handleAdvancedAction = async ({ action, targetUserId, reasonCategory, reasonDetail, expectedUpdatedAt, areaAssignments }) => {
+  const handleAdvancedAction = async ({ action, targetUserId, reasonCategory, reasonDetail, expectedUpdatedAt, areaAssignments, payload = {} }) => {
     if (!settingsOrder) return;
     if (action === "route_production" || action === "reassign_production") {
       const freshOrder = orders.find((item) => item.id === settingsOrder.id) || settingsOrder;
@@ -2340,38 +2382,52 @@ export default function Dashboard() {
         expectedUpdatedAt: hydratedOrder?.updated_at || expectedUpdatedAt,
         action,
         areaAssignments,
+        payload,
       });
       return;
     }
     setAdvancedActionLoading(true);
-    const { data, error } = await supabase.rpc("admin_manage_order", {
-      p_order_id: settingsOrder.id,
-      p_action: action,
-      p_reason_category: reasonCategory,
-      p_reason_detail: reasonDetail,
-      p_expected_updated_at: expectedUpdatedAt,
-      p_target_user_id: targetUserId,
-      p_area_assignments: areaAssignments || {},
-    });
+    let data;
+    let commandError;
+    try {
+      data = await executeAdminOrderCommand(supabase, {
+        orderId: settingsOrder.id,
+        action,
+        reasonCategory,
+        reasonDetail,
+        expectedUpdatedAt,
+        payload: { ...payload, target_user_id: targetUserId, area_assignments: areaAssignments || {} },
+      });
+    } catch (error) {
+      commandError = error;
+    }
     setAdvancedActionLoading(false);
-    if (error) {
-      const message = error.message || "No se pudo aplicar el ajuste.";
+    if (commandError) {
+      const message = commandError.message || "No se pudo aplicar el ajuste.";
       showFeedback("error", message);
       throw new Error(message);
     }
-    if (data?.id) {
-      setSettingsOrder((current) => current?.id === data.id ? { ...current, ...data } : current);
+    const updatedOrder = data?.order;
+    if (updatedOrder?.id) {
+      setSettingsOrder((current) => current?.id === updatedOrder.id ? { ...current, ...updatedOrder } : current);
     }
     await loadOrders();
-    const successMsg = data?.last_admin_intervention_kind === "route_quote" ? "Orden enviada a Caja"
-      : data?.last_admin_intervention_kind === "return_to_quote" ? "Orden regresada a Caja"
-      : data?.last_admin_intervention_kind === "mark_delivered" ? "Orden marcada como Entregada"
-      : data?.last_admin_intervention_kind === "return_to_completed" ? "Orden regresada a Completado"
-      : data?.last_admin_intervention_kind === "route_design" ? "Orden enviada a Diseño"
-      : data?.last_admin_intervention_kind === "set_designer_assignee" ? "Diseñador actualizado"
-      : data?.last_admin_intervention_kind === "return_to_design" ? "Orden regresada a Diseño"
-      : data?.last_admin_intervention_kind === "assign_seller" ? "Vendedor reasignado"
-      : data?.last_admin_intervention_kind === "design_assets_updated" ? "Archivos de diseño guardados"
+    const completedAction = data?.action || action;
+    const successMsg = completedAction === "route_quote" ? "Orden enviada a Caja"
+      : completedAction === "return_to_quote" ? "Orden regresada a Caja"
+      : completedAction === "mark_delivered" ? "Orden marcada como Entregada"
+      : completedAction === "return_to_completed" ? "Orden regresada a Completado"
+      : completedAction === "route_design" ? "Orden enviada a Diseño"
+      : completedAction === "set_designer_assignee" ? "Diseñador actualizado"
+      : completedAction === "return_to_design" ? "Orden regresada a Diseño"
+      : completedAction === "assign_seller" ? "Vendedor reasignado"
+      : completedAction === "block_order" ? "Orden bloqueada"
+      : completedAction === "resume_order" ? "Orden reanudada"
+      : completedAction === "set_priority" ? "Prioridad actualizada"
+      : completedAction === "reclassify_design" ? "Tipo de diseño actualizado"
+      : completedAction === "update_requirements" ? "Requisitos versionados"
+      : completedAction === "cancel_order" ? "Orden cancelada"
+      : completedAction === "reopen_cancelled" ? "Orden reabierta"
       : "Ajuste guardado";
     showFeedback("success", `${successMsg} correctamente.`);
     return data;
@@ -2382,20 +2438,25 @@ export default function Dashboard() {
     const productionAction = advancedProduction.action || "route_production";
     const mergedAssignments = { ...(advancedProduction.areaAssignments || {}), ...assignments };
     setAdvancedActionLoading(true);
-    const { data, error } = await supabase.rpc("admin_manage_order", {
-      p_order_id: advancedProduction.order.id,
-      p_action: productionAction,
-      p_reason_category: advancedProduction.reasonCategory,
-      p_reason_detail: advancedProduction.reasonDetail,
-      p_expected_updated_at: advancedProduction.expectedUpdatedAt,
-      p_target_user_id: null,
-      p_area_assignments: mergedAssignments,
-    });
+    let data;
+    let commandError;
+    try {
+      data = await executeAdminOrderCommand(supabase, {
+        orderId: advancedProduction.order.id,
+        action: productionAction,
+        reasonCategory: advancedProduction.reasonCategory,
+        reasonDetail: advancedProduction.reasonDetail,
+        expectedUpdatedAt: advancedProduction.expectedUpdatedAt,
+        payload: { ...(advancedProduction.payload || {}), area_assignments: mergedAssignments },
+      });
+    } catch (error) {
+      commandError = error;
+    }
     setAdvancedActionLoading(false);
-    if (error) return showFeedback("error", error.message || "No se pudo completar la operación.");
+    if (commandError) return showFeedback("error", commandError.message || "No se pudo completar la operación.");
     setAdvancedProduction(null);
-    if (data?.id) {
-      setSettingsOrder((current) => current?.id === data.id ? { ...current, ...data } : current);
+    if (data?.order?.id) {
+      setSettingsOrder((current) => current?.id === data.order.id ? { ...current, ...data.order } : current);
     }
     await loadOrders();
     const msg = productionAction === "reassign_production" ? "Producción reasignada correctamente." : "Orden enviada a Producción correctamente.";
@@ -3071,9 +3132,13 @@ export default function Dashboard() {
       const matchesIntervention = interventionFilter === "all"
         || (interventionFilter === "intervened" && Boolean(order.last_admin_intervention_at))
         || (interventionFilter === "not_intervened" && !order.last_admin_intervention_at);
-      return matchesSearch && matchesStatus && matchesOwner && matchesClient && matchesArchive && matchesDate && matchesIntervention;
+      const matchesOperational = operationalFilter === "all"
+        || (operationalFilter === "blocked" && order.operational_status === "blocked")
+        || (operationalFilter === "priority" && order.order_type === "orden 911")
+        || (operationalFilter === "commercial_review" && order.commercial_review_required);
+      return matchesSearch && matchesStatus && matchesOwner && matchesClient && matchesArchive && matchesDate && matchesIntervention && matchesOperational;
     });
-  }, [orders, search, statusFilter, ownerFilter, clientFilter, archiveFilter, dateFilter, interventionFilter, usersById]);
+  }, [orders, search, statusFilter, ownerFilter, clientFilter, archiveFilter, dateFilter, interventionFilter, operationalFilter, usersById]);
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
@@ -3338,8 +3403,6 @@ export default function Dashboard() {
     });
   };
 
-  useEffect(() => { setPage(1); }, [filteredOrders.length]);
-
   const filteredProfiles = useMemo(() => {
     const q = normalizeText(userSearch);
     return profiles.filter(item => {
@@ -3384,6 +3447,8 @@ export default function Dashboard() {
     { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length, icon: <Icons.Check />, accentIdx: 4 },
     { label: "Clientes Registrados", value: clients.length, icon: <Icons.User />, accentIdx: 9 },
     { label: "Crédito pendiente", value: receivablesTotal, icon: <Icons.Money />, accentIdx: 5 },
+    { label: "Bloqueadas", value: orders.filter(order => order.operational_status === "blocked").length, icon: <Icons.AlertCircle />, accentIdx: 1 },
+    { label: "Revisión comercial", value: orders.filter(order => order.commercial_review_required).length, icon: <Icons.Receipt />, accentIdx: 2 },
   ];
 
   const typeMetrics = [
@@ -3415,6 +3480,9 @@ export default function Dashboard() {
     setActiveTab(nextTab);
     setSettingsOrder(null);
     setSettingsView("list");
+    if (window.matchMedia("(max-width: 768px)").matches) {
+      setSidebarOpen(false);
+    }
   };
 
   const advancedSettingsOpen = settingsView === "detail" && Boolean(settingsOrder);
@@ -3553,48 +3621,59 @@ export default function Dashboard() {
         {activeTab === "orders" && !advancedSettingsOpen &&
           <section className="pa-section">
             <div className="pa-toolbar pa-toolbar-orders">
-              <div className="pa-search-box pa-toolbar-search">
-                <Icons.Search />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por cliente, facturacion, descripcion, material o usuario..." />
+              <div className="pa-toolbar-orders-primary">
+                <div className="pa-search-box pa-toolbar-search pa-orders-search">
+                  <Icons.Search />
+                  <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Buscar por cliente, facturacion, descripcion, material o usuario..." />
+                </div>
+                <button className="pa-btn primary pa-toolbar-create" onClick={openCreateOrder}><Icons.Plus />
+                  Nueva orden
+                </button>
               </div>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                <option value="all">Todos los estados</option>
-                {STATUS_OPTIONS.map(status => <option key={status} value={status}>{STATUS_LABELS[status] || status}</option>)}
-              </select>
-              <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
-                <option value="all">Todas las fechas</option>
-                <option value="today">Hoy</option>
-                <option value="week">Últimos 7 días</option>
-              </select>
-              <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)}>
-                <option value="all">Todos los usuarios</option>
-                {profiles.map(item =>
-                  <option key={item.id} value={item.id}>
-                    {getUserDisplayName(item)}
-                  </option>
-                )}
-              </select>
-              <ClientFilterSelect
-                clients={clients}
-                value={clientFilter}
-                onChange={setClientFilter}
-                allLabel="Todos los clientes"
-              />
-              <select value={archiveFilter} onChange={(e) => setArchiveFilter(e.target.value)}>
-                <option value="active">Activas</option>
-                <option value="all">Todas</option>
-                <option value="archived">Archivadas</option>
-              </select>
-              <select value={interventionFilter} onChange={(e) => setInterventionFilter(e.target.value)}>
-                <option value="all">Todas las intervenciones</option>
-                <option value="intervened">Intervenidas por Admin</option>
-                <option value="not_intervened">Sin intervención avanzada</option>
-              </select>
-              <button className="pa-btn primary pa-toolbar-create" onClick={openCreateOrder}><Icons.Plus />
-                Nueva orden
-              </button>
+              <div className="pa-toolbar-filter-row" aria-label="Filtros de órdenes">
+                <select className="pa-order-filter-control" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
+                  <option value="all">Todos los estados</option>
+                  {STATUS_OPTIONS.map(status => <option key={status} value={status}>{STATUS_LABELS[status] || status}</option>)}
+                </select>
+                <select className="pa-order-filter-control" value={dateFilter} onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}>
+                  <option value="all">Todas las fechas</option>
+                  <option value="today">Hoy</option>
+                  <option value="week">Últimos 7 días</option>
+                </select>
+                <select className="pa-order-filter-control" value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}>
+                  <option value="all">Todos los usuarios</option>
+                  {profiles.map(item =>
+                    <option key={item.id} value={item.id}>
+                      {getUserDisplayName(item)}
+                    </option>
+                  )}
+                </select>
+                <ClientFilterSelect
+                  clients={clients}
+                  value={clientFilter}
+                  onChange={(value) => { setClientFilter(value); setPage(1); }}
+                  allLabel="Todos los clientes"
+                  className="pa-order-filter-control"
+                />
+                <select className="pa-order-filter-control" value={archiveFilter} onChange={(e) => { setArchiveFilter(e.target.value); setPage(1); }}>
+                  <option value="active">Activas</option>
+                  <option value="all">Todas</option>
+                  <option value="archived">Archivadas</option>
+                </select>
+                <select className="pa-order-filter-control pa-order-filter-control-wide" value={interventionFilter} onChange={(e) => { setInterventionFilter(e.target.value); setPage(1); }}>
+                  <option value="all">Todas las intervenciones</option>
+                  <option value="intervened">Intervenidas por Admin</option>
+                  <option value="not_intervened">Sin intervención avanzada</option>
+                </select>
+                <select className="pa-order-filter-control pa-order-filter-control-wide" value={operationalFilter} onChange={(event) => { setOperationalFilter(event.target.value); setPage(1); }}>
+                  <option value="all">Toda la situación operativa</option>
+                  <option value="blocked">Bloqueadas</option>
+                  <option value="priority">Prioridad 911</option>
+                  <option value="commercial_review">Revisión comercial pendiente</option>
+                </select>
+              </div>
             </div>
-            <div className="pa-panel">
+            <div className="pa-panel pa-orders-panel">
               <div className="pa-panel-stripe" />
               <div className="pa-panel-head pa-panel-head-results">
                 <div>
@@ -3610,10 +3689,22 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="ps-table-wrap">
-                <table className="ps-table">
+                <table className="ps-table pa-orders-table">
+                  <colgroup>
+                    <col className="pa-order-col-id" />
+                    <col className="pa-order-col-client" />
+                    <col className="pa-order-col-invoice" />
+                    <col className="pa-order-col-description" />
+                    <col className="pa-order-col-material" />
+                    <col className="pa-order-col-status" />
+                    <col className="pa-order-col-payment" />
+                    <col className="pa-order-col-type" />
+                    <col className="pa-order-col-date" />
+                    <col className="pa-order-col-actions" />
+                  </colgroup>
                   <thead>
                     <tr>
-                      {["ID", "Cliente", "Facturación", "Descripción", "Material", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}
+                      {["ID", "Cliente", "Facturación", "Descripción", "Material", "Estado", "Pago", "Tipo", "Fecha", "Acciones"].map(h => <th key={h}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -3627,11 +3718,17 @@ export default function Dashboard() {
                             aria-label={`Ver detalles de la orden ${order.id?.slice(0, 8) || ""} de ${order.client_name || "cliente sin nombre"}`}
                           >
                             <td className="td-pad td-id">{order.id?.slice(0, 8) || "---"}</td>
-                            <td className="td-pad td-name">{order.client_name || "Sin cliente"}</td>
-                            <td className="td-pad">{order.invoice_number || "---"}</td>
-                            <td className="td-pad td-desc">{order.description || "Sin descripción"}</td>
-                            <td className="td-pad td-mat">{order.material || "---"}</td>
-                            <td className="td-pad"><StatusBadge status={order.status} className="ps-badge" showDot bordered /></td>
+                            <td className="td-pad td-name" title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</td>
+                            <td className="td-pad" title={order.invoice_number || "---"}>
+                              <span className="pa-order-cell-ellipsis">{order.invoice_number || "---"}</span>
+                            </td>
+                            <td className="td-pad td-desc" title={order.description || "Sin descripción"}>
+                              <span className="pa-order-cell-ellipsis">{order.description || "Sin descripción"}</span>
+                            </td>
+                            <td className="td-pad td-mat" title={order.material || "---"}>
+                              <span className="pa-order-cell-ellipsis">{order.material || "---"}</span>
+                            </td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="ps-badge" showDot bordered />{order.operational_status === "blocked" ? <span className="pa-order-flag is-blocked">Bloqueada</span> : null}{order.commercial_review_required ? <span className="pa-order-flag is-review">Revisión</span> : null}</td>
                             <td className="td-pad"><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></td>
                             <td className="td-pad">
                               {order.order_type === "orden 911" ? (
@@ -3643,32 +3740,32 @@ export default function Dashboard() {
                             <td className="td-pad td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
                             <td className="td-pad td-actions">
                               <div className="table-actions" data-row-action>
-                                <button className="table-action-btn view" onClick={() => setSelectedOrder(order)} title="Ver detalles">
+                                <button className="table-action-btn view" onClick={() => setSelectedOrder(order)} title="Ver detalles" aria-label="Ver detalles">
                                   <Icons.Eye />
                                 </button>
-                                <button className="table-action-btn edit" onClick={() => openEditOrder(order)} title="Editar orden">
+                                <button className="table-action-btn edit" onClick={() => openEditOrder(order)} title="Editar orden" aria-label="Editar orden">
                                   <Icons.Edit />
                                 </button>
                                 {["EXTERNAL_DESING", "INTERNAL_DESING"].includes(order.order_design_type) && (
-                                  <button className="table-action-btn advanced" onClick={() => { setSettingsOrder(order); setSettingsView("detail"); }} title="Configuración avanzada">
+                                  <button className="table-action-btn advanced" onClick={() => { setSettingsOrder(order); setSettingsView("detail"); }} title="Configuración avanzada" aria-label="Configuración avanzada">
                                     <Icons.Settings />
                                   </button>
                                 )}
                                 {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED]) && (
-                                  <button className="table-action-btn" style={{ background: "#06B6D4", color: "#fff", border: "none" }} onClick={() => openPaymentModal(order)} title="Caja">
+                                  <button className="table-action-btn cash" onClick={() => openPaymentModal(order)} title="Caja" aria-label="Caja">
                                     <Icons.Money />
                                   </button>
                                 )}
                                 {!isOrderStatus(order.status, ORDER_STATUS.CANCELLED) &&
-                                  <button className="table-action-btn cancel" onClick={() => openCancelModal(order)} title="Cancelar orden">
+                                  <button className="table-action-btn cancel" onClick={() => openCancelModal(order)} title="Cancelar orden" aria-label="Cancelar orden">
                                     <Icons.Trash />
                                   </button>}
                                 {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, user?.id) ? (
-                                  <button className="table-action-btn archive" onClick={() => openArchiveModal(order)} title="Archivar orden">
+                                  <button className="table-action-btn archive" onClick={() => openArchiveModal(order)} title="Archivar orden" aria-label="Archivar orden">
                                     <Icons.Archive />
                                   </button>
                                 ) : order.is_archived_admin ? (
-                                  <button className="table-action-btn archive" title="Orden archivada" disabled>
+                                  <button className="table-action-btn archive" title="Orden archivada" aria-label="Orden archivada" disabled>
                                     <Icons.Archive />
                                   </button>
                                 ) : null}
@@ -4485,7 +4582,11 @@ export default function Dashboard() {
             <h4>Cancelar orden</h4>
             <p className="pa-confirm-order-name">{cancelOrderData?.client_name}</p>
             <p className="pa-confirm-order-desc">{cancelOrderData?.description?.slice(0, 60)}{cancelOrderData?.description?.length > 60 ? "..." : ""}</p>
-            <p className="pa-confirm-warning">Esta accion no se puede deshacer</p>
+            <label className="pa-field full">
+              <span>Motivo de cancelación</span>
+              <textarea rows={3} value={cancelReason} onChange={(event) => setCancelReason(event.target.value.slice(0, 500))} placeholder="Describe por qué se cancela esta orden." />
+            </label>
+            <p className="pa-confirm-warning">La orden podrá reabrirse únicamente desde Configuración avanzada y quedará auditada.</p>
           </div>
           <div className="pa-modal-actions">
             <button className="pa-btn secondary" onClick={() => setCancelModalOpen(false)}>

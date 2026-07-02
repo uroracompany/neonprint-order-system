@@ -5,6 +5,7 @@ import { StatusBadge } from "../ui/Badge";
 import { ORDER_STATUS, PAYMENT_STATUS, PAYMENT_COLORS } from "../../utils/constants";
 import { buildPaymentReceiptPath, uploadOrderAsset } from "../../utils/uploadOrderAsset";
 import { validateReceiptFile } from "../../utils/receiptValidation";
+import { executeAdminOrderCommand } from "../../utils/adminOrderCommands";
 import PaymentFormModal from "../ui/PaymentFormModal";
 import AdminAdvancedActionModal from "./AdminAdvancedActionModal";
 import AdminManageFilesModal from "./AdminManageFilesModal";
@@ -32,6 +33,15 @@ const ACTION_COPY = {
   set_designer_assignee: ["Gestionar diseñador", "Asignar, cambiar o quitar responsable de diseño", Icons.Users],
   return_to_design: ["Regresar a Diseño", "Regresar la orden de Caja a Diseño", Icons.ArrowLeft],
   assign_seller: ["Reasignar vendedor", "Cambiar el vendedor responsable", Icons.Users],
+  block_order: ["Bloquear temporalmente", "Detener avances mientras se resuelve una incidencia", Icons.AlertCircle],
+  update_block: ["Actualizar bloqueo", "Cambiar responsable o fecha estimada", Icons.Clock],
+  resume_order: ["Reanudar orden", "Retirar el bloqueo sin cambiar la etapa", Icons.CheckCircle],
+  set_priority: ["Cambiar prioridad", "Alternar entre orden Normal y 911", Icons.AlertCircle],
+  reclassify_design: ["Reclasificar diseño", "Corregir el tipo y decidir el impacto", Icons.Brush],
+  update_requirements: ["Cambiar requisitos", "Crear una revisión versionada del cliente", Icons.File],
+  cancel_order: ["Cancelar orden", "Cancelar con motivo y conservar la etapa anterior", Icons.Trash],
+  reopen_cancelled: ["Reabrir orden", "Restaurar la última etapa segura", Icons.ArrowLeft],
+  approve_commercial_review: ["Aprobar revisión comercial", "Confirmar que Caja revisó los cambios del cliente", Icons.CheckCircle],
 };
 
 export default function AdminAdvancedSettings({
@@ -54,7 +64,7 @@ export default function AdminAdvancedSettings({
     if (!order?.id) return;
     setLoadingActions(true);
     setError("");
-    const { data, error: requestError } = await supabase.rpc("get_admin_order_actions", { p_order_id: order.id });
+    const { data, error: requestError } = await supabase.rpc("admin_get_order_command_catalog", { p_order_id: order.id });
     setAvailability(requestError ? null : data);
     if (requestError) setError(requestError.message);
     setLoadingActions(false);
@@ -149,16 +159,22 @@ export default function AdminAdvancedSettings({
       }
     }
 
-    const { error: updateError } = await supabase
-      .from("orders")
-      .update({
-        payment_status: paymentStatus,
-        invoice_payment: paymentStatus === PAYMENT_STATUS.PARTIAL ? null : paymentInvoiceUrl,
-      })
-      .eq("id", order.id);
+    let updateError;
+    try {
+      await executeAdminOrderCommand(supabase, {
+        orderId: order.id,
+        action: "register_payment",
+        payload: { payment_status: paymentStatus, invoice_payment: paymentInvoiceUrl },
+        reasonCategory: "workflow_correction",
+        reasonDetail: "Pago registrado por Administración desde Configuración avanzada.",
+        expectedUpdatedAt: order.updated_at,
+      });
+    } catch (error) {
+      updateError = error;
+    }
 
     setPaymentLoading(false);
-    if (updateError) throw new Error("Error al actualizar el pago.");
+    if (updateError) throw new Error(updateError.message || "Error al actualizar el pago.");
 
     setPaymentOrder(null);
     await onRefreshOrder?.();
@@ -186,6 +202,15 @@ export default function AdminAdvancedSettings({
         </header>
 
         <div className="aas-summary-card" aria-label="Resumen de la orden">
+          {availability?.operational_status === "blocked" && (
+            <div className="aas-summary-item aas-summary-item-blocked">
+              <span className="aas-summary-icon"><Icons.AlertCircle /></span>
+              <span className="aas-summary-copy">
+                <strong>Orden bloqueada</strong>
+                <small>{availability.blocked_reason_detail || "Incidencia operativa activa"}</small>
+              </span>
+            </div>
+          )}
           <div className="aas-summary-item">
             <span className="aas-summary-icon"><Icons.File /></span>
             <span className="aas-summary-copy">

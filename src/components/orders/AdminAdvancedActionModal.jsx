@@ -9,6 +9,7 @@ const REASONS = [
   ["client_request", "Solicitud del cliente"],
   ["assignment_correction", "Corrección de responsable"],
   ["workflow_correction", "Corrección de flujo"],
+  ["quality_rework", "Retrabajo o calidad"],
   ["operational_priority", "Prioridad operativa"],
   ["other", "Otro"],
 ];
@@ -27,6 +28,15 @@ const ACTION_COPY = {
   set_designer_assignee: ["Gestionar diseñador", "Asignar, cambiar o quitar responsable de diseño", Icons.Users],
   return_to_design: ["Regresar a Diseño", "Regresar la orden de Caja a Diseño", Icons.ArrowLeft],
   assign_seller: ["Reasignar vendedor", "Cambiar el vendedor responsable", Icons.Users],
+  block_order: ["Bloquear temporalmente", "Detener avances mientras se resuelve una incidencia", Icons.AlertCircle],
+  update_block: ["Actualizar bloqueo", "Cambiar responsable o fecha estimada", Icons.Clock],
+  resume_order: ["Reanudar orden", "Retirar el bloqueo operativo sin cambiar la etapa", Icons.CheckCircle],
+  set_priority: ["Cambiar prioridad", "Alternar entre orden Normal y 911", Icons.AlertCircle],
+  reclassify_design: ["Reclasificar diseño", "Corregir el tipo y decidir su impacto en el flujo", Icons.Brush],
+  update_requirements: ["Cambiar requisitos", "Registrar una revisión versionada del cliente", Icons.File],
+  cancel_order: ["Cancelar orden", "Cancelar con motivo y conservar la etapa de origen", Icons.Trash],
+  reopen_cancelled: ["Reabrir orden", "Restaurar la última etapa que continúe siendo segura", Icons.ArrowLeft],
+  approve_commercial_review: ["Aprobar revisión comercial", "Confirmar la revisión de Caja antes de continuar", Icons.CheckCircle],
 };
 
 const USER_SELECTOR_CONFIG = {
@@ -55,6 +65,12 @@ export default function AdminAdvancedActionModal({
   const [reasonDetail, setReasonDetail] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [ownerId, setOwnerId] = useState("");
+  const [expectedResolutionAt, setExpectedResolutionAt] = useState("");
+  const [orderType, setOrderType] = useState("orden normal");
+  const [designType, setDesignType] = useState("INTERNAL_DESING");
+  const [impactMode, setImpactMode] = useState("preserve_stage");
+  const [requirementChanges, setRequirementChanges] = useState({ description: "", material: "", termination_type: "", delivery_date: "" });
 
   const profilesById = useMemo(() => new Map(profiles.map((p) => [p.id, p])), [profiles]);
   const quoteUsers = useMemo(() => profiles.filter((p) => p.role === "quote" && p.employment_status !== false), [profiles]);
@@ -84,9 +100,20 @@ export default function AdminAdvancedActionModal({
     else setTargetUserId("");
     setReasonCategory("workflow_correction");
     setReasonDetail("");
+    setOwnerId(order.blocked_owner_id || currentUserId || "");
+    setExpectedResolutionAt(order.blocked_expected_resolution_at?.slice(0, 16) || "");
+    setOrderType(order.order_type === "orden 911" ? "orden 911" : "orden normal");
+    setDesignType(order.order_design_type || "INTERNAL_DESING");
+    setImpactMode("preserve_stage");
+    setRequirementChanges({
+      description: order.description || "",
+      material: order.material || "",
+      termination_type: order.termination_type || "",
+      delivery_date: order.delivery_date?.slice(0, 10) || "",
+    });
     setError("");
     setSubmitting(false);
-  }, [open, actionKey, order]);
+  }, [open, actionKey, order, currentUserId]);
 
   if (!open || !actionKey) return null;
 
@@ -94,7 +121,8 @@ export default function AdminAdvancedActionModal({
   const [title, description, Icon] = copy || [actionKey, "", Icons.Settings];
   const selectorConfig = USER_SELECTOR_CONFIG[actionKey];
   const showReason = !NO_REASON_ACTIONS.has(actionKey);
-  const needsReason = actionKey !== "reassign_production";
+  const needsReason = true;
+  const activeProfiles = profiles.filter((profile) => profile.employment_status !== false);
 
   const handleSubmit = async () => {
     setError("");
@@ -112,6 +140,28 @@ export default function AdminAdvancedActionModal({
       if (!reasonCategory) return setError("Selecciona una categoría del motivo.");
       if (reasonDetail.trim().length < 10) return setError("Explica el motivo con al menos 10 caracteres.");
     }
+    if (["block_order", "update_block"].includes(actionKey) && !ownerId) {
+      return setError("Selecciona un responsable para resolver el bloqueo.");
+    }
+    if (["block_order", "update_block"].includes(actionKey) && !expectedResolutionAt) {
+      return setError("Indica una fecha estimada de resolución.");
+    }
+
+    const payload = { target_user_id: targetUserId || null };
+    if (["block_order", "update_block"].includes(actionKey)) {
+      payload.owner_id = ownerId;
+      payload.expected_resolution_at = new Date(expectedResolutionAt).toISOString();
+    }
+    if (actionKey === "set_priority") payload.order_type = orderType;
+    if (actionKey === "reclassify_design") {
+      payload.design_type = designType;
+      payload.impact_mode = impactMode;
+    }
+    if (actionKey === "update_requirements") {
+      payload.design_type = designType;
+      payload.impact_mode = impactMode;
+      payload.changes = requirementChanges;
+    }
 
     setSubmitting(true);
     try {
@@ -120,6 +170,8 @@ export default function AdminAdvancedActionModal({
         targetUserId: targetUserId || null,
         reasonCategory: showReason ? reasonCategory : "workflow_correction",
         reasonDetail: showReason ? reasonDetail.trim() : "Acción desde configuración avanzada.",
+        expectedUpdatedAt: order.updated_at,
+        payload,
       });
     } catch (err) {
       setError(err?.message || "Error al ejecutar la acción.");
@@ -158,6 +210,73 @@ export default function AdminAdvancedActionModal({
           </div>
 
           {children && <div className="aam-body-section">{children}</div>}
+
+          {["block_order", "update_block"].includes(actionKey) && (
+            <div className="aam-reason-grid aam-body-section">
+              <label className="aam-field">
+                <span>Responsable de resolver</span>
+                <div className="aam-select-wrap">
+                  <select value={ownerId} onChange={(event) => setOwnerId(event.target.value)} disabled={submitting}>
+                    <option value="">Seleccionar responsable</option>
+                    {activeProfiles.map((profile) => <option key={profile.id} value={profile.id}>{getUserDisplayName(profile)}</option>)}
+                  </select>
+                  <Icons.ChevronDown aria-hidden="true" />
+                </div>
+              </label>
+              <label className="aam-field">
+                <span>Resolución estimada</span>
+                <input type="datetime-local" value={expectedResolutionAt} onChange={(event) => setExpectedResolutionAt(event.target.value)} disabled={submitting} />
+              </label>
+            </div>
+          )}
+
+          {actionKey === "set_priority" && (
+            <label className="aam-field aam-body-section">
+              <span>Nueva prioridad</span>
+              <div className="aam-select-wrap">
+                <select value={orderType} onChange={(event) => setOrderType(event.target.value)} disabled={submitting}>
+                  <option value="orden normal">Normal</option>
+                  <option value="orden 911">911</option>
+                </select>
+                <Icons.ChevronDown aria-hidden="true" />
+              </div>
+            </label>
+          )}
+
+          {["reclassify_design", "update_requirements"].includes(actionKey) && (
+            <div className="aam-reason-grid aam-body-section">
+              <label className="aam-field">
+                <span>Tipo de diseño</span>
+                <div className="aam-select-wrap">
+                  <select value={designType} onChange={(event) => setDesignType(event.target.value)} disabled={submitting}>
+                    <option value="INTERNAL_DESING">Diseño interno</option>
+                    <option value="EXTERNAL_DESING">Diseño externo</option>
+                  </select>
+                  <Icons.ChevronDown aria-hidden="true" />
+                </div>
+              </label>
+              <label className="aam-field">
+                <span>Impacto en el flujo</span>
+                <div className="aam-select-wrap">
+                  <select value={impactMode} onChange={(event) => setImpactMode(event.target.value)} disabled={submitting}>
+                    <option value="preserve_stage">Conservar etapa actual</option>
+                    <option value="restart_flow">Reiniciar en Diseño/Caja</option>
+                  </select>
+                  <Icons.ChevronDown aria-hidden="true" />
+                </div>
+              </label>
+              {impactMode === "restart_flow" ? <p className="aam-hint">Se conservarán pagos y archivos, pero se limpiarán responsables posteriores y Producción volverá a Pendiente.</p> : null}
+            </div>
+          )}
+
+          {actionKey === "update_requirements" && (
+            <div className="aam-body-section">
+              <label className="aam-field"><span>Descripción</span><textarea rows={3} value={requirementChanges.description} onChange={(event) => setRequirementChanges((current) => ({ ...current, description: event.target.value }))} /></label>
+              <label className="aam-field"><span>Material</span><input value={requirementChanges.material} onChange={(event) => setRequirementChanges((current) => ({ ...current, material: event.target.value }))} /></label>
+              <label className="aam-field"><span>Terminación</span><input value={requirementChanges.termination_type} onChange={(event) => setRequirementChanges((current) => ({ ...current, termination_type: event.target.value }))} /></label>
+              <label className="aam-field"><span>Fecha de entrega</span><input type="date" value={requirementChanges.delivery_date} onChange={(event) => setRequirementChanges((current) => ({ ...current, delivery_date: event.target.value }))} /></label>
+            </div>
+          )}
 
           {selectorConfig && (
             <label className="aam-field">

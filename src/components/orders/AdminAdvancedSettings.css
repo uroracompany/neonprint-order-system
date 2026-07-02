@@ -114,6 +114,26 @@
   border-right: 0;
 }
 
+.aas-summary-item-blocked {
+  grid-column: 1 / -1;
+  margin: -4px -6px 18px;
+  padding: 12px 14px;
+  border: 1px solid #f4b8a9;
+  border-radius: 14px;
+  background: #fff4f0;
+  color: #9a3412;
+}
+
+.aas-summary-item-blocked .aas-summary-icon {
+  background: #fed7cc;
+  color: #c2410c;
+}
+
+.aas-summary-item-blocked .aas-summary-copy strong,
+.aas-summary-item-blocked .aas-summary-copy small {
+  color: inherit;
+}
+
 .aas-summary-icon {
   display: grid;
   place-items: center;

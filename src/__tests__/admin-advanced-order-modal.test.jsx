@@ -108,7 +108,7 @@ describe("AdminAdvancedSettings", () => {
     await waitFor(() => expect(onRunAction).toHaveBeenCalledOnce());
     expect(screen.getByText("Configuración avanzada")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(rpc.mock.calls.filter(([name]) => name === "get_admin_order_actions").length).toBeGreaterThan(1);
+    expect(rpc.mock.calls.filter(([name]) => name === "admin_get_order_command_catalog").length).toBeGreaterThan(1);
   });
 
   it("keeps an action modal open when the action fails", async () => {

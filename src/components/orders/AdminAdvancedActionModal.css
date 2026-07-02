@@ -205,7 +205,8 @@
   color: var(--text-muted);
 }
 
-.aam-field textarea {
+.aam-field textarea,
+.aam-field input {
   width: 100%;
   min-height: 122px;
   padding: 14px;
@@ -221,11 +222,17 @@
   box-sizing: border-box;
 }
 
-.aam-field textarea:hover {
+.aam-field input {
+  min-height: 48px;
+}
+
+.aam-field textarea:hover,
+.aam-field input:hover {
   border-color: var(--border-hov);
 }
 
-.aam-field textarea:focus {
+.aam-field textarea:focus,
+.aam-field input:focus {
   border-color: var(--cyan);
   box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.12);
 }

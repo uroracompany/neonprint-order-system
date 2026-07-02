@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../supabaseClient";
 import { Icons } from "../../utils/icons";
 import { ORDER_STATUS, PAYMENT_STATUS, PRODUCTION_AREA_LABELS, PRODUCTION_FILE_STATUS, PRODUCTION_FILE_STATUS_LABELS } from "../../utils/constants";
-import { buildProductionFileRows } from "../../utils/production";
 import { buildStorageSafeFileName, formatFileSize, getOrderAssetLimit, removeOrderAssetByPublicUrl, uploadOrderAsset, validateOrderAssetSize } from "../../utils/uploadOrderAsset";
 import { compressImage, REF_IMAGE_CONFIG } from "../../utils/imageValidation";
 import { getReferenceImages } from "../../utils/orderAssets";
@@ -48,10 +47,12 @@ export default function AdminManageFilesModal({
   const [savingRefs, setSavingRefs] = useState(false);
   const [refsSaved, setRefsSaved] = useState(false);
   const [error, setError] = useState("");
+  const [orderUpdatedAt, setOrderUpdatedAt] = useState(order?.updated_at || null);
 
   useEffect(() => {
     if (!open || !order?.id) return;
     setError("");
+    setOrderUpdatedAt(order.updated_at || null);
     let active = true;
     (async () => {
       const { data, error: fetchError } = await supabase
@@ -82,7 +83,7 @@ export default function AdminManageFilesModal({
       setProductionUsers(userData || []);
     })();
     return () => { active = false; };
-  }, [open, order?.id]);
+  }, [open, order?.id, order?.updated_at]);
 
   const isPaymentLocked = order?.status === PAYMENT_LOCKED_STATUS && order?.payment_status === PAYMENT_STATUS.PAID;
   const isInQuoteOrLater = order?.status && !["Pending", "in_Design", "cancelled"].includes(order.status);
@@ -170,22 +171,19 @@ export default function AdminManageFilesModal({
       const path = `orders/${order.id}/files/${fileName}`;
       const publicUrl = await uploadOrderAsset({ bucket: "order-docs", path, file: newFile });
       if (!publicUrl) throw new Error("Error al subir el archivo.");
-      const { data: { user } } = await supabase.auth.getUser();
-      const rows = buildProductionFileRows({
-        orderId: order.id,
-        urls: [publicUrl],
-        files: [newFile],
-        areaCodes: [newFileAreaCode],
-        publicLabels: [newFileLabel.trim()],
-        userId: user?.id || null,
+      const { data: attached, error: insertError } = await supabase.rpc("admin_add_production_file", {
+        p_order_id: order.id,
+        p_url: publicUrl,
+        p_filename: newFile.name,
+        p_public_label: newFileLabel.trim(),
+        p_area_code: newFileAreaCode,
+        p_expected_updated_at: orderUpdatedAt,
       });
-      const { error: insertError } = await supabase.from("order_production_files").insert(rows);
-      if (insertError) throw new Error(insertError.message);
-      const existingUrls = JSON.parse(order.order_file_url || "[]");
-      const { error: updateError } = await supabase.from("orders").update({
-        order_file_url: JSON.stringify([...existingUrls, publicUrl]),
-      }).eq("id", order.id);
-      if (updateError) throw new Error(updateError.message);
+      if (insertError) {
+        await removeOrderAssetByPublicUrl({ bucket: "order-docs", url: publicUrl });
+        throw new Error(insertError.message);
+      }
+      if (attached?.order_updated_at) setOrderUpdatedAt(attached.order_updated_at);
       const { data: freshData } = await supabase
         .from("orders")
         .select("order_production_files(*)")
@@ -206,22 +204,17 @@ export default function AdminManageFilesModal({
   };
 
   const handleDeleteFile = async (file) => {
-    if (!window.confirm(`?Eliminar el archivo "${file.public_label || file.filename || "sin nombre"}"?`)) return;
+    const reason = window.prompt(`Motivo para retirar "${file.public_label || file.filename || "sin nombre"}" (mínimo 10 caracteres):`);
+    if (reason === null) return;
+    if (reason.trim().length < 10) return setError("Explica el motivo con al menos 10 caracteres.");
     setError("");
     try {
-      if (file.url) {
-        await removeOrderAssetByPublicUrl({ bucket: "order-docs", url: file.url });
-      }
-      const { error: deleteError } = await supabase
-        .from("order_production_files")
-        .delete()
-        .eq("id", file.id);
+      const { error: deleteError } = await supabase.rpc("admin_remove_production_file", {
+        p_file_id: file.id,
+        p_reason_detail: reason.trim(),
+        p_expected_updated_at: file.updated_at,
+      });
       if (deleteError) throw new Error(deleteError.message);
-      const existingUrls = JSON.parse(order.order_file_url || "[]");
-      const updatedUrls = Array.isArray(existingUrls) ? existingUrls.filter((u) => u !== file.url) : [];
-      await supabase.from("orders").update({
-        order_file_url: JSON.stringify(updatedUrls),
-      }).eq("id", order.id);
       setProductionFiles((prev) => prev.filter((f) => f.id !== file.id));
     } catch (err) {
       setError(err.message || "Error al eliminar el archivo.");

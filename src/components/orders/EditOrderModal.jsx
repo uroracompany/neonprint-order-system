@@ -19,6 +19,7 @@ import {
   validateReferenceImages,
 } from "../../utils/imageValidation";
 import { formatDominicanPhone, getSelectedClientOrderFields } from "../../utils/clients";
+import { executeAdminOrderCommand } from "../../utils/adminOrderCommands";
 import {
   Field,
   Modal,
@@ -335,9 +336,18 @@ export default function EditOrderModal({
       }
     }
 
-    const { error: updateError } = await supabase
-      .from("orders")
-      .update({
+    let updateError;
+    try {
+      await executeAdminOrderCommand(supabase, {
+        orderId: order.id,
+        action: "update_requirements",
+        reasonCategory: "client_request",
+        reasonDetail: "Requisitos actualizados por Administración desde la edición de la orden.",
+        expectedUpdatedAt: order.updated_at,
+        payload: {
+          design_type: order.order_design_type,
+          impact_mode: "preserve_stage",
+          changes: {
         client_id: form.client_id,
         client_name: form.client_name.trim(),
         client_contact: form.client_contact.trim() || null,
@@ -349,8 +359,12 @@ export default function EditOrderModal({
         order_file_url: JSON.stringify(fileUrls),
         preview_image: previewUrl,
         reference_images: refImageUrls.length > 0 ? serializeReferenceImages(refImageUrls) : [],
-      })
-      .eq("id", order.id);
+          },
+        },
+      });
+    } catch (commandError) {
+      updateError = commandError;
+    }
 
     if (updateError) {
       setLoading(false);

@@ -35,6 +35,14 @@ const readInternalDesignMigration = () => {
     .at(-1);
   return readFileSync(join(dir, name), "utf8");
 };
+const readOperationsV2Migration = () => {
+  const dir = join(process.cwd(), "supabase", "migrations");
+  const name = readdirSync(dir)
+    .filter((file) => file.endsWith("_admin_order_operations_v2.sql"))
+    .sort()
+    .at(-1);
+  return readFileSync(join(dir, name), "utf8");
+};
 
 describe("advanced admin order interventions", () => {
   it("exposes guarded, auditable RPCs only to authenticated users", () => {
@@ -96,8 +104,8 @@ describe("advanced admin order interventions", () => {
 
     expect(dashboard).toContain("AdminAdvancedSettings");
     expect(dashboard).toContain("interventionFilter");
-    expect(settings).toContain('rpc("get_admin_order_actions"');
-    expect(dashboard).toContain('rpc("admin_manage_order"');
+    expect(settings).toContain('rpc("admin_get_order_command_catalog"');
+    expect(dashboard).toContain("executeAdminOrderCommand");
     expect(settings).toContain("Acciones disponibles");
     expect(settings).toContain("Registrar o actualizar el pago de la orden");
     expect(actionModal).toContain("Usuario de Caja (opcional)");
@@ -237,6 +245,35 @@ describe("advanced admin order interventions", () => {
 
     expect(migration).toContain("old_order.status in ('in_Production', 'in_Termination', 'in_Completed')");
     expect(migration).toContain("perform public.recalculate_order_production_status(file_row.order_id)");
+  });
+
+  it("adds a guarded command layer for administrative exceptions", () => {
+    const migration = readOperationsV2Migration();
+
+    expect(migration).toContain("operational_status text not null default 'active'");
+    expect(migration).toContain("orders_operational_status_check");
+    expect(migration).toContain("create or replace function public.admin_execute_order_command");
+    expect(migration).toContain("create or replace function public.admin_get_order_command_catalog");
+    expect(migration).toContain("create or replace function public.admin_preview_order_command");
+    expect(migration).toContain("for update");
+    expect(migration).toContain("idempotency_key text not null unique");
+    expect(migration).toContain("p.role = 'admin'");
+    expect(migration).toContain("revoke all on function public.admin_execute_order_command");
+    expect(migration).toContain("grant execute on function public.admin_execute_order_command");
+  });
+
+  it("supports controlled holds, revisions, reopening and bounded batches", () => {
+    const migration = readOperationsV2Migration();
+
+    expect(migration).toContain("p_action = 'block_order'");
+    expect(migration).toContain("p_action = 'resume_order'");
+    expect(migration).toContain("p_action = 'reclassify_design'");
+    expect(migration).toContain("p_action = 'reopen_cancelled'");
+    expect(migration).toContain("commercial_review_required");
+    expect(migration).toContain("order_requirement_revisions");
+    expect(migration).toContain("array_length(p_order_ids, 1) > 100");
+    expect(migration).toContain("status = 'pending', assigned_to = null");
+    expect(migration).toContain("order_asset_cleanup_queue");
   });
 
   it("hides manage_files for INTERNAL_DESING orders in Pending", () => {
