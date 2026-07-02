@@ -237,7 +237,11 @@ describe("advanced admin order interventions", () => {
     expect(migration).not.toContain("p.role = 'design'");
     expect(migration).toContain("if old_order.status <> 'in_Design' then");
     expect(migration).toContain("'requires_area_assignments', true");
-    expect(dashboard).toContain('["EXTERNAL_DESING", "INTERNAL_DESING"].includes(order.order_design_type)');
+    const adminOrderActions = readProjectFile("src/components/orders/AdminOrderActions.jsx");
+
+    expect(dashboard).toContain("AdminOrderActions");
+    expect(adminOrderActions).toContain('const ADMIN_DESIGN_TYPES = ["EXTERNAL_DESING", "INTERNAL_DESING"];');
+    expect(adminOrderActions).toContain("ADMIN_DESIGN_TYPES.includes(order.order_design_type)");
   });
 
   it("prevents recalculate_order_production_status from escalating pre-production orders", () => {

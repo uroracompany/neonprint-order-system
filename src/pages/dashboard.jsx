@@ -6,6 +6,7 @@ import CreateOrderModal from "../components/orders/CreateOrderModal";
 import SharedEditOrderModal from "../components/orders/EditOrderModal";
 import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
 import AdminAdvancedSettings from "../components/orders/AdminAdvancedSettings";
+import AdminOrderActions from "../components/orders/AdminOrderActions";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import PaymentFormModal from "../components/ui/PaymentFormModal";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
@@ -2145,6 +2146,12 @@ export default function Dashboard() {
     setCancelModalOpen(true);
   };
 
+  const openAdvancedSettings = (order) => {
+    setSelectedOrder(null);
+    setSettingsOrder(order);
+    setSettingsView("detail");
+  };
+
   const handleConfirmCancelOrder = async () => {
     if (!cancelOrderData) return;
     if (cancelReason.trim().length < 10) {
@@ -3743,23 +3750,13 @@ export default function Dashboard() {
                                 <button className="table-action-btn view" onClick={() => setSelectedOrder(order)} title="Ver detalles" aria-label="Ver detalles">
                                   <Icons.Eye />
                                 </button>
-                                <button className="table-action-btn edit" onClick={() => openEditOrder(order)} title="Editar orden" aria-label="Editar orden">
-                                  <Icons.Edit />
-                                </button>
-                                {["EXTERNAL_DESING", "INTERNAL_DESING"].includes(order.order_design_type) && (
-                                  <button className="table-action-btn advanced" onClick={() => { setSettingsOrder(order); setSettingsView("detail"); }} title="Configuración avanzada" aria-label="Configuración avanzada">
-                                    <Icons.Settings />
-                                  </button>
-                                )}
-                                {!isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED]) && (
-                                  <button className="table-action-btn cash" onClick={() => openPaymentModal(order)} title="Caja" aria-label="Caja">
-                                    <Icons.Money />
-                                  </button>
-                                )}
-                                {!isOrderStatus(order.status, ORDER_STATUS.CANCELLED) &&
-                                  <button className="table-action-btn cancel" onClick={() => openCancelModal(order)} title="Cancelar orden" aria-label="Cancelar orden">
-                                    <Icons.Trash />
-                                  </button>}
+                                <AdminOrderActions
+                                  order={order}
+                                  onEdit={openEditOrder}
+                                  onAdvanced={openAdvancedSettings}
+                                  onPayment={openPaymentModal}
+                                  onCancel={openCancelModal}
+                                />
                                 {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, user?.id) ? (
                                   <button className="table-action-btn archive" onClick={() => openArchiveModal(order)} title="Archivar orden" aria-label="Archivar orden">
                                     <Icons.Archive />
@@ -4547,6 +4544,16 @@ export default function Dashboard() {
             setSelectedOrder(null);
             openAssignModal(order, "quote");
           }}
+          adminActions={selectedOrder ? (
+            <AdminOrderActions
+              order={selectedOrder}
+              variant="modal"
+              onEdit={openEditOrder}
+              onAdvanced={openAdvancedSettings}
+              onPayment={openPaymentModal}
+              onCancel={openCancelModal}
+            />
+          ) : null}
         />
       )}
       <AssignModal

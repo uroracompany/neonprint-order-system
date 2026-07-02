@@ -29,6 +29,10 @@ describe("admin order modal consistency", () => {
     expect(dashboard).toContain('import SharedOrderDetailModal from "../components/orders/OrderDetailModal";');
     expect(dashboard).toContain("<SharedOrderDetailModal");
     expect(dashboard).toContain('primaryActionLabel="Asignar Orden"');
+    expect(dashboard).toContain("<AdminOrderActions");
+    expect(dashboard).toContain("adminActions={selectedOrder ? (");
+    expect(detailModal).toContain("adminActions = null");
+    expect(detailModal).toContain('aria-label="Acciones de la orden"');
 
     const activeDetailRender = getSourceSlice(
       dashboard,
@@ -36,8 +40,8 @@ describe("admin order modal consistency", () => {
       "<AssignModal"
     );
     expect(activeDetailRender).not.toContain("<AdminOrderDetailModal");
-    expect(activeDetailRender).not.toContain("onEdit={");
-    expect(activeDetailRender).not.toContain("onCancel={");
+    expect(activeDetailRender).toContain("onEdit={openEditOrder}");
+    expect(activeDetailRender).toContain("onCancel={openCancelModal}");
     expect(activeDetailRender).not.toContain("onArchive={");
     expect(activeDetailRender).not.toContain("onDelete={");
   });

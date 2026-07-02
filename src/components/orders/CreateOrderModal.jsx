@@ -32,15 +32,15 @@ const EMPTY_FORM = {
   reference_images: [],
 };
 
-export function Modal({ open, onClose, title, children, wide, stickyHeader = false }) {
+export function Modal({ open, onClose, title, children, wide, stickyHeader = false, className = "" }) {
   if (!open) return null;
   return (
     <div className="ps-modal-overlay">
-      <div className={`ps-modal ${wide ? "wide" : "narrow"}`}>
+      <div className={`ps-modal ${wide ? "wide" : "narrow"} ${className}`.trim()}>
         <div className="ps-modal-stripe" />
         <div className={`ps-modal-header ${stickyHeader ? "is-sticky" : ""}`}>
           <span className="ps-modal-title">{title}</span>
-          <button className="ps-modal-close" onClick={onClose}><Icons.Close /></button>
+          <button className="ps-modal-close" onClick={onClose} aria-label="Cerrar modal"><Icons.Close /></button>
         </div>
         <div className="ps-modal-body">{children}</div>
       </div>

@@ -898,9 +898,10 @@
   align-items: center;
   margin-bottom: 26px;
   padding: 16px 18px;
-  background: var(--surface-alt);
-  border-radius: var(--radius-md);
-  border: 1.5px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .ps-flow > div {

@@ -1,0 +1,193 @@
+.order-detail-modal.ps-modal {
+  width: min(1040px, calc(100vw - 32px));
+  max-width: 1040px;
+  max-height: min(92vh, 960px);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  box-shadow: 0 28px 80px rgba(15, 30, 64, 0.22);
+}
+
+.order-detail-modal .ps-modal-header {
+  padding: 20px 26px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 96%, var(--primary) 4%);
+}
+
+.order-detail-modal .ps-modal-title {
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+
+.order-detail-modal .ps-modal-body {
+  padding: 22px 26px 30px;
+  background: color-mix(in srgb, var(--surface-alt) 34%, var(--surface) 66%);
+}
+
+.order-detail-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.order-detail-actions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.order-detail-actions-copy strong,
+.order-detail-actions-copy span {
+  display: block;
+}
+
+.order-detail-actions-copy strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.order-detail-actions-copy span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.pa-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pa-order-action {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-sub);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.pa-order-action:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+  box-shadow: 0 8px 18px rgba(15, 30, 64, 0.1);
+}
+
+.pa-order-action:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  outline-offset: 2px;
+}
+
+.pa-order-action-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.pa-order-action-advanced {
+  color: #075985;
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.pa-order-action-cash {
+  color: #047857;
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.pa-order-action-cancel {
+  color: #b42318;
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.pa-order-table-actions {
+  display: contents;
+}
+
+.order-detail-content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  gap: 18px;
+}
+
+.order-detail-column {
+  min-width: 0;
+}
+
+.order-detail-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.order-detail-flow {
+  padding: 4px 2px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.order-detail-flow:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent);
+  outline-offset: 3px;
+  border-radius: var(--radius-md);
+}
+
+@media (max-width: 900px) {
+  .order-detail-actions-panel {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .order-detail-content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .order-detail-modal.ps-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .order-detail-modal .ps-modal-header,
+  .order-detail-modal .ps-modal-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .pa-order-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pa-order-action {
+    justify-content: flex-start;
+  }
+
+  .order-detail-flow > * {
+    min-width: 680px;
+  }
+}
+
+@media (max-width: 390px) {
+  .pa-order-actions {
+    grid-template-columns: 1fr;
+  }
+}

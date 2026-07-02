@@ -14,6 +14,7 @@ import { PaymentBadge, StatusBadge as SharedStatusBadge } from "../ui/Badge";
 import { Modal } from "./CreateOrderModal";
 import OrderAssignmentAction from "./OrderAssignmentAction";
 import OrderReviewCard from "./OrderReviewCard";
+import "./OrderDetailModal.css";
 
 const ACTIVE_WORKFLOW_STATUSES_FOR_SELLER = [
   ORDER_STATUS.IN_DESIGN,
@@ -163,6 +164,7 @@ export default function OrderDetailModal({
   reviewAcknowledging = false,
   reviewError = "",
   adminIntervention = null,
+  adminActions = null,
 }) {
   const hasOrder = Boolean(order);
   const created = hasOrder ? new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" }) : "";
@@ -207,21 +209,32 @@ export default function OrderDetailModal({
   const displayResponsibleName = responsibleName || user?.displayName || "---";
 
   return (
-    <Modal open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} wide>
-      {isExternalDesign ? (
-        <FlowTrackerExternal status={order.status} />
-      ) : (
-        <FlowTracker status={order.status} />
-      )}
+    <Modal open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} wide className="order-detail-modal">
+      <div className="order-detail-shell">
+        <div className="order-detail-flow" role="region" aria-label="Progreso de la orden" tabIndex={0}>
+          {isExternalDesign ? (
+            <FlowTrackerExternal status={order.status} />
+          ) : (
+            <FlowTracker status={order.status} />
+          )}
+        </div>
 
-      {adminIntervention}
+        {adminActions && (
+          <section className="order-detail-actions-panel" aria-label="Acciones de la orden">
+            <div className="order-detail-actions-copy">
+              <strong>Acciones de la orden</strong>
+              <span>Gestiona esta orden sin volver al listado.</span>
+            </div>
+            {adminActions}
+          </section>
+        )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: 22 }}>
-        <div>
-          <div style={{
-            background: "var(--surface-alt)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
+        {adminIntervention}
+
+      <div className="order-detail-content-grid">
+        <div className="order-detail-column">
+          <div className="order-detail-section" style={{
+            background: "var(--surface)",
             padding: 20,
             marginBottom: 18,
             position: "relative",
@@ -273,10 +286,8 @@ export default function OrderDetailModal({
             error={reviewError}
           />
 
-          <div style={{
+          <div className="order-detail-section" style={{
             background: "var(--surface)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
             padding: 20,
             marginBottom: 18
           }}>
@@ -320,11 +331,9 @@ export default function OrderDetailModal({
           </div>
         </div>
 
-        <div>
-          <div style={{
+        <div className="order-detail-column">
+          <div className="order-detail-section" style={{
             background: "var(--surface)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
             padding: 20,
             marginBottom: 18,
             position: "relative",
@@ -391,11 +400,9 @@ export default function OrderDetailModal({
             )}
           </div>
 
-          <div style={{
-            background: "var(--surface-alt)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            padding: 16,
+          <div className="order-detail-section" style={{
+            background: "var(--surface)",
+            padding: 16,  
             marginBottom: 18
           }}>
             <p style={{
@@ -416,7 +423,7 @@ export default function OrderDetailModal({
                   gap: 8, alignItems: "center"
                 }}>
                   <span style={{ color: "var(--text-muted)" }}>{item.icon}</span>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, margin: 0 }}>
                     {item.label}
                   </p>
                   <p style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, margin: 0, textAlign: "right" }}>
@@ -427,18 +434,18 @@ export default function OrderDetailModal({
             </div>
           </div>
 
-          <div style={{
+          <div className="order-detail-section" style={{
             background: "var(--surface)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
             padding: 16,
             marginBottom: 18
           }}>
             <p style={{
               fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
               textTransform: "uppercase", letterSpacing: "0.07em",
-              marginBottom: 12
-            }}>🔗 Link de Seguimiento</p>
+              marginBottom: 12, display: "flex", alignItems: "center", gap: 8
+            }}>
+              <Icons.ExternalLink /> Link de Seguimiento
+            </p>
 
             <TrackingLinkField orderId={order.id} />
           </div>
@@ -446,11 +453,8 @@ export default function OrderDetailModal({
       </div>
 
       {hasAssets && (
-        <div style={{
-          marginTop: 18,
+        <div className="order-detail-section" style={{
           background: "var(--surface)",
-          border: "1.5px solid var(--border)",
-          borderRadius: "var(--radius-lg)",
           padding: 20,
           boxShadow: "var(--shadow-sm)"
         }}>
@@ -534,6 +538,7 @@ export default function OrderDetailModal({
           )}
         </div>
       )}
+      </div>
     </Modal>
   );
 }
