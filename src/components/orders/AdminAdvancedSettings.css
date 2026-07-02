@@ -40,6 +40,7 @@
   line-height: 1.2;
   letter-spacing: -0.03em;
   color: var(--text);
+  font-weight: 600;
 }
 
 .aas-header p {
@@ -90,8 +91,8 @@
   grid-template-columns: repeat(4, 1fr);
   margin: 0 32px;
   padding: 20px 22px;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
@@ -217,8 +218,8 @@
   width: 100%;
   min-height: 76px;
   padding: 14px 18px;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--surface);
   text-align: left;
   cursor: pointer;
@@ -226,9 +227,6 @@
 }
 
 .aas-action:hover {
-  transform: translateY(-2px);
-  border-color: var(--cyan);
-  box-shadow: var(--shadow-lg);
   background: var(--surface-hov);
 }
 
@@ -261,10 +259,6 @@
   background: var(--surface-alt);
   color: var(--text);
   transition: transform 0.2s ease, background 0.2s ease;
-}
-
-.aas-action:hover .aas-action-icon {
-  transform: scale(1.05);
 }
 
 .aas-action-icon.is-route_sales,
