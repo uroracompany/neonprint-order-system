@@ -1,3 +1,4 @@
+import { Icons } from "../../utils/icons";
 import "./Pagination.css";
 
 export function Pagination({ currentPage, totalPages, onPageChange }) {
@@ -28,7 +29,8 @@ export function Pagination({ currentPage, totalPages, onPageChange }) {
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage === 1}
       >
-        ‹ Anterior
+        <Icons.ChevronLeft style={{ width: 13, height: 13, marginRight: 4 }} />
+        Anterior
       </button>
 
       {pages[0] > 1 && (
@@ -62,7 +64,8 @@ export function Pagination({ currentPage, totalPages, onPageChange }) {
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage === totalPages}
       >
-        Siguiente ›
+        Siguiente
+        <Icons.ChevronRight style={{ width: 13, height: 13, marginLeft: 4 }} />
       </button>
 
       <span className="pagination-info">

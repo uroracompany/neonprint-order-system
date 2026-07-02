@@ -83,12 +83,6 @@
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
-.pa-order-action:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
-  box-shadow: 0 8px 18px rgba(15, 30, 64, 0.1);
-}
-
 .pa-order-action:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--primary) 28%, transparent);
   outline-offset: 2px;
