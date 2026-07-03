@@ -6,6 +6,7 @@ import CreateOrderModal from "../components/orders/CreateOrderModal";
 import SharedEditOrderModal from "../components/orders/EditOrderModal";
 import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
 import AdminAdvancedSettings from "../components/orders/AdminAdvancedSettings";
+import AdminClientsModule from "../components/clients/AdminClientsModule";
 import AdminOrderActions from "../components/orders/AdminOrderActions";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import PaymentFormModal from "../components/ui/PaymentFormModal";
@@ -59,7 +60,7 @@ import {
   archiveOrder,
 } from "../utils/archive";
 import { getReferenceImages } from "../utils/orderAssets";
-import { clientMatchesQuery, formatDominicanPhone, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
+import { formatDominicanPhone, getSelectedClientOrderFields, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
 import { filterActiveNotifications, getActiveUnreadCount, showCreditActionFeedback } from "../utils/notifications";
 import { useAuth } from "../hooks/useAuth";
@@ -1457,6 +1458,11 @@ const isInteractiveOrderRowTarget = (target) => Boolean(
   target?.closest?.("button, a, input, select, textarea, [data-row-action]")
 );
 
+const getLatestCollectionTimestamp = (items = []) => items.reduce((latest, item) => {
+  const timestamp = Date.parse(item?.updated_at || item?.created_at || "") || 0;
+  return Math.max(latest, timestamp);
+}, 0);
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
@@ -1533,6 +1539,7 @@ export default function Dashboard() {
   const [materialSearch, setMaterialSearch] = useState("");
   const [materialsPage, setMaterialsPage] = useState(1);
   const [clients, setClients] = useState([]);
+  const [clientsTotal, setClientsTotal] = useState(0);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [accountsReceivable, setAccountsReceivable] = useState([]);
   const [accountsReceivableLoading, setAccountsReceivableLoading] = useState(true);
@@ -1567,7 +1574,6 @@ export default function Dashboard() {
   const [creditReminderCompletingId, setCreditReminderCompletingId] = useState(null);
   const [creditReminderNow, setCreditReminderNow] = useState(null);
   const creditReminderServerClockRef = useRef(null);
-  const [clientSearch, setClientSearch] = useState("");
   const [showClientModal, setShowClientModal] = useState(false);
   const [showOrderClientModal, setShowOrderClientModal] = useState(false);
   const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
@@ -1577,7 +1583,6 @@ export default function Dashboard() {
   const [clientFormErrors, setClientFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deletingClientId, setDeletingClientId] = useState(null);
-  const [clientPage, setClientPage] = useState(1);
 
   const usersById = useMemo(() => Object.fromEntries(profiles.map(item => [item.id, item])), [profiles]);
   const adminVisibleNotifications = useMemo(() => filterActiveNotifications(notif.notifications), [notif.notifications]);
@@ -1751,11 +1756,17 @@ export default function Dashboard() {
   const fetchClients = useCallback(async () => {
     setClientsLoading(true);
     try {
-      const data = await loadClients(supabase);
+      const [data, countResult] = await Promise.all([
+        searchClients(supabase, "", 100),
+        supabase.from("clients").select("id", { count: "exact", head: true }),
+      ]);
+      if (countResult.error) throw countResult.error;
       setClients(Array.isArray(data) ? data : []);
+      setClientsTotal(countResult.count || 0);
     } catch (err) {
       console.warn("No se pudieron cargar clientes:", err?.message || err);
       setClients([]);
+      setClientsTotal(0);
     } finally {
       setClientsLoading(false);
     }
@@ -1773,7 +1784,7 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from("accounts_receivable")
-        .select("*")
+        .select("*, client:clients(id,name,phone,email,address,notes,created_at,updated_at)")
         .order("issued_at", { ascending: false });
 
       if (error) {
@@ -2023,9 +2034,16 @@ export default function Dashboard() {
     });
   };
 
-  const openCreateOrder = () => {
+  const openCreateOrder = (client = null) => {
+    const selectedClient = client?.id ? client : null;
     setOrderModalMode("create");
     setEditingOrder(null);
+    setClientToSelectInOrderForm(selectedClient);
+    setOrderForm({
+      ...DEFAULT_ORDER_FORM,
+      id: "",
+      ...(selectedClient ? getSelectedClientOrderFields(selectedClient, "client_contact") : {}),
+    });
     fetchClients();
     fetchMaterials();
     setOrderModalOpen(true);
@@ -2822,22 +2840,23 @@ export default function Dashboard() {
         await fetchClients();
         await loadOrders();
         showFeedback("success", "Cliente eliminado correctamente.");
+        return true;
       } catch (err) {
         setClientFormError(err.message || "No se pudo eliminar el cliente.");
         showFeedback("error", "No se pudo eliminar el cliente.");
+        return false;
       }
     } else {
       setDeletingClientId(id);
+      return false;
     }
   };
 
-  const openRecordPaymentModal = (client) => {
-    setRecordPaymentClient(client);
-    setRecordPaymentForm({
-      amount: "",
-      payment_method: "",
-      notes: "",
-    });
+  const handleManageClientCredit = (clientId) => {
+    setActiveTab("credits");
+    setCreditStatusFilter("all");
+    setCreditDetailClientId(clientId);
+    setCreditView("detail");
   };
 
   const handleOpenCreditSettleAll = (client, openInvoices) => {
@@ -3179,7 +3198,7 @@ export default function Dashboard() {
       .filter(item => item?.client_id)
       .map(item => {
         const order = ordersById[item.order_id] || null;
-        const client = clientsById[item.client_id] || null;
+        const client = item.client || clientsById[item.client_id] || null;
         return {
           ...item,
           order,
@@ -3419,16 +3438,14 @@ export default function Dashboard() {
     });
   }, [profiles, userSearch, roleFilter]);
 
-  const filteredClients = useMemo(() => (
-    clients.filter((client) => clientMatchesQuery(client, clientSearch))
-  ), [clients, clientSearch]);
-
-  const CLIENT_PER_PAGE = 20;
-  const totalClientPages = Math.ceil(filteredClients.length / CLIENT_PER_PAGE) || 1;
-  const safeClientPage = Math.min(clientPage, totalClientPages);
-  const paginatedClients = filteredClients.slice((safeClientPage - 1) * CLIENT_PER_PAGE, safeClientPage * CLIENT_PER_PAGE);
-
-  useEffect(() => { setClientPage(1); }, [filteredClients.length]);
+  const clientDirectoryRefreshKey = useMemo(() => [
+    clients.length,
+    getLatestCollectionTimestamp(clients),
+    orders.length,
+    getLatestCollectionTimestamp(orders),
+    accountsReceivable.length,
+    getLatestCollectionTimestamp(accountsReceivable),
+  ].join(":"), [accountsReceivable, clients, orders]);
 
   const filteredMaterials = useMemo(() => {
     const q = normalizeText(materialSearch);
@@ -3478,7 +3495,7 @@ export default function Dashboard() {
     { id: "overview", label: "Resumen", icon: <Icons.Dashboard /> },
     { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loadingOrders, orders.length) },
     { id: "credits", label: "Créditos", icon: <Icons.Receipt />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
-    { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clients.length) },
+    { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clientsTotal) },
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
     { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
   ];
@@ -3952,141 +3969,17 @@ export default function Dashboard() {
         )}
 
         {activeTab === "clients" && (
-          <section className="pa-section">
-            <div className="pa-section-heading">
-              <div>
-                <span className="pa-kicker">Catálogo</span>
-                <h2>Gestión de Clientes</h2>
-                <p>Administra los clientes registrados para reutilizarlos al crear órdenes.</p>
-              </div>
-              <button className="pa-btn primary" onClick={handleAddClient}>
-                <Icons.Plus />
-                Agregar cliente
-              </button>
-            </div>
-            <div className="pa-toolbar pa-toolbar-users">
-              <div className="pa-search-box pa-toolbar-search">
-                <Icons.Search />
-                <input
-                  value={clientSearch}
-                  onChange={(event) => setClientSearch(event.target.value)}
-                  placeholder="Buscar por nombre o teléfono..."
-                />
-              </div>
-            </div>
-            <div className="pa-panel">
-              <div className="pa-panel-stripe" />
-              <div className="pa-panel-head pa-panel-head-results">
-                <div>
-                  <span className="pa-section-kicker">Registro</span>
-                  <h2>Clientes registrados</h2>
-                </div>
-                <span className="pa-results-count">
-                  {filteredClients.length} resultados
-                </span>
-              </div>
-              <div className="ps-table-wrap">
-                <table className="ps-table">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Cliente</th>
-                      <th>Contacto</th>
-                      <th>Registro</th>
-                      <th>Estado</th>
-                      <th>Crédito</th>
-                      <th style={{ width: 120 }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {clientsLoading ? (
-                      <tr>
-                        <td colSpan={7} className="ps-table-empty">Cargando clientes...</td>
-                      </tr>
-                    ) : filteredClients.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="ps-table-empty">
-                          No hay clientes que coincidan con la búsqueda.
-                        </td>
-                      </tr>
-                    ) : (
-                      paginatedClients.map((client) => {
-                        const activeOrdersCount = orders.filter(o =>
-                          o.client_id === client.id &&
-                          !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) &&
-                          !isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)
-                        ).length;
-                        const receivableSummary = receivablesByClient[client.id];
-                        return (
-                          <tr key={client.id} className="row-hover" onClick={() => handleClientClick(client)}>
-                            <td className="td-pad td-id">{client.id?.slice(0, 8) || "---"}</td>
-                            <td className="td-pad td-name">{client.name}</td>
-                            <td className="td-pad" style={{ lineHeight: 1.6 }}>
-                              <div style={{ color: "var(--text)", fontSize: 13 }}>{client.phone || "---"}</div>
-                              {client.email && <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{client.email}</div>}
-                            </td>
-                            <td className="td-pad td-date">
-                              {new Date(client.created_at).toLocaleDateString("es-DO", {
-                                day: "2-digit", month: "short", year: "numeric"
-                              })}
-                            </td>
-                            <td className="td-pad">
-                              {activeOrdersCount > 0 ? (
-                                <span className="ps-badge" style={{ background: "#DCFCE7", color: "#166534", border: "1px solid #22C55E40" }}>
-                                  {activeOrdersCount} activa{activeOrdersCount !== 1 ? "s" : ""}
-                                </span>
-                              ) : (
-                                <span className="ps-badge" style={{ background: "#F1F5F9", color: "#64748B", border: "1px solid #E2E8F040" }}>
-                                  Sin órdenes
-                                </span>
-                              )}
-                            </td>
-                            <td className="td-pad">
-                              {receivableSummary ? (
-                                <span className="ps-badge" style={{ background: "#F3E8FF", color: "#6D28D9", border: "1px solid #A855F740" }}>
-                                  {receivableSummary.count} factura{receivableSummary.count !== 1 ? "s" : ""}
-                                </span>
-                              ) : (
-                                <span className="ps-badge" style={{ background: "#F1F5F9", color: "#64748B", border: "1px solid #E2E8F040" }}>
-                                  Sin crédito
-                                </span>
-                              )}
-                            </td>
-                            <td className="td-pad td-actions" onClick={(e) => e.stopPropagation()}>
-                              <div className="table-actions">
-                                {receivableSummary && (
-                                  <button className="table-action-btn" onClick={() => openRecordPaymentModal(client)} title="Marcar crédito saldado">
-                                    <Icons.Money />
-                                  </button>
-                                )}
-                                <button className="table-action-btn view" onClick={() => handleEditClient(client)} title="Ver detalle">
-                                  <Icons.Eye />
-                                </button>
-                                <button className="table-action-btn edit" onClick={() => { handleEditClient(client); }} title="Editar cliente">
-                                  <Icons.Edit />
-                                </button>
-                                <button
-                                  className={`table-action-btn ${deletingClientId === client.id ? "" : "cancel"}`}
-                                  onClick={() => handleDeleteClient(client.id)}
-                                  title={deletingClientId === client.id ? "Confirmar eliminación" : "Eliminar cliente"}
-                                  style={deletingClientId === client.id ? { background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA" } : undefined}
-                                >
-                                  {deletingClientId === client.id ? <Icons.Check /> : <Icons.Trash />}
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {filteredClients.length > CLIENT_PER_PAGE && (
-                <Pagination currentPage={safeClientPage} totalPages={totalClientPages} onPageChange={setClientPage} />
-              )}
-            </div>
-          </section>
+          <AdminClientsModule
+            supabase={supabase}
+            refreshKey={clientDirectoryRefreshKey}
+            deletingClientId={deletingClientId}
+            onAddClient={handleAddClient}
+            onEditClient={handleEditClient}
+            onDeleteClient={handleDeleteClient}
+            onCreateOrder={openCreateOrder}
+            onViewOrders={(clientId) => handleClientClick({ id: clientId })}
+            onManageCredit={handleManageClientCredit}
+          />
         )}
 
         <ModalShell open={!!recordPaymentClient} onClose={() => setRecordPaymentClient(null)} title="Marcar crédito saldado" size="compact">

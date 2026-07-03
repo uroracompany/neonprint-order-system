@@ -98,7 +98,9 @@ describe("modulo de gestion de creditos", () => {
     expect(dashboard).toContain('const getSidebarBadge = (loading, value) => (loading ? "..." : value);');
     expect(dashboard).toContain("badge: getSidebarBadge(loadingOrders, orders.length)");
     expect(dashboard).toContain("badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount)");
-    expect(dashboard).toContain("badge: getSidebarBadge(clientsLoading, clients.length)");
+    expect(dashboard).toContain("badge: getSidebarBadge(clientsLoading, clientsTotal)");
+    expect(dashboard).toContain('searchClients(supabase, "", 100)');
+    expect(dashboard).toContain('select("id", { count: "exact", head: true })');
     expect(dashboard).toContain("badge: getSidebarBadge(loadingUsers, profiles.length)");
   });
 
