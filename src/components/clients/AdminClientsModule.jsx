@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pagination } from "../ui/Pagination";
 import { Icons } from "../../utils/icons";
-import { getOrderStatusLabel, getPaymentStatusLabel } from "../../utils/constants";
+import {
+  getOrderStatusLabel,
+  getPaymentStatusLabel,
+  STATUS_OPTIONS,
+  PAYMENT_OPTIONS,
+} from "../../utils/constants";
 import "./AdminClientsModule.css";
 
 const PAGE_SIZE = 7;
@@ -377,6 +382,79 @@ function ClientDetail({
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (menuRef.current && menuRef.current.open && !menuRef.current.contains(e.target)) {
+        menuRef.current.removeAttribute("open");
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const ORDER_PAGE_SIZE = 7;
+
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderQuery, setOrderQuery] = useState("");
+  const [orderPage, setOrderPage] = useState(1);
+  const [orderItems, setOrderItems] = useState([]);
+  const [orderTotal, setOrderTotal] = useState(0);
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [orderError, setOrderError] = useState("");
+  const [orderStatusFilter, setOrderStatusFilter] = useState("all");
+  const [orderPaymentFilter, setOrderPaymentFilter] = useState("all");
+  const orderRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setOrderQuery(orderSearch.trim()), 250);
+    return () => window.clearTimeout(timeout);
+  }, [orderSearch]);
+
+  useEffect(() => setOrderPage(1), [orderQuery, orderStatusFilter, orderPaymentFilter]);
+
+  const loadOrders = useCallback(async () => {
+    const requestId = orderRequestIdRef.current + 1;
+    orderRequestIdRef.current = requestId;
+    setOrderLoading(true);
+    setOrderError("");
+
+    const { data, error: rpcError } = await supabase.rpc("admin_list_client_orders", {
+      p_client_id: clientId,
+      p_page: orderPage,
+      p_page_size: ORDER_PAGE_SIZE,
+      p_search: orderQuery || null,
+      p_status_filter: orderStatusFilter,
+      p_payment_filter: orderPaymentFilter,
+    });
+
+    if (requestId !== orderRequestIdRef.current) return;
+    if (rpcError) {
+      setOrderItems([]);
+      setOrderTotal(0);
+      setOrderError(rpcError.message || "No se pudieron cargar las órdenes.");
+      setOrderLoading(false);
+      return;
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    const nextTotal = Number(rows[0]?.total_count || 0);
+    const maxPage = Math.max(1, Math.ceil(nextTotal / ORDER_PAGE_SIZE));
+
+    if (orderPage > maxPage) {
+      setOrderPage(maxPage);
+      return;
+    }
+
+    setOrderItems(rows);
+    setOrderTotal(nextTotal);
+    setOrderLoading(false);
+  }, [clientId, orderPage, orderQuery, orderStatusFilter, orderPaymentFilter, supabase]);
+
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -422,8 +500,6 @@ function ClientDetail({
   const stats = Object.fromEntries(Object.entries(detail.stats || {}).map(([key, value]) => (
     [key, typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value]
   )));
-  const recentOrders = Array.isArray(detail.recent_orders) ? detail.recent_orders : [];
-
   const confirmDelete = async () => {
     const deleted = await onDeleteClient(client.id);
     if (deleted) onBack();
@@ -457,11 +533,13 @@ function ClientDetail({
           </div>
         </div>
         <div className="acm-detail-actions">
-          <button className="pa-btn secondary" onClick={() => onEditClient(client)}><Icons.Edit /> Editar</button>
-          <button className="pa-btn primary" onClick={() => onCreateOrder(client)}><Icons.Plus /> Nueva orden</button>
-          <details className="acm-more-menu">
+          <button className="pa-btn primary acm-detail-action-primary" onClick={() => onCreateOrder(client)}>
+            <Icons.Plus /> Nueva orden
+          </button>
+          <details ref={menuRef} className="acm-more-menu">
             <summary aria-label="Más acciones"><Icons.Menu /></summary>
             <div>
+              <button onClick={() => onEditClient(client)}><Icons.Edit /> Editar cliente</button>
               <button onClick={() => onViewOrders(client.id)}><Icons.Orders /> Ver todas las órdenes</button>
               <button onClick={() => onManageCredit(client.id)}><Icons.Receipt /> Gestionar crédito</button>
               <button className="danger" onClick={confirmDelete}>
@@ -529,13 +607,74 @@ function ClientDetail({
             <button onClick={() => onManageCredit(client.id)}>Gestionar crédito</button>
           </div>
         </div>
+
+        <div className="acm-activity-filters">
+          <div className="pa-search-box acm-search acm-activity-search">
+            <Icons.Search />
+            <input
+              value={orderSearch}
+              onChange={(event) => setOrderSearch(event.target.value)}
+              placeholder="Buscar por orden, factura, estado…"
+              aria-label="Buscar en actividad reciente"
+            />
+            {orderSearch && (
+              <button className="acm-search-clear" onClick={() => setOrderSearch("")} aria-label="Limpiar búsqueda">
+                <Icons.X />
+              </button>
+            )}
+          </div>
+          <div className="acm-activity-filter-row">
+            <label>
+              <span>Estado</span>
+              <select value={orderStatusFilter} onChange={(event) => setOrderStatusFilter(event.target.value)}>
+                <option value="all">Todos</option>
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>{getOrderStatusLabel(status)}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Pago</span>
+              <select value={orderPaymentFilter} onChange={(event) => setOrderPaymentFilter(event.target.value)}>
+                <option value="all">Todos</option>
+                {PAYMENT_OPTIONS.map((payment) => (
+                  <option key={payment} value={payment}>{getPaymentStatusLabel(payment)}</option>
+                ))}
+              </select>
+            </label>
+            <span className="pa-results-count acm-activity-count">{orderTotal} resultado{orderTotal === 1 ? "" : "s"}</span>
+          </div>
+        </div>
+
         <div className="ps-table-wrap">
           <table className="ps-table acm-activity-table">
             <thead><tr><th>Orden / factura</th><th>Fecha</th><th>Estado operativo</th><th>Estado de pago</th><th /></tr></thead>
             <tbody>
-              {recentOrders.length === 0 ? (
-                <tr><td colSpan={5} className="ps-table-empty">Este cliente todavía no tiene órdenes.</td></tr>
-              ) : recentOrders.map((order) => (
+              {orderLoading ? (
+                Array.from({ length: ORDER_PAGE_SIZE }, (_, index) => (
+                  <tr key={index} className="acm-skeleton-row" aria-hidden="true">
+                    <td colSpan={5}><span /></td>
+                  </tr>
+                ))
+              ) : orderError ? (
+                <tr>
+                  <td colSpan={5} className="ps-table-empty acm-error-state">
+                    <Icons.AlertCircle />
+                    <span>{orderError}</span>
+                    <button className="pa-btn secondary pa-btn-sm" onClick={loadOrders}>Reintentar</button>
+                  </td>
+                </tr>
+              ) : orderItems.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="ps-table-empty acm-empty-state">
+                    <Icons.Orders />
+                    <strong>No encontramos órdenes</strong>
+                    <span>{(orderQuery || orderStatusFilter !== "all" || orderPaymentFilter !== "all")
+                      ? "Prueba con otros filtros o limpia la búsqueda."
+                      : "Este cliente todavía no tiene órdenes."}</span>
+                  </td>
+                </tr>
+              ) : orderItems.map((order) => (
                 <tr key={order.id} className="row-hover" onClick={() => onViewOrders(client.id)}>
                   <td className="td-pad">
                     <div className="acm-order-id"><Icons.FileText /><span><strong>#{order.id.slice(0, 8).toUpperCase()}</strong><small>{order.invoice_number || "Sin factura"}</small></span></div>
@@ -549,6 +688,12 @@ function ClientDetail({
             </tbody>
           </table>
         </div>
+
+        {!orderLoading && !orderError && orderTotal > 0 && (
+          <div className="acm-pagination-footer">
+            <Pagination currentPage={orderPage} totalPages={Math.max(1, Math.ceil(orderTotal / ORDER_PAGE_SIZE))} onPageChange={setOrderPage} />
+          </div>
+        )}
       </div>
     </section>
   );

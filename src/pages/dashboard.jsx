@@ -1,4 +1,4 @@
-﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
@@ -263,11 +263,11 @@ const getOrderSearchUserIds = (order) => [
 ].filter(Boolean);
 
 
-// Genera nombres únicos y legibles para los archivos que sube el administrador.
-// Función uploadOrderAsset importada desde ../utils/uploadOrderAsset.js
+// Genera nombres �nicos y legibles para los archivos que sube el administrador.
+// Funci�n uploadOrderAsset importada desde ../utils/uploadOrderAsset.js
 // Para usar: uploadOrderAsset({ bucket, path, file })
 
-// Funciones para obtener información de los perfiles de usuario con lógica de respaldo
+// Funciones para obtener informaci�n de los perfiles de usuario con l�gica de respaldo
 // Funcion para obtener el nombre del usuario
 const getUserDisplayName = (profile) => profile?.name || profile?.email || "Usuario";
 // Normaliza el estado laboral a un booleano real para que la UI y la base hablen el mismo idioma.
@@ -697,7 +697,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onAssign }) {
   );
 }
 
-// Modal de detalles de orden para el apartado de crédito (solo informacion, sin acciones)
+// Modal de detalles de orden para el apartado de cr�dito (solo informacion, sin acciones)
 function CreditOrderDetailModal({ open, order, usersById, onClose }) {
   if (!open || !order) return null;
 
@@ -708,8 +708,8 @@ function CreditOrderDetailModal({ open, order, usersById, onClose }) {
   );
 }
 
-// Modal de asignación de orden a usuario
-// Versión enriquecida del formulario de órdenes para admin, con la misma capacidad de carga
+// Modal de asignaci�n de orden a usuario
+// Versi�n enriquecida del formulario de �rdenes para admin, con la misma capacidad de carga
 // de archivos y preview que hoy utiliza seller.
 function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit, saving, clients = [], onClientSearch, clientsLoading = false }) {
   const filesInputRef = useRef(null);
@@ -948,7 +948,7 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
                   <div className="pa-preview-card-footer">
                     <div>
                       <strong>{orderForm.newPreview ? orderForm.newPreview.name : "Preview actual"}</strong>
-                      <small>{orderForm.newPreview ? "Se reemplazará al guardar" : "Archivo guardado"}</small>
+                      <small>{orderForm.newPreview ? "Se reemplazar� al guardar" : "Archivo guardado"}</small>
                     </div>
                     <div className="pa-upload-chip-actions">
                       <button type="button" className="pa-btn ghost pa-btn-sm" onClick={() => previewInputRef.current?.click()}>Cambiar</button>
@@ -1097,10 +1097,10 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
             <div><span>Material</span><strong>{order.material || "No definido"}</strong></div>
             <div><span>Fecha</span><strong>{formatDate(order.created_at)}</strong></div>
           </div>
-          <div className="pa-detail-description">{order.description || "Sin descripción"}</div>
+          <div className="pa-detail-description">{order.description || "Sin descripci�n"}</div>
         </div>
         <div className="pa-panel">
-          <div className="pa-panel-title">Diseños y caja</div>
+          <div className="pa-panel-title">Dise�os y caja</div>
           <div className="pa-detail-list">
             <div><span>Estado</span><strong><StatusBadge status={order.status} className="ps-badge" showDot bordered /></strong></div>
             <div><span>Pago</span><strong><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></strong></div>
@@ -1119,7 +1119,7 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
               ))}
             </div>
           ) : (
-            <div className="pa-empty-small">No hay diseños cargados.</div>
+            <div className="pa-empty-small">No hay dise�os cargados.</div>
           )}
         </div>
       </div>
@@ -1176,7 +1176,7 @@ function EmploymentStatusConfirmModal({ open, pendingChange, onClose, onConfirm,
 }
 
 // Detalles del usuario
-function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggle, onShowFeedback }) {
+function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequestEmploymentToggle, onShowFeedback }) {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -1184,7 +1184,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
   const [changingPassword, setChangingPassword] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  // Estados de validación
+  // Estados de validaci�n
   const [errors, setErrors] = useState({ newPassword: "", confirmPassword: "" });
 
   useEffect(() => {
@@ -1232,7 +1232,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
       return;
     }
 
-    // Limpiar errores si todo está bien
+    // Limpiar errores si todo est� bien
     setErrors({ newPassword: "", confirmPassword: "" });
 
     setChangingPassword(true);
@@ -1241,7 +1241,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
       const { response, result } = await adminApiFetch("/api/change-user-password", { userId: user.id, newPassword });
 
       if (!response.ok) {
-        onShowFeedback?.("error", `Error al cambiar la contraseña: ${result.error}`);
+        onShowFeedback?.("error", `Error al cambiar la contrase�a: ${result.error}`);
         setChangingPassword(false);
         return;
       }
@@ -1306,57 +1306,33 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
                   onClick={() => setShowPasswordForm(true)}
                   style={{ width: "100%" }}
                 >
-                  Cambiar contraseña
+                  Cambiar contrase�a
                 </button>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div className="pa-field" style={{ marginBottom: "0" }}>
-                    <span style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase", color: "#64748b" }}>Nueva contraseña</span>
+                <div className="pa-password-form">
+                  <label className="pa-field">
+                    <span>Nueva contrase�a</span>
                     <input
                       type="password"
                       value={newPassword}
                       onChange={(e) => { setNewPassword(e.target.value); setErrors(prev => ({ ...prev, newPassword: "" })); }}
-                      placeholder="Mínimo 6 caracteres"
-                      style={{
-                        marginTop: "8px",
-                        padding: "10px",
-                        border: errors.newPassword ? "1px solid #ef4444" : "1px solid #dbe3ef",
-                        borderRadius: "8px",
-                        width: "100%",
-                        boxSizing: "border-box",
-                        background: errors.newPassword ? "#fef2f2" : "#ffffff"
-                      }}
+                      placeholder="M�nimo 6 caracteres"
+                      className={errors.newPassword ? "pa-field-error" : ""}
                     />
-                    {errors.newPassword && (
-                      <span style={{ fontSize: "11px", color: "#ef4444", marginTop: "4px", display: "block" }}>
-                        {errors.newPassword}
-                      </span>
-                    )}
-                  </div>
-                  <div className="pa-field" style={{ marginBottom: "0" }}>
-                    <span style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase", color: "#64748b" }}>Confirmar contraseña</span>
+                    {errors.newPassword && <small className="pa-field-help error">{errors.newPassword}</small>}
+                  </label>
+                  <label className="pa-field">
+                    <span>Confirmar contrase�a</span>
                     <input
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => { setConfirmPassword(e.target.value); setErrors(prev => ({ ...prev, confirmPassword: "" })); }}
-                      placeholder="Repite la contraseña"
-                      style={{
-                        marginTop: "8px",
-                        padding: "10px",
-                        border: errors.confirmPassword ? "1px solid #ef4444" : "1px solid #dbe3ef",
-                        borderRadius: "8px",
-                        width: "100%",
-                        boxSizing: "border-box",
-                        background: errors.confirmPassword ? "#fef2f2" : "#ffffff"
-                      }}
+                      placeholder="Repite la contrase�a"
+                      className={errors.confirmPassword ? "pa-field-error" : ""}
                     />
-                    {errors.confirmPassword && (
-                      <span style={{ fontSize: "11px", color: "#ef4444", marginTop: "4px", display: "block" }}>
-                        {errors.confirmPassword}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
+                    {errors.confirmPassword && <small className="pa-field-help error">{errors.confirmPassword}</small>}
+                  </label>
+                  <div className="pa-password-actions">
                     <button
                       className="pa-btn secondary pa-btn-sm"
                       onClick={() => {
@@ -1365,15 +1341,13 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
                         setConfirmPassword("");
                       }}
                       disabled={changingPassword}
-                      style={{ flex: 1 }}
                     >
                       Cancelar
                     </button>
                     <button
-                      className="pa-btn primary pa-btn-sm cursor-pointer"
+                      className="pa-btn primary pa-btn-sm"
                       onClick={handleChangePassword}
                       disabled={changingPassword}
-                      style={{ flex: 1 }}
                     >
                       {changingPassword ? "Actualizando..." : "Actualizar"}
                     </button>
@@ -1395,17 +1369,21 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
             </section>
           </div>
 
-          <div className="pa-modal-actions">
-            <button className="pa-btn secondary" onClick={onClose}>Cerrar</button>
-            <button className="pa-btn primary" onClick={() => onEdit(user)}>
-              Editar empleado
+          <div className="pa-user-detail-actions">
+            <button className="pa-btn secondary pa-user-action-btn" onClick={() => onEdit(user)}>
+              <Icons.Edit /> Editar
             </button>
-            <button
-              className={`pa-btn ${isActive ? "danger" : "primary"}`}
-              onClick={() => onRequestEmploymentToggle(user)}
-            >
-              {isActive ? "Desactivar usuario" : "Activar usuario"}
+            <button className="pa-btn primary pa-user-action-btn" onClick={() => onCreateOrder?.(user)}>
+              <Icons.Plus /> Nueva Orden
             </button>
+            <details className="pa-user-more-menu">
+              <summary aria-label="Más acciones"><Icons.Menu /></summary>
+              <div>
+                <button onClick={() => { onRequestEmploymentToggle(user); }}>
+                  {isActive ? "Desactivar usuario" : "Activar usuario"}
+                </button>
+              </div>
+            </details>
           </div>
         </div>
       </ModalShell>
@@ -1419,8 +1397,8 @@ function UserDetailModal({ open, user, onClose, onEdit, onRequestEmploymentToggl
                 <polyline points="22 4 12 14.01 9 11.01" />
               </svg>
             </div>
-            <h3>Contraseña cambiada correctamente</h3>
-            <p>La contraseña del usuario ha sido actualizada exitosamente.</p>
+            <h3>Contrase�a cambiada correctamente</h3>
+            <p>La contrase�a del usuario ha sido actualizada exitosamente.</p>
           </div>
         </div>
       )}
@@ -1524,7 +1502,7 @@ export default function Dashboard() {
   const [userForm, setUserForm] = useState(DEFAULT_USER_FORM);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userDetailModalOpen, setUserDetailModalOpen] = useState(false);
-  // Guarda la intención de cambio hasta que el admin confirme la acción en el modal.
+  // Guarda la intenci�n de cambio hasta que el admin confirme la acci�n en el modal.
   const [employmentStatusConfirmOpen, setEmploymentStatusConfirmOpen] = useState(false);
   const [pendingEmploymentStatusChange, setPendingEmploymentStatusChange] = useState(null);
   const [savingEmploymentStatus, setSavingEmploymentStatus] = useState(false);
@@ -1577,6 +1555,7 @@ export default function Dashboard() {
   const [showClientModal, setShowClientModal] = useState(false);
   const [showOrderClientModal, setShowOrderClientModal] = useState(false);
   const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
+  const [clientFieldLocked, setClientFieldLocked] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [clientForm, setClientForm] = useState(DEFAULT_CLIENT_FORM);
   const [clientFormError, setClientFormError] = useState("");
@@ -1831,7 +1810,7 @@ export default function Dashboard() {
       setCreditCustomReminderLinks(Array.isArray(links) ? links : []);
     } catch (error) {
       if (!String(error?.message || "").includes("credit_custom_reminders")) {
-        console.warn("No se pudieron cargar recordatorios de crédito:", error?.message || error);
+        console.warn("No se pudieron cargar recordatorios de cr�dito:", error?.message || error);
       }
       setCreditCustomReminders([]);
       setCreditCustomReminderLinks([]);
@@ -2034,11 +2013,12 @@ export default function Dashboard() {
     });
   };
 
-  const openCreateOrder = (client = null) => {
+  const openCreateOrder = (client = null, options = {}) => {
     const selectedClient = client?.id ? client : null;
     setOrderModalMode("create");
     setEditingOrder(null);
     setClientToSelectInOrderForm(selectedClient);
+    setClientFieldLocked(!!options.lockClient);
     setOrderForm({
       ...DEFAULT_ORDER_FORM,
       id: "",
@@ -2047,6 +2027,15 @@ export default function Dashboard() {
     fetchClients();
     fetchMaterials();
     setOrderModalOpen(true);
+  };
+
+  const handleCreateOrderFromUser = (user) => {
+    const pseudoClient = { id: user.id, name: getUserDisplayName(user), phone: user.email || "" };
+    openCreateOrder(pseudoClient, { lockClient: true });
+  };
+
+  const openCreateOrderFromClient = (client) => {
+    openCreateOrder(client, { lockClient: true });
   };
 
   const openEditOrder = (order) => {
@@ -2086,7 +2075,7 @@ export default function Dashboard() {
     let finalPreviewUrl = orderForm.existingPreview;
     let finalFileUrls = [...orderForm.existingFiles];
 
-    // Subir nuevos archivos de diseño
+    // Subir nuevos archivos de dise�o
     for (const file of orderForm.newFiles) {
       const fileName = buildStorageSafeFileName(file, "design-");
       const publicUrl = await uploadOrderAsset({
@@ -2107,7 +2096,7 @@ export default function Dashboard() {
       });
     }
 
-    // Si se eliminó el preview existente
+    // Si se elimin� el preview existente
     if (orderForm.removePreview || (!orderForm.newPreview && orderForm.existingPreview && orderForm.removePreview)) {
       finalPreviewUrl = null;
     }
@@ -2173,7 +2162,7 @@ export default function Dashboard() {
   const handleConfirmCancelOrder = async () => {
     if (!cancelOrderData) return;
     if (cancelReason.trim().length < 10) {
-      showFeedback("error", "Explica el motivo de cancelación con al menos 10 caracteres.");
+      showFeedback("error", "Explica el motivo de cancelaci�n con al menos 10 caracteres.");
       return;
     }
     if (isPaymentPartial(cancelOrderData.payment_status)) {
@@ -2219,7 +2208,7 @@ export default function Dashboard() {
 
   const openArchiveModal = (order) => {
     if (!canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, user?.id)) {
-      showFeedback("error", "Solo se pueden archivar órdenes canceladas, completadas o entregadas.");
+      showFeedback("error", "Solo se pueden archivar �rdenes canceladas, completadas o entregadas.");
       return;
     }
     setArchivingOrder(order);
@@ -2273,7 +2262,7 @@ export default function Dashboard() {
         action: isDesigner ? "route_design" : "route_quote",
         payload: { target_user_id: userId },
         reasonCategory: "assignment_correction",
-        reasonDetail: "Asignación realizada por Administración desde el detalle de la orden.",
+        reasonDetail: "Asignaci�n realizada por Administraci�n desde el detalle de la orden.",
         expectedUpdatedAt: assigningOrder.updated_at,
       });
     } catch (error) {
@@ -2290,7 +2279,7 @@ export default function Dashboard() {
     setAssigningOrder(null);
     setAssigningRole(null);
     await loadOrders();
-    showFeedback("success", `Orden asignada a ${isDesigner ? "diseñador" : "caja"} correctamente.`);
+    showFeedback("success", `Orden asignada a ${isDesigner ? "dise�ador" : "caja"} correctamente.`);
   };
 
   const openPaymentModal = (order) => {
@@ -2310,7 +2299,7 @@ export default function Dashboard() {
       setPaymentModalLoading(false);
 
       if (error) {
-        throw new Error(error.message || "No se pudo aprobar el crédito.");
+        throw new Error(error.message || "No se pudo aprobar el cr�dito.");
       }
 
       setPaymentModalOrder(null);
@@ -2326,7 +2315,7 @@ export default function Dashboard() {
       const validation = await validateReceiptFile(receiptFile);
       if (!validation.isValid) {
         setPaymentModalLoading(false);
-        throw new Error(validation.error || "La imagen no es válida.");
+        throw new Error(validation.error || "La imagen no es v�lida.");
       }
 
       try {
@@ -2355,7 +2344,7 @@ export default function Dashboard() {
         action: "register_payment",
         payload: { payment_status: paymentStatus, invoice_payment: paymentInvoiceUrl },
         reasonCategory: "workflow_correction",
-        reasonDetail: "Pago registrado por Administración desde el listado de órdenes.",
+        reasonDetail: "Pago registrado por Administraci�n desde el listado de �rdenes.",
         expectedUpdatedAt: currentOrder.updated_at,
       });
     } catch (error) {
@@ -2668,7 +2657,7 @@ export default function Dashboard() {
     );
   };
 
-  // Si el admin confirma, recién aquí se persiste el cambio.
+  // Si el admin confirma, reci�n aqu� se persiste el cambio.
   const confirmEmploymentStatusChange = async () => {
     if (!pendingEmploymentStatusChange) return;
 
@@ -2787,7 +2776,7 @@ export default function Dashboard() {
 
     if (!payload.phone) {
       nextErrors.phone = "Escribe el número de teléfono del cliente.";
-    } else if (payload.phone.length < 3) {
+    } else if (phone.length < 3) {
       nextErrors.phone = "El teléfono debe tener al menos 3 caracteres.";
     }
 
@@ -2920,7 +2909,7 @@ export default function Dashboard() {
     setLoadingState(false);
 
     if (error) {
-      showFeedback("error", error.message || "No se pudo registrar el cierre del crédito.");
+      showFeedback("error", error.message || "No se pudo registrar el cierre del cr�dito.");
       return false;
     }
 
@@ -3528,7 +3517,7 @@ export default function Dashboard() {
             >
               {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
-            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
+            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
           </div>
           <div className="pa-header-right">
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
@@ -3612,7 +3601,7 @@ export default function Dashboard() {
                       Actividad reciente
                     </span>
                     <h2>
-                      Órdenes más recientes
+                      órdenes más recientes
                     </h2>
                   </div>
                 </div>
@@ -3824,7 +3813,7 @@ export default function Dashboard() {
               </select>
             </div>
 
-            <div className="pa-credit-metrics" aria-label="Resumen de créditos">
+            <div className="pa-credit-metrics" aria-label="Resumen de cr�ditos">
               <div className="pa-credit-summary-item">
                 <span className="pa-credit-summary-icon client"><Icons.User /></span>
                 <div><strong>{creditClientGroups.length}</strong><span>Clientes filtrados</span></div>
@@ -3877,7 +3866,7 @@ export default function Dashboard() {
                   <tbody>
                     {creditClientGroups.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="ps-table-empty">No hay créditos que coincidan con los filtros.</td>
+                        <td colSpan={5} className="ps-table-empty">No hay cr�ditos que coincidan con los filtros.</td>
                       </tr>
                     ) : (
                       creditClientGroups.map(group => {
@@ -3976,13 +3965,13 @@ export default function Dashboard() {
             onAddClient={handleAddClient}
             onEditClient={handleEditClient}
             onDeleteClient={handleDeleteClient}
-            onCreateOrder={openCreateOrder}
+            onCreateOrder={openCreateOrderFromClient}
             onViewOrders={(clientId) => handleClientClick({ id: clientId })}
             onManageCredit={handleManageClientCredit}
           />
         )}
 
-        <ModalShell open={!!recordPaymentClient} onClose={() => setRecordPaymentClient(null)} title="Marcar crédito saldado" size="compact">
+        <ModalShell open={!!recordPaymentClient} onClose={() => setRecordPaymentClient(null)} title="Marcar cr�dito saldado" size="compact">
           <div style={{ minWidth: 320 }}>
             <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
               {recordPaymentClient?.name}
@@ -4025,7 +4014,7 @@ export default function Dashboard() {
           </div>
         </ModalShell>
 
-        <ModalShell open={!!creditSettlementTarget} onClose={() => setCreditSettlementTarget(null)} title="Marcar crédito saldado" size="compact">
+        <ModalShell open={!!creditSettlementTarget} onClose={() => setCreditSettlementTarget(null)} title="Marcar cr�dito saldado" size="compact">
           <div style={{ minWidth: 320 }}>
             <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
               {creditSettlementTarget?.client?.name || "Cliente sin nombre"}
@@ -4082,8 +4071,11 @@ export default function Dashboard() {
               </div>
               <div className="pa-modal-body">
                 <div className="pa-client-form-intro">
-                  <span>Cliente registrado</span>
-                  <strong>Nombre y telefono son obligatorios</strong>
+                  <Icons.AlertCircle />
+                  <div>
+                    <span>Cliente registrado</span>
+                    <strong>Nombre y telefono son obligatorios</strong>
+                  </div>
                 </div>
                 <div className="pa-form-grid pa-client-form-grid">
                   <label className="pa-field">
@@ -4295,7 +4287,7 @@ export default function Dashboard() {
                 <option value="all">Todos los roles</option>
                 <option value="admin">Administrador</option>
                 <option value="seller">Vendedor</option>
-                <option value="designer">Diseñador</option>
+                <option value="designer">Dise�ador</option>
                 <option value="quote">Caja</option>
                 <option value="printer">Produccion legacy</option>
                 <option value="digital_producer">Produccion Digital</option>
@@ -4311,7 +4303,7 @@ export default function Dashboard() {
               <div className="pa-panel-stripe" />
               <div className="pa-panel-head">
                 <div>
-                  <span className="pa-section-kicker">Supervisión</span>
+                  <span className="pa-section-kicker">Supervisi�n</span>
                   <h2>Usuarios del sistema</h2>
                 </div>
                 <span className="pa-results-count">{filteredProfiles.length} usuarios</span>
@@ -4378,7 +4370,7 @@ export default function Dashboard() {
       {orderModalMode === "create" ? (
         <CreateOrderModal
           open={orderModalOpen}
-          onClose={() => { setOrderModalOpen(false); setEditingOrder(null); }}
+          onClose={() => { setOrderModalOpen(false); setEditingOrder(null); setClientFieldLocked(false); }}
           onCreated={async () => {
             await Promise.all([loadOrders(), fetchClients(), fetchAccountsReceivable()]);
             await notif.refresh?.({ showNewToasts: true });
@@ -4392,6 +4384,7 @@ export default function Dashboard() {
           onAddNewClient={() => setShowOrderClientModal(true)}
           clientToSelect={clientToSelectInOrderForm}
           onClientToSelectConsumed={() => setClientToSelectInOrderForm(null)}
+          clientFieldDisabled={clientFieldLocked}
         />
       ) : (
         <SharedEditOrderModal
@@ -4462,7 +4455,7 @@ export default function Dashboard() {
         open={!!advancedProduction}
         order={advancedProduction?.order}
         loading={advancedActionLoading}
-        title={advancedProduction?.action === "reassign_production" ? "Reasignar Producción" : undefined}
+        title={advancedProduction?.action === "reassign_production" ? "Reasignar Producci�n" : undefined}
         onClose={() => setAdvancedProduction(null)}
         onConfirm={handleAdvancedProductionConfirm}
       />
@@ -4473,7 +4466,7 @@ export default function Dashboard() {
         onClose={() => setPaymentModalOrder(null)}
         onConfirm={handlePaymentConfirm}
       />
-      <ModalShell open={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Confirmar Cancelación" size="compact">
+      <ModalShell open={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Confirmar Cancelaci�n" size="compact">
         <div className="pa-confirm-modal-body">
           <div className="pa-confirm-icon cancel">
             <Icons.Trash />
@@ -4483,17 +4476,17 @@ export default function Dashboard() {
             <p className="pa-confirm-order-name">{cancelOrderData?.client_name}</p>
             <p className="pa-confirm-order-desc">{cancelOrderData?.description?.slice(0, 60)}{cancelOrderData?.description?.length > 60 ? "..." : ""}</p>
             <label className="pa-field full">
-              <span>Motivo de cancelación</span>
-              <textarea rows={3} value={cancelReason} onChange={(event) => setCancelReason(event.target.value.slice(0, 500))} placeholder="Describe por qué se cancela esta orden." />
+              <span>Motivo de cancelaci�n</span>
+              <textarea rows={3} value={cancelReason} onChange={(event) => setCancelReason(event.target.value.slice(0, 500))} placeholder="Describe por qu� se cancela esta orden." />
             </label>
-            <p className="pa-confirm-warning">La orden podrá reabrirse únicamente desde Configuración avanzada y quedará auditada.</p>
+            <p className="pa-confirm-warning">La orden podr� reabrirse �nicamente desde Configuraci�n avanzada y quedar� auditada.</p>
           </div>
           <div className="pa-modal-actions">
             <button className="pa-btn secondary" onClick={() => setCancelModalOpen(false)}>
               Cerrar
             </button>
             <button className="pa-btn pa-confirm-btn-cancel" onClick={handleConfirmCancelOrder} disabled={cancelLoading}>
-              {cancelLoading ? "Cancelando..." : "Sí, cancelar orden"}
+              {cancelLoading ? "Cancelando..." : "S�, cancelar orden"}
             </button>
           </div>
         </div>
@@ -4525,7 +4518,7 @@ export default function Dashboard() {
         </p>
       </ArchiveOrderModal>
       <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} />
-      <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} />
+      <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onCreateOrder={handleCreateOrderFromUser} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />
       <SettleCreditModal
         open={!!creditSettleAllTarget}
@@ -4720,7 +4713,7 @@ function CreditClientDetailView({
         <div className="pa-credit-detail-header">
           <button className="pa-credit-detail-back" onClick={onBack}>
             <Icons.ChevronLeft />
-            Volver a lista de créditos
+            Volver a lista de cr�ditos
           </button>
           <button
             className="pa-btn secondary pa-btn-sm"
@@ -4999,7 +4992,7 @@ function AdminTrackingLinkField({ orderId }) {
         </div>
       ) : (
         <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, fontStyle: "italic" }}>
-          El link estará disponible cuando la orden tenga un token de seguimiento.
+          El link estar� disponible cuando la orden tenga un token de seguimiento.
         </p>
       )}
     </div>

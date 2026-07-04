@@ -223,8 +223,10 @@
   display: inline-grid;
   flex: 0 0 auto;
   place-items: center;
-  color: #243b72;
-  background: linear-gradient(145deg, #eef2ff, #dbeafe);
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--green);
+  color: #ffffff;
   font-weight: 700;
   letter-spacing: -.03em;
 }
@@ -232,7 +234,6 @@
 .acm-avatar-small {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
   font-size: 11px;
 }
 
@@ -240,10 +241,10 @@
   width: 88px;
   height: 88px;
   border-radius: 50%;
-  border: 4px solid rgba(255, 255, 255, .9);
-  color: #312e81;
-  background: linear-gradient(145deg, #eef2ff 5%, #ddd6fe 52%, #c4b5fd 100%);
-  box-shadow: 0 14px 32px rgba(79, 70, 229, .16);
+  background: var(--primary);
+  border: 3px solid var(--green);
+  color: #ffffff;
+  box-shadow: 0 14px 32px rgba(16, 185, 129, .25);
   font-size: 27px;
   font-weight: 750;
 }
@@ -319,7 +320,26 @@
 
 .acm-error-state,
 .acm-empty-state {
-  height: 320px;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Ensure the empty/error cell spans and centers without horizontal padding
+   coming from the table cell. Apply when the table cell also has the
+   ps-table-empty helper class used across the app. */
+.ps-table-empty.acm-empty-state,
+.ps-table-empty.acm-error-state {
+  width: 100%;
+  box-sizing: border-box;
+  padding-left: 0; /* keep vertical padding managed by ps-table-empty only */
+  padding-right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .acm-error-state,
@@ -512,6 +532,15 @@
 .acm-detail-actions {
   flex: 0 0 auto;
   gap: 10px;
+}
+
+.acm-detail-action-primary {
+  min-height: 42px;
+  padding: 0 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(244, 63, 94, 0.2);
 }
 
 .acm-detail-actions .pa-btn {
@@ -770,6 +799,78 @@
 .acm-activity-heading button + button {
   border-left: 1px solid var(--border);
   padding-left: 16px;
+}
+
+.acm-activity-filters {
+  padding: 0 20px 14px;
+}
+
+.acm-activity-search {
+  width: 100%;
+  height: 42px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.acm-activity-search:focus-within {
+  border-color: var(--primary-mid);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.acm-activity-search input {
+  height: 100%;
+}
+
+.acm-activity-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.acm-activity-filter-row label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.acm-activity-filter-row label > span {
+  color: var(--text-sub);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.acm-activity-filter-row select {
+  width: 100%;
+  min-width: 138px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  border-color: color-mix(in srgb, var(--border) 86%, transparent);
+  color: var(--text-sub);
+  background: var(--surface-alt);
+  font: 600 11px/1 'Poppins', sans-serif;
+}
+
+.acm-activity-filter-row select:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.acm-activity-filter-row select:focus {
+  border-color: var(--primary-mid);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.acm-activity-count {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .acm-activity-table { min-width: 760px; }

@@ -53,9 +53,21 @@ const detailResponse = {
   }],
 };
 
+const orderListResponse = [{
+  id: "11111111-1111-1111-1111-111111111111",
+  invoice_number: "FAC-001",
+  description: "Pedido de prueba",
+  status: "in_Production",
+  payment_status: "Pending_Payment",
+  created_at: "2026-02-01T12:00:00Z",
+  updated_at: "2026-02-01T12:00:00Z",
+  total_count: 1,
+}];
+
 const createSupabaseMock = () => ({
   rpc: vi.fn(async (name) => {
     if (name === "admin_get_client_detail") return { data: detailResponse, error: null };
+    if (name === "admin_list_client_orders") return { data: orderListResponse, error: null };
     return { data: listRows, error: null };
   }),
 });

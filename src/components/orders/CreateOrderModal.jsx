@@ -208,6 +208,7 @@ export default function CreateOrderModal({
   onAddNewClient,
   clientToSelect = null,
   onClientToSelectConsumed,
+  clientFieldDisabled = false,
 }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
@@ -516,6 +517,7 @@ export default function CreateOrderModal({
               onSelect={applySelectedClient}
               onSearch={onClientSearch}
               onAddNewClient={onAddNewClient}
+              disabled={clientFieldDisabled}
               placeholder="Seleccionar cliente registrado"
             />
           </Field>
