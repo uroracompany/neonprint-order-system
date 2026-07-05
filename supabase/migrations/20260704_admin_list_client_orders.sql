@@ -4,7 +4,9 @@ create or replace function public.admin_list_client_orders(
   p_page_size integer default 7,
   p_search text default null,
   p_status_filter text default 'all',
-  p_payment_filter text default 'all'
+  p_payment_filter text default 'all',
+  p_date_from date default null,
+  p_date_to date default null
 )
 returns table (
   id uuid,
@@ -58,6 +60,8 @@ begin
         p_payment_filter = 'all'
         or lower(o.payment_status) = lower(p_payment_filter)
       )
+      and (p_date_from is null or o.created_at >= p_date_from::timestamptz)
+      and (p_date_to is null or o.created_at < (p_date_to + 1)::timestamptz)
   )
   select
     f.id, f.invoice_number, f.description, f.status, f.payment_status,
@@ -70,6 +74,6 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_list_client_orders(uuid, integer, integer, text, text, text) from public;
-revoke all on function public.admin_list_client_orders(uuid, integer, integer, text, text, text) from anon;
-grant execute on function public.admin_list_client_orders(uuid, integer, integer, text, text, text) to authenticated;
+revoke all on function public.admin_list_client_orders(uuid, integer, integer, text, text, text, date, date) from public;
+revoke all on function public.admin_list_client_orders(uuid, integer, integer, text, text, text, date, date) from anon;
+grant execute on function public.admin_list_client_orders(uuid, integer, integer, text, text, text, date, date) to authenticated;

@@ -3526,6 +3526,16 @@
     padding: 12px 14px;
   }
 
+  .acm-pagination-footer {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .acm-pagination-footer .pagination {
+    justify-content: center;
+  }
+
 }
 
 .pa-loading {
@@ -3576,4 +3586,21 @@
 .pa-order-flag.is-review {
   background: #fff8db;
   color: #8a5a00;
+}
+
+.acm-pagination-footer {
+  display: flex;
+  min-height: 66px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.acm-pagination-footer .pagination {
+  margin: 0;
+  padding: 0;
 }

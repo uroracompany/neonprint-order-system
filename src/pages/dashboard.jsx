@@ -4234,8 +4234,10 @@ export default function Dashboard() {
                   </tbody>
                 </table>
               </div>
-              {filteredMaterials.length > MATERIALS_PER_PAGE && (
-                <Pagination currentPage={safeMaterialPage} totalPages={totalMaterialPages} onPageChange={setMaterialsPage} />
+              {!materialsLoading && filteredMaterials.length > 0 && (
+                <div className="acm-pagination-footer">
+                  <Pagination currentPage={safeMaterialPage} totalPages={totalMaterialPages} onPageChange={setMaterialsPage} />
+                </div>
               )}
             </div>
           </section>
