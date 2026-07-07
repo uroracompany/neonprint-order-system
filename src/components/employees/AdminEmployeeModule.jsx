@@ -279,11 +279,13 @@ function EmployeeOrdersPanel({ profile, orders, onViewOrder }) {
             <tbody>
               {paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="ps-table-empty acm-empty-state">
-                    <Icons.Orders />
-                    <strong>No encontramos órdenes</strong>
-                    <span>{hasFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Este empleado todavía no tiene órdenes asignadas."}</span>
-                    {hasFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setSearch(""); setQuery(""); setStatusFilter("all"); setPaymentFilter("all"); }}>Limpiar filtros</button>}
+                  <td colSpan={5} className="ps-table-empty">
+                    <div className="acm-empty-state">
+                      <Icons.Orders />
+                      <strong>No encontramos órdenes</strong>
+                      <span>{hasFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Este empleado todavía no tiene órdenes asignadas."}</span>
+                      {hasFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setSearch(""); setQuery(""); setStatusFilter("all"); setPaymentFilter("all"); }}>Limpiar filtros</button>}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -327,7 +329,7 @@ function EmployeeOrdersPanel({ profile, orders, onViewOrder }) {
   );
 }
 
-export default function AdminEmployeeModule({ profile, orders, onBack, onEditUser, onViewOrder, onDeleteUser }) {
+export default function AdminEmployeeModule({ profile, orders, onBack, onEditUser, onViewOrder, onDeleteUser, currentUserId }) {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, []);
@@ -376,9 +378,11 @@ export default function AdminEmployeeModule({ profile, orders, onBack, onEditUse
           <button className="pa-btn secondary" onClick={() => onEditUser?.(profile)}>
             <Icons.Edit /> Editar empleado
           </button>
-          <button className="pa-btn danger" onClick={() => onDeleteUser?.(profile)}>
-            <Icons.Trash /> Eliminar empleado
-          </button>
+          {profile.id !== currentUserId && (
+            <button className="pa-btn danger" onClick={() => onDeleteUser?.(profile)}>
+              <Icons.Trash /> Eliminar empleado
+            </button>
+          )}
         </div>
       </div>
 

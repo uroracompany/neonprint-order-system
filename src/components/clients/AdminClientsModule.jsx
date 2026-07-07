@@ -77,8 +77,7 @@ function ClientList({
   refreshKey,
   onAddClient,
   onEditClient,
-  onDeleteClient,
-  deletingClientId,
+  onRequestDelete,
   onOpenDetail,
 }) {
   const [search, setSearch] = useState("");
@@ -282,19 +281,23 @@ function ClientList({
                 ))
               ) : error ? (
                 <tr>
-                  <td colSpan={6} className="ps-table-empty acm-error-state">
-                    <Icons.AlertCircle />
-                    <span>{error}</span>
-                    <button className="pa-btn secondary pa-btn-sm" onClick={loadPage}>Reintentar</button>
+                  <td colSpan={6} className="ps-table-empty">
+                    <div className="acm-error-state">
+                      <Icons.AlertCircle />
+                      <span>{error}</span>
+                      <button className="pa-btn secondary pa-btn-sm" onClick={loadPage}>Reintentar</button>
+                    </div>
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="ps-table-empty acm-empty-state">
-                    <Icons.Users />
-                    <strong>No encontramos clientes</strong>
-                    <span>{hasFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Agrega el primer cliente para comenzar."}</span>
-                    {hasFilters && <button className="pa-btn secondary pa-btn-sm" onClick={resetFilters}>Limpiar filtros</button>}
+                  <td colSpan={6} className="ps-table-empty">
+                    <div className="acm-empty-state">
+                      <Icons.Users />
+                      <strong>No encontramos clientes</strong>
+                      <span>{hasFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Agrega el primer cliente para comenzar."}</span>
+                      {hasFilters && <button className="pa-btn secondary pa-btn-sm" onClick={resetFilters}>Limpiar filtros</button>}
+                    </div>
                   </td>
                 </tr>
               ) : items.map((client) => (
@@ -339,12 +342,12 @@ function ClientList({
                       <button className="table-action-btn view" onClick={() => onOpenDetail(client.id)} title="Ver detalle" aria-label={`Ver detalle de ${client.name}`}><Icons.Eye /></button>
                       <button className="table-action-btn edit" onClick={() => onEditClient(client)} title="Editar cliente" aria-label={`Editar ${client.name}`}><Icons.Edit /></button>
                       <button
-                        className={`table-action-btn ${deletingClientId === client.id ? "acm-confirm-delete" : "cancel"}`}
-                        onClick={() => onDeleteClient(client.id)}
-                        title={deletingClientId === client.id ? "Confirmar eliminación" : "Eliminar cliente"}
-                        aria-label={deletingClientId === client.id ? `Confirmar eliminación de ${client.name}` : `Eliminar ${client.name}`}
+                        className="table-action-btn cancel"
+                        onClick={() => onRequestDelete(client)}
+                        title="Eliminar cliente"
+                        aria-label={`Eliminar ${client.name}`}
                       >
-                        {deletingClientId === client.id ? <Icons.Check /> : <Icons.Trash />}
+                        <Icons.Trash />
                       </button>
                     </div>
                   </td>
@@ -378,10 +381,9 @@ function ClientDetail({
   supabase,
   clientId,
   refreshKey,
-  deletingClientId,
   onBack,
   onEditClient,
-  onDeleteClient,
+  onRequestDelete,
   onCreateOrder,
   onViewOrders,
   onManageCredit,
@@ -521,9 +523,8 @@ function ClientDetail({
   const stats = Object.fromEntries(Object.entries(detail.stats || {}).map(([key, value]) => (
     [key, typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value]
   )));
-  const confirmDelete = async () => {
-    const deleted = await onDeleteClient(client.id);
-    if (deleted) onBack();
+  const confirmDelete = () => {
+    onRequestDelete(client);
   };
 
   return (
@@ -564,8 +565,7 @@ function ClientDetail({
               <button onClick={() => onViewOrders(client.id)}><Icons.Orders /> Ver todas las órdenes</button>
               <button onClick={() => onManageCredit(client.id)}><Icons.Receipt /> Gestionar crédito</button>
               <button className="danger" onClick={confirmDelete}>
-                {deletingClientId === client.id ? <Icons.Check /> : <Icons.Trash />}
-                {deletingClientId === client.id ? "Confirmar eliminación" : "Eliminar cliente"}
+                <Icons.Trash /> Eliminar cliente
               </button>
             </div>
           </details>
@@ -690,20 +690,24 @@ function ClientDetail({
                 ))
               ) : orderError ? (
                 <tr>
-                  <td colSpan={5} className="ps-table-empty acm-error-state">
-                    <Icons.AlertCircle />
-                    <span>{orderError}</span>
-                    <button className="pa-btn secondary pa-btn-sm" onClick={loadOrders}>Reintentar</button>
+                  <td colSpan={5} className="ps-table-empty">
+                    <div className="acm-error-state">
+                      <Icons.AlertCircle />
+                      <span>{orderError}</span>
+                      <button className="pa-btn secondary pa-btn-sm" onClick={loadOrders}>Reintentar</button>
+                    </div>
                   </td>
                 </tr>
               ) : orderItems.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="ps-table-empty acm-empty-state">
-                    <Icons.Orders />
-                    <strong>No encontramos órdenes</strong>
-                    <span>{(orderQuery || orderStatusFilter !== "all" || orderPaymentFilter !== "all" || orderDateFrom || orderDateTo)
-                      ? "Prueba con otros filtros o limpia la búsqueda."
-                      : "Este cliente todavía no tiene órdenes."}</span>
+                  <td colSpan={5} className="ps-table-empty">
+                    <div className="acm-empty-state">
+                      <Icons.Orders />
+                      <strong>No encontramos órdenes</strong>
+                      <span>{(orderQuery || orderStatusFilter !== "all" || orderPaymentFilter !== "all" || orderDateFrom || orderDateTo)
+                        ? "Prueba con otros filtros o limpia la búsqueda."
+                        : "Este cliente todavía no tiene órdenes."}</span>
+                    </div>
                   </td>
                 </tr>
               ) : orderItems.map((order) => (

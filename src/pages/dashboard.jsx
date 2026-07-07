@@ -1150,7 +1150,7 @@ function EmploymentStatusConfirmModal({ open, pendingChange, onClose, onConfirm,
   return (
     <div className="archive-modal-overlay" onClick={onClose}>
       <div className="archive-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="archive-modal-stripe" />
+        <div className={`archive-modal-stripe${willActivate ? "" : " danger"}`} />
         <div className="archive-modal-header">
           <div className="archive-modal-title">
             <h3>{willActivate ? "Activar empleado" : "Desactivar empleado"}</h3>
@@ -1216,7 +1216,7 @@ function EmploymentStatusConfirmModal({ open, pendingChange, onClose, onConfirm,
 }
 
 // Detalles del usuario
-function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequestEmploymentToggle, onShowFeedback }) {
+function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequestEmploymentToggle, onShowFeedback, currentUserId }) {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -1416,14 +1416,16 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
             <button className="pa-btn primary pa-user-action-btn" onClick={() => onCreateOrder?.(user)}>
               <Icons.Plus /> Nueva Orden
             </button>
-            <details className="pa-user-more-menu">
-              <summary aria-label="Más acciones"><Icons.Menu /></summary>
-              <div>
-                <button onClick={() => { onRequestEmploymentToggle(user); }}>
-                  {isActive ? "Desactivar empleado" : "Activar empleado"}
-                </button>
-              </div>
-            </details>
+            {user?.id !== currentUserId && (
+              <details className="pa-user-more-menu">
+                <summary aria-label="Más acciones"><Icons.Menu /></summary>
+                <div>
+                  <button onClick={() => { onRequestEmploymentToggle(user); }}>
+                    {isActive ? "Desactivar empleado" : "Activar empleado"}
+                  </button>
+                </div>
+              </details>
+            )}
           </div>
         </div>
       </ModalShell>
@@ -1611,6 +1613,8 @@ export default function Dashboard() {
   const [clientFormErrors, setClientFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deletingClientId, setDeletingClientId] = useState(null);
+  const [clientToDelete, setClientToDelete] = useState(null);
+  const [clientDeleteLoading, setClientDeleteLoading] = useState(false);
 
   const usersById = useMemo(() => Object.fromEntries(profiles.map(item => [item.id, item])), [profiles]);
   const adminVisibleNotifications = useMemo(() => filterActiveNotifications(notif.notifications), [notif.notifications]);
@@ -2748,10 +2752,26 @@ export default function Dashboard() {
 
   const handleConfirmDeleteEmployee = async () => {
     if (!employeeToDelete) return;
+
+    if (employeeToDelete.id === user?.id) {
+      showFeedback("error", "No puedes eliminar tu propia cuenta de administrador mientras tengas la sesión iniciada.");
+      setEmployeeToDelete(null);
+      return;
+    }
+
     setEmployeeDeleteLoading(true);
     try {
-      const { error } = await supabase.auth.admin.deleteUser(employeeToDelete.id);
-      if (error) throw error;
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin-delete-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ userId: employeeToDelete.id }),
+      });
+      const payload = await res.json();
+      if (!res.ok || payload.error) throw new Error(payload.error || "No se pudo eliminar el empleado.");
       setEmployeeToDelete(null);
       closeEmployeeDetail();
       loadProfiles();
@@ -2937,6 +2957,23 @@ export default function Dashboard() {
     } else {
       setDeletingClientId(id);
       return false;
+    }
+  };
+
+  const handleConfirmDeleteClient = async () => {
+    if (!clientToDelete) return;
+    setClientDeleteLoading(true);
+    try {
+      const { error } = await supabase.from("clients").delete().eq("id", clientToDelete.id);
+      if (error) throw error;
+      setClientToDelete(null);
+      await fetchClients();
+      await loadOrders();
+      showFeedback("success", "Cliente eliminado correctamente.");
+    } catch (err) {
+      showFeedback("error", err?.message || "No se pudo eliminar el cliente.");
+    } finally {
+      setClientDeleteLoading(false);
     }
   };
 
@@ -3919,10 +3956,12 @@ export default function Dashboard() {
                   <tbody>
                     {loadingOrders ? <tr><td colSpan={6} className="ps-table-empty">Cargando órdenes...</td></tr> : loadOrdersError ? <tr><td colSpan={6} className="ps-table-empty">{loadOrdersError}</td></tr> : filteredOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="ps-table-empty acm-empty-state">
-                          <Icons.Search />
-                          <strong>No se encontraron órdenes</strong>
-                          <span>{(search || statusFilter !== "all" || dateFilter !== "all" || ownerFilter !== "all" || clientFilter !== "all" || archiveFilter !== "active" || interventionFilter !== "all" || operationalFilter !== "all") ? "Prueba con otros filtros o limpia la búsqueda." : "Las órdenes del sistema aparecerán aquí."}</span>
+                        <td colSpan={6} className="ps-table-empty">
+                          <div className="acm-empty-state">
+                            <Icons.Search />
+                            <strong>No se encontraron órdenes</strong>
+                            <span>{(search || statusFilter !== "all" || dateFilter !== "all" || ownerFilter !== "all" || clientFilter !== "all" || archiveFilter !== "active" || interventionFilter !== "all" || operationalFilter !== "all") ? "Prueba con otros filtros o limpia la búsqueda." : "Las órdenes del sistema aparecerán aquí."}</span>
+                          </div>
                         </td>
                       </tr>
                     ) : paginatedOrders.map(order =>
@@ -4103,11 +4142,13 @@ export default function Dashboard() {
                   <tbody>
                     {creditClientGroups.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="ps-table-empty acm-empty-state">
-                          <Icons.Receipt />
-                          <strong>No hay créditos registrados</strong>
-                          <span>{hasCreditFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Las facturas a crédito aparecerán aquí."}</span>
-                          {hasCreditFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setCreditSearch(""); setCreditStatusFilter("open"); }}>Limpiar filtros</button>}
+                        <td colSpan={5} className="ps-table-empty">
+                          <div className="acm-empty-state">
+                            <Icons.Receipt />
+                            <strong>No hay créditos registrados</strong>
+                            <span>{hasCreditFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Las facturas a crédito aparecerán aquí."}</span>
+                            {hasCreditFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setCreditSearch(""); setCreditStatusFilter("open"); }}>Limpiar filtros</button>}
+                          </div>
                         </td>
                       </tr>
                     ) : (
@@ -4214,10 +4255,9 @@ export default function Dashboard() {
           <AdminClientsModule
             supabase={supabase}
             refreshKey={clientDirectoryRefreshKey}
-            deletingClientId={deletingClientId}
             onAddClient={handleAddClient}
             onEditClient={handleEditClient}
-            onDeleteClient={handleDeleteClient}
+            onRequestDelete={(client) => setClientToDelete(client)}
             onCreateOrder={openCreateOrderFromClient}
             onViewOrders={(clientId) => handleClientClick({ id: clientId })}
             onManageCredit={handleManageClientCredit}
@@ -4570,12 +4610,36 @@ export default function Dashboard() {
           confirmText="Eliminar empleado"
           cancelText="Cancelar"
           className="emp-delete-modal"
+          variant="danger"
+          loadingText="Eliminando..."
+          confirmIcon={<Icons.Trash />}
         >
           <p>
             ¿Estás seguro de que deseas eliminar a{" "}
             <strong>{employeeToDelete?.name || employeeToDelete?.email}</strong>?
           </p>
           <p className="archive-modal-hint">Esta acción no se puede deshacer. El empleado será eliminado permanentemente del sistema.</p>
+        </ArchiveOrderModal>
+
+        <ArchiveOrderModal
+          open={!!clientToDelete}
+          onClose={() => setClientToDelete(null)}
+          onConfirm={handleConfirmDeleteClient}
+          order={clientToDelete}
+          loading={clientDeleteLoading}
+          title="Eliminar cliente"
+          confirmText="Eliminar cliente"
+          cancelText="Cancelar"
+          className="client-delete-modal"
+          variant="danger"
+          loadingText="Eliminando..."
+          confirmIcon={<Icons.Trash />}
+        >
+          <p>
+            ¿Estás seguro de que deseas eliminar al cliente{" "}
+            <strong>{clientToDelete?.name}</strong>?
+          </p>
+          <p className="archive-modal-hint">Esta acción no se puede deshacer. El cliente será eliminado permanentemente del sistema.</p>
         </ArchiveOrderModal>
 
         {activeTab === "users" && employeeDetailView && selectedEmployeeId ? (
@@ -4586,6 +4650,7 @@ export default function Dashboard() {
             onEditUser={(profile) => openEditUserModal(profile)}
             onViewOrder={(order) => setSelectedOrder(order)}
             onDeleteUser={(profile) => setEmployeeToDelete(profile)}
+            currentUserId={user?.id}
           />
         ) : activeTab === "users" &&
           <section className="pa-section acm-section" aria-labelledby="users-title">
@@ -4682,19 +4747,23 @@ export default function Dashboard() {
                       ))
                     ) : loadUsersError ? (
                       <tr>
-                        <td colSpan={5} className="ps-table-empty acm-error-state">
-                          <Icons.AlertCircle />
-                          <span>{loadUsersError}</span>
-                          <button className="pa-btn secondary pa-btn-sm" onClick={loadProfiles}>Reintentar</button>
+                        <td colSpan={5} className="ps-table-empty">
+                          <div className="acm-error-state">
+                            <Icons.AlertCircle />
+                            <span>{loadUsersError}</span>
+                            <button className="pa-btn secondary pa-btn-sm" onClick={loadProfiles}>Reintentar</button>
+                          </div>
                         </td>
                       </tr>
                     ) : paginatedUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="ps-table-empty acm-empty-state">
-                          <Icons.Users />
-                          <strong>No encontramos empleados</strong>
-                          <span>{hasUserFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Crea el primer empleado para comenzar."}</span>
-                          {hasUserFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setUserSearch(""); setRoleFilter("all"); setEmploymentFilter("all"); }}>Limpiar filtros</button>}
+                        <td colSpan={5} className="ps-table-empty">
+                          <div className="acm-empty-state">
+                            <Icons.Users />
+                            <strong>No encontramos empleados</strong>
+                            <span>{hasUserFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Crea el primer empleado para comenzar."}</span>
+                            {hasUserFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setUserSearch(""); setRoleFilter("all"); setEmploymentFilter("all"); }}>Limpiar filtros</button>}
+                          </div>
                         </td>
                       </tr>
                     ) : paginatedUsers.map(item => {
@@ -4731,14 +4800,16 @@ export default function Dashboard() {
                               <button className="table-action-btn edit" onClick={() => openEditUserModal(item)} title="Editar empleado" aria-label={`Editar ${getUserDisplayName(item)}`}>
                                 <Icons.Edit />
                               </button>
-                              <button
-                                className={`table-action-btn ${isActive ? "cancel" : "activate"}`}
-                                onClick={() => openEmploymentStatusConfirm(item)}
-                                title={isActive ? "Desactivar empleado" : "Activar empleado"}
-                                aria-label={isActive ? `Desactivar ${getUserDisplayName(item)}` : `Activar ${getUserDisplayName(item)}`}
-                              >
-                                {isActive ? <Icons.UserMinus /> : <Icons.Check />}
-                              </button>
+                              {item.id !== user?.id && (
+                                <button
+                                  className={`table-action-btn ${isActive ? "cancel" : "activate"}`}
+                                  onClick={() => openEmploymentStatusConfirm(item)}
+                                  title={isActive ? "Desactivar empleado" : "Activar empleado"}
+                                  aria-label={isActive ? `Desactivar ${getUserDisplayName(item)}` : `Activar ${getUserDisplayName(item)}`}
+                                >
+                                  {isActive ? <Icons.UserMinus /> : <Icons.Check />}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -4910,7 +4981,7 @@ export default function Dashboard() {
         </p>
       </ArchiveOrderModal>
       <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} />
-      <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onCreateOrder={handleCreateOrderFromUser} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} />
+      <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onCreateOrder={handleCreateOrderFromUser} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} currentUserId={user?.id} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />
       <SettleCreditModal
         open={!!creditSettleAllTarget}
@@ -5194,10 +5265,12 @@ function CreditClientDetailView({
               <tbody>
                 {filteredInvoices.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="ps-table-empty acm-empty-state">
-                      <Icons.Receipt />
-                      <strong>No hay facturas</strong>
-                      <span>{detailSearch || detailFilter !== "all" ? "Prueba con otros filtros o limpia la búsqueda." : "No hay facturas registradas para este cliente."}</span>
+                    <td colSpan={6} className="ps-table-empty">
+                      <div className="acm-empty-state">
+                        <Icons.Receipt />
+                        <strong>No hay facturas</strong>
+                        <span>{detailSearch || detailFilter !== "all" ? "Prueba con otros filtros o limpia la búsqueda." : "No hay facturas registradas para este cliente."}</span>
+                      </div>
                     </td>
                   </tr>
                 ) : (

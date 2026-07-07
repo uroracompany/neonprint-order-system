@@ -470,6 +470,13 @@
   justify-content: center;
 }
 
+/* When the empty/error state is a child div inside a ps-table-empty td,
+   let the td handle width and the child div handles flex centering. */
+.ps-table-empty > .acm-empty-state,
+.ps-table-empty > .acm-error-state {
+  width: 100%;
+}
+
 .acm-error-state,
 .acm-empty-state,
 .acm-detail-error {

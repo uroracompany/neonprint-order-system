@@ -12,13 +12,20 @@ export default function ArchiveOrderModal({
   cancelText = "Cancelar",
   children,
   className = "",
+  variant = "archive",
+  loadingText,
+  confirmIcon,
 }) {
   if (!open || !order) return null;
+
+  const isDanger = variant === "danger";
+  const stripeClass = `archive-modal-stripe${isDanger ? " danger" : ""}`;
+  const btnClass = `archive-btn ${isDanger ? "archive-btn-danger" : "archive-btn-primary"}`;
 
   return (
     <div className="archive-modal-overlay" onClick={onClose}>
       <div className={`archive-modal ${className}`.trim()} onClick={(e) => e.stopPropagation()}>
-        <div className="archive-modal-stripe" />
+        <div className={stripeClass} />
         <div className="archive-modal-header">
           <div className="archive-modal-title">
             <h3>{title}</h3>
@@ -47,15 +54,15 @@ export default function ArchiveOrderModal({
           <button className="archive-btn archive-btn-secondary" onClick={onClose} disabled={loading}>
             {cancelText}
           </button>
-          <button className="archive-btn archive-btn-primary" onClick={onConfirm} disabled={loading}>
+          <button className={btnClass} onClick={onConfirm} disabled={loading}>
             {loading ? (
               <>
                 <span className="archive-btn-spinner" />
-                Archivando...
+                {loadingText || (isDanger ? "Eliminando..." : "Archivando...")}
               </>
             ) : (
               <>
-                <Icons.Archive />
+                {confirmIcon || (isDanger ? <Icons.Trash /> : <Icons.Archive />)}
                 {confirmText}
               </>
             )}

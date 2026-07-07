@@ -42,6 +42,10 @@
   flex-shrink: 0;
 }
 
+.archive-modal-stripe.danger {
+  background: #ef4444;
+}
+
 .archive-modal-header {
   display: flex;
   justify-content: space-between;
