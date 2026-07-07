@@ -61,6 +61,7 @@ export default function AdminOrderActions({
           onClick={() => action.onClick?.(order)}
           title={action.label}
           aria-label={action.label}
+          data-action={action.key}
         >
           <span className="pa-order-action-icon" aria-hidden="true">{action.icon}</span>
           {isModal && <span>{action.label}</span>}

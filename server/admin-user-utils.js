@@ -56,5 +56,6 @@ export function normalizeUserProfile(profile, fallback = {}) {
     email: src.email || "",
     role: src.role || "",
     employment_status: src.employment_status ?? true,
+    created_at: src.created_at || null,
   };
 }

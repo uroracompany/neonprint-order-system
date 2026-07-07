@@ -579,11 +579,11 @@ function ClientDetail({
             <div><dt>Nombre completo</dt><dd>{client.name}</dd></div>
             <div><dt>Teléfono</dt><dd>{client.phone || "—"}</dd></div>
             <div><dt>Correo</dt><dd>{client.email || "—"}</dd></div>
-            <div><dt>Dirección</dt><dd>{client.address || "—"}</dd></div>
-            <div><dt>Notas internas</dt><dd>{client.notes || "—"}</dd></div>
-            <div className="acm-info-divider"><dt>ID de cliente</dt><dd>#{client.id.slice(0, 8).toUpperCase()}</dd></div>
+            <div className="acm-info-divider"><dt>Dirección</dt><dd>{client.address || "—"}</dd></div>
+            <div><dt>ID de cliente</dt><dd>#{client.id.slice(0, 8).toUpperCase()}</dd></div>
             <div><dt>Fecha de registro</dt><dd>{formatDate(client.created_at)}</dd></div>
             <div><dt>Última modificación</dt><dd>{formatDate(client.updated_at, true)}</dd></div>
+            <div className="acm-info-divider"><dt>Notas internas</dt><dd>{client.notes || "—"}</dd></div>
           </dl>
         </article>
 

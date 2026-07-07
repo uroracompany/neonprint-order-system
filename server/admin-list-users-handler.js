@@ -46,7 +46,7 @@ export async function handleAdminListUsers(payload = {}, env = process.env) {
 
   let query = supabaseAdmin
     .from("profiles")
-    .select("id,name,email,role,employment_status", { count: "exact" });
+    .select("id,name,email,role,employment_status,created_at", { count: "exact" });
 
   if (role !== "all" && ADMIN_USER_ROLE_SET.has(role)) {
     query = query.eq("role", role);
@@ -61,7 +61,7 @@ export async function handleAdminListUsers(payload = {}, env = process.env) {
   if (isMissingEmailColumnError(error)) {
     let fallbackQuery = supabaseAdmin
       .from("profiles")
-      .select("id,name,role,employment_status", { count: "exact" });
+      .select("id,name,role,employment_status,created_at", { count: "exact" });
 
     if (role !== "all" && ADMIN_USER_ROLE_SET.has(role)) {
       fallbackQuery = fallbackQuery.eq("role", role);

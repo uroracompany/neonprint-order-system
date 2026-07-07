@@ -31,15 +31,15 @@ export function RoleBadge({ role }) {
   const roleMap = {
     admin: ["Administrador", "danger"],
     seller: ["Vendedor", "info"],
-    designer: ["Diseñador", "purple"],
-    quote: [UI_TERMS.cotizacion, "blue"],
-    printer: ["Producción", "orange"],
-    digital_producer: ["Produccion Digital", "orange"],
-    dtf_producer: ["Produccion DTF", "orange"],
-    ploteo_producer: ["Produccion Ploteo", "orange"],
+    designer: ["Diseñador", "violet"],
+    quote: [UI_TERMS.cotizacion, "info"],
+    printer: ["Producción", "warning"],
+    digital_producer: ["Produccion Digital", "warning"],
+    dtf_producer: ["Produccion DTF", "warning"],
+    ploteo_producer: ["Produccion Ploteo", "warning"],
     delivery: [UI_TERMS.delivery, "cyan"],
   };
   const entry = roleMap[role];
   if (!entry) return null;
-  return <span className={`pa-badge ${entry[1]}`}>{entry[0]}</span>;
+  return <span className={`acm-badge ${entry[1]}`}>{entry[0]}</span>;
 }

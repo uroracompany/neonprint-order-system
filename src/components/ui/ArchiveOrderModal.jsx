@@ -11,12 +11,13 @@ export default function ArchiveOrderModal({
   confirmText = "Archivar orden",
   cancelText = "Cancelar",
   children,
+  className = "",
 }) {
   if (!open || !order) return null;
 
   return (
     <div className="archive-modal-overlay" onClick={onClose}>
-      <div className="archive-modal" onClick={(e) => e.stopPropagation()}>
+      <div className={`archive-modal ${className}`.trim()} onClick={(e) => e.stopPropagation()}>
         <div className="archive-modal-stripe" />
         <div className="archive-modal-header">
           <div className="archive-modal-title">

@@ -96,10 +96,10 @@ describe("admin order modal consistency", () => {
     expect(dashboard).toContain('target?.closest?.("button, a, input, select, textarea, [data-row-action]")');
     expect(dashboard).toContain("handleOrderRowClick");
     expect(dashboard).toContain("handleOrderRowKeyDown");
-    expect(dashboard).toContain('className="row-hover pa-orders-clickable-row"');
+    expect(dashboard).toContain('className="row-hover acm-client-row"');
     expect(dashboard).toContain("data-row-action");
     expect(dashboard).toContain("setSelectedOrder(order)");
-    expect(adminCss).toContain(".pa-orders-clickable-row");
-    expect(adminCss).toContain(".pa-orders-clickable-row:focus-visible");
+    expect(adminCss).toContain(".pa-orders-panel .acm-client-row:focus-visible");
+    expect(adminCss).toContain(".pa-orders-panel .acm-row-actions .table-action-btn:focus-visible");
   });
 });

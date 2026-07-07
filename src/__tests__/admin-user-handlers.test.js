@@ -759,7 +759,7 @@ describe("handleAdminListUsers", () => {
 
     expect(result.status).toBe(200);
     expect(result.body.users).toEqual([
-      { id: "user-1", name: "Ana", email: "ana@example.com", role: "seller", employment_status: true },
+      { id: "user-1", name: "Ana", email: "ana@example.com", role: "seller", employment_status: true, created_at: null },
     ]);
   });
 
@@ -782,7 +782,7 @@ describe("handleAdminListUsers", () => {
 
     expect(result.status).toBe(200);
     expect(result.body.users).toEqual([
-      { id: "user-1", name: "Ana", email: "", role: "seller", employment_status: true },
+      { id: "user-1", name: "Ana", email: "", role: "seller", employment_status: true, created_at: null },
     ]);
     expect(currentClient.orderFallbackUsers).toHaveBeenCalled();
   });
@@ -923,6 +923,7 @@ describe("handleAdminSetUserStatus", () => {
       email: "ana@example.com",
       role: "seller",
       employment_status: false,
+      created_at: null,
     });
   });
 

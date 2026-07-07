@@ -164,3 +164,33 @@
   width: 15px;
   height: 15px;
 }
+
+.archive-btn-danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.3);
+}
+
+.archive-btn-danger:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+}
+
+.archive-btn-danger svg {
+  width: 15px;
+  height: 15px;
+}
+
+.archive-btn-success {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+}
+
+.archive-btn-success:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669, #047857);
+}
+
+.archive-btn-success svg {
+  width: 15px;
+  height: 15px;
+}

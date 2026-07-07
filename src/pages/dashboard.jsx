@@ -7,11 +7,13 @@ import SharedEditOrderModal from "../components/orders/EditOrderModal";
 import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
 import AdminAdvancedSettings from "../components/orders/AdminAdvancedSettings";
 import AdminClientsModule from "../components/clients/AdminClientsModule";
+import AdminEmployeeModule from "../components/employees/AdminEmployeeModule";
 import AdminOrderActions from "../components/orders/AdminOrderActions";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import PaymentFormModal from "../components/ui/PaymentFormModal";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
 import CreateClientModal from "../components/ui/CreateClientModal";
+import AdminOverviewCarousel from "../components/ui/AdminOverviewCarousel";
 import { validateReceiptFile } from "../utils/receiptValidation";
 import { executeAdminOrderCommand } from "../utils/adminOrderCommands";
 import {
@@ -263,11 +265,11 @@ const getOrderSearchUserIds = (order) => [
 ].filter(Boolean);
 
 
-// Genera nombres �nicos y legibles para los archivos que sube el administrador.
-// Funci�n uploadOrderAsset importada desde ../utils/uploadOrderAsset.js
+// Genera nombres únicos y legibles para los archivos que sube el administrador.
+// Función uploadOrderAsset importada desde ../utils/uploadOrderAsset.js
 // Para usar: uploadOrderAsset({ bucket, path, file })
 
-// Funciones para obtener informaci�n de los perfiles de usuario con l�gica de respaldo
+// Funciones para obtener información de los perfiles de usuario con lógica de respaldo
 // Funcion para obtener el nombre del usuario
 const getUserDisplayName = (profile) => profile?.name || profile?.email || "Usuario";
 // Normaliza el estado laboral a un booleano real para que la UI y la base hablen el mismo idioma.
@@ -297,11 +299,11 @@ const getRoleLabel = (role) => {
   return map[role] || role;
 };
 
-function ModalShell({ open, title, onClose, children, size = "default" }) {
+function ModalShell({ open, title, onClose, children, size = "default", className = "" }) {
   if (!open) return null;
   return (
     <div className="pa-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className={`pa-modal ${size}`}>
+      <div className={`pa-modal ${size} ${className}`.trim()}>
         <div className="pa-modal-head">
           <div className="pa-modal-copy"><span className="pa-modal-kicker">Administrador</span><h3>{title}</h3></div>
           <button className="pa-icon-btn pa-modal-close" onClick={onClose} aria-label="Cerrar modal"><Icons.Close /></button>
@@ -697,7 +699,7 @@ function AdminOrderDetailModal({ open, order, usersById, onClose, onAssign }) {
   );
 }
 
-// Modal de detalles de orden para el apartado de cr�dito (solo informacion, sin acciones)
+// Modal de detalles de orden para el apartado de crédito (solo información, sin acciones)
 function CreditOrderDetailModal({ open, order, usersById, onClose }) {
   if (!open || !order) return null;
 
@@ -708,8 +710,8 @@ function CreditOrderDetailModal({ open, order, usersById, onClose }) {
   );
 }
 
-// Modal de asignaci�n de orden a usuario
-// Versi�n enriquecida del formulario de �rdenes para admin, con la misma capacidad de carga
+// Modal de asignación de orden a usuario
+// Versión enriquecida del formulario de órdenes para admin, con la misma capacidad de carga
 // de archivos y preview que hoy utiliza seller.
 function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit, saving, clients = [], onClientSearch, clientsLoading = false }) {
   const filesInputRef = useRef(null);
@@ -948,7 +950,7 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
                   <div className="pa-preview-card-footer">
                     <div>
                       <strong>{orderForm.newPreview ? orderForm.newPreview.name : "Preview actual"}</strong>
-                      <small>{orderForm.newPreview ? "Se reemplazar� al guardar" : "Archivo guardado"}</small>
+                      <small>{orderForm.newPreview ? "Se reemplazará al guardar" : "Archivo guardado"}</small>
                     </div>
                     <div className="pa-upload-chip-actions">
                       <button type="button" className="pa-btn ghost pa-btn-sm" onClick={() => previewInputRef.current?.click()}>Cambiar</button>
@@ -1016,36 +1018,48 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
   };
 
   return (
-    <ModalShell open={open} onClose={onClose} title={isEdit ? "Editar empleado" : "Crear usuario"} size="compact">
-      <div className="pa-user-modal-intro">
-        <div className="pa-user-modal-icon"><Icons.Users /></div>
-        <div>
-          <h4>{isEdit ? "Actualizar acceso del empleado" : "Nuevo miembro del sistema"}</h4>
-          <p>{isEdit ? "Modifica la identidad, correo y permisos sin cambiar el estado laboral actual." : "Organiza primero la identidad del usuario y luego define su rol y estado inicial dentro del equipo."}</p>
-        </div>
-      </div>
-      <div className="pa-user-modal-layout">
+    <ModalShell open={open} onClose={onClose} title={isEdit ? "Editar empleado" : "Crear empleado"} size="large" className="pa-user-form-modal">
+      <div className="pa-order-form-layout">
         <section className="pa-form-section">
           <div className="pa-form-section-head">
             <span className="pa-form-section-kicker">Identidad</span>
             <h5>Información principal</h5>
           </div>
-          <div className="pa-form-grid single">
-            <label className="pa-field"><span>Nombre</span><input value={userForm.name} onChange={(e) => setUserForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Ej. Maria Fernanda" autoComplete="name" /><small className="pa-field-help">Este nombre será visible en el sistema y se guardará también en autenticación.</small></label>
-            <label className="pa-field"><span>Email</span><input type="email" value={userForm.email} onChange={(e) => setUserForm(prev => ({ ...prev, email: e.target.value }))} placeholder="usuario@empresa.com" autoComplete="email" /><small className="pa-field-help">Usa un correo único para evitar conflictos de acceso.</small></label>
-            <label className="pa-field"><span>{isEdit ? "Nueva contraseña" : "Contraseña"}</span><input type="password" value={userForm.password} onChange={(e) => setUserForm(prev => ({ ...prev, password: e.target.value }))} placeholder={isEdit ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"} autoComplete="new-password" /></label>
-            <label className="pa-field"><span>Confirmar contraseña</span><input type="password" value={userForm.confirmPassword} onChange={(e) => setUserForm(prev => ({ ...prev, confirmPassword: e.target.value }))} placeholder={isEdit ? "Confirma solo si cambias contraseña" : "Repite la contraseña"} autoComplete="new-password" /></label>
+          <div className="pa-form-grid">
+            <label className="pa-field">
+              <span>Nombre</span>
+              <input value={userForm.name} onChange={(e) => setUserForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Ej. Maria Fernanda" autoComplete="name" />
+            </label>
+            <label className="pa-field">
+              <span>Email</span>
+              <input type="email" value={userForm.email} onChange={(e) => setUserForm(prev => ({ ...prev, email: e.target.value }))} placeholder="usuario@empresa.com" autoComplete="email" />
+            </label>
           </div>
         </section>
-        
-        {/* Apartado para configurar los permisos y estados del usuario */}
+
+        <section className="pa-form-section">
+          <div className="pa-form-section-head">
+            <span className="pa-form-section-kicker">Credenciales</span>
+            <h5>Seguridad de acceso</h5>
+          </div>
+          <div className="pa-form-grid">
+            <label className="pa-field">
+              <span>{isEdit ? "Nueva contraseña" : "Contraseña"}</span>
+              <input type="password" value={userForm.password} onChange={(e) => setUserForm(prev => ({ ...prev, password: e.target.value }))} placeholder={isEdit ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"} autoComplete="new-password" />
+            </label>
+            <label className="pa-field">
+              <span>Confirmar contraseña</span>
+              <input type="password" value={userForm.confirmPassword} onChange={(e) => setUserForm(prev => ({ ...prev, confirmPassword: e.target.value }))} placeholder={isEdit ? "Confirma solo si cambias contraseña" : "Repite la contraseña"} autoComplete="new-password" />
+            </label>
+          </div>
+        </section>
+
         <section className="pa-form-section">
           <div className="pa-form-section-head">
             <span className="pa-form-section-kicker">Acceso</span>
             <h5>Permisos y estado</h5>
           </div>
-          <div className="pa-form-grid single">
-            {/* Apartado para elegir el rol de usuario */}
+          <div className="pa-form-grid">
             <label className="pa-field">
               <span>Rol</span>
               <select value={userForm.role} onChange={(e) => setUserForm(prev => ({ ...prev, role: e.target.value }))}>
@@ -1060,21 +1074,17 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
                 <option value="admin">Administrador</option>
               </select>
             </label>
-            <div className="pa-static-field">
+            <label className="pa-field">
               <span>Estado laboral</span>
-              <div className="pa-static-value">{isEdit ? getEmploymentStatus(userForm) : "Empleado por defecto"}</div>
-              <small className="pa-field-help">Acceso actual: {roleDescriptions[userForm.role]}</small>
-            </div>
-          </div>
-          <div className="pa-user-modal-pills">
-            <span className="pa-user-pill neutral">El rol define el acceso dentro del sistema.</span>
-            <span className="pa-user-pill info">{isEdit ? "El estado laboral se administra con Activar/Desactivar." : "Se guardará como empleado activo (`employment_status = true`)."}</span>
+              <input value={isEdit ? getEmploymentStatus(userForm) : "Empleado por defecto"} readOnly disabled />
+            </label>
           </div>
         </section>
       </div>
+
       <div className="pa-modal-actions">
         <button className="pa-btn secondary" onClick={onClose}>Cancelar</button>
-        <button className="pa-btn primary" onClick={onSubmit} disabled={saving || !isSubmitReady}>{saving ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear usuario"}</button>
+        <button className="pa-btn primary" onClick={onSubmit} disabled={saving || !isSubmitReady}>{saving ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear empleado"}</button>
       </div>
     </ModalShell>
   );
@@ -1097,10 +1107,10 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
             <div><span>Material</span><strong>{order.material || "No definido"}</strong></div>
             <div><span>Fecha</span><strong>{formatDate(order.created_at)}</strong></div>
           </div>
-          <div className="pa-detail-description">{order.description || "Sin descripci�n"}</div>
+          <div className="pa-detail-description">{order.description || "Sin descripción"}</div>
         </div>
         <div className="pa-panel">
-          <div className="pa-panel-title">Dise�os y caja</div>
+          <div className="pa-panel-title">Diseños y caja</div>
           <div className="pa-detail-list">
             <div><span>Estado</span><strong><StatusBadge status={order.status} className="ps-badge" showDot bordered /></strong></div>
             <div><span>Pago</span><strong><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></strong></div>
@@ -1119,7 +1129,7 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
               ))}
             </div>
           ) : (
-            <div className="pa-empty-small">No hay dise�os cargados.</div>
+            <div className="pa-empty-small">No hay diseños cargados.</div>
           )}
         </div>
       </div>
@@ -1138,40 +1148,70 @@ function EmploymentStatusConfirmModal({ open, pendingChange, onClose, onConfirm,
   const willActivate = pendingChange.nextStatus === true;
 
   return (
-    <ModalShell
-      open={open}
-      onClose={onClose}
-      title={willActivate ? "Activar usuario" : "Desactivar usuario"}
-      size="compact"
-    >
-      <div className="pa-confirm-modal-body">
-        <div className={`pa-confirm-icon ${willActivate ? "activate" : "deactivate"}`}>
-          {willActivate ? <Icons.Users /> : <Icons.Close />}
+    <div className="archive-modal-overlay" onClick={onClose}>
+      <div className="archive-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="archive-modal-stripe" />
+        <div className="archive-modal-header">
+          <div className="archive-modal-title">
+            <h3>{willActivate ? "Activar empleado" : "Desactivar empleado"}</h3>
+          </div>
+          <button className="archive-modal-close" onClick={onClose}>
+            <Icons.Close />
+          </button>
         </div>
-
-        <div className="pa-confirm-copy">
-          <h4>{pendingChange.userName}</h4>
+        <div className="archive-modal-body">
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <span
+              style={{
+                display: "inline-grid",
+                width: 40,
+                height: 40,
+                placeItems: "center",
+                borderRadius: 10,
+                background: willActivate ? "#f0fdf4" : "#fef2f2",
+                color: willActivate ? "#16a34a" : "#dc2626",
+                flexShrink: 0,
+              }}
+            >
+              {willActivate ? <Icons.UserCheck /> : <Icons.UserMinus />}
+            </span>
+            <strong style={{ fontSize: 15, color: "#111827" }}>{pendingChange.userName}</strong>
+          </div>
           <p>
             {willActivate
-              ? "Si confirmas esta acción, el usuario volverá a estar activo y podrá iniciar sesión."
-              : "Si continúas, el usuario quedará inactivo y no podrá iniciar sesión hasta ser activado nuevamente."}
+              ? "Si confirmas esta acción, el empleado volverá a estar activo y podrá iniciar sesión."
+              : "Si continúas, el empleado quedará inactivo y no podrá iniciar sesión hasta ser activado nuevamente."}
           </p>
+          {!willActivate && (
+            <p className="archive-modal-hint">
+              Esta acción no eliminará la cuenta. El empleado podrá ser reactivado más adelante.
+            </p>
+          )}
+        </div>
+        <div className="archive-modal-footer">
+          <button className="archive-btn archive-btn-secondary" onClick={onClose} disabled={saving}>
+            Cancelar
+          </button>
+          <button
+            className={`archive-btn ${willActivate ? "archive-btn-success" : "archive-btn-danger"}`}
+            onClick={onConfirm}
+            disabled={saving}
+          >
+            {saving ? (
+              <>
+                <span className="archive-btn-spinner" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                {willActivate ? <Icons.UserCheck /> : <Icons.UserMinus />}
+                {willActivate ? "Activar empleado" : "Desactivar empleado"}
+              </>
+            )}
+          </button>
         </div>
       </div>
-
-      <div className="pa-modal-actions">
-        <button className="pa-btn secondary" onClick={onClose} disabled={saving}>
-          Cancelar
-        </button>
-        <button
-          className={`pa-btn ${willActivate ? "primary" : "danger"}`}
-          onClick={onConfirm}
-          disabled={saving}
-        >
-          {saving ? "Guardando..." : willActivate ? "Activar usuario" : "Desactivar usuario"}
-        </button>
-      </div>
-    </ModalShell>
+    </div>
   );
 }
 
@@ -1184,7 +1224,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
   const [changingPassword, setChangingPassword] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  // Estados de validaci�n
+  // Estados de validación
   const [errors, setErrors] = useState({ newPassword: "", confirmPassword: "" });
 
   useEffect(() => {
@@ -1232,7 +1272,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
       return;
     }
 
-    // Limpiar errores si todo est� bien
+    // Limpiar errores si todo está bien
     setErrors({ newPassword: "", confirmPassword: "" });
 
     setChangingPassword(true);
@@ -1241,7 +1281,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
       const { response, result } = await adminApiFetch("/api/change-user-password", { userId: user.id, newPassword });
 
       if (!response.ok) {
-        onShowFeedback?.("error", `Error al cambiar la contrase�a: ${result.error}`);
+        onShowFeedback?.("error", `Error al cambiar la contraseña: ${result.error}`);
         setChangingPassword(false);
         return;
       }
@@ -1306,28 +1346,28 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
                   onClick={() => setShowPasswordForm(true)}
                   style={{ width: "100%" }}
                 >
-                  Cambiar contrase�a
+                  Cambiar contraseña
                 </button>
               ) : (
                 <div className="pa-password-form">
                   <label className="pa-field">
-                    <span>Nueva contrase�a</span>
+                    <span>Nueva contraseña</span>
                     <input
                       type="password"
                       value={newPassword}
                       onChange={(e) => { setNewPassword(e.target.value); setErrors(prev => ({ ...prev, newPassword: "" })); }}
-                      placeholder="M�nimo 6 caracteres"
+                      placeholder="Mínimo 6 caracteres"
                       className={errors.newPassword ? "pa-field-error" : ""}
                     />
                     {errors.newPassword && <small className="pa-field-help error">{errors.newPassword}</small>}
                   </label>
                   <label className="pa-field">
-                    <span>Confirmar contrase�a</span>
+                    <span>Confirmar contraseña</span>
                     <input
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => { setConfirmPassword(e.target.value); setErrors(prev => ({ ...prev, confirmPassword: "" })); }}
-                      placeholder="Repite la contrase�a"
+                      placeholder="Repite la contraseña"
                       className={errors.confirmPassword ? "pa-field-error" : ""}
                     />
                     {errors.confirmPassword && <small className="pa-field-help error">{errors.confirmPassword}</small>}
@@ -1380,7 +1420,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
               <summary aria-label="Más acciones"><Icons.Menu /></summary>
               <div>
                 <button onClick={() => { onRequestEmploymentToggle(user); }}>
-                  {isActive ? "Desactivar usuario" : "Activar usuario"}
+                  {isActive ? "Desactivar empleado" : "Activar empleado"}
                 </button>
               </div>
             </details>
@@ -1397,8 +1437,8 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
                 <polyline points="22 4 12 14.01 9 11.01" />
               </svg>
             </div>
-            <h3>Contrase�a cambiada correctamente</h3>
-            <p>La contrase�a del usuario ha sido actualizada exitosamente.</p>
+            <h3>Contraseña cambiada correctamente</h3>
+            <p>La contraseña del empleado ha sido actualizada exitosamente.</p>
           </div>
         </div>
       )}
@@ -1482,7 +1522,14 @@ export default function Dashboard() {
   const notif = useNotifications(user?.id);
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [employmentFilter, setEmploymentFilter] = useState("all");
+  const [userPage, setUserPage] = useState(1);
+  const USERS_PER_PAGE = 7;
   // userViewMode eliminado: solo vista tabla
+  const [employeeDetailView, setEmployeeDetailView] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
+  const [employeeToDelete, setEmployeeToDelete] = useState(null);
+  const [employeeDeleteLoading, setEmployeeDeleteLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [settingsView, setSettingsView] = useState("list");
   const [settingsOrder, setSettingsOrder] = useState(null);
@@ -1502,7 +1549,7 @@ export default function Dashboard() {
   const [userForm, setUserForm] = useState(DEFAULT_USER_FORM);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userDetailModalOpen, setUserDetailModalOpen] = useState(false);
-  // Guarda la intenci�n de cambio hasta que el admin confirme la acci�n en el modal.
+  // Guarda la intención de cambio hasta que el admin confirme la acción en el modal.
   const [employmentStatusConfirmOpen, setEmploymentStatusConfirmOpen] = useState(false);
   const [pendingEmploymentStatusChange, setPendingEmploymentStatusChange] = useState(null);
   const [savingEmploymentStatus, setSavingEmploymentStatus] = useState(false);
@@ -1513,7 +1560,8 @@ export default function Dashboard() {
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [materialFormName, setMaterialFormName] = useState("");
   const [materialFormError, setMaterialFormError] = useState("");
-  const [deletingMaterialId, setDeletingMaterialId] = useState(null);
+  const [materialToDelete, setMaterialToDelete] = useState(null);
+  const [materialDeleteLoading, setMaterialDeleteLoading] = useState(false);
   const [materialSearch, setMaterialSearch] = useState("");
   const [materialsPage, setMaterialsPage] = useState(1);
   const [clients, setClients] = useState([]);
@@ -1526,6 +1574,7 @@ export default function Dashboard() {
   const [recordPaymentLoading, setRecordPaymentLoading] = useState(false);
   const [creditSearch, setCreditSearch] = useState("");
   const [creditStatusFilter, setCreditStatusFilter] = useState("open");
+  const [creditPage, setCreditPage] = useState(1);
   const [creditView, setCreditView] = useState("list");
   const [creditDetailClientId, setCreditDetailClientId] = useState(null);
   const [selectedCreditOrderIds, setSelectedCreditOrderIds] = useState({});
@@ -1810,7 +1859,7 @@ export default function Dashboard() {
       setCreditCustomReminderLinks(Array.isArray(links) ? links : []);
     } catch (error) {
       if (!String(error?.message || "").includes("credit_custom_reminders")) {
-        console.warn("No se pudieron cargar recordatorios de cr�dito:", error?.message || error);
+        console.warn("No se pudieron cargar recordatorios de crédito:", error?.message || error);
       }
       setCreditCustomReminders([]);
       setCreditCustomReminderLinks([]);
@@ -2075,7 +2124,7 @@ export default function Dashboard() {
     let finalPreviewUrl = orderForm.existingPreview;
     let finalFileUrls = [...orderForm.existingFiles];
 
-    // Subir nuevos archivos de dise�o
+    // Subir nuevos archivos de diseño
     for (const file of orderForm.newFiles) {
       const fileName = buildStorageSafeFileName(file, "design-");
       const publicUrl = await uploadOrderAsset({
@@ -2096,7 +2145,7 @@ export default function Dashboard() {
       });
     }
 
-    // Si se elimin� el preview existente
+    // Si se eliminó el preview existente
     if (orderForm.removePreview || (!orderForm.newPreview && orderForm.existingPreview && orderForm.removePreview)) {
       finalPreviewUrl = null;
     }
@@ -2162,7 +2211,7 @@ export default function Dashboard() {
   const handleConfirmCancelOrder = async () => {
     if (!cancelOrderData) return;
     if (cancelReason.trim().length < 10) {
-      showFeedback("error", "Explica el motivo de cancelaci�n con al menos 10 caracteres.");
+      showFeedback("error", "Explica el motivo de cancelación con al menos 10 caracteres.");
       return;
     }
     if (isPaymentPartial(cancelOrderData.payment_status)) {
@@ -2208,7 +2257,7 @@ export default function Dashboard() {
 
   const openArchiveModal = (order) => {
     if (!canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, user?.id)) {
-      showFeedback("error", "Solo se pueden archivar �rdenes canceladas, completadas o entregadas.");
+      showFeedback("error", "Solo se pueden archivar órdenes canceladas, completadas o entregadas.");
       return;
     }
     setArchivingOrder(order);
@@ -2262,7 +2311,7 @@ export default function Dashboard() {
         action: isDesigner ? "route_design" : "route_quote",
         payload: { target_user_id: userId },
         reasonCategory: "assignment_correction",
-        reasonDetail: "Asignaci�n realizada por Administraci�n desde el detalle de la orden.",
+        reasonDetail: "Asignación realizada por Administración desde el detalle de la orden.",
         expectedUpdatedAt: assigningOrder.updated_at,
       });
     } catch (error) {
@@ -2279,7 +2328,7 @@ export default function Dashboard() {
     setAssigningOrder(null);
     setAssigningRole(null);
     await loadOrders();
-    showFeedback("success", `Orden asignada a ${isDesigner ? "dise�ador" : "caja"} correctamente.`);
+    showFeedback("success", `Orden asignada a ${isDesigner ? "diseñador" : "caja"} correctamente.`);
   };
 
   const openPaymentModal = (order) => {
@@ -2299,7 +2348,7 @@ export default function Dashboard() {
       setPaymentModalLoading(false);
 
       if (error) {
-        throw new Error(error.message || "No se pudo aprobar el cr�dito.");
+        throw new Error(error.message || "No se pudo aprobar el crédito.");
       }
 
       setPaymentModalOrder(null);
@@ -2315,7 +2364,7 @@ export default function Dashboard() {
       const validation = await validateReceiptFile(receiptFile);
       if (!validation.isValid) {
         setPaymentModalLoading(false);
-        throw new Error(validation.error || "La imagen no es v�lida.");
+        throw new Error(validation.error || "La imagen no es válida.");
       }
 
       try {
@@ -2344,7 +2393,7 @@ export default function Dashboard() {
         action: "register_payment",
         payload: { payment_status: paymentStatus, invoice_payment: paymentInvoiceUrl },
         reasonCategory: "workflow_correction",
-        reasonDetail: "Pago registrado por Administraci�n desde el listado de �rdenes.",
+        reasonDetail: "Pago registrado por Administración desde el listado de órdenes.",
         expectedUpdatedAt: currentOrder.updated_at,
       });
     } catch (error) {
@@ -2614,6 +2663,14 @@ export default function Dashboard() {
 
   // Prepara el cambio de estado, pero no actualiza la base hasta que el admin confirme.
   const openEmploymentStatusConfirm = (profile) => {
+    const isDeactivating = !isEmploymentActive(profile);
+    const isSelf = profile.id === user?.id;
+
+    if (isSelf && isDeactivating) {
+      showFeedback("error", "No puedes desactivar tu propia cuenta de administrador.");
+      return;
+    }
+
     setPendingEmploymentStatusChange({
       userId: profile.id,
       userName: getUserDisplayName(profile),
@@ -2657,9 +2714,18 @@ export default function Dashboard() {
     );
   };
 
-  // Si el admin confirma, reci�n aqu� se persiste el cambio.
+  // Si el admin confirma, recién aquí se persiste el cambio.
   const confirmEmploymentStatusChange = async () => {
     if (!pendingEmploymentStatusChange) return;
+
+    const isDeactivating = pendingEmploymentStatusChange.nextStatus === false;
+    const isSelf = pendingEmploymentStatusChange.userId === user?.id;
+
+    if (isSelf && isDeactivating) {
+      showFeedback("error", "No puedes desactivar tu propia cuenta de administrador.");
+      closeEmploymentStatusConfirm();
+      return;
+    }
 
     await handleEmploymentStatusChange(
       pendingEmploymentStatusChange.userId,
@@ -2667,6 +2733,34 @@ export default function Dashboard() {
     );
 
     closeEmploymentStatusConfirm();
+  };
+
+  const openEmployeeDetail = (profile) => {
+    setSelectedEmployeeId(profile?.id || null);
+    setUserDetailModalOpen(false);
+    setEmployeeDetailView(true);
+  };
+
+  const closeEmployeeDetail = () => {
+    setSelectedEmployeeId(null);
+    setEmployeeDetailView(false);
+  };
+
+  const handleConfirmDeleteEmployee = async () => {
+    if (!employeeToDelete) return;
+    setEmployeeDeleteLoading(true);
+    try {
+      const { error } = await supabase.auth.admin.deleteUser(employeeToDelete.id);
+      if (error) throw error;
+      setEmployeeToDelete(null);
+      closeEmployeeDetail();
+      loadProfiles();
+      showFeedback("success", "Empleado eliminado correctamente.");
+    } catch (err) {
+      showFeedback("error", err?.message || "No se pudo eliminar el empleado.");
+    } finally {
+      setEmployeeDeleteLoading(false);
+    }
   };
 
   const handleAddMaterial = () => {
@@ -2715,18 +2809,23 @@ export default function Dashboard() {
     }
   };
 
-  const handleDeleteMaterial = async (id) => {
-    if (deletingMaterialId === id) {
-      try {
-        const { error } = await supabase.from("materials").delete().eq("id", id);
-        if (error) throw error;
-        setDeletingMaterialId(null);
-        fetchMaterials();
-      } catch (err) {
-        console.error("Error deleting material:", err);
-      }
-    } else {
-      setDeletingMaterialId(id);
+  const handleDeleteMaterial = (mat) => {
+    setMaterialToDelete(mat);
+  };
+
+  const handleConfirmDeleteMaterial = async () => {
+    if (!materialToDelete) return;
+    setMaterialDeleteLoading(true);
+    try {
+      const { error } = await supabase.from("materials").delete().eq("id", materialToDelete.id);
+      if (error) throw error;
+      setMaterialToDelete(null);
+      fetchMaterials();
+      showFeedback("success", "Material eliminado correctamente.");
+    } catch (err) {
+      showFeedback("error", "No se pudo eliminar el material.");
+    } finally {
+      setMaterialDeleteLoading(false);
     }
   };
 
@@ -2909,7 +3008,7 @@ export default function Dashboard() {
     setLoadingState(false);
 
     if (error) {
-      showFeedback("error", error.message || "No se pudo registrar el cierre del cr�dito.");
+      showFeedback("error", error.message || "No se pudo registrar el cierre del crédito.");
       return false;
     }
 
@@ -3256,6 +3355,14 @@ export default function Dashboard() {
     return buildCreditClientGroups(filtered);
   }, [buildCreditClientGroups, creditRows, creditSearch, creditStatusFilter]);
 
+  const CREDIT_PAGE_SIZE = 7;
+  const creditTotalPages = Math.max(1, Math.ceil(creditClientGroups.length / CREDIT_PAGE_SIZE));
+  const safeCreditPage = Math.min(creditPage, creditTotalPages);
+  const paginatedCreditClientGroups = creditClientGroups.slice((safeCreditPage - 1) * CREDIT_PAGE_SIZE, safeCreditPage * CREDIT_PAGE_SIZE);
+  const hasCreditFilters = Boolean(creditSearch) || creditStatusFilter !== "all";
+
+  useEffect(() => { setCreditPage(1); }, [creditSearch, creditStatusFilter]);
+
   const creditDetailClient = useMemo(() => (
     allCreditClientGroups.find(group => group.client?.id === creditDetailClientId) || null
   ), [allCreditClientGroups, creditDetailClientId]);
@@ -3423,9 +3530,19 @@ export default function Dashboard() {
     return profiles.filter(item => {
       const matchesSearch = !q || [getUserDisplayName(item), item.email, item.role, getEmploymentStatus(item)].some(value => normalizeText(value).includes(q));
       const matchesRole = roleFilter === "all" || item.role === roleFilter;
-      return matchesSearch && matchesRole;
+      const matchesEmployment = employmentFilter === "all"
+        || (employmentFilter === "active" && isEmploymentActive(item))
+        || (employmentFilter === "inactive" && !isEmploymentActive(item));
+      return matchesSearch && matchesRole && matchesEmployment;
     });
-  }, [profiles, userSearch, roleFilter]);
+  }, [profiles, userSearch, roleFilter, employmentFilter]);
+
+  const userTotalPages = Math.max(1, Math.ceil(filteredProfiles.length / USERS_PER_PAGE));
+  const safeUserPage = Math.min(userPage, userTotalPages);
+  const paginatedUsers = filteredProfiles.slice((safeUserPage - 1) * USERS_PER_PAGE, safeUserPage * USERS_PER_PAGE);
+  const hasUserFilters = Boolean(userSearch) || roleFilter !== "all" || employmentFilter !== "all";
+
+  useEffect(() => { setUserPage(1); }, [userSearch, roleFilter, employmentFilter]);
 
   const clientDirectoryRefreshKey = useMemo(() => [
     clients.length,
@@ -3441,7 +3558,7 @@ export default function Dashboard() {
     return q ? materials.filter(mat => normalizeText(mat.name).includes(q)) : materials;
   }, [materials, materialSearch]);
 
-  const MATERIALS_PER_PAGE = 20;
+  const MATERIALS_PER_PAGE = 10;
   const totalMaterialPages = Math.ceil(filteredMaterials.length / MATERIALS_PER_PAGE) || 1;
   const safeMaterialPage = Math.min(materialsPage, totalMaterialPages);
   const paginatedMaterials = filteredMaterials.slice((safeMaterialPage - 1) * MATERIALS_PER_PAGE, safeMaterialPage * MATERIALS_PER_PAGE);
@@ -3452,7 +3569,7 @@ export default function Dashboard() {
     { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders />, accentIdx: 0 },
     { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money />, accentIdx: 5 },
     { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, accentIdx: 2 },
-    { label: "Usuarios", value: profiles.length, icon: <Icons.Users />, accentIdx: 3 },
+    { label: "Empleados", value: profiles.length, icon: <Icons.Users />, accentIdx: 3 },
     { label: "Pendientes", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, accentIdx: 1 },
     { label: "En producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length, icon: <Icons.Brush />, accentIdx: 6 },
     { label: "En terminación", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)).length, icon: <Icons.Paintbrush />, accentIdx: 7 },
@@ -3486,7 +3603,7 @@ export default function Dashboard() {
     { id: "credits", label: "Créditos", icon: <Icons.Receipt />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
     { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clientsTotal) },
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
-    { id: "users", label: "Usuarios", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
+    { id: "users", label: "Empleados", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
   ];
 
   const handleAdminTabChange = (nextTab) => {
@@ -3505,7 +3622,7 @@ export default function Dashboard() {
   return (
     // Apartado principal totalmente flexible
     <div className="pa-root">
-      <Sidebar isOpen={sidebarOpen} activeTab={activeTab} onTabChange={handleAdminTabChange} role="Admin" userName={getUserDisplayName(profile)} menuItems={menuItems} onLogout={handleLogout} onCreateNew={openCreateOrder} showCreateButton />
+      <Sidebar isOpen={sidebarOpen} activeTab={activeTab} onTabChange={handleAdminTabChange} role="Admin" userName={getUserDisplayName(profile)} menuItems={menuItems} onLogout={handleLogout} />
       <div className="pa-main-wrap">
         <header className="pa-header">
           <div className="pa-header-left">
@@ -3517,7 +3634,7 @@ export default function Dashboard() {
             >
               {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
-            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de usuarios"}</h1></div>
+            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de Empleados"}</h1></div>
           </div>
           <div className="pa-header-right">
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
@@ -3537,6 +3654,55 @@ export default function Dashboard() {
 
         {activeTab === "overview" &&
           <section className="pa-section">
+            <div className="pa-section-heading acm-heading">
+              <div>
+                <h2>Panel General</h2>
+                <p>Resumen del estado actual de tu negocio.</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                  <div className="acm-total-badge">
+                    <Icons.Orders />
+                    <strong>{loadingOrders ? "..." : orders.length.toLocaleString("es-PE")}</strong> órdenes
+                  </div>
+                  <div className="acm-total-badge">
+                    <Icons.Clock />
+                    <strong>{loadingOrders ? "..." : orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length}</strong> pendientes
+                  </div>
+                  <div className="acm-total-badge">
+                    <Icons.Brush />
+                    <strong>{loadingOrders ? "..." : orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length}</strong> en producción
+                  </div>
+                  <div className="acm-total-badge">
+                    <Icons.Check />
+                    <strong>{loadingOrders ? "..." : orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length}</strong> completadas
+                  </div>
+                  <div className="acm-total-badge">
+                    <Icons.User />
+                    <strong>{clientsLoading ? "..." : clients.length.toLocaleString("es-PE")}</strong> clientes
+                  </div>
+                  <div className="acm-total-badge">
+                    <Icons.Receipt />
+                    <strong>{accountsReceivableLoading ? "..." : creditPendingInvoicesCount}</strong> crédito pendiente
+                  </div>
+                  <div className="acm-total-badge">
+                    <Icons.Users />
+                    <strong>{loadingUsers ? "..." : profiles.length}</strong> empleados
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <AdminOverviewCarousel
+              onNavigate={handleAdminTabChange}
+              orders={orders}
+              creditPendingInvoicesCount={creditPendingInvoicesCount}
+              creditPendingClientCount={creditPendingClientCount}
+              loading={loadingOrders}
+              isOrderStatus={isOrderStatus}
+              ORDER_STATUS={ORDER_STATUS}
+              profiles={profiles}
+              clients={clients}
+            />
+
             <div className="pa-metrics-grid">
               {metrics.map((metric) => {
                 const acc = CARD_ACCENTS[metric.accentIdx];
@@ -3633,126 +3799,167 @@ export default function Dashboard() {
 
         {activeTab === "orders" && !advancedSettingsOpen &&
           <section className="pa-section">
-            <div className="pa-toolbar pa-toolbar-orders">
-              <div className="pa-toolbar-orders-primary">
-                <div className="pa-search-box pa-toolbar-search pa-orders-search">
-                  <Icons.Search />
-                  <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Buscar por cliente, facturacion, descripcion, material o usuario..." />
-                </div>
-                <button className="pa-btn primary pa-toolbar-create" onClick={openCreateOrder}><Icons.Plus />
-                  Nueva orden
+            <div className="pa-section-heading acm-heading">
+              <div>
+                <h2>Gestión de Órdenes</h2>
+                <p>Supervisa, filtra y administra las órdenes del sistema.</p>
+                {orders.length > 0 && (
+                  <div className="acm-total-badge">
+                    <Icons.Orders />
+                    <strong>{orders.length.toLocaleString("es-PE")}</strong> órdenes registradas
+                  </div>
+                )}
+              </div>
+              <button className="pa-btn primary" onClick={openCreateOrder}>
+                <Icons.Plus />
+                Nueva orden
+              </button>
+            </div>
+            <div className="acm-filter-panel" aria-label="Filtros de órdenes">
+              <h3 className="acm-filter-header-title">Filtrar Búsqueda</h3>
+              <div className="pa-search-box acm-search">
+                <Icons.Search />
+                <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Buscar por cliente, facturación, descripción, material o usuario..." aria-label="Buscar órdenes" />
+                {search && (
+                  <button className="acm-search-clear" onClick={() => { setSearch(""); setPage(1); }} aria-label="Limpiar búsqueda">
+                    <Icons.X />
+                  </button>
+                )}
+              </div>
+              <div className="acm-filter-row">
+                <label>
+                  <span>Estado operativo</span>
+                  <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
+                    <option value="all">Todos los estados</option>
+                    {STATUS_OPTIONS.map(status => <option key={status} value={status}>{STATUS_LABELS[status] || status}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Fecha</span>
+                  <select value={dateFilter} onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}>
+                    <option value="all">Todas las fechas</option>
+                    <option value="today">Hoy</option>
+                    <option value="week">Últimos 7 días</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Empleado</span>
+                  <select value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}>
+                    <option value="all">Todos los empleados</option>
+                    {profiles.map(item =>
+                      <option key={item.id} value={item.id}>
+                        {getUserDisplayName(item)}
+                      </option>
+                    )}
+                  </select>
+                </label>
+                <label>
+                  <span>Cliente</span>
+                  <ClientFilterSelect
+                    clients={clients}
+                    value={clientFilter}
+                    onChange={(value) => { setClientFilter(value); setPage(1); }}
+                    allLabel="Todos los clientes"
+                  />
+                </label>
+                <label>
+                  <span>Archivo</span>
+                  <select value={archiveFilter} onChange={(e) => { setArchiveFilter(e.target.value); setPage(1); }}>
+                    <option value="active">Activas</option>
+                    <option value="all">Todas</option>
+                    <option value="archived">Archivadas</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Intervención</span>
+                  <select value={interventionFilter} onChange={(e) => { setInterventionFilter(e.target.value); setPage(1); }}>
+                    <option value="all">Todas las intervenciones</option>
+                    <option value="intervened">Intervenidas por Admin</option>
+                    <option value="not_intervened">Sin intervención avanzada</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Situación operativa</span>
+                  <select value={operationalFilter} onChange={(event) => { setOperationalFilter(event.target.value); setPage(1); }}>
+                    <option value="all">Toda la situación operativa</option>
+                    <option value="blocked">Bloqueadas</option>
+                    <option value="priority">Prioridad 911</option>
+                    <option value="commercial_review">Revisión comercial pendiente</option>
+                  </select>
+                </label>
+                <button
+                  className="acm-reset"
+                  onClick={() => { setSearch(""); setStatusFilter("all"); setDateFilter("all"); setOwnerFilter("all"); setClientFilter("all"); setArchiveFilter("active"); setInterventionFilter("all"); setOperationalFilter("all"); setPage(1); }}
+                >
+                  Limpiar filtros
                 </button>
               </div>
-              <div className="pa-toolbar-filter-row" aria-label="Filtros de órdenes">
-                <select className="pa-order-filter-control" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
-                  <option value="all">Todos los estados</option>
-                  {STATUS_OPTIONS.map(status => <option key={status} value={status}>{STATUS_LABELS[status] || status}</option>)}
-                </select>
-                <select className="pa-order-filter-control" value={dateFilter} onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}>
-                  <option value="all">Todas las fechas</option>
-                  <option value="today">Hoy</option>
-                  <option value="week">Últimos 7 días</option>
-                </select>
-                <select className="pa-order-filter-control" value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}>
-                  <option value="all">Todos los usuarios</option>
-                  {profiles.map(item =>
-                    <option key={item.id} value={item.id}>
-                      {getUserDisplayName(item)}
-                    </option>
-                  )}
-                </select>
-                <ClientFilterSelect
-                  clients={clients}
-                  value={clientFilter}
-                  onChange={(value) => { setClientFilter(value); setPage(1); }}
-                  allLabel="Todos los clientes"
-                  className="pa-order-filter-control"
-                />
-                <select className="pa-order-filter-control" value={archiveFilter} onChange={(e) => { setArchiveFilter(e.target.value); setPage(1); }}>
-                  <option value="active">Activas</option>
-                  <option value="all">Todas</option>
-                  <option value="archived">Archivadas</option>
-                </select>
-                <select className="pa-order-filter-control pa-order-filter-control-wide" value={interventionFilter} onChange={(e) => { setInterventionFilter(e.target.value); setPage(1); }}>
-                  <option value="all">Todas las intervenciones</option>
-                  <option value="intervened">Intervenidas por Admin</option>
-                  <option value="not_intervened">Sin intervención avanzada</option>
-                </select>
-                <select className="pa-order-filter-control pa-order-filter-control-wide" value={operationalFilter} onChange={(event) => { setOperationalFilter(event.target.value); setPage(1); }}>
-                  <option value="all">Toda la situación operativa</option>
-                  <option value="blocked">Bloqueadas</option>
-                  <option value="priority">Prioridad 911</option>
-                  <option value="commercial_review">Revisión comercial pendiente</option>
-                </select>
-              </div>
             </div>
-            <div className="pa-panel pa-orders-panel">
-              <div className="pa-panel-stripe" />
+            <div className="pa-panel acm-table-panel pa-orders-panel">
               <div className="pa-panel-head pa-panel-head-results">
                 <div>
-                  <span className="pa-section-kicker">
-                    Supervisión
-                  </span>
-                  <h2>
-                    Órdenes del sistema
-                  </h2>
+                  <h2>Órdenes del sistema</h2>
                 </div>
                 <span className="pa-results-count">
-                  {filteredOrders.length} resultados
+                  {filteredOrders.length} resultado{filteredOrders.length === 1 ? "" : "s"}
                 </span>
               </div>
               <div className="ps-table-wrap">
-                <table className="ps-table pa-orders-table">
-                  <colgroup>
-                    <col className="pa-order-col-id" />
-                    <col className="pa-order-col-client" />
-                    <col className="pa-order-col-invoice" />
-                    <col className="pa-order-col-description" />
-                    <col className="pa-order-col-material" />
-                    <col className="pa-order-col-status" />
-                    <col className="pa-order-col-payment" />
-                    <col className="pa-order-col-type" />
-                    <col className="pa-order-col-date" />
-                    <col className="pa-order-col-actions" />
-                  </colgroup>
+                <table className="ps-table acm-table pa-orders-table">
                   <thead>
                     <tr>
-                      {["ID", "Cliente", "Facturación", "Descripción", "Material", "Estado", "Pago", "Tipo", "Fecha", "Acciones"].map(h => <th key={h}>{h}</th>)}
+                      <th>Orden</th>
+                      <th>Facturación</th>
+                      <th>Estado</th>
+                      <th>Pago</th>
+                      <th>Fecha</th>
+                      <th aria-label="Acciones" />
                     </tr>
                   </thead>
                   <tbody>
-                    {loadingOrders ? <tr><td colSpan={10} className="ps-table-empty">Cargando órdenes...</td></tr> : loadOrdersError ? <tr><td colSpan={10} className="ps-table-empty">{loadOrdersError}</td></tr> : filteredOrders.length === 0 ? <tr><td colSpan={10} className="ps-table-empty">No hay órdenes disponibles.</td></tr> : paginatedOrders.map(order =>
+                    {loadingOrders ? <tr><td colSpan={6} className="ps-table-empty">Cargando órdenes...</td></tr> : loadOrdersError ? <tr><td colSpan={6} className="ps-table-empty">{loadOrdersError}</td></tr> : filteredOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="ps-table-empty acm-empty-state">
+                          <Icons.Search />
+                          <strong>No se encontraron órdenes</strong>
+                          <span>{(search || statusFilter !== "all" || dateFilter !== "all" || ownerFilter !== "all" || clientFilter !== "all" || archiveFilter !== "active" || interventionFilter !== "all" || operationalFilter !== "all") ? "Prueba con otros filtros o limpia la búsqueda." : "Las órdenes del sistema aparecerán aquí."}</span>
+                        </td>
+                      </tr>
+                    ) : paginatedOrders.map(order =>
                           <tr
                             key={order.id}
-                            className="row-hover pa-orders-clickable-row"
+                            className="row-hover acm-client-row"
                             tabIndex={0}
                             onClick={(event) => handleOrderRowClick(event, order)}
                             onKeyDown={(event) => handleOrderRowKeyDown(event, order)}
                             aria-label={`Ver detalles de la orden ${order.id?.slice(0, 8) || ""} de ${order.client_name || "cliente sin nombre"}`}
                           >
-                            <td className="td-pad td-id">{order.id?.slice(0, 8) || "---"}</td>
-                            <td className="td-pad td-name" title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</td>
-                            <td className="td-pad" title={order.invoice_number || "---"}>
+                            <td className="td-pad">
+                              <div className="acm-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{(order.client_name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase()).join("") || "?"}</span>
+                                <span>
+                                  <small>#{order.id?.slice(0, 8) || "---"}</small>
+                                  <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                </span>
+                              </div>
+                            </td>
+                            <td className="td-pad td-desc" title={order.invoice_number || "---"}>
                               <span className="pa-order-cell-ellipsis">{order.invoice_number || "---"}</span>
                             </td>
-                            <td className="td-pad td-desc" title={order.description || "Sin descripción"}>
-                              <span className="pa-order-cell-ellipsis">{order.description || "Sin descripción"}</span>
-                            </td>
-                            <td className="td-pad td-mat" title={order.material || "---"}>
-                              <span className="pa-order-cell-ellipsis">{order.material || "---"}</span>
-                            </td>
-                            <td className="td-pad"><StatusBadge status={order.status} className="ps-badge" showDot bordered />{order.operational_status === "blocked" ? <span className="pa-order-flag is-blocked">Bloqueada</span> : null}{order.commercial_review_required ? <span className="pa-order-flag is-review">Revisión</span> : null}</td>
-                            <td className="td-pad"><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></td>
                             <td className="td-pad">
-                              {order.order_type === "orden 911" ? (
-                                <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B", border: "1px solid #EF444420" }}>911</span>
-                              ) : (
-                                <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>Normal</span>
-                              )}
+                              <div className="acm-badge-stack">
+                                <StatusBadge status={order.status} className="ps-badge" showDot bordered />
+                                {order.operational_status === "blocked" && <span className="acm-badge danger">Bloqueada</span>}
+                                {order.commercial_review_required && <span className="acm-badge warning">Revisión</span>}
+                                {order.order_type === "orden 911" && <span className="acm-badge danger">911</span>}
+                              </div>
+                            </td>
+                            <td className="td-pad">
+                              <PaymentBadge status={order.payment_status} className="ps-badge" bordered />
                             </td>
                             <td className="td-pad td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
-                            <td className="td-pad td-actions">
-                              <div className="table-actions" data-row-action>
+                            <td className="td-pad td-actions" onClick={(event) => event.stopPropagation()}>
+                              <div className="table-actions acm-row-actions" data-row-action>
                                 <button className="table-action-btn view" onClick={() => setSelectedOrder(order)} title="Ver detalles" aria-label="Ver detalles">
                                   <Icons.Eye />
                                 </button>
@@ -3778,7 +3985,11 @@ export default function Dashboard() {
                   </tbody>
                 </table>
               </div>
-              <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+              {!loadingOrders && !loadOrdersError && filteredOrders.length > 0 && (
+                <div className="acm-pagination-footer">
+                  <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+                </div>
+              )}
             </div>
           </section>
         }
@@ -3797,23 +4008,49 @@ export default function Dashboard() {
 
         {activeTab === "credits" && creditView === "list" && (
           <section className="pa-section">
-            <div className="pa-toolbar">
-              <div className="pa-search-box pa-toolbar-search">
-                <Icons.Search />
-                <input
-                  value={creditSearch}
-                  onChange={(event) => setCreditSearch(event.target.value)}
-                  placeholder="Buscar por cliente, telefono, factura u orden..."
-                />
+            <div className="pa-section-heading acm-heading">
+              <div>
+                <h2>Gestión de Créditos</h2>
+                <p>Supervisa y da seguimiento a las facturas a crédito de los clientes.</p>
+                <div className="acm-total-badge">
+                  <Icons.Receipt />
+                  <strong>{creditPendingInvoicesCount.toLocaleString("es-PE")}</strong> órdenes a crédito sin pagar
+                </div>
               </div>
-              <select value={creditStatusFilter} onChange={(event) => setCreditStatusFilter(event.target.value)}>
-                <option value="all">Todos</option>
-                <option value="open">Pendientes</option>
-                <option value="paid">Saldadas</option>
-              </select>
+            </div>
+            <div className="acm-filter-panel pa-credit-filter-panel" aria-label="Filtros de créditos">
+              <div className="acm-filter-row">
+                <div className="pa-search-box acm-search">
+                  <Icons.Search />
+                  <input
+                    value={creditSearch}
+                    onChange={(event) => setCreditSearch(event.target.value)}
+                    placeholder="Buscar por cliente, telefono, factura u orden..."
+                    aria-label="Buscar créditos"
+                  />
+                  {creditSearch && (
+                    <button className="acm-search-clear" onClick={() => setCreditSearch("")} aria-label="Limpiar búsqueda">
+                      <Icons.X />
+                    </button>
+                  )}
+                </div>
+                <label className="acm-filter-row-field">
+                  <span>Estado</span>
+                  <select value={creditStatusFilter} onChange={(event) => setCreditStatusFilter(event.target.value)}>
+                    <option value="all">Todos</option>
+                    <option value="open">Pendientes</option>
+                    <option value="paid">Saldadas</option>
+                  </select>
+                </label>
+                {hasCreditFilters && (
+                  <button className="acm-reset" onClick={() => { setCreditSearch(""); setCreditStatusFilter("open"); }}>
+                    <Icons.X /> Limpiar filtros
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="pa-credit-metrics" aria-label="Resumen de cr�ditos">
+            <div className="pa-credit-metrics" aria-label="Resumen de créditos">
               <div className="pa-credit-summary-item">
                 <span className="pa-credit-summary-icon client"><Icons.User /></span>
                 <div><strong>{creditClientGroups.length}</strong><span>Clientes filtrados</span></div>
@@ -3853,7 +4090,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="ps-table-wrap">
-                <table className="ps-table">
+                <table className="ps-table acm-table">
                   <thead>
                     <tr>
                       <th>Cliente</th>
@@ -3866,14 +4103,25 @@ export default function Dashboard() {
                   <tbody>
                     {creditClientGroups.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="ps-table-empty">No hay cr�ditos que coincidan con los filtros.</td>
+                        <td colSpan={5} className="ps-table-empty acm-empty-state">
+                          <Icons.Receipt />
+                          <strong>No hay créditos registrados</strong>
+                          <span>{hasCreditFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Las facturas a crédito aparecerán aquí."}</span>
+                          {hasCreditFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setCreditSearch(""); setCreditStatusFilter("open"); }}>Limpiar filtros</button>}
+                        </td>
                       </tr>
                     ) : (
-                      creditClientGroups.map(group => {
+                      paginatedCreditClientGroups.map(group => {
                         const clientId = group.client?.id;
                         const openInvoices = group.invoices.filter(item => isOpenCreditReceivable(item));
                         return (
-                          <tr key={clientId} className="row-hover pa-credit-client-row" style={{ cursor: "pointer" }} onClick={() => { setCreditDetailClientId(clientId); setCreditView("detail"); }}>
+                          <tr
+                            key={clientId}
+                            className="row-hover acm-client-row"
+                            onClick={() => { setCreditDetailClientId(clientId); setCreditView("detail"); }}
+                            onKeyDown={(event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); setCreditDetailClientId(clientId); setCreditView("detail"); } }}
+                            tabIndex={0}
+                          >
                             <td className="td-pad td-name">
                               <div className="pa-credit-client-cell">
                                 <div className="pa-credit-client-meta">
@@ -3884,7 +4132,7 @@ export default function Dashboard() {
                             </td>
                             <td className="td-pad">
                               <div className="pa-credit-badge-stack">
-                                <span className="ps-badge" style={{ background: "#FEF3C7", color: "#92400E", border: "1px solid #F59E0B40" }}>
+                                <span className="acm-badge warning">
                                   {group.pendingCount} factura{group.pendingCount === 1 ? "" : "s"}
                                 </span>
                               </div>
@@ -3896,12 +4144,12 @@ export default function Dashboard() {
                               </div>
                             </td>
                             <td className="td-pad">
-                              <span className="ps-badge" style={group.pendingCount > 0 ? getCreditReceivableStatusStyle("open") : getCreditReceivableStatusStyle("paid")}>
+                              <span className={`acm-badge ${group.pendingCount > 0 ? "warning" : "success"}`}>
                                 {group.pendingCount > 0 ? "Con saldo pendiente" : "Sin pendientes"}
                               </span>
                             </td>
-                            <td className="td-pad td-actions pa-credit-row-actions" onClick={(event) => event.stopPropagation()}>
-                              <div className="table-actions">
+                            <td className="td-pad td-actions" onClick={(event) => event.stopPropagation()}>
+                              <div className="table-actions acm-row-actions">
                                 <button
                                   className="table-action-btn view"
                                   onClick={() => { setCreditDetailClientId(clientId); setCreditView("detail"); }}
@@ -3911,7 +4159,7 @@ export default function Dashboard() {
                                 </button>
                                 {openInvoices.length > 0 && (
                                   <button
-                                    className="table-action-btn"
+                                    className="table-action-btn edit"
                                     onClick={() => openCreditReminderModal(group.client, openInvoices)}
                                     title="Crear recordatorio"
                                   >
@@ -3920,7 +4168,7 @@ export default function Dashboard() {
                                 )}
                                 {openInvoices.length > 0 && (
                                   <button
-                                    className="table-action-btn"
+                                    className="table-action-btn cancel"
                                     onClick={() => handleOpenCreditSettleAll(group.client, openInvoices)}
                                     title="Marcar todas como saldadas"
                                   >
@@ -3936,6 +4184,11 @@ export default function Dashboard() {
                   </tbody>
                 </table>
               </div>
+              {creditClientGroups.length > 0 && (
+                <div className="acm-pagination-footer">
+                  <Pagination currentPage={safeCreditPage} totalPages={creditTotalPages} onPageChange={setCreditPage} />
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -3971,7 +4224,7 @@ export default function Dashboard() {
           />
         )}
 
-        <ModalShell open={!!recordPaymentClient} onClose={() => setRecordPaymentClient(null)} title="Marcar cr�dito saldado" size="compact">
+        <ModalShell open={!!recordPaymentClient} onClose={() => setRecordPaymentClient(null)} title="Marcar crédito saldado" size="compact">
           <div style={{ minWidth: 320 }}>
             <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
               {recordPaymentClient?.name}
@@ -4014,7 +4267,7 @@ export default function Dashboard() {
           </div>
         </ModalShell>
 
-        <ModalShell open={!!creditSettlementTarget} onClose={() => setCreditSettlementTarget(null)} title="Marcar cr�dito saldado" size="compact">
+        <ModalShell open={!!creditSettlementTarget} onClose={() => setCreditSettlementTarget(null)} title="Marcar crédito saldado" size="compact">
           <div style={{ minWidth: 320 }}>
             <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
               {creditSettlementTarget?.client?.name || "Cliente sin nombre"}
@@ -4152,32 +4405,44 @@ export default function Dashboard() {
 
         {activeTab === "materials" && (
           <section className="pa-section">
-            <div className="pa-section-heading">
+            <div className="pa-section-heading acm-heading">
               <div>
-                <span className="pa-kicker">Catálogo</span>
                 <h2>Gestión de Materiales</h2>
                 <p>Administra los materiales disponibles para las órdenes de producción.</p>
+                {materials.length > 0 && (
+                  <div className="acm-total-badge">
+                    <Icons.Package />
+                    <strong>{materials.length.toLocaleString("es-PE")}</strong> materiales registrados
+                  </div>
+                )}
               </div>
               <button className="pa-btn primary" onClick={handleAddMaterial}>
                 <Icons.Plus />
                 Agregar material
               </button>
             </div>
-            <div className="pa-toolbar pa-toolbar-users">
-              <div className="pa-search-box pa-toolbar-search">
+            <div className="acm-filter-panel" aria-label="Filtros de materiales">
+              <div className="acm-filter-header">
+                <h3>Buscar Material</h3>
+              </div>
+              <div className="pa-search-box acm-search">
                 <Icons.Search />
                 <input
                   value={materialSearch}
                   onChange={(event) => setMaterialSearch(event.target.value)}
                   placeholder="Buscar por nombre..."
+                  aria-label="Buscar materiales"
                 />
+                {materialSearch && (
+                  <button className="acm-search-clear" onClick={() => setMaterialSearch("")} aria-label="Limpiar búsqueda">
+                    <Icons.X />
+                  </button>
+                )}
               </div>
             </div>
-            <div className="pa-panel">
-              <div className="pa-panel-stripe" />
-              <div className="pa-panel-head pa-panel-head-results">
+            <div className="pa-panel mat-table-panel">
+              <div className="pa-panel-head">
                 <div>
-                  <span className="pa-section-kicker">Inventario</span>
                   <h2>Materiales registrados</h2>
                 </div>
                 <span className="pa-results-count">
@@ -4214,17 +4479,16 @@ export default function Dashboard() {
                             })}
                           </td>
                           <td className="td-pad td-actions" onClick={(e) => e.stopPropagation()}>
-                            <div className="table-actions">
+                            <div className="table-actions mat-row-actions">
                               <button className="table-action-btn edit" onClick={() => handleEditMaterial(mat)} title="Editar material">
                                 <Icons.Edit />
                               </button>
                               <button
-                                className={`table-action-btn ${deletingMaterialId === mat.id ? "" : "cancel"}`}
-                                onClick={() => handleDeleteMaterial(mat.id)}
-                                title={deletingMaterialId === mat.id ? "Confirmar eliminación" : "Eliminar material"}
-                                style={deletingMaterialId === mat.id ? { background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA" } : undefined}
+                                className="table-action-btn cancel"
+                                onClick={() => handleDeleteMaterial(mat)}
+                                title="Eliminar material"
                               >
-                                {deletingMaterialId === mat.id ? <Icons.Check /> : <Icons.Trash />}
+                                <Icons.Trash />
                               </button>
                             </div>
                           </td>
@@ -4279,90 +4543,216 @@ export default function Dashboard() {
           </div>
         )}
 
-        {activeTab === "users" &&
-          <section className="pa-section">
-            <div className="pa-toolbar pa-toolbar-users">
-              <div className="pa-search-box pa-toolbar-search"><Icons.Search />
-                <input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} placeholder="Buscar por nombre, correo o rol..." />
+        <ArchiveOrderModal
+          open={!!materialToDelete}
+          onClose={() => setMaterialToDelete(null)}
+          onConfirm={handleConfirmDeleteMaterial}
+          order={materialToDelete}
+          loading={materialDeleteLoading}
+          title="Eliminar material"
+          confirmText="Eliminar material"
+          cancelText="Cancelar"
+          className="mat-delete-modal"
+        >
+          <p>
+            ¿Estás seguro de que deseas eliminar <strong>{materialToDelete?.name}</strong>?
+          </p>
+          <p className="archive-modal-hint">Esta acción no se puede deshacer. El material será eliminado permanentemente del sistema.</p>
+        </ArchiveOrderModal>
+
+        <ArchiveOrderModal
+          open={!!employeeToDelete}
+          onClose={() => setEmployeeToDelete(null)}
+          onConfirm={handleConfirmDeleteEmployee}
+          order={employeeToDelete}
+          loading={employeeDeleteLoading}
+          title="Eliminar empleado"
+          confirmText="Eliminar empleado"
+          cancelText="Cancelar"
+          className="emp-delete-modal"
+        >
+          <p>
+            ¿Estás seguro de que deseas eliminar a{" "}
+            <strong>{employeeToDelete?.name || employeeToDelete?.email}</strong>?
+          </p>
+          <p className="archive-modal-hint">Esta acción no se puede deshacer. El empleado será eliminado permanentemente del sistema.</p>
+        </ArchiveOrderModal>
+
+        {activeTab === "users" && employeeDetailView && selectedEmployeeId ? (
+          <AdminEmployeeModule
+            profile={usersById[selectedEmployeeId]}
+            orders={orders}
+            onBack={closeEmployeeDetail}
+            onEditUser={(profile) => openEditUserModal(profile)}
+            onViewOrder={(order) => setSelectedOrder(order)}
+            onDeleteUser={(profile) => setEmployeeToDelete(profile)}
+          />
+        ) : activeTab === "users" &&
+          <section className="pa-section acm-section" aria-labelledby="users-title">
+            <div className="pa-section-heading acm-heading">
+              <div>
+                <h2 id="users-title">Gestión de Empleados</h2>
+                <p>Consulta, segmenta y administra los empleados del sistema.</p>
+                {profiles.length > 0 && (
+                  <div className="acm-total-badge">
+                    <Icons.Users />
+                    <strong>{profiles.length.toLocaleString("es-PE")}</strong> empleados registrados
+                  </div>
+                )}
               </div>
-              <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-                <option value="all">Todos los roles</option>
-                <option value="admin">Administrador</option>
-                <option value="seller">Vendedor</option>
-                <option value="designer">Dise�ador</option>
-                <option value="quote">Caja</option>
-                <option value="printer">Produccion legacy</option>
-                <option value="digital_producer">Produccion Digital</option>
-                <option value="dtf_producer">Produccion DTF</option>
-                <option value="ploteo_producer">Produccion Ploteo</option>
-                <option value="delivery">Entrega</option>
-              </select>
-              <button className="pa-btn primary pa-toolbar-create" onClick={openCreateUserModal}><Icons.Plus />
-                Crear usuario
+              <button className="pa-btn primary" onClick={openCreateUserModal}>
+                <Icons.Plus /> Crear empleado
               </button>
             </div>
-            <div className="pa-panel">
-              <div className="pa-panel-stripe" />
-              <div className="pa-panel-head">
-                <div>
-                  <span className="pa-section-kicker">Supervisi�n</span>
-                  <h2>Usuarios del sistema</h2>
-                </div>
-                <span className="pa-results-count">{filteredProfiles.length} usuarios</span>
-              </div>
-              <div className="ps-table-wrap" style={{ maxHeight: 520 }}>
-                <table className="ps-table">
-                    <thead>
-                      <tr>
-                        <th>Nombre</th>
-                        <th>Correo</th>
-                        <th>Rol</th>
-                        <th>Estado</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loadingUsers ?
-                        <tr><td colSpan={5} className="ps-table-empty">Cargando usuarios...</td></tr>
-                        : filteredProfiles.length === 0 ?
-                          <tr><td colSpan={5} className="ps-table-empty">{loadUsersError || "No hay usuarios para mostrar."}</td></tr>
-                          : filteredProfiles.map(item => {
-                            const isActive = isEmploymentActive(item);
 
-                            return <tr key={item.id} className="row-hover" onClick={() => { setSelectedUser(item); setUserDetailModalOpen(true); }}>
-                              <td className="td-pad td-name">
-                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  <div className="pa-user-avatar-mini">
-                                    {getUserDisplayName(item).charAt(0).toUpperCase()}
-                                  </div>
-                                  <strong style={{ fontSize: 13 }}>{getUserDisplayName(item)}</strong>
-                                </div>
-                              </td>
-                              <td className="td-pad">{item.email || "Sin correo"}</td>
-                              <td className="td-pad"><RoleBadge role={item.role} /></td>
-                              <td className="td-pad">
-                                <span className={`pa-meta-badge ${isActive ? "active" : "inactive"}`}>
-                                  {getEmploymentStatus(item)}
-                                </span>
-                              </td>
-                              <td className="td-pad td-actions">
-                                <div className="table-actions">
-                                  <button className="table-action-btn view" onClick={(e) => { e.stopPropagation(); setSelectedUser(item); setUserDetailModalOpen(true); }} title="Ver detalles">
-                                    <Icons.Eye />
-                                  </button>
-                                  <button className="table-action-btn edit" onClick={(e) => { e.stopPropagation(); openEditUserModal(item); }} title="Editar empleado">
-                                    <Icons.Edit />
-                                  </button>
-                                  <button className={`table-action-btn ${isActive ? "deactivate" : "activate"}`} onClick={(e) => { e.stopPropagation(); openEmploymentStatusConfirm(item); }} title={isActive ? "Desactivar usuario" : "Activar usuario"}>
-                                    {isActive ? <Icons.X /> : <Icons.Check />}
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>;
-                          })}
-                    </tbody>
-                  </table>
+            <div className="acm-filter-panel" aria-label="Filtros de empleados">
+              <div className="pa-search-box acm-search">
+                <Icons.Search />
+                <input
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Buscar por nombre, correo o rol..."
+                  aria-label="Buscar empleados"
+                />
+                {userSearch && (
+                  <button className="acm-search-clear" onClick={() => setUserSearch("")} aria-label="Limpiar búsqueda">
+                    <Icons.X />
+                  </button>
+                )}
+              </div>
+
+              <div className="acm-filter-grid">
+                <label>
+                  <span>Rol</span>
+                  <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+                    <option value="all">Todos los roles</option>
+                    <option value="admin">Administrador</option>
+                    <option value="seller">Vendedor</option>
+                    <option value="designer">Diseñador</option>
+                    <option value="quote">Caja</option>
+                    <option value="printer">Producción legacy</option>
+                    <option value="digital_producer">Producción Digital</option>
+                    <option value="dtf_producer">Producción DTF</option>
+                    <option value="ploteo_producer">Producción Ploteo</option>
+                    <option value="delivery">Entrega</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Estado laboral</span>
+                  <select value={employmentFilter} onChange={(e) => setEmploymentFilter(e.target.value)}>
+                    <option value="all">Todos</option>
+                    <option value="active">Activos</option>
+                    <option value="inactive">Inactivos</option>
+                  </select>
+                </label>
+              </div>
+
+              {hasUserFilters && (
+                <button className="acm-reset" onClick={() => { setUserSearch(""); setRoleFilter("all"); setEmploymentFilter("all"); }}>
+                  <Icons.X /> Limpiar filtros
+                </button>
+              )}
+            </div>
+
+            <div className="pa-panel acm-table-panel">
+              <div className="pa-panel-head pa-panel-head-results">
+                <div>
+                  <h2>Empleados del sistema</h2>
                 </div>
+                <span className="pa-results-count">{filteredProfiles.length} resultado{filteredProfiles.length === 1 ? "" : "s"}</span>
+              </div>
+
+              <div className="ps-table-wrap">
+                <table className="ps-table acm-table">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Correo</th>
+                      <th>Rol</th>
+                      <th>Estado</th>
+                      <th aria-label="Acciones" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingUsers ? (
+                      Array.from({ length: USERS_PER_PAGE }, (_, index) => (
+                        <tr key={index} className="acm-skeleton-row" aria-hidden="true">
+                          <td colSpan={5}><span /></td>
+                        </tr>
+                      ))
+                    ) : loadUsersError ? (
+                      <tr>
+                        <td colSpan={5} className="ps-table-empty acm-error-state">
+                          <Icons.AlertCircle />
+                          <span>{loadUsersError}</span>
+                          <button className="pa-btn secondary pa-btn-sm" onClick={loadProfiles}>Reintentar</button>
+                        </td>
+                      </tr>
+                    ) : paginatedUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="ps-table-empty acm-empty-state">
+                          <Icons.Users />
+                          <strong>No encontramos empleados</strong>
+                          <span>{hasUserFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Crea el primer empleado para comenzar."}</span>
+                          {hasUserFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setUserSearch(""); setRoleFilter("all"); setEmploymentFilter("all"); }}>Limpiar filtros</button>}
+                        </td>
+                      </tr>
+                    ) : paginatedUsers.map(item => {
+                      const isActive = isEmploymentActive(item);
+                      return (
+                        <tr
+                          key={item.id}
+                          className="row-hover acm-client-row"
+                          onClick={() => openEmployeeDetail(item)}
+                          onKeyDown={(e) => { if (["Enter", " "].includes(e.key)) { e.preventDefault(); openEmployeeDetail(item); } }}
+                          tabIndex={0}
+                        >
+                          <td className="td-pad">
+                            <div className="acm-client-cell">
+                              <span className="acm-avatar acm-avatar-small">{getUserDisplayName(item).charAt(0).toUpperCase()}</span>
+                              <span>
+                                <strong>{getUserDisplayName(item)}</strong>
+                                <small>#{item.id.slice(0, 8).toUpperCase()}</small>
+                              </span>
+                            </div>
+                          </td>
+                          <td className="td-pad">{item.email || "Sin correo"}</td>
+                          <td className="td-pad"><RoleBadge role={item.role} /></td>
+                          <td className="td-pad">
+                            <span className={`acm-badge ${isActive ? "success" : "neutral"}`}>
+                              {isActive ? "Activo" : "Inactivo"}
+                            </span>
+                          </td>
+                          <td className="td-pad td-actions" onClick={(e) => e.stopPropagation()}>
+                            <div className="table-actions acm-row-actions">
+                              <button className="table-action-btn view" onClick={() => openEmployeeDetail(item)} title="Ver detalles" aria-label={`Ver detalles de ${getUserDisplayName(item)}`}>
+                                <Icons.Eye />
+                              </button>
+                              <button className="table-action-btn edit" onClick={() => openEditUserModal(item)} title="Editar empleado" aria-label={`Editar ${getUserDisplayName(item)}`}>
+                                <Icons.Edit />
+                              </button>
+                              <button
+                                className={`table-action-btn ${isActive ? "cancel" : "activate"}`}
+                                onClick={() => openEmploymentStatusConfirm(item)}
+                                title={isActive ? "Desactivar empleado" : "Activar empleado"}
+                                aria-label={isActive ? `Desactivar ${getUserDisplayName(item)}` : `Activar ${getUserDisplayName(item)}`}
+                              >
+                                {isActive ? <Icons.UserMinus /> : <Icons.Check />}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {!loadingUsers && !loadUsersError && filteredProfiles.length > 0 && (
+                <div className="acm-pagination-footer">
+                  <Pagination currentPage={safeUserPage} totalPages={userTotalPages} onPageChange={setUserPage} />
+                </div>
+              )}
             </div>
           </section>
         }
@@ -4457,7 +4847,7 @@ export default function Dashboard() {
         open={!!advancedProduction}
         order={advancedProduction?.order}
         loading={advancedActionLoading}
-        title={advancedProduction?.action === "reassign_production" ? "Reasignar Producci�n" : undefined}
+        title={advancedProduction?.action === "reassign_production" ? "Reasignar Producción" : undefined}
         onClose={() => setAdvancedProduction(null)}
         onConfirm={handleAdvancedProductionConfirm}
       />
@@ -4468,7 +4858,7 @@ export default function Dashboard() {
         onClose={() => setPaymentModalOrder(null)}
         onConfirm={handlePaymentConfirm}
       />
-      <ModalShell open={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Confirmar Cancelaci�n" size="compact">
+      <ModalShell open={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Confirmar Cancelación" size="compact">
         <div className="pa-confirm-modal-body">
           <div className="pa-confirm-icon cancel">
             <Icons.Trash />
@@ -4478,17 +4868,17 @@ export default function Dashboard() {
             <p className="pa-confirm-order-name">{cancelOrderData?.client_name}</p>
             <p className="pa-confirm-order-desc">{cancelOrderData?.description?.slice(0, 60)}{cancelOrderData?.description?.length > 60 ? "..." : ""}</p>
             <label className="pa-field full">
-              <span>Motivo de cancelaci�n</span>
-              <textarea rows={3} value={cancelReason} onChange={(event) => setCancelReason(event.target.value.slice(0, 500))} placeholder="Describe por qu� se cancela esta orden." />
+              <span>Motivo de cancelación</span>
+              <textarea rows={3} value={cancelReason} onChange={(event) => setCancelReason(event.target.value.slice(0, 500))} placeholder="Describe por qué se cancela esta orden." />
             </label>
-            <p className="pa-confirm-warning">La orden podr� reabrirse �nicamente desde Configuraci�n avanzada y quedar� auditada.</p>
+            <p className="pa-confirm-warning">La orden podrá reabrirse únicamente desde Configuración avanzada y quedará auditada.</p>
           </div>
           <div className="pa-modal-actions">
             <button className="pa-btn secondary" onClick={() => setCancelModalOpen(false)}>
               Cerrar
             </button>
             <button className="pa-btn pa-confirm-btn-cancel" onClick={handleConfirmCancelOrder} disabled={cancelLoading}>
-              {cancelLoading ? "Cancelando..." : "S�, cancelar orden"}
+              {cancelLoading ? "Cancelando..." : "Sí, cancelar orden"}
             </button>
           </div>
         </div>
@@ -4715,7 +5105,7 @@ function CreditClientDetailView({
         <div className="pa-credit-detail-header">
           <button className="pa-credit-detail-back" onClick={onBack}>
             <Icons.ChevronLeft />
-            Volver a lista de cr�ditos
+            Volver a lista de créditos
           </button>
           <button
             className="pa-btn secondary pa-btn-sm"
@@ -4761,13 +5151,18 @@ function CreditClientDetailView({
           </div>
           <div style={{ padding: "0 14px 14px" }}>
             <div className="pa-credit-detail-toolbar">
-              <div className="pa-search-box pa-toolbar-search">
+              <div className="pa-search-box acm-search">
                 <Icons.Search />
                 <input
                   value={detailSearch}
                   onChange={(e) => setDetailSearch(e.target.value)}
                   placeholder="Buscar por factura u orden..."
                 />
+                {detailSearch && (
+                  <button className="acm-search-clear" onClick={() => setDetailSearch("")} aria-label="Limpiar búsqueda">
+                    <Icons.X />
+                  </button>
+                )}
               </div>
               <select value={detailFilter} onChange={(e) => setDetailFilter(e.target.value)}>
                 <option value="all">Todos</option>
@@ -4777,7 +5172,7 @@ function CreditClientDetailView({
             </div>
           </div>
           <div className="ps-table-wrap pa-credit-invoice-wrap">
-            <table className="ps-table">
+            <table className="ps-table acm-table">
               <thead>
                 <tr>
                   <th className="pa-credit-check-cell">
@@ -4799,10 +5194,10 @@ function CreditClientDetailView({
               <tbody>
                 {filteredInvoices.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="ps-table-empty">
-                      {detailSearch || detailFilter !== "all"
-                        ? "No hay facturas que coincidan con los filtros."
-                        : "No hay facturas registradas para este cliente."}
+                    <td colSpan={6} className="ps-table-empty acm-empty-state">
+                      <Icons.Receipt />
+                      <strong>No hay facturas</strong>
+                      <span>{detailSearch || detailFilter !== "all" ? "Prueba con otros filtros o limpia la búsqueda." : "No hay facturas registradas para este cliente."}</span>
                     </td>
                   </tr>
                 ) : (
@@ -4810,7 +5205,13 @@ function CreditClientDetailView({
                     const itemOpen = isOpenCreditReceivable(item);
                     const selected = selectedIds.includes(item.order_id);
                     return (
-                      <tr key={item.id || item.order_id} className="row-hover" style={{ cursor: "pointer" }} onClick={() => { if (item.order) onViewOrder(item.order); }}>
+                      <tr
+                        key={item.id || item.order_id}
+                        className="row-hover acm-client-row"
+                        onClick={() => { if (item.order) onViewOrder(item.order); }}
+                        onKeyDown={(e) => { if (["Enter", " "].includes(e.key)) { e.preventDefault(); if (item.order) onViewOrder(item.order); } }}
+                        tabIndex={0}
+                      >
                         <td className="td-pad pa-credit-check-cell">
                           <input
                             type="checkbox"
@@ -4825,12 +5226,12 @@ function CreditClientDetailView({
                         <td className="td-pad td-id">{item.order_id?.slice(0, 8) || "---"}</td>
                         <td className="td-pad">{formatCreditDate(item.creditIssuedAt)}</td>
                         <td className="td-pad">
-                          <span className="ps-badge" style={getCreditReceivableStatusStyle(item.status)}>
+                          <span className={`acm-badge ${itemOpen ? "warning" : "success"}`}>
                             {getCreditReceivableStatusLabel(item.status)}
                           </span>
                         </td>
                         <td className="td-pad td-actions">
-                          <div className="table-actions">
+                          <div className="table-actions acm-row-actions">
                             {item.order && (
                               <button className="table-action-btn view" onClick={(e) => { e.stopPropagation(); onViewOrder(item.order); }} title="Ver orden">
                                 <Icons.Eye />
@@ -4838,7 +5239,7 @@ function CreditClientDetailView({
                             )}
                             {itemOpen && (
                               <button
-                                className="table-action-btn"
+                                className="table-action-btn edit"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onCreateReminder(group.client, [item]);
@@ -4850,7 +5251,7 @@ function CreditClientDetailView({
                             )}
                             {itemOpen && (
                               <button
-                                className="table-action-btn"
+                                className="table-action-btn cancel"
                                 onClick={(e) => { e.stopPropagation(); onSettle({
                                   client: group.client,
                                   orderIds: [item.order_id],
@@ -4994,7 +5395,7 @@ function AdminTrackingLinkField({ orderId }) {
         </div>
       ) : (
         <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, fontStyle: "italic" }}>
-          El link estar� disponible cuando la orden tenga un token de seguimiento.
+          El link estará disponible cuando la orden tenga un token de seguimiento.
         </p>
       )}
     </div>

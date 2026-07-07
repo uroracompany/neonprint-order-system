@@ -26,6 +26,12 @@ export async function handleAdminSetUserStatus(payload, env = process.env) {
     });
   }
 
+  if (!nextStatus && auth.user?.id === userId) {
+    return jsonResponse(403, {
+      error: "No puedes desactivar tu propia cuenta de administrador.",
+    });
+  }
+
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
     auth: {
       persistSession: false,
