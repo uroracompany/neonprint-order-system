@@ -72,8 +72,10 @@ import useNotifications from "../hooks/useNotifications";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
+import KPIModule from "../components/kpi/KPIModule";
 import "../css-components/page-seller.css";
 import "../css-components/page-admin.css";
+import "../css-components/page-kpi.css";
 
 
 const DEFAULT_ORDER_FORM = {
@@ -3636,6 +3638,7 @@ export default function Dashboard() {
 
   const menuItems = [
     { id: "overview", label: "Resumen", icon: <Icons.Dashboard /> },
+    { id: "kpi", label: "Inteligencia", icon: <Icons.TrendUp /> },
     { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loadingOrders, orders.length) },
     { id: "credits", label: "Créditos", icon: <Icons.Receipt />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
     { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clientsTotal) },
@@ -3671,7 +3674,7 @@ export default function Dashboard() {
             >
               {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
-            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de Empleados"}</h1></div>
+            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "kpi" ? "KPI" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de Empleados"}</h1></div>
           </div>
           <div className="pa-header-right">
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
@@ -3688,6 +3691,8 @@ export default function Dashboard() {
           </div>
         </header>
         <main className="pa-main">
+
+        {activeTab === "kpi" && <KPIModule />}
 
         {activeTab === "overview" &&
           <section className="pa-section">

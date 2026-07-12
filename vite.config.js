@@ -9,6 +9,7 @@ import { handleAdminSetUserStatus } from './server/admin-set-user-status-handler
 import { handleAdminDeleteUser } from './server/admin-delete-user-handler.js'
 import { handleGetUserEmail } from './server/get-user-email-handler.js'
 import { handleChangeUserPassword } from './server/change-user-password-handler.js'
+import { handleKpiData } from './server/kpi-data-handler.js'
 import {
   handleAdminDeleteOrderWithFiles,
   handleCompleteFileUpload,
@@ -68,7 +69,7 @@ export default defineConfig(() => {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   }
 
-  return {
+return {
     plugins: [
       react(),
       tailwindcss(),
@@ -80,11 +81,15 @@ export default defineConfig(() => {
       createApiHandler("/api/admin-delete-user", handleAdminDeleteUser),
       createApiHandler("/api/get-user-email", handleGetUserEmail),
       createApiHandler("/api/change-user-password", handleChangeUserPassword),
+      createApiHandler("/api/kpi-data", handleKpiData),
       createApiHandler("/api/files-initiate-upload", handleInitiateFileUpload),
       createApiHandler("/api/files-complete-upload", handleCompleteFileUpload),
       createApiHandler("/api/files-download-url", handleFileDownloadUrl),
       createApiHandler("/api/files-import-url", handleImportRemoteFile),
       createApiHandler("/api/admin-delete-order", handleAdminDeleteOrderWithFiles),
     ],
+    optimizeDeps: {
+      include: ['recharts', 'es-toolkit', 'lodash'],
+    },
   };
 })
