@@ -126,7 +126,7 @@ export async function handleKpiData(body, env) {
         }))
 
         const paymentByClientRaw = await supabase.from('orders')
-          .select('client_id, client_name, payment_status, price, id, created_at')
+          .select('client_id, client_name, payment_status, price, id, created_at, invoice_number')
           .in('payment_status', ['credito', 'parcial'])
           .not('status', 'in', '(cancelled,in_completed,in_delivered)')
 
@@ -154,6 +154,7 @@ export async function handleKpiData(body, env) {
             price,
             payment_status: o.payment_status,
             created_at: o.created_at,
+            invoice_number: o.invoice_number || '',
           })
         })
 
@@ -433,40 +434,56 @@ export async function handleKpiData(body, env) {
               .sort((a, b) => b.orders_per_month - a.orders_per_month)
               .slice(0, 10) }
           })),
-          safeQuery(() => supabase.from('orders').select('client_id, client_name, material, created_at, order_type, status').then(({ data, error }) => {
-            if (error) throw error
-            const materialMap = {}
-            const allMaterials = new Set()
-            ;(data || []).forEach(o => {
-              if (!o.material) return
-              o.material.split(',').map(s => s.trim()).filter(Boolean).forEach(m => {
-                allMaterials.add(m)
-                if (!materialMap[m]) materialMap[m] = { name: m, total: 0, cancelled: 0, clients: {}, months: {} }
-                materialMap[m].total++
-                if ((o.status || '').toLowerCase() === 'cancelled') materialMap[m].cancelled++
-                if (o.client_id) {
-                  if (!materialMap[m].clients[o.client_id]) materialMap[m].clients[o.client_id] = { client_name: o.client_name, count: 0 }
-                  materialMap[m].clients[o.client_id].count++
-                }
-                const monthKey = new Date(o.created_at).toISOString().slice(0, 7)
-                materialMap[m].months[monthKey] = (materialMap[m].months[monthKey] || 0) + 1
+          safeQuery(() => {
+            let q = supabase.from('orders').select('client_id, client_name, material, created_at, order_type, status')
+            if (date_from) q = q.gte('created_at', date_from)
+            if (date_to) q = q.lt('created_at', date_to)
+            return q.then(({ data, error }) => {
+              if (error) throw error
+              const materialMap = {}
+              const allMaterials = new Set()
+              const orderTypeMap = {}
+              ;(data || []).forEach(o => {
+                if (!o.material) return
+                const isUrgent = (o.order_type || '').toLowerCase().includes('911')
+                o.material.split(',').map(s => s.trim()).filter(Boolean).forEach(m => {
+                  allMaterials.add(m)
+                  if (!materialMap[m]) materialMap[m] = { name: m, total: 0, cancelled: 0, clients: {}, months: {}, normal: 0, urgent: 0 }
+                  materialMap[m].total++
+                  if ((o.status || '').toLowerCase() === 'cancelled') materialMap[m].cancelled++
+                  if (isUrgent) materialMap[m].urgent++
+                  else materialMap[m].normal++
+                  if (!orderTypeMap[m]) orderTypeMap[m] = { name: m, normal: 0, urgent: 0 }
+                  if (isUrgent) orderTypeMap[m].urgent++
+                  else orderTypeMap[m].normal++
+                  if (o.client_id) {
+                    if (!materialMap[m].clients[o.client_id]) materialMap[m].clients[o.client_id] = { client_name: o.client_name, count: 0 }
+                    materialMap[m].clients[o.client_id].count++
+                  }
+                  const monthKey = new Date(o.created_at).toISOString().slice(0, 7)
+                  materialMap[m].months[monthKey] = (materialMap[m].months[monthKey] || 0) + 1
+                })
               })
+              const totalOrdersWithMaterial = Object.values(materialMap).reduce((s, m) => s + m.total, 0)
+              return { data: {
+                all_materials: [...allMaterials].sort(),
+                summary: Object.values(materialMap)
+                  .map(m => ({
+                    name: m.name,
+                    total_orders: m.total,
+                    cancelled_orders: m.cancelled,
+                    cancel_rate: m.total > 0 ? Math.round((m.cancelled / m.total) * 1000) / 10 : 0,
+                    usage_pct: totalOrdersWithMaterial > 0 ? Math.round((m.total / totalOrdersWithMaterial) * 1000) / 10 : 0,
+                    normal_orders: m.normal,
+                    urgent_orders: m.urgent,
+                    top_clients: Object.values(m.clients).sort((a, b) => b.count - a.count).slice(0, 5).map(c => ({ client_name: c.client_name, count: c.count })),
+                    monthly_trend: Object.entries(m.months).sort((a, b) => a[0].localeCompare(b[0])).map(([month, count]) => ({ month, count })),
+                  }))
+                  .sort((a, b) => b.total_orders - a.total_orders),
+                order_type_by_material: Object.values(orderTypeMap).sort((a, b) => (b.normal + b.urgent) - (a.normal + a.urgent)),
+              } }
             })
-            const totalOrdersWithMaterial = Object.values(materialMap).reduce((s, m) => s + m.total, 0)
-            return { data: {
-              all_materials: [...allMaterials].sort(),
-              summary: Object.values(materialMap)
-                .map(m => ({
-                  name: m.name,
-                  total_orders: m.total,
-                  cancelled_orders: m.cancelled,
-                  usage_pct: totalOrdersWithMaterial > 0 ? Math.round((m.total / totalOrdersWithMaterial) * 1000) / 10 : 0,
-                  top_clients: Object.values(m.clients).sort((a, b) => b.count - a.count).slice(0, 5).map(c => ({ client_name: c.client_name, count: c.count })),
-                  monthly_trend: Object.entries(m.months).sort((a, b) => a[0].localeCompare(b[0])).map(([month, count]) => ({ month, count })),
-                }))
-                .sort((a, b) => b.total_orders - a.total_orders),
-            } }
-          })),
+          }),
         ])
 
         const agedOrders = (pendingAged.data || []).map(o => ({
@@ -476,7 +493,7 @@ export async function handleKpiData(body, env) {
         }))
 
         const paymentByClientRaw = await supabase.from('orders')
-          .select('client_id, client_name, payment_status, price, id, created_at')
+          .select('client_id, client_name, payment_status, price, id, created_at, invoice_number')
           .in('payment_status', ['credito', 'parcial'])
           .not('status', 'in', '(cancelled,in_completed,in_delivered)')
 
@@ -504,6 +521,7 @@ export async function handleKpiData(body, env) {
             price,
             payment_status: o.payment_status,
             created_at: o.created_at,
+            invoice_number: o.invoice_number || '',
           })
         })
 

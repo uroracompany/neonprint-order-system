@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts'
 import { Icons } from '../../utils/icons'
 import { formatNumber, getTrendConfig } from '../../utils/kpiHelpers'
+import { Pagination } from '../ui/Pagination'
 
 const SEMANTIC = {
   positive: { iconBg: '#DCFCE7', iconColor: '#16A34A', trendBg: '#DCFCE7', trendColor: '#16A34A' },
@@ -86,6 +87,7 @@ export default function KPIClientAnalytics({ data }) {
   const [evoDateTo, setEvoDateTo] = useState('')
   const [payIdx, setPayIdx] = useState(-1)
   const [paySearch, setPaySearch] = useState('')
+  const [payPage, setPayPage] = useState(1)
   const [now] = useState(() => Date.now())
 
   if (!data) return null
@@ -915,14 +917,14 @@ export default function KPIClientAnalytics({ data }) {
             </div>
 
             {byClient.length > 0 && (
-              <div className="kpi-filter-row" style={{ marginTop: 16 }}>
+              <div className="kpi-filter-row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
                 <label>
                   <span>Buscar</span>
-                  <input type="text" placeholder="Nombre del cliente..." value={paySearch} onChange={e => { setPaySearch(e.target.value); setPayIdx(-1) }} />
+                    <input type="text" placeholder="Nombre del cliente..." value={paySearch} onChange={e => { setPaySearch(e.target.value); setPayIdx(-1); setPayPage(1) }} />
                 </label>
                 <label>
                   <span>Cliente</span>
-                  <select value={payIdx} onChange={e => setPayIdx(+e.target.value)}>
+                    <select value={payIdx} onChange={e => { setPayIdx(+e.target.value); setPayPage(1) }}>
                     <option value={-1}>Todos</option>
                     {filteredPayClients.map((cl, i) => <option key={i} value={byClient.indexOf(cl)}>{cl.client_name}</option>)}
                   </select>
@@ -954,23 +956,39 @@ export default function KPIClientAnalytics({ data }) {
                 </div>
 
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Detalle de Órdenes</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflow: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {payDetail.orders.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: 16, color: '#94A3B8', fontSize: 13 }}>Sin órdenes</div>
-                  ) : payDetail.orders.map((o, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                      <Badge
-                        color={o.payment_status === 'credito' ? '#9F1239' : '#92400E'}
-                        bg={o.payment_status === 'credito' ? '#FFF1F2' : '#FFFBEB'}
-                      >
-                        {o.payment_status === 'credito' ? 'Crédito' : 'Parcial'}
-                      </Badge>
-                      <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#475569' }}>
-                        {new Date(o.created_at).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#091127' }}>{formatCurrency(o.price)}</div>
-                    </div>
-                  ))}
+                  ) : (() => {
+                    const PAGE_SIZE = 7
+                    const totalPages = Math.ceil(payDetail.orders.length / PAGE_SIZE)
+                    const paged = payDetail.orders.slice((payPage - 1) * PAGE_SIZE, payPage * PAGE_SIZE)
+                    return (
+                      <>
+                        {paged.map((o, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                            <Badge
+                              color={o.payment_status === 'credito' ? '#9F1239' : '#92400E'}
+                              bg={o.payment_status === 'credito' ? '#FFF1F2' : '#FFFBEB'}
+                            >
+                              {o.payment_status === 'credito' ? 'Crédito' : 'Parcial'}
+                            </Badge>
+                            <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#475569' }}>
+                              {new Date(o.created_at).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>
+                              {o.invoice_number || 'Sin factura'}
+                            </div>
+                          </div>
+                        ))}
+                        {totalPages > 1 && (
+                          <div style={{ marginTop: 8 }}>
+                            <Pagination currentPage={payPage} totalPages={totalPages} onPageChange={setPayPage} />
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
             )}
