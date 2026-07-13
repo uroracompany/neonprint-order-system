@@ -135,7 +135,17 @@ export default function KPIModule() {
 
       {activeTab === 'orders' && <KPIOrdersAnalytics data={data} />}
       {activeTab === 'clients' && <KPIClientAnalytics data={data} />}
-      {activeTab === 'materials' && <KPIMaterialsAnalytics data={data} />}
+      {activeTab === 'materials' && (
+        <KPIMaterialsAnalytics
+          data={data}
+          period={period}
+          setPeriod={setPeriod}
+          customDateFrom={customDateFrom}
+          setCustomDateFrom={setCustomDateFrom}
+          customDateTo={customDateTo}
+          setCustomDateTo={setCustomDateTo}
+        />
+      )}
       {activeTab === 'users' && <KPIUserAnalytics data={data} />}
       {activeTab === 'production' && <KPIProductionInsights data={data} />}
       {activeTab === 'alerts' && <KPIAlertsPanel data={data} />}
