@@ -453,7 +453,7 @@ export async function handleKpiData(body, env) {
                 const isUrgent = (o.order_type || '').toLowerCase().includes('911')
                 o.material.split(',').map(s => s.trim()).filter(Boolean).forEach(m => {
                   allMaterials.add(m)
-                  if (!materialMap[m]) materialMap[m] = { name: m, total: 0, cancelled: 0, clients: {}, months: {}, normal: 0, urgent: 0 }
+                  if (!materialMap[m]) materialMap[m] = { name: m, total: 0, cancelled: 0, clients: {}, months: {}, daily: {}, normal: 0, urgent: 0 }
                   materialMap[m].total++
                   if ((o.status || '').toLowerCase() === 'cancelled') materialMap[m].cancelled++
                   if (isUrgent) materialMap[m].urgent++
@@ -467,6 +467,8 @@ export async function handleKpiData(body, env) {
                   }
                   const monthKey = new Date(o.created_at).toISOString().slice(0, 7)
                   materialMap[m].months[monthKey] = (materialMap[m].months[monthKey] || 0) + 1
+                  const dayKey = new Date(o.created_at).toISOString().slice(0, 10)
+                  materialMap[m].daily[dayKey] = (materialMap[m].daily[dayKey] || 0) + 1
                 })
               })
               const totalOrdersWithMaterial = Object.values(materialMap).reduce((s, m) => s + m.total, 0)
@@ -483,6 +485,7 @@ export async function handleKpiData(body, env) {
                     urgent_orders: m.urgent,
                     top_clients: Object.values(m.clients).sort((a, b) => b.count - a.count).slice(0, 5).map(c => ({ client_name: c.client_name, count: c.count })),
                     monthly_trend: Object.entries(m.months).sort((a, b) => a[0].localeCompare(b[0])).map(([month, count]) => ({ month, count })),
+                    daily: m.daily,
                   }))
                   .sort((a, b) => b.total_orders - a.total_orders),
                 order_type_by_material: Object.values(orderTypeMap).sort((a, b) => (b.normal + b.urgent) - (a.normal + a.urgent)),
@@ -502,9 +505,13 @@ export async function handleKpiData(body, env) {
             ;(prevResult.data || []).forEach(o => {
               if (!o.material) return
               o.material.split(',').map(s => s.trim()).filter(Boolean).forEach(m => {
-                if (!prevMatMap[m]) prevMatMap[m] = { name: m, total: 0, cancelled: 0 }
+                if (!prevMatMap[m]) prevMatMap[m] = { name: m, total: 0, cancelled: 0, daily: {}, months: {} }
                 prevMatMap[m].total++
                 if ((o.status || '').toLowerCase() === 'cancelled') prevMatMap[m].cancelled++
+                const dayKey = new Date(o.created_at).toISOString().slice(0, 10)
+                prevMatMap[m].daily[dayKey] = (prevMatMap[m].daily[dayKey] || 0) + 1
+                const monthKey = new Date(o.created_at).toISOString().slice(0, 7)
+                prevMatMap[m].months[monthKey] = (prevMatMap[m].months[monthKey] || 0) + 1
               })
             })
             const prevTotal = Object.values(prevMatMap).reduce((s, m) => s + m.total, 0)
@@ -516,6 +523,10 @@ export async function handleKpiData(body, env) {
                   total_orders: m.total,
                   cancel_rate: m.total > 0 ? Math.round((m.cancelled / m.total) * 1000) / 10 : 0,
                   usage_pct: prevTotal > 0 ? Math.round((m.total / prevTotal) * 1000) / 10 : 0,
+                  daily: m.daily,
+                  monthly_trend: Object.entries(m.months)
+                    .sort((a, b) => a[0].localeCompare(b[0]))
+                    .map(([month, count]) => ({ month, count })),
                 }))
                 .sort((a, b) => b.total_orders - a.total_orders),
             }

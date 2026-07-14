@@ -159,7 +159,7 @@ function MiniPieChart({ data, title, subtitle, insight, colors }) {
                   <Cell key={idx} fill={displayColors[idx % displayColors.length]} />
                 ))}
               </Pie>
-              {!isEmpty && <Tooltip content={<ChartTooltip />} />}
+              {!isEmpty && <Tooltip content={<ChartTooltip />} wrapperStyle={{ zIndex: 9999 }} />}
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -353,12 +353,6 @@ export default function KPIOrdersAnalytics({ data }) {
       }
     })
 
-    if (completed === 0 && cancelled === 0) {
-      console.log('[KPIOrdersAnalytics] status_breakdown keys:', Object.keys(breakdown))
-      console.log('[KPIOrdersAnalytics] type_breakdown:', typeBreakdown)
-      console.log('[KPIOrdersAnalytics] design_breakdown:', designBreakdown)
-    }
-
     return { completed, cancelled, normal, urgent, internal, external }
   }, [data])
 
@@ -520,7 +514,7 @@ export default function KPIOrdersAnalytics({ data }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#E8EDF8" />
                   <XAxis dataKey="displayDate" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} label={{ value: 'Órdenes', angle: -90, position: 'insideLeft', style: { fontSize: 12, fill: '#64748B' } }} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                   <Bar dataKey="Órdenes" fill="#06B6D4" radius={[4, 4, 0, 0]} />
                 </BarChart>
               ) : chartMode === 'line' ? (
@@ -528,7 +522,7 @@ export default function KPIOrdersAnalytics({ data }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#E8EDF8" />
                   <XAxis dataKey="displayDate" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} label={{ value: 'Órdenes', angle: -90, position: 'insideLeft', style: { fontSize: 12, fill: '#64748B' } }} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                   <Line type="monotone" dataKey="Órdenes" stroke="#06B6D4" strokeWidth={2.5} dot={{ r: 4, fill: '#06B6D4', strokeWidth: 0 }} activeDot={{ r: 6, stroke: '#fff', strokeWidth: 2 }} />
                 </LineChart>
               ) : (
@@ -542,7 +536,7 @@ export default function KPIOrdersAnalytics({ data }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#E8EDF8" />
                   <XAxis dataKey="displayDate" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} label={{ value: 'Órdenes', angle: -90, position: 'insideLeft', style: { fontSize: 12, fill: '#64748B' } }} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                   <Area type="monotone" dataKey="Órdenes" stroke="#06B6D4" strokeWidth={2.5} fill="url(#trendGradient)" dot={{ r: 4, fill: '#06B6D4', strokeWidth: 0 }} activeDot={{ r: 6, stroke: '#fff', strokeWidth: 2 }} />
                 </AreaChart>
               )}

@@ -94,7 +94,7 @@ export default function KPIProductionInsights({ data }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8EDF8" />
                 <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                 <Bar dataKey="Pendientes" stackId="a" fill="#F59E0B" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="Producción" stackId="a" fill="#F97316" />
                 <Bar dataKey="Terminación" stackId="a" fill="#0EA5E9" />
@@ -112,7 +112,7 @@ export default function KPIProductionInsights({ data }) {
                 <Pie data={filePieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
                   {filePieData.map((entry, idx) => <Cell key={idx} fill={entry.color} />)}
                 </Pie>
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 9999 }} />
               </PieChart>
             </ResponsiveContainer>
           </div>

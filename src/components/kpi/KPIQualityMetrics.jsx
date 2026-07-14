@@ -2,7 +2,22 @@ import { Icons } from '../../utils/icons'
 import { formatNumber, formatPercent, getTrendConfig } from '../../utils/kpiHelpers'
 
 export default function KPIQualityMetrics({ data }) {
-  if (!data) return null
+  if (!data) return (
+    <div className="kpi-section">
+      <div className="kpi-section-header">
+        <div>
+          <span className="kpi-section-kicker">Panel de Calidad</span>
+          <h2 className="kpi-section-title">Calidad y Equipo</h2>
+          <p className="kpi-section-subtitle">Indicadores de calidad del servicio y rendimiento del equipo</p>
+        </div>
+      </div>
+      <div className="kpi-empty-state">
+        <div className="kpi-empty-icon"><Icons.Clipboard size={28} /></div>
+        <div className="kpi-empty-title">Sin datos disponibles</div>
+        <div className="kpi-empty-message">Los datos de calidad aún no están disponibles. Intenta refrescar el panel.</div>
+      </div>
+    </div>
+  )
 
   const current = data.business_summary?.current || {}
   const previous = data.business_summary?.previous || {}

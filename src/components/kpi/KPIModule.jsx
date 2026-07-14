@@ -62,9 +62,7 @@ function CriticalAlertsInline({ alerts }) {
 
 export default function KPIModule() {
   const {
-    data, loading, error, period, setPeriod,
-    customDateFrom, setCustomDateFrom,
-    customDateTo, setCustomDateTo, refresh,
+    data, loading, error, refresh,
   } = useKPI()
 
   const [activeTab, setActiveTab] = useState('overview')
@@ -73,10 +71,9 @@ export default function KPIModule() {
     return (
       <section className="pa-section" style={{ minHeight: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 48, height: 48, margin: '0 auto 16px', border: '3px solid #DDE3EF', borderTopColor: '#06B6D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <div className="kpi-spinner" />
           <p style={{ color: '#4A5E80', fontSize: 14, fontWeight: 500 }}>Cargando inteligencia del sistema...</p>
         </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </section>
     )
   }
@@ -99,13 +96,8 @@ export default function KPIModule() {
   return (
     <section className="pa-section">
       <KPIHeader
-        period={period}
-        setPeriod={setPeriod}
-        customDateFrom={customDateFrom}
-        setCustomDateFrom={setCustomDateFrom}
-        customDateTo={customDateTo}
-        setCustomDateTo={setCustomDateTo}
         onRefresh={refresh}
+        loading={loading}
       />
 
       <div className="kpi-tabs">
@@ -122,7 +114,7 @@ export default function KPIModule() {
       </div>
 
       {activeTab === 'overview' && (
-        <>
+        <div className="kpi-tab-content" key="overview">
           <KPISummaryCards data={data} />
           <KPIOrderPipeline data={data} />
           <KPIProductionMini data={data} />
@@ -130,25 +122,15 @@ export default function KPIModule() {
           <KPICreditsSummary data={data} />
           <KPIQualityMetrics data={data} />
           <CriticalAlertsInline alerts={data?.smart_alerts} />
-        </>
+        </div>
       )}
 
-      {activeTab === 'orders' && <KPIOrdersAnalytics data={data} />}
-      {activeTab === 'clients' && <KPIClientAnalytics data={data} />}
-      {activeTab === 'materials' && (
-        <KPIMaterialsAnalytics
-          data={data}
-          period={period}
-          setPeriod={setPeriod}
-          customDateFrom={customDateFrom}
-          setCustomDateFrom={setCustomDateFrom}
-          customDateTo={customDateTo}
-          setCustomDateTo={setCustomDateTo}
-        />
-      )}
-      {activeTab === 'users' && <KPIUserAnalytics data={data} />}
-      {activeTab === 'production' && <KPIProductionInsights data={data} />}
-      {activeTab === 'alerts' && <KPIAlertsPanel data={data} />}
+      {activeTab === 'orders' && <div className="kpi-tab-content" key="orders"><KPIOrdersAnalytics data={data} /></div>}
+      {activeTab === 'clients' && <div className="kpi-tab-content" key="clients"><KPIClientAnalytics data={data} /></div>}
+      {activeTab === 'materials' && <div className="kpi-tab-content" key="materials"><KPIMaterialsAnalytics data={data} /></div>}
+      {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} /></div>}
+      {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} /></div>}
+      {activeTab === 'alerts' && <div className="kpi-tab-content" key="alerts"><KPIAlertsPanel data={data} /></div>}
     </section>
   )
 }

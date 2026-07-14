@@ -289,7 +289,7 @@ export default function KPIOrderPipeline({ data }) {
                           <Cell key={idx} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip content={<CustomTooltip />} />
+                      <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>

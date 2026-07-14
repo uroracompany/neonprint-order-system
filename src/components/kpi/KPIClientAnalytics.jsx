@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts'
 import { Icons } from '../../utils/icons'
-import { formatNumber, getTrendConfig } from '../../utils/kpiHelpers'
+import { formatNumber, getTrendConfig, KPI_CHART_COLORS } from '../../utils/kpiHelpers'
 import { Pagination } from '../ui/Pagination'
 
 const SEMANTIC = {
@@ -14,7 +14,7 @@ const PALETTE = {
   cyan: '#06B6D4', green: '#10B981', rose: '#F43F5E', amber: '#F59E0B',
   violet: '#8B5CF6', orange: '#F97316', pink: '#EC4899', teal: '#14B8A6',
   indigo: '#6366F1', red: '#EF4444',
-  pie: ['#06B6D4', '#F43F5E', '#F59E0B', '#10B981', '#8B5CF6', '#F97316', '#EC4899', '#14B8A6', '#6366F1', '#EF4444'],
+  pie: KPI_CHART_COLORS,
 }
 
 function ChartTooltip({ active, payload, label }) {
@@ -147,7 +147,7 @@ export default function KPIClientAnalytics({ data }) {
         </div>
       </div>
 
-      <div className="kpi-hero-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+      <div className="kpi-hero-grid kpi-hero-grid--5">
         {heroCards.map(c => (
           <div key={c.id} className="kpi-hero-card">
             <div className="kpi-hero-header">
@@ -258,7 +258,7 @@ export default function KPIClientAnalytics({ data }) {
                   <Pie data={compPie} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value">
                     {compPie.map((e, i) => <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2} />)}
                   </Pie>
-                  <Tooltip content={({ active, payload }) => {
+                  <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
                     if (!active || !payload?.length) return null
                     const d = payload[0].payload
                     return (
@@ -628,7 +628,7 @@ export default function KPIClientAnalytics({ data }) {
                     <CartesianGrid strokeDasharray="3 3" stroke="#E8EDF8" />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip content={<ChartTooltip />} />
+                    <Tooltip content={<ChartTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                     <Area type="monotone" dataKey="Clientes" stroke={PALETTE.cyan} fill={`url(#gradCyan-${isAllEvo ? 'all' : evoIdx})`} strokeWidth={2} hide={!isAllEvo} />
                     <Area type="monotone" dataKey="Órdenes" stroke={PALETTE.green} fill={`url(#gradGreen-${isAllEvo ? 'all' : evoIdx})`} strokeWidth={2} />
                   </AreaChart>
@@ -655,7 +655,7 @@ export default function KPIClientAnalytics({ data }) {
         </div>
         <div className="kpi-card" style={{ padding: 24 }}>
           {topView === 'ranking' && barData.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#94A3B8', fontSize: 13 }}>Sin datos de clientes</div>
+            <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">Sin datos de clientes</div></div>
           ) : topView === 'ranking' ? (
             <div style={{ height: 360 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -663,7 +663,7 @@ export default function KPIClientAnalytics({ data }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#E8EDF8" />
                   <XAxis type="number" tick={{ fontSize: 11 }} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={105} />
-                  <Tooltip content={<ChartTooltip />} />
+                  <Tooltip content={<ChartTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                   <Bar dataKey="Completadas" fill={PALETTE.cyan} radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -728,7 +728,7 @@ export default function KPIClientAnalytics({ data }) {
                   >
                     {topPie.map((e, i) => <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2} />)}
                   </Pie>
-                  <Tooltip content={({ active, payload }) => {
+                  <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
                     if (!active || !payload?.length) return null
                     const d = payload[0].payload
                     const total = topPie.reduce((s, x) => s + x.value, 0)
@@ -827,8 +827,6 @@ export default function KPIClientAnalytics({ data }) {
           return { color: '#06B6D4', bg: '#E0F2FE', text: `${Math.round(days)}d` }
         }
 
-        const formatCurrency = (v) => `RD$ ${Number(v || 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`
-
         return (
           <div className="kpi-section">
             <div className="kpi-section-header">
@@ -848,7 +846,7 @@ export default function KPIClientAnalytics({ data }) {
                       <Pie data={creditPartialPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
                         {creditPartialPie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
-                      <Tooltip content={({ active, payload }) => {
+                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
                         if (!active || !payload?.length) return null
                         const d = payload[0].payload
                         const denom = credito + parcial || 1
@@ -885,7 +883,7 @@ export default function KPIClientAnalytics({ data }) {
                       <Pie data={pendingPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
                         {pendingPie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
-                      <Tooltip content={({ active, payload }) => {
+                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
                         if (!active || !payload?.length) return null
                         const d = payload[0].payload
                         return (
@@ -958,7 +956,7 @@ export default function KPIClientAnalytics({ data }) {
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Detalle de Órdenes</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {payDetail.orders.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: 16, color: '#94A3B8', fontSize: 13 }}>Sin órdenes</div>
+                    <div className="kpi-empty-state" style={{ padding: 16 }}><div className="kpi-empty-title">Sin órdenes</div></div>
                   ) : (() => {
                     const PAGE_SIZE = 7
                     const totalPages = Math.ceil(payDetail.orders.length / PAGE_SIZE)
@@ -1079,7 +1077,7 @@ export default function KPIClientAnalytics({ data }) {
                       <Pie key={matIdx} data={matPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
                         {matPie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
-                      <Tooltip content={({ active, payload }) => {
+                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
                         if (!active || !payload?.length) return null
                         const d = payload[0].payload
                         return (
@@ -1106,7 +1104,7 @@ export default function KPIClientAnalytics({ data }) {
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Ranking de Materiales</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, overflow: 'auto' }}>
                   {matMaterials.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: 20, color: '#94A3B8', fontSize: 13 }}>Sin datos</div>
+                    <div className="kpi-empty-state" style={{ padding: 16 }}><div className="kpi-empty-title">Sin datos</div></div>
                   ) : matMaterials.map((m, i) => {
                     const pct = maxMatCount > 0 ? (m.count / maxMatCount) * 100 : 0
                     return (
@@ -1178,7 +1176,7 @@ export default function KPIClientAnalytics({ data }) {
                       <Pie key={cancelIdx} data={cancelPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
                         {cancelPie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
-                      <Tooltip content={({ active, payload }) => {
+                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
                         if (!active || !payload?.length) return null
                         const d = payload[0].payload
                         return (
@@ -1421,7 +1419,7 @@ export default function KPIClientAnalytics({ data }) {
                       <Pie key={freqIdx} data={freqPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke={isGold ? '#D4A017' : 'none'}>
                         {freqPie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
-                      <Tooltip content={({ active, payload }) => {
+                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
                         if (!active || !payload?.length) return null
                         const d = payload[0].payload
                         return (
@@ -1556,7 +1554,7 @@ export default function KPIClientAnalytics({ data }) {
                         <Pie key={selectedClientIdx} data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
                           {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                         </Pie>
-                        <Tooltip content={({ active, payload }) => {
+                        <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
                           if (!active || !payload?.length) return null
                           const d = payload[0].payload
                           return (

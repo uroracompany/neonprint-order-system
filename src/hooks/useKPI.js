@@ -34,8 +34,6 @@ export function useKPI() {
         ...params,
       })
 
-      console.log('KPI Response:', result.response.status, result.result)
-
       if (!result.response.ok) {
         const errorMsg = result.result?.details
           ? result.result.details.join('; ')

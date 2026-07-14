@@ -3,14 +3,6 @@
  * Formateo, cálculo y helpers comunes
  */
 
-export const PERIOD_OPTIONS = [
-  { value: 'today', label: 'Hoy' },
-  { value: 'week', label: 'Esta semana' },
-  { value: 'month', label: 'Este mes' },
-  { value: 'year', label: 'Este año' },
-  { value: 'custom', label: 'Personalizado' },
-]
-
 export const SEVERITY_COLORS = {
   high: { bg: '#FEF2F2', color: '#991B1B', border: '#FECACA', icon: '#EF4444' },
   medium: { bg: '#FFFBEB', color: '#92400E', border: '#FDE68A', icon: '#F59E0B' },
@@ -42,14 +34,6 @@ export function getTrendConfig(current, previous) {
   if (change > 0.5) return { ...TREND_COLORS.positive, change: change.toFixed(1) }
   if (change < -0.5) return { ...TREND_COLORS.negative, change: Math.abs(change).toFixed(1) }
   return { ...TREND_COLORS.neutral, change: '0.0' }
-}
-
-export function formatDateRange(dateFrom, dateTo) {
-  if (!dateFrom && !dateTo) return 'Todo el tiempo'
-  const fmt = (d) => new Date(d).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' })
-  if (dateFrom && dateTo) return `${fmt(dateFrom)} - ${fmt(dateTo)}`
-  if (dateFrom) return `Desde ${fmt(dateFrom)}`
-  return `Hasta ${fmt(dateTo)}`
 }
 
 export function getPeriodBounds(period, offsetMonths = 0) {
@@ -86,26 +70,6 @@ export function getPeriodBounds(period, offsetMonths = 0) {
 
 export function getComparePeriodBounds(period) {
   return getPeriodBounds(period, 1)
-}
-
-export function calculateHealthScore({
-  completion_rate,
-  orders_growth,
-  active_orders
-}) {
-  const completionWeight = 0.4
-  const growthWeight = 0.3
-  const activityWeight = 0.3
-
-  const completionScore = Math.min(100, completion_rate)
-  const growthScore = Math.min(100, Math.max(0, 50 + orders_growth))
-  const activityScore = active_orders > 0 ? 20 : 0
-
-  return Math.round(
-    completionScore * completionWeight +
-    growthScore * growthWeight +
-    activityScore * activityWeight
-  )
 }
 
 export function getSeverityConfig(severity) {

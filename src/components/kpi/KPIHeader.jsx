@@ -1,6 +1,6 @@
 import { Icons } from '../../utils/icons'
 
-export default function KPIHeader({ onRefresh, title = "Dashboard KPI", subtitle = "Resumen ejecutivo del estado operativo del sistema" }) {
+export default function KPIHeader({ onRefresh, loading, title = "Dashboard KPI", subtitle = "Resumen ejecutivo del estado operativo del sistema" }) {
   return (
     <div className="kpi-banner">
       <div className="kpi-banner-content">
@@ -11,8 +11,13 @@ export default function KPIHeader({ onRefresh, title = "Dashboard KPI", subtitle
         </div>
 
         <div className="kpi-banner-right">
-          <button className="kpi-btn banner-refresh" onClick={onRefresh}>
-            <Icons.Refresh /> Refrescar
+          <button className="kpi-btn banner-refresh" onClick={onRefresh} disabled={loading}>
+            {loading ? (
+              <span className="kpi-spinner-sm" />
+            ) : (
+              <Icons.Refresh />
+            )}
+            {loading ? 'Cargando...' : 'Refrescar'}
           </button>
         </div>
       </div>
