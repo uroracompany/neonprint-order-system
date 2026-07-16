@@ -44,7 +44,7 @@ const base64ToBlob = (base64, contentType) => {
 };
 
 const importRemoteFileFromDraggedUrl = async (url, mode) => {
-  const { response, result } = await adminApiFetch("/api/files-import-url", { url, mode });
+  const { response, result } = await adminApiFetch("/api/files", { action: "import-url", url, mode });
   if (!response.ok) throw new Error(result?.error || DRAGGED_URL_ERROR);
   if (!result?.base64 || !result?.fileName) throw new Error(DRAGGED_URL_ERROR);
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useKPI } from '../../hooks/useKPI'
 import { Icons } from '../../utils/icons'
 import KPIHeader from './KPIHeader'
@@ -14,13 +14,14 @@ import KPIMaterialsAnalytics from './KPIMaterialsAnalytics'
 import KPIUserAnalytics from './KPIUserAnalytics'
 import KPIProductionInsights from './KPIProductionInsights'
 import KPIAlertsPanel from './KPIAlertsPanel'
+import { SellerDetailView } from './KPISellerIntelligence'
 
 const TABS = [
   { id: 'overview', label: 'Resumen Ejecutivo', icon: <Icons.Dashboard /> },
   { id: 'orders', label: 'Órdenes', icon: <Icons.Orders /> },
   { id: 'clients', label: 'Clientes', icon: <Icons.User /> },
   { id: 'materials', label: 'Materiales', icon: <Icons.Package /> },
-  { id: 'users', label: 'Usuarios', icon: <Icons.Users /> },
+  { id: 'users', label: 'Empleados', icon: <Icons.Users /> },
   { id: 'production', label: 'Producción', icon: <Icons.Brush /> },
   { id: 'alerts', label: 'Alertas', icon: <Icons.AlertCircle /> },
 ]
@@ -62,10 +63,42 @@ function CriticalAlertsInline({ alerts }) {
 
 export default function KPIModule() {
   const {
-    data, loading, error, refresh,
+    data, loading, error, refresh, period, customDateFrom, customDateTo,
   } = useKPI()
 
   const [activeTab, setActiveTab] = useState('overview')
+  const [sellerDetailId, setSellerDetailId] = useState(null)
+
+  const getDateBounds = useCallback(() => {
+    if (period === 'custom' && customDateFrom && customDateTo) {
+      return { date_from: customDateFrom, date_to: customDateTo }
+    }
+    const now = new Date()
+    let start, end
+    switch (period) {
+      case 'today':
+        start = new Date(now.setHours(0, 0, 0, 0))
+        end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
+        break
+      case 'week':
+        start = new Date(now)
+        start.setDate(now.getDate() - now.getDay())
+        start.setHours(0, 0, 0, 0)
+        end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000)
+        break
+      case 'year':
+        start = new Date(now.getFullYear(), 0, 1)
+        end = new Date(now.getFullYear() + 1, 0, 1)
+        break
+      default:
+        start = new Date(now.getFullYear(), now.getMonth(), 1)
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    }
+    return { date_from: start.toISOString(), date_to: end.toISOString() }
+  }, [period, customDateFrom, customDateTo])
+
+  const handleSellerClick = useCallback((sellerId) => { setSellerDetailId(sellerId) }, [])
+  const handleSellerBack = useCallback(() => { setSellerDetailId(null) }, [])
 
   if (loading && !data) {
     return (
@@ -95,42 +128,48 @@ export default function KPIModule() {
 
   return (
     <section className="pa-section">
-      <KPIHeader
-        onRefresh={refresh}
-        loading={loading}
-      />
+      {sellerDetailId ? (
+        <SellerDetailView sellerId={sellerDetailId} getDateBounds={getDateBounds} onBack={handleSellerBack} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} />
+      ) : (
+        <>
+          <KPIHeader
+            onRefresh={refresh}
+            loading={loading}
+          />
 
-      <div className="kpi-tabs">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`kpi-tab ${activeTab === tab.id ? 'active' : ''}`}
-          >
-            {tab.icon}
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </div>
+          <div className="kpi-tabs">
+            {TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`kpi-tab ${activeTab === tab.id ? 'active' : ''}`}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
 
-      {activeTab === 'overview' && (
-        <div className="kpi-tab-content" key="overview">
-          <KPISummaryCards data={data} />
-          <KPIOrderPipeline data={data} />
-          <KPIProductionMini data={data} />
-          <KPIStatusTrend data={data} />
-          <KPICreditsSummary data={data} />
-          <KPIQualityMetrics data={data} />
-          <CriticalAlertsInline alerts={data?.smart_alerts} />
-        </div>
+          {activeTab === 'overview' && (
+            <div className="kpi-tab-content" key="overview">
+              <KPISummaryCards data={data} />
+              <KPIOrderPipeline data={data} />
+              <KPIProductionMini data={data} />
+              <KPIStatusTrend data={data} />
+              <KPICreditsSummary data={data} />
+              <KPIQualityMetrics data={data} />
+              <CriticalAlertsInline alerts={data?.smart_alerts} />
+            </div>
+          )}
+
+          {activeTab === 'orders' && <div className="kpi-tab-content" key="orders"><KPIOrdersAnalytics data={data} /></div>}
+          {activeTab === 'clients' && <div className="kpi-tab-content" key="clients"><KPIClientAnalytics data={data} /></div>}
+          {activeTab === 'materials' && <div className="kpi-tab-content" key="materials"><KPIMaterialsAnalytics data={data} /></div>}
+          {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={handleSellerClick} /></div>}
+          {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} /></div>}
+          {activeTab === 'alerts' && <div className="kpi-tab-content" key="alerts"><KPIAlertsPanel data={data} /></div>}
+        </>
       )}
-
-      {activeTab === 'orders' && <div className="kpi-tab-content" key="orders"><KPIOrdersAnalytics data={data} /></div>}
-      {activeTab === 'clients' && <div className="kpi-tab-content" key="clients"><KPIClientAnalytics data={data} /></div>}
-      {activeTab === 'materials' && <div className="kpi-tab-content" key="materials"><KPIMaterialsAnalytics data={data} /></div>}
-      {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} /></div>}
-      {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} /></div>}
-      {activeTab === 'alerts' && <div className="kpi-tab-content" key="alerts"><KPIAlertsPanel data={data} /></div>}
     </section>
   )
 }

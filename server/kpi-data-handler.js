@@ -96,6 +96,158 @@ export async function handleKpiData(body, env) {
         break
       }
 
+      case 'sales_overview': {
+        const { data, error } = await supabase.rpc('kpi_sales_overview', {
+          p_date_from: date_from,
+          p_date_to: date_to,
+          p_compare_from: compare_from,
+          p_compare_to: compare_to,
+        })
+        if (error) throw error
+        result = data
+        break
+      }
+
+      case 'seller_detail': {
+        const { seller_id } = body
+        if (!seller_id) return { status: 400, body: { error: 'seller_id es requerido' } }
+        const { data, error } = await supabase.rpc('kpi_seller_detail', {
+          p_seller_id: seller_id,
+          p_date_from: date_from,
+          p_date_to: date_to,
+          p_compare_from: compare_from,
+          p_compare_to: compare_to,
+        })
+        if (error) throw error
+        result = data
+        break
+      }
+
+      case 'seller_daily_trend': {
+        const { metric = 'orders' } = body
+        const { data, error } = await supabase.rpc('kpi_seller_daily_trend', {
+          p_metric: metric,
+          p_date_from: date_from,
+          p_date_to: date_to,
+        })
+        if (error) throw error
+        result = data
+        break
+      }
+
+      case 'seller_profile': {
+        const { seller_id } = body
+        if (!seller_id) return { status: 400, body: { error: 'seller_id es requerido' } }
+
+        let ordersQuery = supabase.from('orders')
+          .select('client_id, client_name, material, status, payment_status, created_at')
+          .or(`seller_id.eq.${seller_id},created_by.eq.${seller_id}`)
+        if (date_from) ordersQuery = ordersQuery.gte('created_at', date_from)
+        if (date_to) ordersQuery = ordersQuery.lt('created_at', date_to)
+
+        const { data: ordersData, error: ordersError } = await ordersQuery
+        if (ordersError) throw ordersError
+
+        const clientMap = {}
+        ;(ordersData || []).forEach(o => {
+          const name = (o.client_name || '').trim()
+          if (!name) return
+          if (!clientMap[name]) clientMap[name] = { client_id: o.client_id, client_name: name, total: 0, completed: 0, cancelled: 0 }
+          clientMap[name].total++
+          const st = (o.status || '').toLowerCase()
+          if (st === 'in_completed' || st === 'in_delivered') clientMap[name].completed++
+          if (st === 'cancelled') clientMap[name].cancelled++
+        })
+
+        const top_clients = Object.values(clientMap)
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 10)
+          .map(c => ({
+            client_id: c.client_id,
+            client_name: c.client_name,
+            total_orders: c.total,
+            completed_orders: c.completed,
+            cancel_rate: c.total > 0 ? Math.round(c.cancelled / c.total * 1000) / 10 : 0,
+          }))
+
+        const matMap = {}
+        let totalMatCount = 0
+        ;(ordersData || []).forEach(o => {
+          if (!o.material) return
+          o.material.split(',').map(s => s.trim()).filter(Boolean).forEach(m => {
+            matMap[m] = (matMap[m] || 0) + 1
+            totalMatCount++
+          })
+        })
+
+        const materials = Object.entries(matMap)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([name, count]) => ({
+            name,
+            count,
+            pct: totalMatCount > 0 ? Math.round(count / totalMatCount * 1000) / 10 : 0,
+          }))
+
+        const days = (date_from && date_to) ? Math.max((new Date(date_to) - new Date(date_from)) / 86400000, 1) : 30
+        const totalOrders = (ordersData || []).length
+
+        const lastOrderDate = totalOrders > 0
+          ? new Date(Math.max(...ordersData.map(o => new Date(o.created_at))))
+          : null
+        const daysSinceLastOrder = lastOrderDate
+          ? Math.floor((Date.now() - lastOrderDate.getTime()) / 86400000)
+          : null
+
+        const activeOrders = (ordersData || []).filter(o => {
+          const st = (o.status || '').toLowerCase()
+          return st !== 'cancelled' && st !== 'in_completed' && st !== 'in_delivered'
+        })
+        const pendingPaymentOrders = activeOrders.filter(o => {
+          const ps = (o.payment_status || '').toLowerCase()
+          return ps === 'credito' || ps === 'parcial' || ps === 'pending_payment'
+        })
+        const pendingPaymentPct = activeOrders.length > 0
+          ? Math.round(pendingPaymentOrders.length / activeOrders.length * 1000) / 10
+          : 0
+
+        let clientsRegistered = 0
+        try {
+          const { count } = await supabase.from('clients')
+            .select('id', { count: 'exact', head: true })
+            .eq('created_by', seller_id)
+            .gte('created_at', date_from || '1970-01-01')
+            .lt('created_at', date_to || new Date().toISOString())
+          clientsRegistered = count || 0
+        } catch { /* ignore */ }
+
+        result = {
+          top_clients,
+          materials,
+          order_frequency: {
+            per_day: totalOrders > 0 ? Math.round(totalOrders / days * 100) / 100 : 0,
+            per_week: totalOrders > 0 ? Math.round(totalOrders / (days / 7) * 100) / 100 : 0,
+            per_month: totalOrders > 0 ? Math.round(totalOrders / (days / 30) * 100) / 100 : 0,
+          },
+          days_since_last_order: daysSinceLastOrder,
+          pending_payment_pct: pendingPaymentPct,
+          clients_registered: clientsRegistered,
+        }
+        break
+      }
+
+      case 'seller_metrics': {
+        const { metric = 'orders' } = body
+        const { data, error } = await supabase.rpc('kpi_seller_metrics', {
+          p_metric: metric,
+          p_date_from: date_from,
+          p_date_to: date_to,
+        })
+        if (error) throw error
+        result = data
+        break
+      }
+
       case 'sla_violations': {
         const { data, error } = await supabase.rpc('kpi_sla_violations')
         if (error) throw error
@@ -249,7 +401,7 @@ export async function handleKpiData(body, env) {
         const now = new Date()
         const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000)
 
-        const [bs, oa, ca, ui, pi, sa, ot, sv, empCount, clientCount, credito, parcial, pendingPayment, pendingAged, materialsResult] = await Promise.all([
+        const [bs, oa, ca, ui, pi, sa, ot, sv, empCount, empCountAll, clientCount, credito, parcial, pendingPayment, pendingAged, materialsResult] = await Promise.all([
           supabase.rpc('kpi_business_summary', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
           supabase.rpc('kpi_orders_analytics', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
           supabase.rpc('kpi_client_analytics', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
@@ -259,6 +411,7 @@ export async function handleKpiData(body, env) {
           supabase.rpc('kpi_orders_trend', { p_days: 30 }),
           supabase.rpc('kpi_sla_violations'),
           supabase.from('profiles').select('id', { count: 'exact', head: true }).neq('role', 'admin').eq('employment_status', true),
+          supabase.from('profiles').select('id', { count: 'exact', head: true }).neq('role', 'admin'),
           supabase.from('clients').select('id', { count: 'exact', head: true }),
           supabase.from('orders').select('id', { count: 'exact', head: true }).eq('payment_status', 'credito').not('status', 'in', '(cancelled,in_completed,in_delivered)'),
           supabase.from('orders').select('id', { count: 'exact', head: true }).eq('payment_status', 'parcial').not('status', 'in', '(cancelled,in_completed,in_delivered)'),
@@ -295,6 +448,7 @@ export async function handleKpiData(body, env) {
         if (ot.error) console.error('kpi_orders_trend:', ot.error.message)
         if (sv.error) console.error('kpi_sla_violations:', sv.error.message)
         if (empCount.error) console.error('total_employees:', empCount.error.message)
+        if (empCountAll.error) console.error('total_employees_all:', empCountAll.error.message)
         if (clientCount.error) console.error('total_clients:', clientCount.error.message)
 
         const safeQuery = (fn) => fn().catch(err => { console.error('client_kpi query error:', err.message); return { data: [] } })
@@ -706,6 +860,7 @@ export async function handleKpiData(body, env) {
           orders_trend: ot.data || null,
           sla_violations: sv.data || null,
           total_employees: empCount.count || 0,
+          total_employees_all: empCountAll.count || 0,
           total_clients: clientCount.count || 0,
           payment_summary: {
             credito: credito.count || 0,

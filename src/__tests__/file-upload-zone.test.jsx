@@ -122,7 +122,8 @@ describe("FileUploadZone", () => {
       );
     });
     expect(onFilesAccepted.mock.calls[0][0][0].name).toBe("imagen.png");
-    expect(adminApiFetch).toHaveBeenCalledWith("/api/files-import-url", {
+    expect(adminApiFetch).toHaveBeenCalledWith("/api/files", {
+      action: "import-url",
       url: "https://example.com/imagen.png",
       mode: "image",
     });

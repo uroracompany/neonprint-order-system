@@ -1714,17 +1714,34 @@ export default function Dashboard() {
     };
   }, [syncCreditReminderServerTime, user?.id]);
 
-  const loadOrders = useCallback(async (silent = false) => {
+  const loadOrders = useCallback(async (silent = false, retryCount = 0) => {
     if (!silent) {
       setLoadingOrders(true);
       setLoadOrdersError(null);
     }
 
     try {
-      const { response, result } = await adminApiFetch("/api/admin-list-orders", { page: 1, pageSize: 1000 });
+      const { response, result } = await adminApiFetch("/api/admin", { action: "list-orders", page: 1, pageSize: 1000 });
 
       if (!response.ok) {
-        throw new Error(result?.error || "No se pudieron cargar ordenes.");
+        const isRateLimit = response.status === 429;
+        const isServerError = response.status >= 500;
+
+        if (isRateLimit && retryCount < 2) {
+          await new Promise(r => setTimeout(r, 2000 * (retryCount + 1)));
+          return loadOrders(silent, retryCount + 1);
+        }
+
+        if (isServerError && retryCount < 1) {
+          await new Promise(r => setTimeout(r, 1500));
+          return loadOrders(silent, retryCount + 1);
+        }
+
+        throw new Error(
+          isRateLimit
+            ? "Demasiadas solicitudes. Espera un momento e intenta de nuevo."
+            : result?.error || "No se pudieron cargar las ordenes."
+        );
       }
 
       applyOrdersSnapshot({
@@ -1739,7 +1756,7 @@ export default function Dashboard() {
     } catch (error) {
       console.error("Error loading orders:", error);
       if (!silent) {
-        setLoadOrdersError(error?.message || "No se pudieron cargar ordenes.");
+        setLoadOrdersError(error?.message || "No se pudieron cargar las ordenes.");
         setOrders([]);
         setLoadingOrders(false);
       }
@@ -1752,7 +1769,7 @@ export default function Dashboard() {
     setLoadUsersError(null);
 
     try {
-      const { response, result } = await adminApiFetch("/api/admin-list-users", { page: 1, pageSize: 500 });
+      const { response, result } = await adminApiFetch("/api/admin", { action: "list-users", page: 1, pageSize: 500 });
 
       if (!response.ok) {
         throw new Error(result?.error || "No se pudieron cargar usuarios.");
@@ -2289,7 +2306,8 @@ export default function Dashboard() {
     if (!deletingOrder?.id) return;
     setDeleteLoading(true);
 
-    const { response, result } = await adminApiFetch("/api/admin-delete-order", {
+    const { response, result } = await adminApiFetch("/api/admin", {
+      action: "delete-order",
       orderId: deletingOrder.id,
     });
 
@@ -2583,7 +2601,8 @@ export default function Dashboard() {
     let response;
     let result;
     try {
-      ({ response, result } = await adminApiFetch("/api/admin-create-user", {
+      ({ response, result } = await adminApiFetch("/api/admin", {
+          action: "create-user",
           name: trimmedName,
           email: trimmedEmail,
           password: trimmedPassword,
@@ -2632,7 +2651,8 @@ export default function Dashboard() {
     let response;
     let result;
     try {
-      ({ response, result } = await adminApiFetch("/api/admin-update-user", {
+      ({ response, result } = await adminApiFetch("/api/admin", {
+          action: "update-user",
           userId: selectedUser.id,
           name: trimmedName,
           email: trimmedEmail,
@@ -2698,7 +2718,8 @@ export default function Dashboard() {
     let result;
 
     try {
-      ({ response, result } = await adminApiFetch("/api/admin-set-user-status", {
+      ({ response, result } = await adminApiFetch("/api/admin", {
+          action: "set-user-status",
           userId: profileId,
           employment_status: nextStatus,
         }));
@@ -2764,13 +2785,13 @@ export default function Dashboard() {
     setEmployeeDeleteLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/admin-delete-user", {
+      const res = await fetch("/api/admin", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? ""}`,
         },
-        body: JSON.stringify({ userId: employeeToDelete.id }),
+        body: JSON.stringify({ action: "delete-user", userId: employeeToDelete.id }),
       });
       const payload = await res.json();
       if (!res.ok || payload.error) throw new Error(payload.error || "No se pudo eliminar el empleado.");

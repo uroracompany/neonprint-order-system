@@ -42,7 +42,84 @@ function createApiHandler(path, handler) {
             const result = await Promise.race([
               handler(body, { ...env, authHeader }),
               new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("El servicio no respondió a tiempo.")), HANDLER_TIMEOUT_MS)
+                setTimeout(() => reject(new Error("El servicio no respondio a tiempo.")), HANDLER_TIMEOUT_MS)
+              ),
+            ]);
+
+            res.statusCode = result.status;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify(result.body));
+          } catch (error) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: error?.message || "Error interno del servidor." }));
+          }
+        });
+      });
+    },
+  };
+}
+
+const ADMIN_ACTIONS = {
+  "list-orders": handleAdminListOrders,
+  "list-users": handleAdminListUsers,
+  "create-user": handleAdminCreateUser,
+  "update-user": handleAdminUpdateUser,
+  "set-user-status": handleAdminSetUserStatus,
+  "delete-user": handleAdminDeleteUser,
+  "delete-order": handleAdminDeleteOrderWithFiles,
+};
+
+const FILES_ACTIONS = {
+  "initiate-upload": handleInitiateFileUpload,
+  "import-url": handleImportRemoteFile,
+  "download-url": handleFileDownloadUrl,
+  "complete-upload": handleCompleteFileUpload,
+};
+
+function createConsolidatedAdminHandler() {
+  return createConsolidatedHandler("/api/admin", ADMIN_ACTIONS);
+}
+
+function createConsolidatedFilesHandler() {
+  return createConsolidatedHandler("/api/files", FILES_ACTIONS);
+}
+
+function createConsolidatedHandler(path, actionsMap) {
+  return {
+    name: `api-handler-${path}-consolidated`,
+    configureServer(server) {
+      const env = loadEnv(server.config.mode, process.cwd(), "");
+
+      server.middlewares.use(path, async (req, res, next) => {
+        if (req.method !== "POST") {
+          return next();
+        }
+
+        let rawBody = "";
+        req.on("data", (chunk) => {
+          rawBody += chunk;
+        });
+
+        req.on("end", async () => {
+          try {
+            const body = rawBody ? JSON.parse(rawBody) : {};
+            const authHeader = req.headers["authorization"] || "";
+            const { action, ...payload } = body;
+            const handler = actionsMap[action];
+
+            if (!handler) {
+              res.statusCode = 400;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: `Accion no valida: ${action}` }));
+              return;
+            }
+
+            const HANDLER_TIMEOUT_MS = 20000;
+            const result = await Promise.race([
+              handler(payload, { ...env, authHeader }),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("El servicio no respondio a tiempo.")), HANDLER_TIMEOUT_MS)
               ),
             ]);
 
@@ -73,6 +150,8 @@ return {
     plugins: [
       react(),
       tailwindcss(),
+      createConsolidatedAdminHandler(),
+      createConsolidatedFilesHandler(),
       createApiHandler("/api/admin-list-orders", handleAdminListOrders),
       createApiHandler("/api/admin-list-users", handleAdminListUsers),
       createApiHandler("/api/admin-create-user", handleAdminCreateUser),

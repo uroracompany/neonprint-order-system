@@ -80,7 +80,8 @@ const registerCompletedUpload = async ({ provider, bucket, path, file, storedUrl
   const orderId = getOrderIdFromStoragePath(path);
   if (!orderId || orderId === "new") return null;
 
-  const { response, result } = await adminApiFetch("/api/files-complete-upload", {
+  const { response, result } = await adminApiFetch("/api/files", {
+    action: "complete-upload",
     provider,
     orderId,
     bucket,
@@ -104,7 +105,8 @@ const markR2UploadFailed = async ({ orderId, fileId }) => {
   if (!orderId || !fileId) return;
 
   try {
-    await adminApiFetch("/api/files-complete-upload", {
+    await adminApiFetch("/api/files", {
+      action: "complete-upload",
       provider: "r2",
       orderId,
       fileId,
@@ -127,7 +129,8 @@ export const uploadOrderAsset = async ({ bucket, path, file }) => {
     const orderId = getOrderIdFromStoragePath(path);
 
     if (orderId && orderId !== "new") {
-      const { response, result } = await adminApiFetch("/api/files-initiate-upload", {
+      const { response, result } = await adminApiFetch("/api/files", {
+        action: "initiate-upload",
         orderId,
         bucket,
         path,
@@ -250,7 +253,7 @@ export const createSignedOrderAssetUrl = async ({ bucket, path, expiresIn = DEFA
 
 export const createSignedOrderAssetUrlFromStoredUrl = async ({ bucket, url, expiresIn = DEFAULT_SIGNED_URL_TTL }) => {
   if (isR2OrderAssetUrl(url)) {
-    const { response, result } = await adminApiFetch("/api/files-download-url", { url, expiresIn });
+    const { response, result } = await adminApiFetch("/api/files", { action: "download-url", url, expiresIn });
     if (!response.ok) return null;
     return result?.url || null;
   }

@@ -12,7 +12,7 @@ export const getDownloadUrl = (url, fileName) => {
 export const resolveOrderAssetUrl = async (url, expiresIn = 600) => {
   if (!isR2OrderAssetUrl(url)) return url;
 
-  const { response, result } = await adminApiFetch("/api/files-download-url", { url, expiresIn });
+  const { response, result } = await adminApiFetch("/api/files", { action: "download-url", url, expiresIn });
   if (!response.ok) {
     throw new Error(result?.error || "No se pudo generar el enlace temporal del archivo.");
   }

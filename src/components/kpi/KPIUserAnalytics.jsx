@@ -1,16 +1,16 @@
 import { useState, useMemo } from 'react'
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts'
 import { Icons } from '../../utils/icons'
-import { formatNumber, formatDays, KPI_CHART_COLORS } from '../../utils/kpiHelpers'
-import KPITooltip from '../ui/KPITooltip'
-
-const PALETTE = { pie: KPI_CHART_COLORS }
+import { formatNumber, formatDays } from '../../utils/kpiHelpers'
+import KPISellerIntelligence from './KPISellerIntelligence'
 
 const SEMANTIC = {
   positive: { iconBg: '#DCFCE7', iconColor: '#16A34A', trendBg: '#DCFCE7', trendColor: '#16A34A' },
   negative: { iconBg: '#FEE2E2', iconColor: '#DC2626', trendBg: '#FEE2E2', trendColor: '#DC2626' },
   neutral:  { iconBg: '#E0F2FE', iconColor: '#0284C7', trendBg: '#E0F2FE', trendColor: '#0284C7' },
 }
+
+const DESIGNER_COLORS = ['#8B5CF6', '#A78BFA', '#C4B5FD', '#DDD6FE', '#EDE9FE', '#7C3AED', '#6D28D9', '#5B21B6', '#4C1D95', '#3B0764']
 
 const PAGE_SIZE = 7
 
@@ -39,77 +39,49 @@ function Pagination({ page, total, pageSize, onPage }) {
   )
 }
 
-export default function KPIUserAnalytics({ data }) {
-  const [sellerSearch, setSellerSearch] = useState('')
-  const [sellerSort, setSellerSort] = useState('orders')
-  const [sellerPage, setSellerPage] = useState(0)
+export default function KPIUserAnalytics({ data, period, customDateFrom, customDateTo, onSellerClick }) {
   const [inactivePage, setInactivePage] = useState(0)
 
-  const users = data?.user_analytics || {}
-  const sellers = useMemo(() => users.sellers || [], [users])
+  const users = useMemo(() => data?.user_analytics || {}, [data])
   const designers = useMemo(() => users.designers || [], [users])
   const inactiveUsers = useMemo(() => users.inactive_users || [], [users])
 
-  const filteredSellers = useMemo(() => {
-    let list = [...sellers]
-    if (sellerSearch) {
-      const q = sellerSearch.toLowerCase()
-      list = list.filter(s => s.name?.toLowerCase().includes(q))
-    }
-    switch (sellerSort) {
-      case 'name': list.sort((a, b) => (a.name || '').localeCompare(b.name || '')); break
-      case 'rate': list.sort((a, b) => (b.completed_rate || 0) - (a.completed_rate || 0)); break
-      case 'days': list.sort((a, b) => (a.avg_cycle_days || 999) - (b.avg_cycle_days || 999)); break
-      default: list.sort((a, b) => (b.orders_created || 0) - (a.orders_created || 0))
-    }
-    return list
-  }, [sellers, sellerSearch, sellerSort])
+  const totalEmployeesAll = data?.total_employees_all || 0
+  const activeEmployees = totalEmployeesAll - inactiveUsers.length
+
+  const designerPieData = useMemo(() => {
+    const total = designers.reduce((s, d) => s + (d.orders_processed || 0), 0)
+    return designers.slice(0, 10).map((d, i) => ({
+      name: d.name,
+      value: d.orders_processed || 0,
+      pct: total > 0 ? Math.round((d.orders_processed / total) * 1000) / 10 : 0,
+      color: DESIGNER_COLORS[i % DESIGNER_COLORS.length],
+      avg_days_per_order: d.avg_days_per_order || 0,
+    }))
+  }, [designers])
 
   if (!data) return (
     <div className="kpi-section">
       <div className="kpi-section-header">
         <div>
-          <span className="kpi-section-kicker">Panel de Usuarios</span>
-          <h2 className="kpi-section-title">Productividad de Usuarios</h2>
-          <p className="kpi-section-subtitle">Rankings y rendimiento por rol</p>
+          <span className="kpi-section-kicker">Panel de Empleados</span>
+          <h2 className="kpi-section-title">Estado del Equipo</h2>
+          <p className="kpi-section-subtitle">Vista general del equipo de trabajo</p>
         </div>
       </div>
       <div className="kpi-empty-state">
         <div className="kpi-empty-icon"><Icons.Users size={28} /></div>
         <div className="kpi-empty-title">Sin datos disponibles</div>
-        <div className="kpi-empty-message">Los datos de usuarios aún no están disponibles. Intenta refrescar el panel.</div>
+        <div className="kpi-empty-message">Los datos de empleados aún no están disponibles. Intenta refrescar el panel.</div>
       </div>
     </div>
   )
 
-  const totalOrders = sellers.reduce((s, se) => s + (se.orders_created || 0), 0)
-  const avgCompletion = sellers.length > 0
-    ? Math.round(sellers.reduce((s, se) => s + (se.completed_rate || 0), 0) / sellers.length)
-    : 0
-  const avgDays = sellers.length > 0
-    ? (sellers.reduce((s, se) => s + (se.avg_cycle_days || 0), 0) / sellers.length)
-    : 0
-
   const heroCards = [
-    { label: 'Total Vendedores', value: formatNumber(sellers.length), icon: Icons.User, trend: sellers.length > 0 ? { color: SEMANTIC.positive.trendColor, text: 'Activos' } : null },
-    { label: 'Total Diseñadores', value: formatNumber(designers.length), icon: Icons.Brush, trend: designers.length > 0 ? { color: SEMANTIC.positive.trendColor, text: 'Activos' } : null },
-    { label: 'Órdenes Totales', value: formatNumber(totalOrders), icon: Icons.Orders },
-    { label: '% Completado Prom.', value: `${avgCompletion}%`, icon: Icons.Check, trend: avgCompletion >= 80 ? { color: SEMANTIC.positive.trendColor, text: 'Bueno' } : { color: SEMANTIC.negative.trendColor, text: 'Mejorar' } },
-    { label: 'Días Promedio', value: formatDays(avgDays), icon: Icons.Clock },
+    { label: 'Total Empleados', value: formatNumber(totalEmployeesAll), icon: Icons.Users, trend: totalEmployeesAll > 0 ? { color: SEMANTIC.neutral.trendColor, text: 'Todos' } : null },
+    { label: 'Empleados Activos', value: formatNumber(activeEmployees), icon: Icons.UserCheck, trend: activeEmployees > 0 ? { color: SEMANTIC.positive.trendColor, text: 'Recientes' } : null },
     { label: 'Inactivos (7d+)', value: formatNumber(inactiveUsers.length), icon: Icons.UserMinus, trend: inactiveUsers.length > 0 ? { color: SEMANTIC.negative.trendColor, text: 'Atención' } : { color: SEMANTIC.positive.trendColor, text: 'OK' } },
   ]
-
-  const sellerPaged = filteredSellers.slice(sellerPage * PAGE_SIZE, (sellerPage + 1) * PAGE_SIZE)
-
-  const sellerBarData = sellers.slice(0, 10).map(s => ({
-    name: s.name?.length > 12 ? s.name.slice(0, 12) + '...' : s.name,
-    'Órdenes': s.orders_created,
-  }))
-
-  const designerBarData = designers.slice(0, 10).map(d => ({
-    name: d.name?.length > 12 ? d.name.slice(0, 12) + '...' : d.name,
-    'Procesadas': d.orders_processed,
-  }))
 
   const inactivePaged = inactiveUsers.slice(inactivePage * PAGE_SIZE, (inactivePage + 1) * PAGE_SIZE)
 
@@ -117,14 +89,14 @@ export default function KPIUserAnalytics({ data }) {
     <div className="kpi-section">
       <div className="kpi-section-header">
         <div>
-          <span className="kpi-section-kicker">Panel de Usuarios</span>
-          <h2 className="kpi-section-title">Productividad de Usuarios</h2>
-          <p className="kpi-section-subtitle">Rankings y rendimiento por rol</p>
+          <span className="kpi-section-kicker">Panel de Empleados</span>
+          <h2 className="kpi-section-title">Estado del Equipo</h2>
+          <p className="kpi-section-subtitle">Vista general del equipo de trabajo</p>
         </div>
       </div>
 
       {/* Hero Cards */}
-      <div className="kpi-hero-grid kpi-hero-grid--6" style={{ marginBottom: 24 }}>
+      <div className="kpi-hero-grid kpi-hero-grid--3" style={{ marginBottom: 24 }}>
         {heroCards.map((h, i) => {
           const Icon = h.icon
           return (
@@ -146,38 +118,54 @@ export default function KPIUserAnalytics({ data }) {
 
       {/* Charts */}
       <div className="kpi-grid-2col">
-        <div className="kpi-card" style={{ padding: 24 }}>
-          <h3 className="kpi-card-subtitle">Ranking de Vendedores</h3>
-          {sellerBarData.length > 0 ? (
-            <div style={{ height: 280 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sellerBarData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E8EDF8" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip content={<KPITooltip />} wrapperStyle={{ zIndex: 9999 }} />
-                  <Bar dataKey="Órdenes" fill="#06B6D4" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">Sin datos de vendedores</div></div>
-          )}
-        </div>
-
+        {/* Diseñadores Pie */}
         <div className="kpi-card" style={{ padding: 24 }}>
           <h3 className="kpi-card-subtitle">Ranking de Diseñadores</h3>
-          {designerBarData.length > 0 ? (
-            <div style={{ height: 280 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={designerBarData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E8EDF8" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip content={<KPITooltip />} wrapperStyle={{ zIndex: 9999 }} />
-                  <Bar dataKey="Procesadas" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+          {designerPieData.length > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 32, marginTop: 16 }}>
+              <div style={{ flex: '0 0 200px', height: 200 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={designerPieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
+                      {designerPieData.map((e, i) => <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2} />)}
+                    </Pie>
+                    <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null
+                      const d = payload[0].payload
+                      return (
+                        <div style={{ background: '#fff', border: '1px solid #DDE3EF', borderRadius: 8, padding: '10px 14px', boxShadow: '0 4px 12px rgba(15,30,64,0.08)', fontSize: 13 }}>
+                          <p style={{ margin: 0, fontWeight: 600, color: d.color }}>{d.name}</p>
+                          <p style={{ margin: '4px 0 0', fontWeight: 500 }}>{formatNumber(d.value)} órdenes — {d.pct}%</p>
+                        </div>
+                      )
+                    }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 220, overflowY: 'auto' }}>
+                {designerPieData.map((item, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8edf8' }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#091127', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>#{i + 1} {item.name}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: item.color, flexShrink: 0 }}>{item.pct}%</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ flex: 1, height: 4, background: '#e8edf8', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ width: `${item.pct}%`, height: '100%', background: item.color, borderRadius: 3 }} />
+                        </div>
+                        <span style={{ fontSize: 11, color: '#64748b', flexShrink: 0 }}>{formatNumber(item.value)} ord.</span>
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        <span style={{ fontSize: 11, color: '#64748b' }}>
+                          Tiempo promedio: <span style={{ fontWeight: 600, color: item.avg_days_per_order <= 3 ? '#10B981' : item.avg_days_per_order <= 5 ? '#F59E0B' : '#EF4444' }}>{formatDays(item.avg_days_per_order)}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">Sin datos de diseñadores</div></div>
@@ -185,75 +173,14 @@ export default function KPIUserAnalytics({ data }) {
         </div>
       </div>
 
-      {/* Seller Table */}
-      <div className="kpi-card" style={{ padding: 0, marginTop: 24 }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #DDE3EF' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-            <h3 className="kpi-card-subtitle" style={{ textTransform: 'none', letterSpacing: 0, marginBottom: 0 }}>Detalle por Vendedor</h3>
-            <div className="kpi-filter-row" style={{ gap: 10 }}>
-              <label style={{ flex: '1 1 160px', minWidth: 160 }}>
-                <div style={{ position: 'relative' }}>
-                  <Icons.Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
-                  <input type="text" placeholder="Buscar vendedor..." value={sellerSearch}
-                    onChange={e => { setSellerSearch(e.target.value); setSellerPage(0) }}
-                    style={{ paddingLeft: 32 }} />
-                </div>
-              </label>
-              <label style={{ flex: '0 0 140px' }}>
-                <select value={sellerSort} onChange={e => setSellerSort(e.target.value)}>
-                  <option value="orders">Más órdenes</option>
-                  <option value="rate">Mejor % completado</option>
-                  <option value="days">Menor días promedio</option>
-                  <option value="name">Nombre A-Z</option>
-                </select>
-              </label>
-            </div>
-          </div>
-        </div>
-        <table className="kpi-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Nombre</th>
-              <th>Rol</th>
-              <th>Órdenes</th>
-              <th>% Completado</th>
-              <th>Días Promedio</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sellerPaged.map((s, i) => (
-              <tr key={s.id || i}>
-                <td className="kpi-table-rank">{sellerPage * PAGE_SIZE + i + 1}</td>
-                <td className="kpi-table-name">{s.name}</td>
-                <td>{ROLE_LABELS[s.role] || s.role}</td>
-                <td className="kpi-table-stat">{s.orders_created}</td>
-                <td className="kpi-table-stat">
-                  <span style={{ color: (s.completed_rate || 0) >= 80 ? '#10B981' : (s.completed_rate || 0) >= 50 ? '#F59E0B' : '#EF4444' }}>
-                    {s.completed_rate || 0}%
-                  </span>
-                </td>
-                <td className="kpi-table-stat">{formatDays(s.avg_cycle_days)}</td>
-              </tr>
-            ))}
-            {sellerPaged.length === 0 && (
-              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 20, color: '#8899B5' }}>
-                {sellerSearch ? 'No se encontraron vendedores' : 'Sin datos disponibles'}
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-        <div style={{ padding: '12px 20px', borderTop: '1px solid #DDE3EF', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#64748b' }}>{filteredSellers.length} vendedor{filteredSellers.length !== 1 ? 'es' : ''}</span>
-          <Pagination page={sellerPage} total={filteredSellers.length} pageSize={PAGE_SIZE} onPage={setSellerPage} />
-        </div>
-      </div>
+      {/* Centro de Inteligencia Comercial */}
+      <KPISellerIntelligence period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={onSellerClick} />
 
       {/* Inactive Users */}
       {inactiveUsers.length > 0 && (
         <div className="kpi-card" style={{ padding: 0, marginTop: 20 }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #DDE3EF' }}>
-            <h3 className="kpi-card-subtitle danger" style={{ textTransform: 'none', letterSpacing: 0, marginBottom: 0 }}>Usuarios Inactivos (7+ días)</h3>
+            <h3 className="kpi-card-subtitle danger" style={{ textTransform: 'none', letterSpacing: 0, marginBottom: 0 }}>Empleados Inactivos (7+ días)</h3>
           </div>
           <table className="kpi-table">
             <thead>
@@ -272,7 +199,7 @@ export default function KPIUserAnalytics({ data }) {
             </tbody>
           </table>
           <div style={{ padding: '12px 20px', borderTop: '1px solid #DDE3EF', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#64748b' }}>{inactiveUsers.length} usuario{inactiveUsers.length !== 1 ? 's' : ''}</span>
+            <span style={{ fontSize: 12, color: '#64748b' }}>{inactiveUsers.length} empleado{inactiveUsers.length !== 1 ? 's' : ''}</span>
             <Pagination page={inactivePage} total={inactiveUsers.length} pageSize={PAGE_SIZE} onPage={setInactivePage} />
           </div>
         </div>
