@@ -1,30 +1,103 @@
-# Auditoria: send_order_to_production
+# Final Comprehensive Review — Production & Delivery Intelligence
 
-## Resultado principal
+## VERDICT: NEEDS WORK
 
-El arreglo minimo de `send_order_to_production` no debe ampliar roles. Debe permitir solo:
+One functional bug and one code quality issue remain. All structure, imports, hooks, and data flows are otherwise correct.
 
-- `admin`
-- `quote`
+---
 
-El rol `quote` es Caja en el sistema. Permitir `caja` como string adicional seria incorrecto porque no es un rol canonico almacenado en `profiles.role`.
+## 1. Backend `server/kpi-data-handler.js` — ALL CASES PRESENT ✅
 
-La variable local que almacena el rol de `profiles` debe llamarse `v_profile_role` o similar. No debe llamarse `current_role`, porque ese nombre colisiona con el identificador especial de Postgres y puede volver a evaluar el rol SQL activo (`authenticated`) en vez del rol funcional del usuario.
+| Case | Lines | Key Data |
+|------|-------|----------|
+| `production_overview` | 1155–1229 | area ranking, trend (by area×date), comparison |
+| `production_area_detail` | 1231–1303 | employee ranking, bottlenecks (>3d), pie data |
+| `production_employee_detail` | 1305–1360 | `files_by_area`, daily trend, status breakdown |
+| `production_employee_ranking` | 1362–1425 | area filtering via `area_code`, rank, pct |
+| `production_employee_activity` | 1427–1472 | order_events + file_events, paginated |
+| `production_daily_trend` | 1474–1497 | completed files by area×date |
+| `delivery_metrics` | 1503–1591 | user ranking, `on_time_rate`, `avg_delivery_time_days`, trend |
+| `delivery_detail` | 1593–1676 | payment breakdown, comparison, `vs_team` |
+| `delivery_profile` | 1678–1729 | `top_clients`, `materials`, `order_frequency` |
+| `delivery_daily_trend` | 1731–1755 | delivered + pending by date |
 
-## Riesgos detectados
+No issues. All required parameters validated, error handling consistent.
 
-1. `recalculate_order_production_status(uuid)` es `SECURITY DEFINER` y esta concedida a `authenticated` en `supabase/20260606_file_level_production.sql`. Riesgo: usuarios autenticados podrian intentar recalcular estados sin pasar por `send_order_to_production`.
-2. `update_production_file_status(uuid, text)` es `SECURITY DEFINER` y valida area productiva, pero debe asegurar que la orden ya este oficialmente en produccion antes de permitir avances de archivo.
-3. `orders_update_by_role` permite updates amplios a usuarios asignados. Riesgo: un cliente directo podria intentar cambiar `orders.status` sin pasar por RPC.
-4. `order_production_files_update_by_owner` permite updates de archivos a roles previos del flujo mientras la orden no este en produccion. Esto puede ser intencional para clasificacion, pero debe vigilarse para que no permita avances de estado indebidos.
-5. `employment_status = false` se bloquea en UI, pero no en todas las funciones/RLS. Una sesion vigente de una cuenta desactivada podria seguir intentando llamadas directas.
-6. `debug_auth_uid()` expone datos de diagnostico a `authenticated`. Es util para este incidente, pero debe retirarse o restringirse despues de confirmar el fix.
-7. El rol legacy `printer` sigue en administracion, pero `/production` usa `digital_producer`, `dtf_producer` y `ploteo_producer`. Puede generar usuarios con acceso confuso o incompleto.
+---
 
-## Recomendaciones posteriores al fix principal
+## 2. `KPIProductionIntelligence.jsx` — ✅ CORRECT
 
-- Revocar `execute` de `recalculate_order_production_status(uuid)` para `authenticated` si solo debe ser llamada internamente.
-- Endurecer `update_production_file_status` para validar que la orden ya tenga `status = 'in_Production'` o estado productivo equivalente.
-- Reemplazar updates directos amplios sobre `orders.status` por RPCs de transicion con validaciones explicitas.
-- Incluir `employment_status` en helpers de autorizacion o en validaciones sensibles.
-- Retirar `debug_auth_uid()` del frontend y revocar su `execute` cuando termine la investigacion.
+| View | Renders | Status |
+|------|---------|--------|
+| GlobalView | 4 hero cards, area ranking cards (click → area detail), LineChart with period selector, comparison | ✅ |
+| AreaDetailView | 4 area hero cards, employee ranking list (click → employee detail), PieChart (status), bottlenecks list | ✅ |
+| EmployeeDetailView | 4 employee hero cards, PieChart (status), BarChart (files by area), activity feed | ✅ |
+
+- **Imports**: `useState`, `useEffect`, `useCallback`, `useMemo`, recharts components, `Icons`, `formatNumber`, `formatDays`, `adminApiFetch` — all used ✅
+- **No unused variables** ✅
+- **Hook order correct** (useState → useCallback → useMemo → useEffect) ✅
+- **All props passed correctly** through navigation chain ✅
+
+---
+
+## 3. `KPIDeliveryIntelligence.jsx` — 1 BUG
+
+| View | Renders | Status |
+|------|---------|--------|
+| GlobalView | 4 hero cards, user ranking with metric selector (click → detail), LineChart, comparison | ⚠️ |
+| DeliveryDetailView | 4 hero cards, trend LineChart, 2× PieCharts (status + payment), top clients, materials, alerts, comparison | ✅ |
+
+- **Imports**: all used ✅
+- **Hook order correct** ✅
+- **No unused variables** ✅
+
+---
+
+### BUG: Discarded `delivery_daily_trend` fetch result in GlobalView (lines 127–139)
+
+```js
+useEffect(() => {
+    let cancelled = false
+    async function fetchTrend() {
+      setLoadingTrend(true)
+      const bounds = getChartBounds()
+      try {
+        await adminApiFetch('/api/kpi-data', { action: 'delivery_daily_trend', ...bounds })
+        // ^^^ Result discarded — no state setter called
+      } catch { /* ignore */ }
+      if (!cancelled) setLoadingTrend(false)
+    }
+    fetchTrend()
+    return () => { cancelled = true }
+  }, [getChartBounds])
+```
+
+**Impact:**
+1. **Chart period selector is non-functional.** When user clicks 7d/1m/3m/6m/Personalizar, `getChartBounds` changes → this effect fires → loading spinner flashes → but the chart data comes from `data.trend` (the `delivery_metrics` overview), NOT from this fetch. The chart always shows the same period data.
+2. **Wasted API call** on every chart period change (response is thrown away).
+3. **Misleading UX** — spinner implies data is being filtered when it isn't.
+
+**Fix:** Add a `trendData` state, store the result, and use it in the LineChart. Alternatively, remove the unused fetch and `loadingTrend` state entirely, since the chart works fine with `delivery_metrics` data (matching the production pattern).
+
+**Preferred fix (remove dead code):** Delete lines 127–139, delete `loadingTrend`/`setLoadingTrend` state (line 67), and remove the `loadingTrend` conditional at line 228. This eliminates the wasted API call and misleading spinner.
+
+---
+
+## 4. Integration `KPIUserAnalytics.jsx` — ✅ CORRECT
+
+- `KPIProductionIntelligence` imported (line 8) ✅
+- `KPIDeliveryIntelligence` imported (line 9) ✅
+- Production section with header (lines 294–302) ✅
+- Delivery section with header (lines 304–312) ✅
+- Both receive `period`, `customDateFrom`, `customDateTo` props ✅
+
+---
+
+## 5. Remaining Issues Summary
+
+| # | Severity | File | Issue | Fix |
+|---|----------|------|-------|-----|
+| 1 | **Functional** | `KPIDeliveryIntelligence.jsx` | `delivery_daily_trend` fetch result discarded in GlobalView — chart period selector non-functional, wasted API call | Remove the dead fetch + `loadingTrend` state (lines 67, 127–139, 228), OR store result and use it |
+| 2 | Cosmetic | `KPIDeliveryIntelligence.jsx` | `DeliveryDetailView` line 460 labels `ord.pending` as "Completadas" — semantically incorrect (these are orders pending delivery, not completed) | Rename to "Pendientes de Entrega" or "Listas para Entregar" |
+
+**Note:** The production GlobalView has the same discarded-fetch pattern for `production_daily_trend` (identified in prior review, still present). Both should be fixed consistently — either remove both dead fetches or wire both up properly.

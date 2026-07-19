@@ -15,6 +15,10 @@ import KPIUserAnalytics from './KPIUserAnalytics'
 import KPIProductionInsights from './KPIProductionInsights'
 import KPIAlertsPanel from './KPIAlertsPanel'
 import { SellerDetailView } from './KPISellerIntelligence'
+import { DesignerDetailView } from './KPIDesignIntelligence'
+import { QuoteDetailView } from './KPIQuoteIntelligence'
+import { ProductionAreaDetailView, ProductionEmployeeDetailView } from './KPIProductionIntelligence'
+import { DeliveryDetailView } from './KPIDeliveryIntelligence'
 
 const TABS = [
   { id: 'overview', label: 'Resumen Ejecutivo', icon: <Icons.Dashboard /> },
@@ -68,6 +72,11 @@ export default function KPIModule() {
 
   const [activeTab, setActiveTab] = useState('overview')
   const [sellerDetailId, setSellerDetailId] = useState(null)
+  const [designerDetailId, setDesignerDetailId] = useState(null)
+  const [quoteDetailId, setQuoteDetailId] = useState(null)
+  const [productionAreaCode, setProductionAreaCode] = useState(null)
+  const [productionEmployeeDetail, setProductionEmployeeDetail] = useState(null)
+  const [deliveryUserId, setDeliveryUserId] = useState(null)
 
   const getDateBounds = useCallback(() => {
     if (period === 'custom' && customDateFrom && customDateTo) {
@@ -76,16 +85,19 @@ export default function KPIModule() {
     const now = new Date()
     let start, end
     switch (period) {
-      case 'today':
-        start = new Date(now.setHours(0, 0, 0, 0))
+      case 'today': {
+        start = new Date(now)
+        start.setHours(0, 0, 0, 0)
         end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
         break
-      case 'week':
+      }
+      case 'week': {
         start = new Date(now)
         start.setDate(now.getDate() - now.getDay())
         start.setHours(0, 0, 0, 0)
         end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000)
         break
+      }
       case 'year':
         start = new Date(now.getFullYear(), 0, 1)
         end = new Date(now.getFullYear() + 1, 0, 1)
@@ -99,6 +111,18 @@ export default function KPIModule() {
 
   const handleSellerClick = useCallback((sellerId) => { setSellerDetailId(sellerId) }, [])
   const handleSellerBack = useCallback(() => { setSellerDetailId(null) }, [])
+  const handleDesignerClick = useCallback((designerId) => { setDesignerDetailId(designerId) }, [])
+  const handleDesignerBack = useCallback(() => { setDesignerDetailId(null) }, [])
+  const handleQuoteClick = useCallback((quoteId) => { setQuoteDetailId(quoteId) }, [])
+  const handleQuoteBack = useCallback(() => { setQuoteDetailId(null) }, [])
+  const handleProductionAreaClick = useCallback((areaCode) => { setProductionAreaCode(areaCode) }, [])
+  const handleProductionAreaBack = useCallback(() => { setProductionAreaCode(null); setProductionEmployeeDetail(null) }, [])
+  const handleProductionEmployeeClick = useCallback((employeeId, areaCode) => {
+    setProductionEmployeeDetail({ employeeId, areaCode })
+  }, [])
+  const handleProductionEmployeeBack = useCallback(() => { setProductionEmployeeDetail(null) }, [])
+  const handleDeliveryUserClick = useCallback((userId) => { setDeliveryUserId(userId) }, [])
+  const handleDeliveryUserBack = useCallback(() => { setDeliveryUserId(null) }, [])
 
   if (loading && !data) {
     return (
@@ -130,6 +154,30 @@ export default function KPIModule() {
     <section className="pa-section">
       {sellerDetailId ? (
         <SellerDetailView sellerId={sellerDetailId} getDateBounds={getDateBounds} onBack={handleSellerBack} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} />
+      ) : designerDetailId ? (
+        <DesignerDetailView designerId={designerDetailId} onBack={handleDesignerBack} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} />
+      ) : quoteDetailId ? (
+        <QuoteDetailView quoteId={quoteDetailId} onBack={handleQuoteBack} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} />
+      ) : productionEmployeeDetail ? (
+        <ProductionEmployeeDetailView
+          employeeId={productionEmployeeDetail.employeeId}
+          areaCode={productionEmployeeDetail.areaCode}
+          onBack={handleProductionEmployeeBack}
+          period={period}
+          customDateFrom={customDateFrom}
+          customDateTo={customDateTo}
+        />
+      ) : productionAreaCode ? (
+        <ProductionAreaDetailView
+          areaCode={productionAreaCode}
+          onBack={handleProductionAreaBack}
+          onEmployeeClick={handleProductionEmployeeClick}
+          period={period}
+          customDateFrom={customDateFrom}
+          customDateTo={customDateTo}
+        />
+      ) : deliveryUserId ? (
+        <DeliveryDetailView deliveryUserId={deliveryUserId} onBack={handleDeliveryUserBack} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} />
       ) : (
         <>
           <KPIHeader
@@ -165,7 +213,7 @@ export default function KPIModule() {
           {activeTab === 'orders' && <div className="kpi-tab-content" key="orders"><KPIOrdersAnalytics data={data} /></div>}
           {activeTab === 'clients' && <div className="kpi-tab-content" key="clients"><KPIClientAnalytics data={data} /></div>}
           {activeTab === 'materials' && <div className="kpi-tab-content" key="materials"><KPIMaterialsAnalytics data={data} /></div>}
-          {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={handleSellerClick} /></div>}
+          {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={handleSellerClick} onDesignerClick={handleDesignerClick} onQuoteClick={handleQuoteClick} onProductionAreaClick={handleProductionAreaClick} onProductionEmployeeClick={handleProductionEmployeeClick} onDeliveryUserClick={handleDeliveryUserClick} /></div>}
           {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} /></div>}
           {activeTab === 'alerts' && <div className="kpi-tab-content" key="alerts"><KPIAlertsPanel data={data} /></div>}
         </>

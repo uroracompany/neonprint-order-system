@@ -1,8 +1,12 @@
 import { useState, useMemo } from 'react'
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts'
 import { Icons } from '../../utils/icons'
-import { formatNumber, formatDays } from '../../utils/kpiHelpers'
+import { formatNumber } from '../../utils/kpiHelpers'
 import KPISellerIntelligence from './KPISellerIntelligence'
+import KPIDesignIntelligence from './KPIDesignIntelligence'
+import KPIQuoteIntelligence from './KPIQuoteIntelligence'
+import KPIProductionIntelligence from './KPIProductionIntelligence'
+import KPIDeliveryIntelligence from './KPIDeliveryIntelligence'
 
 const SEMANTIC = {
   positive: { iconBg: '#DCFCE7', iconColor: '#16A34A', trendBg: '#DCFCE7', trendColor: '#16A34A' },
@@ -11,6 +15,7 @@ const SEMANTIC = {
 }
 
 const DESIGNER_COLORS = ['#8B5CF6', '#A78BFA', '#C4B5FD', '#DDD6FE', '#EDE9FE', '#7C3AED', '#6D28D9', '#5B21B6', '#4C1D95', '#3B0764']
+const SELLER_COLORS = ['#F59E0B', '#FBBF24', '#FCD34D', '#FDE68A', '#FEF3C7', '#D97706', '#B45309', '#92400E', '#78350F', '#451A03']
 
 const PAGE_SIZE = 7
 
@@ -39,11 +44,23 @@ function Pagination({ page, total, pageSize, onPage }) {
   )
 }
 
-export default function KPIUserAnalytics({ data, period, customDateFrom, customDateTo, onSellerClick }) {
+export default function KPIUserAnalytics({
+  data,
+  period,
+  customDateFrom,
+  customDateTo,
+  onSellerClick,
+  onDesignerClick,
+  onQuoteClick,
+  onProductionAreaClick,
+  onProductionEmployeeClick,
+  onDeliveryUserClick,
+}) {
   const [inactivePage, setInactivePage] = useState(0)
 
   const users = useMemo(() => data?.user_analytics || {}, [data])
   const designers = useMemo(() => users.designers || [], [users])
+  const sellers = useMemo(() => users.sellers || [], [users])
   const inactiveUsers = useMemo(() => users.inactive_users || [], [users])
 
   const totalEmployeesAll = data?.total_employees_all || 0
@@ -59,6 +76,17 @@ export default function KPIUserAnalytics({ data, period, customDateFrom, customD
       avg_days_per_order: d.avg_days_per_order || 0,
     }))
   }, [designers])
+
+  const sellerPieData = useMemo(() => {
+    const total = sellers.reduce((s, d) => s + (d.orders_created || 0), 0)
+    return sellers.slice(0, 10).map((d, i) => ({
+      name: d.name,
+      value: d.orders_created || 0,
+      pct: total > 0 ? Math.round((d.orders_created / total) * 1000) / 10 : 0,
+      color: SELLER_COLORS[i % SELLER_COLORS.length],
+      avg_cycle_days: d.avg_cycle_days || 0,
+    }))
+  }, [sellers])
 
   if (!data) return (
     <div className="kpi-section">
@@ -116,14 +144,14 @@ export default function KPIUserAnalytics({ data, period, customDateFrom, customD
         })}
       </div>
 
-      {/* Charts */}
+      {/* Rankings */}
       <div className="kpi-grid-2col">
         {/* Diseñadores Pie */}
         <div className="kpi-card" style={{ padding: 24 }}>
           <h3 className="kpi-card-subtitle">Ranking de Diseñadores</h3>
           {designerPieData.length > 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 32, marginTop: 16 }}>
-              <div style={{ flex: '0 0 200px', height: 200 }}>
+              <div style={{ position: 'relative', width: 200, height: 200, flexShrink: 0 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={designerPieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
@@ -141,28 +169,40 @@ export default function KPIUserAnalytics({ data, period, customDateFrom, customD
                     }} />
                   </PieChart>
                 </ResponsiveContainer>
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
+                  <div style={{ fontSize: 26, fontWeight: 800, color: '#000', lineHeight: 1 }}>100%</div>
+                  <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b', marginTop: 2 }}>cobertura</div>
+                </div>
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 220, overflowY: 'auto' }}>
                 {designerPieData.map((item, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8edf8' }}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+                  <div key={i} onClick={() => onDesignerClick?.(designers[i]?.id)} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 14px', borderRadius: 10,
+                    background: i === 0 ? '#F5F3FF' : '#f8fafc',
+                    border: i === 0 ? '1px solid #DDD6FE' : '1px solid #e8edf8',
+                    cursor: 'pointer', transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#8B5CF6'; e.currentTarget.style.background = '#F5F3FF' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = i === 0 ? '#DDD6FE' : '#e8edf8'; e.currentTarget.style.background = i === 0 ? '#F5F3FF' : '#f8fafc' }}
+                  >
+                    <div style={{
+                      width: 26, height: 26, borderRadius: 7,
+                      background: '#8B5CF6',
+                      color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 700, flexShrink: 0,
+                    }}>{i + 1}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#091127', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>#{i + 1} {item.name}</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: item.color, flexShrink: 0 }}>{item.pct}%</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#091127', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#8B5CF6', flexShrink: 0 }}>{item.pct}%</span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <div style={{ flex: 1, height: 4, background: '#e8edf8', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${item.pct}%`, height: '100%', background: item.color, borderRadius: 3 }} />
-                        </div>
-                        <span style={{ fontSize: 11, color: '#64748b', flexShrink: 0 }}>{formatNumber(item.value)} ord.</span>
+                      <div style={{ height: 4, background: '#e8edf8', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.min(item.pct || 0, 100)}%`, height: '100%', background: '#8B5CF6', borderRadius: 3, transition: 'width 0.6s ease' }} />
                       </div>
-                      <div style={{ marginTop: 4 }}>
-                        <span style={{ fontSize: 11, color: '#64748b' }}>
-                          Tiempo promedio: <span style={{ fontWeight: 600, color: item.avg_days_per_order <= 3 ? '#10B981' : item.avg_days_per_order <= 5 ? '#F59E0B' : '#EF4444' }}>{formatDays(item.avg_days_per_order)}</span>
-                        </span>
-                      </div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{formatNumber(item.value)} órdenes totales</div>
                     </div>
+                    <Icons.ArrowRight size={13} style={{ color: '#94A3B8', flexShrink: 0 }} />
                   </div>
                 ))}
               </div>
@@ -171,10 +211,127 @@ export default function KPIUserAnalytics({ data, period, customDateFrom, customD
             <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">Sin datos de diseñadores</div></div>
           )}
         </div>
+
+        {/* Vendedores Pie */}
+        <div className="kpi-card" style={{ padding: 24 }}>
+          <h3 className="kpi-card-subtitle">Ranking de Vendedores</h3>
+          {sellerPieData.length > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 32, marginTop: 16 }}>
+              <div style={{ position: 'relative', width: 200, height: 200, flexShrink: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={sellerPieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
+                      {sellerPieData.map((e, i) => <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2} />)}
+                    </Pie>
+                    <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null
+                      const d = payload[0].payload
+                      return (
+                        <div style={{ background: '#fff', border: '1px solid #DDE3EF', borderRadius: 8, padding: '10px 14px', boxShadow: '0 4px 12px rgba(15,30,64,0.08)', fontSize: 13 }}>
+                          <p style={{ margin: 0, fontWeight: 600, color: d.color }}>{d.name}</p>
+                          <p style={{ margin: '4px 0 0', fontWeight: 500 }}>{formatNumber(d.value)} órdenes — {d.pct}%</p>
+                        </div>
+                      )
+                    }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
+                  <div style={{ fontSize: 26, fontWeight: 800, color: '#000', lineHeight: 1 }}>100%</div>
+                  <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b', marginTop: 2 }}>cobertura</div>
+                </div>
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 220, overflowY: 'auto' }}>
+                {sellerPieData.map((item, i) => (
+                  <div key={i} onClick={() => onSellerClick?.(sellers[i]?.id)} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 14px', borderRadius: 10,
+                    background: i === 0 ? '#FFFBEB' : '#f8fafc',
+                    border: i === 0 ? '1px solid #FDE68A' : '1px solid #e8edf8',
+                    cursor: 'pointer', transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#F59E0B'; e.currentTarget.style.background = '#FFFBEB' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = i === 0 ? '#FDE68A' : '#e8edf8'; e.currentTarget.style.background = i === 0 ? '#FFFBEB' : '#f8fafc' }}
+                  >
+                    <div style={{
+                      width: 26, height: 26, borderRadius: 7,
+                      background: '#F59E0B',
+                      color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 700, flexShrink: 0,
+                    }}>{i + 1}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#091127', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B', flexShrink: 0 }}>{item.pct}%</span>
+                      </div>
+                      <div style={{ height: 4, background: '#e8edf8', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.min(item.pct || 0, 100)}%`, height: '100%', background: '#F59E0B', borderRadius: 3, transition: 'width 0.6s ease' }} />
+                      </div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{formatNumber(item.value)} órdenes totales</div>
+                    </div>
+                    <Icons.ArrowRight size={13} style={{ color: '#94A3B8', flexShrink: 0 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">Sin datos de vendedores</div></div>
+          )}
+        </div>
       </div>
 
       {/* Centro de Inteligencia Comercial */}
       <KPISellerIntelligence period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={onSellerClick} />
+
+      {/* Centro de Inteligencia de Diseño */}
+      <div style={{ marginTop: 48 }}>
+        <div className="kpi-section-header" style={{ marginBottom: 24, display: 'block' }}>
+          <div className="kpi-section-kicker">Análisis por Departamento</div>
+          <h2 className="kpi-section-title">Inteligencia de Diseño</h2>
+          <p className="kpi-section-subtitle">Vista completa del departamento de diseño</p>
+        </div>
+        <KPIDesignIntelligence period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onDesignerClick={onDesignerClick} />
+      </div>
+
+      {/* Centro de Inteligencia de Caja */}
+      <div style={{ marginTop: 48 }}>
+        <div className="kpi-section-header" style={{ marginBottom: 24, display: 'block' }}>
+          <div className="kpi-section-kicker">Análisis por Departamento</div>
+          <h2 className="kpi-section-title">Inteligencia de Caja</h2>
+          <p className="kpi-section-subtitle">Vista completa del departamento de cotización</p>
+        </div>
+        <KPIQuoteIntelligence period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onQuoteClick={onQuoteClick} />
+      </div>
+
+      {/* Centro de Inteligencia de Producción */}
+      <div style={{ marginTop: 48 }}>
+        <div className="kpi-section-header" style={{ marginBottom: 24, display: 'block' }}>
+          <div className="kpi-section-kicker">Análisis por Departamento</div>
+          <h2 className="kpi-section-title">Inteligencia del Departamento de Producción</h2>
+          <p className="kpi-section-subtitle">Vista completa del departamento de producción — áreas, empleados y productividad</p>
+        </div>
+        <KPIProductionIntelligence
+          period={period}
+          customDateFrom={customDateFrom}
+          customDateTo={customDateTo}
+          onAreaClick={onProductionAreaClick}
+          onEmployeeClick={onProductionEmployeeClick}
+        />
+      </div>
+
+      {/* Centro de Inteligencia de Entrega */}
+      <div style={{ marginTop: 48 }}>
+        <div className="kpi-section-header" style={{ marginBottom: 24, display: 'block' }}>
+          <div className="kpi-section-kicker">Análisis por Departamento</div>
+          <h2 className="kpi-section-title">Inteligencia del Equipo de Entrega</h2>
+          <p className="kpi-section-subtitle">Vista completa del equipo de entrega — rendimiento y eficiencia</p>
+        </div>
+        <KPIDeliveryIntelligence
+          period={period}
+          customDateFrom={customDateFrom}
+          customDateTo={customDateTo}
+          onDeliveryUserClick={onDeliveryUserClick}
+        />
+      </div>
 
       {/* Inactive Users */}
       {inactiveUsers.length > 0 && (

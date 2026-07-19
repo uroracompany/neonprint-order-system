@@ -3,6 +3,7 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, LineChart, Line, XAx
 import { Icons } from '../../utils/icons'
 import { formatNumber, formatDays } from '../../utils/kpiHelpers'
 import { adminApiFetch } from '../../utils/adminApi'
+import SellerActivityTimeline from './SellerActivityTimeline'
 
 const SELLER_COLORS = ['#F59E0B', '#FBBF24', '#FCD34D', '#FDE68A', '#FEF3C7', '#D97706', '#B45309', '#92400E', '#78350F', '#451A03']
 const LINE_COLORS = ['#F59E0B', '#06B6D4', '#10B981', '#F43F5E', '#8B5CF6', '#F97316', '#EC4899', '#14B8A6', '#6366F1', '#84CC16']
@@ -47,13 +48,14 @@ function MiniStat({ label, value, sub, color }) {
   )
 }
 
-function PieTooltip({ active, payload }) {
+function PieTooltip({ active, payload, total }) {
   if (!active || !payload?.length) return null
   const d = payload[0].payload
+  const pct = total > 0 ? ((d.value / total) * 100).toFixed(1) : 0
   return (
     <div style={{ background: '#fff', border: '1px solid #DDE3EF', borderRadius: 8, padding: '10px 14px', boxShadow: '0 4px 12px rgba(15,30,64,0.08)', fontSize: 13 }}>
       <p style={{ margin: 0, fontWeight: 600, color: d.color }}>{d.name}</p>
-      <p style={{ margin: '4px 0 0', fontWeight: 500 }}>{formatNumber(d.value)} — {d.pct || d.value}%</p>
+      <p style={{ margin: '4px 0 0', fontWeight: 500 }}>{formatNumber(d.value)} — {pct}%</p>
     </div>
   )
 }
@@ -480,17 +482,17 @@ function GlobalView({ overviewData, loadingOverview, getDateBounds, onSellerClic
                 >
                   <div style={{
                     width: 26, height: 26, borderRadius: 7,
-                    background: i < SELLER_COLORS.length ? SELLER_COLORS[i] : '#94A3B8',
+                    background: '#F59E0B',
                     color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 11, fontWeight: 700, flexShrink: 0,
-                  }}>#{seller.rank}</div>
+                  }}>{seller.rank}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#091127' }}>{seller.name}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: i < SELLER_COLORS.length ? SELLER_COLORS[i] : '#94A3B8' }}>{seller.pct}%</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B' }}>{seller.pct}%</span>
                     </div>
                     <div style={{ height: 4, background: '#e8edf8', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(seller.pct || 0, 100)}%`, height: '100%', background: i < SELLER_COLORS.length ? SELLER_COLORS[i] : '#94A3B8', borderRadius: 3, transition: 'width 0.6s ease' }} />
+                      <div style={{ width: `${Math.min(seller.pct || 0, 100)}%`, height: '100%', background: '#F59E0B', borderRadius: 3, transition: 'width 0.6s ease' }} />
                     </div>
                     <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{formatNumber(seller.value)} {currentMetricLabel.toLowerCase()}</div>
                   </div>
@@ -916,7 +918,7 @@ export function SellerDetailView({ sellerId, getDateBounds, onBack, period, cust
                       <Pie data={orderBreakdown} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={3} dataKey="value">
                         {orderBreakdown.map((e, i) => <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2} />)}
                       </Pie>
-                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={<PieTooltip />} />
+                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={(props) => <PieTooltip {...props} total={orders?.total || 0} />} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -949,7 +951,7 @@ export function SellerDetailView({ sellerId, getDateBounds, onBack, period, cust
                       <Pie data={designBreakdown} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={3} dataKey="value">
                         {designBreakdown.map((e, i) => <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2} />)}
                       </Pie>
-                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={<PieTooltip />} />
+                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={(props) => <PieTooltip {...props} total={orders?.total || 0} />} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1064,16 +1066,16 @@ export function SellerDetailView({ sellerId, getDateBounds, onBack, period, cust
                   return (
                     <div key={i} className="kpi-seller-list-item">
                       <div className="kpi-seller-list-rank" style={{
-                        background: i < 3 ? (i < SELLER_COLORS.length ? SELLER_COLORS[i] : '#94A3B8') : undefined,
-                        color: i < 3 ? '#fff' : undefined,
-                      }}>#{i + 1}</div>
+                        background: '#F59E0B',
+                        color: '#fff',
+                      }}>{i + 1}</div>
                       <div className="kpi-seller-list-info">
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                           <span className="kpi-seller-list-name">{client.client_name}</span>
-                          <span className="kpi-seller-list-value" style={{ color: i < SELLER_COLORS.length ? SELLER_COLORS[i] : '#94A3B8' }}>{clientPct}%</span>
+                          <span className="kpi-seller-list-value" style={{ color: '#F59E0B' }}>{clientPct}%</span>
                         </div>
                         <div style={{ height: 4, background: '#e8edf8', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${Math.min(clientPct, 100)}%`, height: '100%', background: i < SELLER_COLORS.length ? SELLER_COLORS[i] : '#94A3B8', borderRadius: 3, transition: 'width 0.6s ease' }} />
+                          <div style={{ width: `${Math.min(clientPct, 100)}%`, height: '100%', background: '#F59E0B', borderRadius: 3, transition: 'width 0.6s ease' }} />
                         </div>
                         <div className="kpi-seller-list-sub" style={{ marginTop: 4 }}>
                           {client.total_orders} órdenes · {client.completed_orders} completadas · cancelación{' '}
@@ -1095,16 +1097,16 @@ export function SellerDetailView({ sellerId, getDateBounds, onBack, period, cust
                 {materials.slice(0, 6).map((mat, i) => (
                   <div key={i} className="kpi-seller-list-item">
                     <div className="kpi-seller-list-rank" style={{
-                      background: i < 3 ? (i < SELLER_COLORS.length ? SELLER_COLORS[i] : '#94A3B8') : undefined,
-                      color: i < 3 ? '#fff' : undefined,
-                    }}>#{i + 1}</div>
+                      background: '#F59E0B',
+                      color: '#fff',
+                    }}>{i + 1}</div>
                     <div className="kpi-seller-list-info">
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span className="kpi-seller-list-name">{mat.name}</span>
-                        <span className="kpi-seller-list-value" style={{ color: i < SELLER_COLORS.length ? SELLER_COLORS[i] : '#94A3B8' }}>{mat.pct}%</span>
+                        <span className="kpi-seller-list-value" style={{ color: '#F59E0B' }}>{mat.pct}%</span>
                       </div>
                       <div style={{ height: 4, background: '#e8edf8', borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ width: `${Math.min(mat.pct || 0, 100)}%`, height: '100%', background: i < SELLER_COLORS.length ? SELLER_COLORS[i] : '#94A3B8', borderRadius: 3, transition: 'width 0.6s ease' }} />
+                        <div style={{ width: `${Math.min(mat.pct || 0, 100)}%`, height: '100%', background: '#F59E0B', borderRadius: 3, transition: 'width 0.6s ease' }} />
                       </div>
                       <div className="kpi-seller-list-sub" style={{ marginTop: 4 }}>{mat.count} órdenes</div>
                     </div>
@@ -1138,6 +1140,9 @@ export function SellerDetailView({ sellerId, getDateBounds, onBack, period, cust
             </div>
           </>
         )}
+
+        {/* Historial de Actividad */}
+        <SellerActivityTimeline sellerId={sellerId} getDateBounds={getChartBounds} />
       </div>
     </div>
   )
@@ -1204,9 +1209,9 @@ export default function KPISellerIntelligence({ period, customDateFrom, customDa
     <div>
       <div className="kpi-section-header" style={{ marginBottom: 16 }}>
         <div>
-          <span className="kpi-section-kicker">Inteligencia Comercial</span>
-          <h2 className="kpi-section-title">Centro de Inteligencia Comercial</h2>
-          <p className="kpi-section-subtitle">Vista completa del departamento de ventas</p>
+          <span className="kpi-section-kicker">Rendimiento Comercial</span>
+          <h2 className="kpi-section-title">Rendimiento del Equipo de Ventas</h2>
+          <p className="kpi-section-subtitle">Seguimiento detallado del desempeño y productividad del equipo</p>
         </div>
       </div>
 
