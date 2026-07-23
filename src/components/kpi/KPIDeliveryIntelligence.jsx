@@ -73,18 +73,6 @@ function getMetricValue(user, metric) {
   return user.total_delivered || 0
 }
 
-function ChangeBadge({ value, inverse = false }) {
-  if (value === undefined || value === null) return null
-  const num = Number(value)
-  if (num === 0) return <span className="kpi-seller-comparison-delta" style={{ color: '#94A3B8' }}>Sin cambio</span>
-  const good = inverse ? num < 0 : num > 0
-  return (
-    <span className="kpi-seller-comparison-delta" style={{ color: good ? '#10B981' : '#EF4444' }}>
-      {num > 0 ? '+' : ''}{num.toFixed(1)}%
-    </span>
-  )
-}
-
 function PieTooltip({ active, payload, total }) {
   if (!active || !payload?.length) return null
   const item = payload[0].payload
@@ -99,18 +87,29 @@ function PieTooltip({ active, payload, total }) {
 
 function LoadingState() {
   return (
-    <div className="kpi-card" style={{ padding: 40, textAlign: 'center' }}>
-      <div className="kpi-spinner" />
-      <div style={{ marginTop: 12, fontSize: 13, color: '#94A3B8' }}>Cargando datos de entrega...</div>
+    <div className="kpi-seller-page">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+        <div style={{ textAlign: 'center' }}>
+          <div className="kpi-spinner" />
+          <p style={{ color: '#4A5E80', fontSize: 14, fontWeight: 500, marginTop: 12 }}>Cargando datos de entrega...</p>
+        </div>
+      </div>
     </div>
   )
 }
 
 function ErrorState({ message }) {
   return (
-    <div className="kpi-card" style={{ padding: 40, textAlign: 'center' }}>
-      <Icons.AlertCircle size={32} color="#EF4444" />
-      <div style={{ marginTop: 12, fontSize: 14, fontWeight: 600, color: '#EF4444' }}>{message}</div>
+    <div className="kpi-seller-page">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+        <div className="kpi-card" style={{ textAlign: 'center', padding: 60 }}>
+          <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icons.AlertCircle style={{ color: '#EF4444' }} />
+          </div>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#991B1B', marginBottom: 8 }}>Error al cargar datos</h3>
+          <p style={{ fontSize: 13, color: '#8899B5', marginBottom: 20 }}>{message}</p>
+        </div>
+      </div>
     </div>
   )
 }
@@ -120,7 +119,7 @@ function HeroCard({ label, value, color, icon: Icon, subtitle }) {
     <div className="kpi-seller-hero-card">
       <div className="kpi-seller-hero-header">
         <div className="kpi-seller-hero-label">{label}</div>
-        {Icon && <div className="kpi-seller-hero-icon" style={{ background: `${color}18`, color }}><Icon size={18} /></div>}
+        {Icon && <div className="kpi-seller-hero-icon" style={{ background: `${color}15`, color }}><Icon size={16} /></div>}
       </div>
       <div className="kpi-seller-hero-value" style={{ color }}>{value}</div>
       {subtitle && <div className="kpi-seller-hero-footer"><span className="kpi-seller-hero-subtitle">{subtitle}</span></div>}
@@ -138,7 +137,7 @@ function ChartControls({ chartPeriod, chartCustom, chartDateFrom, chartDateTo, s
         <button className={`kpi-pipeline-view-btn ${chartCustom ? 'active' : ''}`} onClick={() => setChartCustom(!chartCustom)}>Personalizar</button>
       </div>
       {chartCustom && (
-        <div className="kpi-filter-row" style={{ marginTop: 12 }}>
+        <div className="kpi-filter-row" style={{ marginTop: 8, marginBottom: 8 }}>
           <label><span>Desde</span><input type="date" value={chartDateFrom} onChange={e => setChartDateFrom(e.target.value)} /></label>
           <label><span>Hasta</span><input type="date" value={chartDateTo} onChange={e => setChartDateTo(e.target.value)} /></label>
         </div>
@@ -147,13 +146,25 @@ function ChartControls({ chartPeriod, chartCustom, chartDateFrom, chartDateTo, s
   )
 }
 
-function ComparisonCard({ label, value, prev, change, color = '#091127', inverse = false }) {
+function ComparisonCard({ label, value, prev, change, inverse = false }) {
+  const num = Number(change) || 0
+  const isPositive = inverse ? num < 0 : num > 0
+  const isNegative = inverse ? num > 0 : num < 0
+  const borderColor = isPositive ? '#10B981' : isNegative ? '#EF4444' : '#94A3B8'
+  const arrow = num > 0 ? '↑' : num < 0 ? '↓' : '→'
   return (
-    <div className="kpi-seller-comparison-card">
-      <div className="kpi-seller-comparison-value" style={{ color }}>{value}</div>
-      <div className="kpi-seller-comparison-label">{label}</div>
-      <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 4 }}>Anterior: {prev}</div>
-      <ChangeBadge value={change} inverse={inverse} />
+    <div className="kpi-seller-comparison-card" style={{ borderLeft: `3px solid ${borderColor}`, textAlign: 'left' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span className="kpi-seller-comparison-label" style={{ margin: 0 }}>{label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: borderColor, display: 'flex', alignItems: 'center', gap: 3 }}>
+          {arrow} {isPositive ? '+' : ''}{num.toFixed(1)}%
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span className="kpi-seller-comparison-value">{value}</span>
+        <span style={{ fontSize: 13, color: '#94A3B8' }}>→</span>
+        <span style={{ fontSize: 15, fontWeight: 600, color: '#94A3B8' }}>{prev}</span>
+      </div>
     </div>
   )
 }
@@ -161,6 +172,7 @@ function ComparisonCard({ label, value, prev, change, color = '#091127', inverse
 function GlobalView({ getDateBounds, onUserClick }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [selectedMetric, setSelectedMetric] = useState('delivered')
   const [chartPeriod, setChartPeriod] = useState('1m')
   const [chartCustom, setChartCustom] = useState(false)
@@ -171,11 +183,22 @@ function GlobalView({ getDateBounds, onUserClick }) {
     let cancelled = false
     async function fetch() {
       setLoading(true)
+      setError(null)
       const bounds = getDateBounds()
       try {
         const res = await adminApiFetch('/api/kpi-data', { action: 'delivery_metrics', ...bounds, ...getCompareBounds(bounds) })
-        if (res.response.ok && !cancelled) setData(res.result)
-      } catch { /* ignore */ }
+        if (cancelled) return
+        if (res.response.ok) setData(res.result)
+        else {
+          setData(null)
+          setError(res.result?.error || 'Error al cargar datos de entrega.')
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setData(null)
+          setError(err?.message || 'Error de conexion al cargar entrega.')
+        }
+      }
       if (!cancelled) setLoading(false)
     }
     fetch()
@@ -205,6 +228,7 @@ function GlobalView({ getDateBounds, onUserClick }) {
   }, [data, selectedMetric])
 
   if (loading) return <LoadingState />
+  if (error) return <ErrorState message={error} />
   if (!data) return <ErrorState message="No hay datos de entrega disponibles." />
 
   const { users = [], trend = [], total_delivered = 0, total_pending = 0, comparison } = data
@@ -219,11 +243,25 @@ function GlobalView({ getDateBounds, onUserClick }) {
 
   return (
     <>
-      <div className="kpi-hero-grid kpi-hero-grid--4" style={{ marginBottom: 24 }}>
-        <HeroCard label="Entregadas" value={formatNumber(total_delivered)} color="#10B981" icon={Icons.CheckCircle} subtitle="Ordenes cerradas" />
-        <HeroCard label="Equipo" value={formatNumber(users.length)} color={DELIVERY_COLOR} icon={Icons.Users} subtitle="Repartidores activos" />
-        <HeroCard label="Pendientes" value={formatNumber(total_pending)} color="#F59E0B" icon={Icons.Clock} subtitle="Por entregar" />
-        <HeroCard label="Mejor A Tiempo" value={`${users.length > 0 ? Math.max(...users.map(u => u.on_time_rate || 0)).toFixed(1) : 0}%`} color="#10B981" icon={Icons.TrendUp} subtitle="Mayor puntualidad" />
+      <div className="kpi-leader-grid" style={{ marginBottom: 24, gridTemplateColumns: 'repeat(4, 1fr)' }}>
+        {[
+          { label: 'Entregadas', value: formatNumber(total_delivered), color: '#10B981', icon: Icons.CheckCircle, subtitle: 'Ordenes cerradas' },
+          { label: 'Equipo', value: formatNumber(users.length), color: DELIVERY_COLOR, icon: Icons.Users, subtitle: 'Repartidores activos' },
+          { label: 'Pendientes', value: formatNumber(total_pending), color: '#F59E0B', icon: Icons.Clock, subtitle: 'Por entregar' },
+          { label: 'Mejor A Tiempo', value: `${users.length > 0 ? Math.max(...users.map(u => u.on_time_rate || 0)).toFixed(1) : 0}%`, color: '#10B981', icon: Icons.TrendUp, subtitle: 'Mayor puntualidad' },
+        ].map((card, i) => {
+          const Icon = card.icon
+          return (
+            <div key={i} className="kpi-leader-card">
+              <div className="kpi-leader-header">
+                <div className="kpi-leader-icon" style={{ background: `${card.color}15`, color: card.color }}><Icon size={16} /></div>
+                <div className="kpi-leader-category">{card.label}</div>
+              </div>
+              <div className="kpi-leader-value" style={{ color: card.color }}>{card.value}</div>
+              <div className="kpi-seller-list-sub" style={{ marginTop: 8 }}>{card.subtitle}</div>
+            </div>
+          )
+        })}
       </div>
 
       <div className="kpi-card" style={{ padding: 24, marginBottom: 24 }}>
@@ -282,14 +320,27 @@ function GlobalView({ getDateBounds, onUserClick }) {
         ) : <div className="kpi-empty-state"><div className="kpi-empty-title">Sin datos de entrega</div></div>}
       </div>
 
-      {comparison && (
-        <>
-          <div className="kpi-seller-section-title">Comparacion con Periodo Anterior</div>
-          <div className="kpi-seller-comparison-grid" style={{ marginBottom: 24 }}>
-            {comparison.total_delivered && <ComparisonCard label="Entregas" value={comparison.total_delivered.curr} prev={comparison.total_delivered.prev} change={comparison.total_delivered.change_pct} color="#10B981" />}
-          </div>
-        </>
-      )}
+      {comparison && (() => {
+        const items = [
+          { label: 'Entregas', change: comparison.total_delivered?.change_pct },
+        ]
+        const improved = items.filter(i => { const n = Number(i.change) || 0; return i.inverse ? n < 0 : n > 0 }).length
+        const worsened = items.filter(i => { const n = Number(i.change) || 0; return i.inverse ? n > 0 : n < 0 }).length
+        const summaryIcon = improved > worsened ? '#10B981' : improved < worsened ? '#EF4444' : '#94A3B8'
+        const summaryText = improved === items.length ? 'Mejoró en todas las métricas.' : worsened === items.length ? 'Empeoró en todas las métricas.' : improved > worsened ? `Mejoró en ${improved} de ${items.length} métricas.` : improved < worsened ? `Empeoró en ${worsened} de ${items.length} métricas.` : 'Sin cambios significativos.'
+        return (
+          <>
+            <div className="kpi-seller-section-title">Comparación con Período Anterior</div>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {improved > worsened ? <Icons.TrendUp size={14} style={{ color: summaryIcon }} /> : improved < worsened ? <Icons.Refresh size={14} style={{ color: summaryIcon }} /> : <Icons.Clock size={14} style={{ color: summaryIcon }} />}
+              {summaryText}
+            </div>
+            <div className="kpi-seller-comparison-grid" style={{ marginBottom: 24 }}>
+              {comparison.total_delivered && <ComparisonCard label="Entregas" value={comparison.total_delivered.curr} prev={comparison.total_delivered.prev} change={comparison.total_delivered.change_pct} />}
+            </div>
+          </>
+        )
+      })()}
     </>
   )
 }
@@ -418,6 +469,20 @@ export function DeliveryDetailView({ deliveryUserId, onBack, period, customDateF
           <HeroCard label="Pendientes" value={formatNumber(ord?.pending || 0)} color="#F59E0B" icon={Icons.Package} subtitle="Carga abierta" />
         </div>
 
+        {alerts.length > 0 && (
+          <div className="kpi-card" style={{ padding: 20, marginBottom: 24 }}>
+            <div className="kpi-seller-section-title">Alertas</div>
+            <div className="kpi-seller-alerts" style={{ marginBottom: 0 }}>
+              {alerts.map((alert, index) => (
+                <div key={index} className="kpi-seller-alert-item" style={{ borderColor: alert.color, color: alert.color }}>
+                  <Icons.AlertCircle size={14} />
+                  <span>{alert.message}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="kpi-card" style={{ padding: 24, marginBottom: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
             <div>
@@ -450,29 +515,29 @@ export function DeliveryDetailView({ deliveryUserId, onBack, period, customDateF
           {materials.length > 0 && <SimpleRanking title="Materiales" items={materials.slice(0, 6).map(item => ({ name: item.name, value: `${item.pct}%` }))} />}
         </div>
 
-        {alerts.length > 0 && (
-          <div className="kpi-card" style={{ padding: 20, marginTop: 16 }}>
-            <div className="kpi-seller-section-title">Alertas</div>
-            <div className="kpi-seller-alerts" style={{ marginBottom: 0 }}>
-              {alerts.map((alert, index) => (
-                <div key={index} className="kpi-seller-alert-item" style={{ borderColor: alert.color, color: alert.color }}>
-                  <Icons.AlertCircle size={14} />
-                  <span>{alert.message}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {cmp && (
-          <>
-            <div className="kpi-seller-section-title" style={{ marginTop: 24 }}>Comparacion con Periodo Anterior</div>
-            <div className="kpi-seller-comparison-grid" style={{ marginBottom: 24 }}>
-              {cmp.total && <ComparisonCard label="Ordenes" value={cmp.total.curr} prev={cmp.total.prev} change={cmp.total.change_pct} />}
-              {cmp.delivered && <ComparisonCard label="Entregadas" value={cmp.delivered.curr} prev={cmp.delivered.prev} change={cmp.delivered.change_pct} color="#10B981" />}
-            </div>
-          </>
-        )}
+        {cmp && (() => {
+          const items = [
+            { label: 'Órdenes', change: cmp.total?.change_pct },
+            { label: 'Entregadas', change: cmp.delivered?.change_pct },
+          ]
+          const improved = items.filter(i => { const n = Number(i.change) || 0; return i.inverse ? n < 0 : n > 0 }).length
+          const worsened = items.filter(i => { const n = Number(i.change) || 0; return i.inverse ? n > 0 : n < 0 }).length
+          const summaryIcon = improved > worsened ? '#10B981' : improved < worsened ? '#EF4444' : '#94A3B8'
+          const summaryText = improved === items.length ? 'Mejoró en todas las métricas.' : worsened === items.length ? 'Empeoró en todas las métricas.' : improved > worsened ? `Mejoró en ${improved} de ${items.length} métricas.` : improved < worsened ? `Empeoró en ${worsened} de ${items.length} métricas.` : 'Sin cambios significativos.'
+          return (
+            <>
+              <div className="kpi-seller-section-title">Comparación con Período Anterior</div>
+              <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                {improved > worsened ? <Icons.TrendUp size={14} style={{ color: summaryIcon }} /> : improved < worsened ? <Icons.Refresh size={14} style={{ color: summaryIcon }} /> : <Icons.Clock size={14} style={{ color: summaryIcon }} />}
+                {summaryText}
+              </div>
+              <div className="kpi-seller-comparison-grid" style={{ marginBottom: 24 }}>
+                {cmp.total && <ComparisonCard label="Órdenes" value={cmp.total.curr} prev={cmp.total.prev} change={cmp.total.change_pct} />}
+                {cmp.delivered && <ComparisonCard label="Entregadas" value={cmp.delivered.curr} prev={cmp.delivered.prev} change={cmp.delivered.change_pct} />}
+              </div>
+            </>
+          )
+        })()}
       </div>
     </div>
   )

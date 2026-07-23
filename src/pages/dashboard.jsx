@@ -293,9 +293,9 @@ const getRoleLabel = (role) => {
     quote: "Caja",
     admin: "Administrador",
     printer: "Producción",
-    digital_producer: "Produccion Digital",
-    dtf_producer: "Produccion DTF",
-    ploteo_producer: "Produccion Ploteo",
+    digital_producer: "Producción Digital",
+    dtf_producer: "Producción DTF",
+    ploteo_producer: "Producción Ploteo",
     delivery: "Entrega"
   };
   return map[role] || role;
@@ -1008,9 +1008,9 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
     isPasswordReady;
 
   const roleDescriptions = {
-    digital_producer: "Gestiona archivos de produccion digital.",
-    dtf_producer: "Gestiona archivos de produccion DTF.",
-    ploteo_producer: "Gestiona archivos de produccion ploteo.",
+    digital_producer: "Gestiona archivos de producción digital.",
+    dtf_producer: "Gestiona archivos de producción DTF.",
+    ploteo_producer: "Gestiona archivos de producción ploteo.",
     seller: "Gestiona y da seguimiento comercial a las órdenes.",
     designer: "Recibe y trabaja los archivos asignados para producción.",
     quote: "Gestiona caja y valida la información de pago.",
@@ -1069,9 +1069,9 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
                 <option value="designer">Diseñador</option>
                 <option value="quote">Caja</option>
                 <option value="printer">Produccion legacy</option>
-                <option value="digital_producer">Produccion Digital</option>
-                <option value="dtf_producer">Produccion DTF</option>
-                <option value="ploteo_producer">Produccion Ploteo</option>
+                <option value="digital_producer">Producción Digital</option>
+                <option value="dtf_producer">Producción DTF</option>
+                <option value="ploteo_producer">Producción Ploteo</option>
                 <option value="delivery">Entrega</option>
                 <option value="admin">Administrador</option>
               </select>

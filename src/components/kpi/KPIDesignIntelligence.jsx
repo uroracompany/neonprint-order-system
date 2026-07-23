@@ -1057,7 +1057,7 @@ export default function KPIDesignIntelligence({ period, customDateFrom, customDa
       const compare = getCompareBounds()
       const res = await adminApiFetch('/api/kpi-data', { action: 'design_overview', ...bounds, ...compare })
       if (res.response.ok) setOverviewData(res.result)
-      else setError('Error al cargar datos de diseño')
+      else setError(res.result?.error || 'Error al cargar datos de diseño')
     } catch (err) { setError(err.message) } finally { setLoadingOverview(false) }
   }, [getDateBounds, getCompareBounds])
 

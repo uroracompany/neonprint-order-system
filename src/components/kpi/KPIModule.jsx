@@ -33,7 +33,7 @@ const TABS = [
 function CriticalAlertsInline({ alerts }) {
   if (!alerts || alerts.length === 0) return null
 
-  const highAlerts = alerts.filter(a => a.severity === 'high')
+  const highAlerts = alerts.filter(a => ['critical', 'high'].includes(a.severity))
   if (highAlerts.length === 0) return null
 
   return (
@@ -53,10 +53,10 @@ function CriticalAlertsInline({ alerts }) {
             </div>
             <div className="kpi-alert-inline-content">
               <h4 className="kpi-alert-inline-title">{alert.title}</h4>
-              <p className="kpi-alert-inline-message">{alert.message}</p>
+              <p className="kpi-alert-inline-message">{alert.description || alert.message}</p>
             </div>
-            {alert.action && (
-              <span className="kpi-alert-inline-action">{alert.action}</span>
+            {(alert.recommended_action || alert.action) && (
+              <span className="kpi-alert-inline-action">{alert.recommended_action || alert.action}</span>
             )}
           </div>
         ))}
@@ -123,6 +123,27 @@ export default function KPIModule() {
   const handleProductionEmployeeBack = useCallback(() => { setProductionEmployeeDetail(null) }, [])
   const handleDeliveryUserClick = useCallback((userId) => { setDeliveryUserId(userId) }, [])
   const handleDeliveryUserBack = useCallback(() => { setDeliveryUserId(null) }, [])
+  const handleAlertTarget = useCallback((target = {}) => {
+    const module = String(target.module || '').toLowerCase()
+    const tabMap = {
+      orders: 'orders',
+      clients: 'clients',
+      materials: 'materials',
+      users: 'users',
+      production: 'production',
+      delivery: 'overview',
+      credits: 'overview',
+      sales: 'orders',
+      overview: 'overview',
+    }
+    setActiveTab(tabMap[module] || 'overview')
+    setSellerDetailId(null)
+    setDesignerDetailId(null)
+    setQuoteDetailId(null)
+    setProductionAreaCode(null)
+    setProductionEmployeeDetail(null)
+    setDeliveryUserId(null)
+  }, [])
 
   if (loading && !data) {
     return (
@@ -206,7 +227,7 @@ export default function KPIModule() {
               <KPIStatusTrend data={data} />
               <KPICreditsSummary data={data} />
               <KPIQualityMetrics data={data} />
-              <CriticalAlertsInline alerts={data?.smart_alerts} />
+              <CriticalAlertsInline alerts={data?.alerts_center?.alerts || data?.smart_alerts} />
             </div>
           )}
 
@@ -214,8 +235,8 @@ export default function KPIModule() {
           {activeTab === 'clients' && <div className="kpi-tab-content" key="clients"><KPIClientAnalytics data={data} /></div>}
           {activeTab === 'materials' && <div className="kpi-tab-content" key="materials"><KPIMaterialsAnalytics data={data} /></div>}
           {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={handleSellerClick} onDesignerClick={handleDesignerClick} onQuoteClick={handleQuoteClick} onProductionAreaClick={handleProductionAreaClick} onProductionEmployeeClick={handleProductionEmployeeClick} onDeliveryUserClick={handleDeliveryUserClick} /></div>}
-          {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} /></div>}
-          {activeTab === 'alerts' && <div className="kpi-tab-content" key="alerts"><KPIAlertsPanel data={data} /></div>}
+          {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} onAreaClick={handleProductionAreaClick} /></div>}
+          {activeTab === 'alerts' && <div className="kpi-tab-content" key="alerts"><KPIAlertsPanel data={data} onNavigateTarget={handleAlertTarget} /></div>}
         </>
       )}
     </section>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pagination } from "../ui/Pagination";
 import { Icons } from "../../utils/icons";
 import { getOrderStatusLabel, getPaymentStatusLabel, STATUS_OPTIONS, PAYMENT_OPTIONS, formatDate, isProductionRole, normalizeText } from "../../utils/constants";
+import { adminApiFetch } from "../../utils/adminApi";
 import "./AdminEmployeeModule.css";
 
 const ORDER_PAGE_SIZE = 7;
@@ -22,9 +23,9 @@ const getRoleLabel = (role) => {
     quote: "Caja",
     admin: "Administrador",
     printer: "Producción",
-    digital_producer: "Produccion Digital",
-    dtf_producer: "Produccion DTF",
-    ploteo_producer: "Produccion Ploteo",
+    digital_producer: "Producción Digital",
+    dtf_producer: "Producción DTF",
+    ploteo_producer: "Producción Ploteo",
     delivery: "Entrega"
   };
   return map[role] || role;
@@ -72,6 +73,8 @@ function EmployeeMetricsCards({ profile, orders }) {
   const role = profile?.role;
   const userId = profile?.id;
   const isProduction = isProductionRole(role);
+  const [productionMetrics, setProductionMetrics] = useState(null);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
 
   const employeeOrders = useMemo(() => {
     return orders.filter((o) => orderMatchesEmployee(o, userId, role));
@@ -92,6 +95,31 @@ function EmployeeMetricsCards({ profile, orders }) {
   const cancelledOrders = employeeOrders.filter((o) =>
     o?.status === "cancelled"
   ).length;
+
+  useEffect(() => {
+    if (!isProduction || !userId) return;
+    let cancelled = false;
+    async function fetchProductionMetrics() {
+      setLoadingMetrics(true);
+      try {
+        const now = new Date();
+        const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const to = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+        const res = await adminApiFetch('/api/kpi-data', {
+          action: 'admin_employee_production_metrics',
+          employee_id: userId,
+          date_from: from,
+          date_to: to,
+        });
+        if (res.response.ok && !cancelled) {
+          setProductionMetrics(res.result);
+        }
+      } catch { /* ignore */ }
+      if (!cancelled) setLoadingMetrics(false);
+    }
+    fetchProductionMetrics();
+    return () => { cancelled = true; };
+  }, [isProduction, userId]);
 
   return (
     <div className="acm-detail-grid">
@@ -148,9 +176,76 @@ function EmployeeMetricsCards({ profile, orders }) {
           </div>
         </div>
         {isProduction && (
-          <div className="pa-emp-production-notice">
-            <Icons.Clock />
-            <span>Las métricas detalladas de producción (archivos por área) estarán disponibles próximamente.</span>
+          <div className="acm-production-metrics">
+            {loadingMetrics ? (
+              <div className="acm-production-loading">
+                <div className="kpi-spinner" />
+                <span>Cargando metricas de produccion...</span>
+              </div>
+            ) : productionMetrics ? (
+              <>
+                <div className="acm-production-header">
+                  <Icons.Refresh />
+                  <span>Metricas de Produccion (Mes Actual)</span>
+                </div>
+                <div className="acm-stat-list">
+                  <div className="acm-stat-line">
+                    <span className="acm-stat-icon info"><Icons.Package /></span>
+                    <span>Archivos procesados</span>
+                    <strong>{productionMetrics.total_files || 0}</strong>
+                  </div>
+                  <div className="acm-stat-line">
+                    <span className="acm-stat-icon success"><Icons.Check /></span>
+                    <span>Completados</span>
+                    <strong>{productionMetrics.completed || 0}</strong>
+                  </div>
+                  <div className="acm-stat-line">
+                    <span className="acm-stat-icon warning"><Icons.Clock /></span>
+                    <span>En proceso</span>
+                    <strong>{(productionMetrics.in_production || 0) + (productionMetrics.in_termination || 0)}</strong>
+                  </div>
+                  <div className="acm-stat-line">
+                    <span className="acm-stat-icon violet"><Icons.TrendUp /></span>
+                    <span>Eficiencia</span>
+                    <strong className={productionMetrics.efficiency_score >= 70 ? "text-success" : productionMetrics.efficiency_score >= 40 ? "text-warning" : "text-danger"}>
+                      {productionMetrics.efficiency_score || 0} pts
+                    </strong>
+                  </div>
+                  <div className="acm-stat-line">
+                    <span className="acm-stat-icon cyan"><Icons.Clock /></span>
+                    <span>Tiempo promedio</span>
+                    <strong>{productionMetrics.avg_time_days || 0}d</strong>
+                  </div>
+                  <div className="acm-stat-line">
+                    <span className="acm-stat-icon success"><Icons.CheckCircle /></span>
+                    <span>Calidad (sin rev.)</span>
+                    <strong className={productionMetrics.first_time_right >= 90 ? "text-success" : productionMetrics.first_time_right >= 70 ? "text-warning" : "text-danger"}>
+                      {productionMetrics.first_time_right || 100}%
+                    </strong>
+                  </div>
+                  <div className="acm-stat-line">
+                    <span className="acm-stat-icon info"><Icons.TrendUp /></span>
+                    <span>Archivos/dia</span>
+                    <strong>{productionMetrics.files_per_day || 0}</strong>
+                  </div>
+                </div>
+                {productionMetrics.alerts && productionMetrics.alerts.length > 0 && (
+                  <div className="acm-production-alerts">
+                    {productionMetrics.alerts.map((alert, i) => (
+                      <div key={i} className={`acm-production-alert ${alert.severity}`}>
+                        <Icons.AlertCircle />
+                        <span>{alert.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="pa-emp-production-notice">
+                <Icons.Clock />
+                <span>Sin datos de produccion para este periodo.</span>
+              </div>
+            )}
           </div>
         )}
         <div className="acm-card-footer-stat">

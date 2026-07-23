@@ -108,6 +108,7 @@
   min-width: 0;
   padding: 26px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .pa-main::-webkit-scrollbar {
