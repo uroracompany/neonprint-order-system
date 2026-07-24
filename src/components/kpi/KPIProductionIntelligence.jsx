@@ -32,6 +32,11 @@ function getStageLabel(status) {
   return STATUS_LABELS[status] || status || 'Sin estado'
 }
 
+function formatEntityCount(value, singular, plural) {
+  const normalized = Number(value) || 0
+  return `${formatNumber(normalized)} ${normalized === 1 ? singular : plural}`
+}
+
 function getDateBoundsForPeriod(period, customDateFrom, customDateTo) {
   if (period === 'custom' && customDateFrom && customDateTo) {
     return { date_from: customDateFrom, date_to: customDateTo }
@@ -505,21 +510,45 @@ function AreaFlowCard({ chartDates, areaTrend, formatXAxis, chartControls }) {
   )
 }
 
-function AreaPipelineCard({ pieData, total_orders }) {
+function AreaPipelineCard({ pieData, totalFiles = 0, totalOrders = 0, activeLoad = 0, completed = 0, bottleneckCount = 0, slaCompliance = 0 }) {
   const pieTotal = pieData.reduce((sum, item) => sum + item.value, 0)
   const dominant = pieData.length > 0 ? pieData.reduce((max, item) => item.value > max.value ? item : max, pieData[0]) : null
-  const dominantPct = dominant && pieTotal > 0 ? ((dominant.value / pieTotal) * 100).toFixed(0) : 0
+  const dominantPct = dominant && pieTotal > 0 ? Number(((dominant.value / pieTotal) * 100).toFixed(0)) : 0
+  const displayTotalFiles = totalFiles || pieTotal
+  const summaryMetrics = [
+    { label: 'Archivos', value: formatNumber(displayTotalFiles), tone: 'info' },
+    { label: 'Ordenes', value: formatNumber(totalOrders), tone: 'neutral' },
+    { label: 'Activos', value: formatNumber(activeLoad), tone: activeLoad > 0 ? 'warning' : 'stable' },
+    { label: 'Completados', value: formatNumber(completed), tone: 'stable' },
+    { label: 'Cuellos', value: formatNumber(bottleneckCount), tone: bottleneckCount > 0 ? 'danger' : 'neutral' },
+  ]
+  const pipelineInsight = pieData.length === 0
+    ? 'No hay archivos del area en el periodo seleccionado.'
+    : bottleneckCount > 0
+      ? `${formatEntityCount(bottleneckCount, 'cuello', 'cuellos')} de botella requieren seguimiento antes de que el flujo siga acumulando retrasos.`
+      : activeLoad === 0 && completed > 0
+        ? 'Pipeline limpio: todos los archivos registrados para el periodo estan completados.'
+        : `Predomina ${dominant?.name || 'el estado principal'}: ${formatEntityCount(dominant?.value || 0, 'archivo', 'archivos')} de ${formatEntityCount(pieTotal, 'archivo', 'archivos')} (${dominantPct}%).`
+  const InsightIcon = bottleneckCount > 0 ? Icons.AlertCircle : activeLoad === 0 && completed > 0 ? Icons.CheckCircle : Icons.TrendUp
 
   return (
     <section className="kpi-area-surface kpi-area-pipeline-card">
-      <AreaSectionHeader title="Pipeline del area" subtitle={`${formatNumber(total_orders)} ordenes en el periodo`} />
+      <AreaSectionHeader title="Pipeline del area" subtitle={`${formatEntityCount(displayTotalFiles, 'archivo', 'archivos')} / ${formatEntityCount(totalOrders, 'orden', 'ordenes')} en el periodo`} aside={`${slaCompliance || 0}% SLA`} />
+      <div className="kpi-area-pipeline-summary" aria-label="Resumen del pipeline">
+        {summaryMetrics.map(item => (
+          <div key={item.label} className={`kpi-area-pipeline-summary-item ${item.tone}`}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </div>
+        ))}
+      </div>
       <div className="kpi-area-pipeline-layout">
         <div className="kpi-area-donut-frame">
           {pieData.length > 0 ? (
             <>
               <ResponsiveContainer width="100%" height={224}>
                 <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={58} outerRadius={88} paddingAngle={3} dataKey="value">
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={58} outerRadius={88} paddingAngle={pieData.length > 1 ? 3 : 0} dataKey="value">
                     {pieData.map((entry, idx) => <Cell key={idx} fill={entry.color} stroke="#fff" strokeWidth={2} />)}
                   </Pie>
                 </PieChart>
@@ -535,17 +564,28 @@ function AreaPipelineCard({ pieData, total_orders }) {
         </div>
         <div className="kpi-area-pipeline-list">
           {pieData.map(item => {
-            const pct = pieTotal > 0 ? ((item.value / pieTotal) * 100).toFixed(0) : 0
+            const pct = pieTotal > 0 ? Number(((item.value / pieTotal) * 100).toFixed(0)) : 0
             return (
-              <div key={item.name} className="kpi-area-pipeline-row">
-                <i style={{ background: item.color }} />
-                <span>{item.name}</span>
-                <strong>{formatNumber(item.value)}</strong>
-                <em style={{ color: item.color }}>{pct}%</em>
+              <div key={item.name} className="kpi-area-pipeline-row premium" style={{ '--pipeline-color': item.color }}>
+                <div className="kpi-area-pipeline-row-main">
+                  <i />
+                  <span>{item.name}</span>
+                </div>
+                <div className="kpi-area-pipeline-row-values">
+                  <strong>{formatNumber(item.value)}</strong>
+                  <em>{pct}%</em>
+                </div>
+                <div className="kpi-area-pipeline-track" aria-hidden="true">
+                  <span style={{ width: `${pct}%` }} />
+                </div>
               </div>
             )
           })}
         </div>
+      </div>
+      <div className={`kpi-area-pipeline-insight ${bottleneckCount > 0 ? 'warning' : 'stable'}`}>
+        <InsightIcon size={15} />
+        <span>{pipelineInsight}</span>
       </div>
     </section>
   )
@@ -891,7 +931,15 @@ export function ProductionAreaDetailView({ areaCode, onBack, period, customDateF
 
         <div className="kpi-area-flow-grid">
           <AreaFlowCard chartDates={chartDates} areaTrend={areaTrend} formatXAxis={formatXAxis} chartControls={chartControls} />
-          <AreaPipelineCard pieData={pieData} total_orders={total_orders} />
+          <AreaPipelineCard
+            pieData={pieData}
+            totalFiles={total_files}
+            totalOrders={total_orders}
+            activeLoad={activeLoad}
+            completed={completed}
+            bottleneckCount={slaMetrics.delayed_count ?? bottlenecks.length}
+            slaCompliance={slaCompliance}
+          />
         </div>
 
         <AreaAnalysisCards priorityBreakdown={priorityBreakdown} agingBuckets={agingBuckets} operationalInsights={operationalInsights} maxAging={maxAging} />
