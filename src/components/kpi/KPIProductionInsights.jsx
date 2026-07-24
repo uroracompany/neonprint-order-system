@@ -19,6 +19,7 @@ import { Pagination } from '../ui/Pagination'
 import OrderDetailModal from '../orders/OrderDetailModal'
 import { Icons } from '../../utils/icons'
 import { formatDays, formatNumber } from '../../utils/kpiHelpers'
+import '../clients/AdminClientsModule.css'
 
 const AREA_LABELS = {
   digital: 'Digital',
@@ -104,6 +105,34 @@ function getProductionStatusColor(order) {
 function getShortOrderId(orderId) {
   if (!orderId) return 'SIN-ID'
   return String(orderId).slice(0, 8).toUpperCase()
+}
+
+function getInitials(name) {
+  if (!name) return '?'
+  return String(name)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join('') || '?'
+}
+
+function getBottleneckDaysTone(days) {
+  return Number(days) > 7 ? 'danger' : 'warning'
+}
+
+function getPaginationRangeText(currentPage, pageSize, total) {
+  if (total <= 0) return 'Sin registros'
+  const start = ((currentPage - 1) * pageSize) + 1
+  const end = Math.min(currentPage * pageSize, total)
+  return `Mostrando ${formatNumber(start)}-${formatNumber(end)} de ${formatNumber(total)}`
+}
+
+function getInspectableBottleneckOrder(item) {
+  if (item?.order && typeof item.order === 'object') return item.order
+  if (item?.id && item?.status && item?.client_name) return item
+  return null
 }
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -250,6 +279,7 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
     bottleneck_count: bottlenecks.length,
     avg_cycle_time_days: stageTiming.total_cycle_time || 0,
   }
+  const bottleneckCount = totals.bottleneck_count ?? bottlenecks.length
 
   const selectedPeriod = useMemo(
     () => getPeriodPayload(history, areaPeriodFilter, areas),
@@ -294,9 +324,9 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
   ]
 
   const operationAlerts = [
-    bottlenecks.length > 0 && {
+    bottleneckCount > 0 && {
       tone: 'danger',
-      title: `${bottlenecks.length} cuello${bottlenecks.length === 1 ? '' : 's'} de botella`,
+      title: `${bottleneckCount} cuello${bottleneckCount === 1 ? '' : 's'} de botella`,
       detail: 'Archivos con mas de 3 dias detenidos en una etapa.',
     },
     totals.active_files > totals.completed && {
@@ -408,7 +438,7 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
         />
         <MetricCard
           label="Cuellos"
-          value={formatNumber(totals.bottleneck_count ?? bottlenecks.length)}
+          value={formatNumber(bottleneckCount)}
           subtitle="Mas de 3 dias en etapa"
           icon={Icons.AlertCircle}
           color="#EF4444"
@@ -724,7 +754,7 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
                 <div><strong>{formatNumber(totals.total_files || 0)}</strong><span>archivos gestionados</span></div>
                 <div><strong>{formatNumber(totals.active_files || 0)}</strong><span>siguen en flujo</span></div>
                 <div><strong>{formatNumber(quality.reversions || 0)}</strong><span>reversiones registradas</span></div>
-                <div><strong>{formatNumber(priorityBreakdown.normal || 0)}</strong><span>ordenes normales</span></div>
+                <div><strong>{formatNumber(priorityBreakdown.normal || 0)}</strong><span>archivos normales</span></div>
               </div>
             </div>
           </div>
@@ -890,35 +920,79 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
             <div className="kpi-table-wrapper kpi-production-table-wrapper">
               <div className="kpi-production-table-header">
                 <h3 className="kpi-card-subtitle danger">Cuellos de botella</h3>
-                <span>Ordenes o archivos con mas de 3 dias sin avanzar</span>
+                <span>{getPaginationRangeText(safeBottleneckPage, BOTTLENECK_PAGE_SIZE, bottlenecks.length)} · Mas de 3 dias sin avanzar</span>
               </div>
-              <table className="kpi-table kpi-production-bottleneck-table">
-                <thead>
-                  <tr><th>Orden</th><th>Cliente</th><th>Area</th><th>Etapa</th><th>Dias</th></tr>
-                </thead>
-                <tbody>
-                  {paginatedBottlenecks.map((item, index) => (
-                    <tr key={`${item.file_id || item.order_id}-${index}`} style={{ '--area-color': AREA_COLORS[item.area_code] || '#64748B' }}>
-                      <td><span className="kpi-production-order-code">#{getShortOrderId(item.order_id)}</span></td>
-                      <td>
-                        <span className="kpi-production-client-cell">
-                          <Icons.Users size={14} />
-                          <strong>{item.client_name || 'Sin nombre'}</strong>
-                        </span>
-                      </td>
-                      <td>
-                        <span className="kpi-production-area-pill">
-                          {getCompactAreaLabel(item.area_code)}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="kpi-production-stage-pill">{STAGE_LABELS[item.stage] || item.stage}</span>
-                      </td>
-                      <td><span className="kpi-production-days-pill">{formatDays(item.days_in_stage || 0)}</span></td>
+              <div className="ps-table-wrap kpi-production-bottleneck-table-wrap">
+                <table className="ps-table acm-table kpi-production-bottleneck-table" aria-label="Cuellos de botella de produccion">
+                  <thead>
+                    <tr>
+                      <th>Orden</th>
+                      <th>Cliente</th>
+                      <th>Area</th>
+                      <th>Etapa</th>
+                      <th>Tiempo detenido</th>
+                      <th aria-label="Acciones" />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {paginatedBottlenecks.map((item, index) => {
+                      const areaColor = AREA_COLORS[item.area_code] || '#64748B'
+                      const clientName = item.client_name || 'Sin nombre'
+                      const daysTone = getBottleneckDaysTone(item.days_in_stage)
+                      const inspectableOrder = getInspectableBottleneckOrder(item)
+                      return (
+                        <tr
+                          key={`${item.file_id || item.order_id}-${index}`}
+                          className="row-hover acm-client-row kpi-production-bottleneck-row"
+                          style={{ '--area-color': areaColor }}
+                        >
+                          <td className="td-pad">
+                            <div className="kpi-production-bottleneck-order">
+                              <span className="kpi-production-bottleneck-order-icon"><Icons.AlertCircle size={14} /></span>
+                              <span>
+                                <strong>#{getShortOrderId(item.order_id)}</strong>
+                                <small>Orden detenida</small>
+                              </span>
+                            </div>
+                          </td>
+                          <td className="td-pad">
+                            <div className="acm-client-cell">
+                              <span className="acm-avatar acm-avatar-small">{getInitials(clientName)}</span>
+                              <span>
+                                <strong title={clientName}>{clientName}</strong>
+                                <small>{item.file_id ? `Archivo #${getShortOrderId(item.file_id)}` : 'Archivo sin identificar'}</small>
+                              </span>
+                            </div>
+                          </td>
+                          <td className="td-pad">
+                            <span className="acm-badge kpi-production-area-badge">{getCompactAreaLabel(item.area_code)}</span>
+                          </td>
+                          <td className="td-pad">
+                            <span className="acm-badge danger">{STAGE_LABELS[item.stage] || item.stage || 'Sin etapa'}</span>
+                          </td>
+                          <td className="td-pad">
+                            <span className={`acm-badge ${daysTone}`}>{formatDays(item.days_in_stage || 0)}</span>
+                          </td>
+                          <td className="td-pad td-actions">
+                            <div className="table-actions acm-row-actions">
+                              <button
+                                type="button"
+                                className="table-action-btn view"
+                                onClick={() => inspectableOrder && setSelectedOrder(inspectableOrder)}
+                                disabled={!inspectableOrder}
+                                title={inspectableOrder ? 'Ver detalles' : 'Detalle no disponible desde este resumen'}
+                                aria-label={inspectableOrder ? `Ver detalles de ${clientName}` : `Detalle no disponible para ${clientName}`}
+                              >
+                                <Icons.Eye />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
               <div className="acm-pagination-footer">
                 <Pagination currentPage={safeBottleneckPage} totalPages={totalBottleneckPages} onPageChange={setBottleneckPage} />
               </div>

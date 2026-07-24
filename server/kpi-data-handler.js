@@ -34,6 +34,19 @@ function average(values) {
   return clean.reduce((sum, value) => sum + value, 0) / clean.length
 }
 
+function clampMetric(value, min = 0, max = 100) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return min
+  return Math.min(max, Math.max(min, number))
+}
+
+function calculateFirstTimeRight(completedCount, reversionCount) {
+  const completed = Number(completedCount) || 0
+  const reversions = Number(reversionCount) || 0
+  if (completed <= 0) return 100
+  return roundMetric(clampMetric(((completed - reversions) / completed) * 100), 1)
+}
+
 function createStatusCounts() {
   return {
     pending: 0,
@@ -933,7 +946,7 @@ async function buildProductionDepartmentInsights(supabase, { date_from, date_to,
   rollingYearStart.setFullYear(rollingYearStart.getFullYear() - 1)
   const historyFrom = new Date(Math.min(calendarYearStart.getTime(), rollingYearStart.getTime())).toISOString()
 
-  const [{ data: areas }, { data: allFiles }, { data: assignments }, { data: orders }, { data: profiles }, { data: historicalFiles }, { data: historicalOrders }] = await Promise.all([
+  const [{ data: areas }, { data: allFiles }, { data: assignments }, { data: periodOrders }, { data: profiles }, { data: historicalFiles }] = await Promise.all([
     supabase.from('production_areas').select('code, label, producer_role').eq('is_active', true),
     supabase.from('order_production_files')
       .select('id, order_id, production_area_code, status, assigned_to, created_by, started_at, in_termination_at, completed_at, created_at')
@@ -941,24 +954,32 @@ async function buildProductionDepartmentInsights(supabase, { date_from, date_to,
     supabase.from('order_production_assignments')
       .select('order_id, production_area_code, assigned_to'),
     supabase.from('orders')
-      .select('*')
+      .select('id, status, status_changed_at, created_at')
       .gte('created_at', from).lt('created_at', to),
     supabase.from('profiles').select('id, name, role').in('role', PRODUCTION_ROLES),
     supabase.from('order_production_files')
       .select('id, order_id, production_area_code, status, assigned_to, created_by, started_at, in_termination_at, completed_at, created_at')
-      .gte('created_at', historyFrom).lt('created_at', nowIso),
-    supabase.from('orders')
-      .select('id, order_type, created_at')
       .gte('created_at', historyFrom).lt('created_at', nowIso),
   ])
 
   const areaList = areas || []
   const files = allFiles || []
   const assignList = assignments || []
+  const historyFiles = historicalFiles || []
+  const orderIds = [...new Set(files.map(file => file.order_id).filter(Boolean))]
+  const historicalOrderIds = [...new Set(historyFiles.map(file => file.order_id).filter(Boolean))]
+  const [{ data: orders }, { data: historicalOrders }] = await Promise.all([
+    orderIds.length > 0
+      ? supabase.from('orders').select('*').in('id', orderIds)
+      : Promise.resolve({ data: [] }),
+    historicalOrderIds.length > 0
+      ? supabase.from('orders').select('id, order_type, created_at').in('id', historicalOrderIds)
+      : Promise.resolve({ data: [] }),
+  ])
   const orderList = orders || []
   const orderMap = new Map(orderList.map(order => [order.id, order]))
+  const periodOrderList = periodOrders || []
   const profileList = profiles || []
-  const historyFiles = historicalFiles || []
   const historyOrderMap = new Map((historicalOrders || []).map(order => [order.id, order]))
   const totalFiles = files.length
   const completedFiles = files.filter(file => file.status === 'completed')
@@ -1031,7 +1052,7 @@ async function buildProductionDepartmentInsights(supabase, { date_from, date_to,
     fileStatus.total += 1
   })
 
-  const orderDesignToQuote = orderList
+  const orderDesignToQuote = periodOrderList
     .filter(order => order.status === 'in_Quote')
     .map(order => daysBetween(order.created_at, order.status_changed_at))
     .filter(value => value !== null)
@@ -1060,18 +1081,26 @@ async function buildProductionDepartmentInsights(supabase, { date_from, date_to,
     .map(file => {
       const order = orderMap.get(file.order_id)
       const daysInStage = daysBetween(getStageStart(file), nowIso) || 0
+      const stageDays = roundMetric(daysInStage, 1)
       return {
         file_id: file.id,
         order_id: file.order_id,
         client_name: order?.client_name || 'Sin nombre',
         area_code: file.production_area_code,
         stage: file.status,
-        days_in_stage: roundMetric(daysInStage, 1),
+        days_in_stage: stageDays,
+        order: order ? {
+          ...order,
+          production_area_code: file.production_area_code,
+          production_file_id: file.id,
+          production_file_status: file.status,
+          production_stage_days: stageDays,
+          assigned_to: file.assigned_to,
+        } : null,
       }
     })
     .filter(item => item.days_in_stage > 3)
     .sort((a, b) => b.days_in_stage - a.days_in_stage)
-    .slice(0, 20)
 
   const bottlenecksByArea = bottlenecks.reduce((acc, item) => {
     const key = item.area_code || 'sin_area'
@@ -1254,7 +1283,7 @@ async function buildProductionDepartmentInsights(supabase, { date_from, date_to,
     quality: {
       reversions,
       reversion_rate: reversionRate,
-      first_time_right: completedFiles.length > 0 ? roundMetric(((completedFiles.length - reversions) / completedFiles.length) * 100, 1) : 100,
+      first_time_right: calculateFirstTimeRight(completedFiles.length, reversions),
     },
     history,
     priority_breakdown: priorityBreakdown,
@@ -2507,7 +2536,7 @@ export async function handleKpiData(body, env) {
         })
 
         const periodDays = Math.max(1, (new Date(to) - new Date(from)) / 86400000)
-        const totalEmployees = userIds.size || 1
+        const totalEmployees = userIds.size
 
         userIds.forEach(userId => {
           const userFiles = files.filter(f => f.assigned_to === userId || f.created_by === userId)
@@ -2519,7 +2548,7 @@ export async function handleKpiData(body, env) {
           const reversions = userFiles.filter(f => f.status === 'in_production' && f.in_termination_at).length
           const currentLoad = userFiles.filter(f => ['in_production', 'in_termination', 'pending'].includes(f.status)).length
           const filesPerDay = periodDays > 0 ? +(completed.length / periodDays).toFixed(2) : 0
-          const firstTimeRight = completed.length > 0 ? +(((completed.length - reversions) / completed.length) * 100).toFixed(1) : 100
+          const firstTimeRight = calculateFirstTimeRight(completed.length, reversions)
 
           const efficiencyScore = Math.min(100, Math.round(
             (Math.min(filesPerDay * 20, 40)) +
@@ -2557,10 +2586,27 @@ export async function handleKpiData(body, env) {
         })
 
         const bottlenecks = files
-          .filter(f => f.status === 'in_production' && f.started_at)
+          .filter(f => ACTIVE_PRODUCTION_STATUSES.includes(f.status))
           .map(f => {
-            const days = (new Date() - new Date(f.started_at)) / 86400000
-            return { file_id: f.id, order_id: f.order_id, days_in_stage: +days.toFixed(1) }
+            const order = orderMap.get(f.order_id)
+            const days = daysBetween(getStageStart(f), nowIso) || 0
+            const stageDays = roundMetric(days, 1)
+            return {
+              file_id: f.id,
+              order_id: f.order_id,
+              client_name: order?.client_name || 'Sin nombre',
+              area_code,
+              stage: f.status,
+              days_in_stage: stageDays,
+              order: order ? {
+                ...order,
+                production_file_id: f.id,
+                production_file_status: f.status,
+                production_area_code: area_code,
+                production_stage_days: stageDays,
+                assigned_to: f.assigned_to,
+              } : null,
+            }
           })
           .filter(b => b.days_in_stage > 3)
           .sort((a, b) => b.days_in_stage - a.days_in_stage)
@@ -2600,9 +2646,7 @@ export async function handleKpiData(body, env) {
         const capacityUtilization = totalEmployees > 0
           ? +((files.length / Math.max(totalEmployees * 15, 1)) * 100).toFixed(1)
           : 0
-        const firstTimeRight = completedFiles.length > 0
-          ? +(((completedFiles.length - reversions) / completedFiles.length) * 100).toFixed(1)
-          : 100
+        const firstTimeRight = calculateFirstTimeRight(completedFiles.length, reversions)
 
         const efficiencyMetrics = {
           files_per_day: filesPerDay,
@@ -3162,9 +3206,7 @@ export async function handleKpiData(body, env) {
 
         const periodDays = Math.max(1, (new Date(to) - new Date(from)) / 86400000)
         const filesPerDay = +(completed.length / periodDays).toFixed(2)
-        const firstTimeRight = completed.length > 0
-          ? +(((completed.length - reversions) / completed.length) * 100).toFixed(1)
-          : 100
+        const firstTimeRight = calculateFirstTimeRight(completed.length, reversions)
 
         const efficiencyScore = Math.min(100, Math.round(
           (Math.min(filesPerDay * 20, 40)) +

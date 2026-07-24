@@ -14,7 +14,7 @@ export default function KPIProductionMini({ data }) {
   const bottlenecks = data.production_insights?.bottlenecks || []
 
   const areaEntries = Object.entries(areaLoad)
-  const totalPending = areaEntries.reduce((sum, [, stats]) => sum + (stats.pending || 0) + (stats.in_production || 0), 0)
+  const totalActive = areaEntries.reduce((sum, [, stats]) => sum + (stats.pending || 0) + (stats.in_production || 0) + (stats.in_termination || 0), 0)
 
   return (
     <div className="kpi-section">
@@ -32,7 +32,7 @@ export default function KPIProductionMini({ data }) {
           <div className="kpi-prod-mini-areas">
             {areaEntries.map(([code, stats]) => {
               const config = AREA_CONFIG[code] || { label: code, color: '#6B7280' }
-              const active = (stats.pending || 0) + (stats.in_production || 0)
+              const active = (stats.pending || 0) + (stats.in_production || 0) + (stats.in_termination || 0)
               return (
                 <div key={code} className="kpi-prod-mini-area">
                   <div className="kpi-prod-mini-area-header">
@@ -44,7 +44,7 @@ export default function KPIProductionMini({ data }) {
                     <div
                       className="kpi-prod-mini-area-bar-fill"
                       style={{
-                        width: `${totalPending > 0 ? (active / totalPending) * 100 : 0}%`,
+                        width: `${totalActive > 0 ? (active / totalActive) * 100 : 0}%`,
                         background: config.color,
                       }}
                     />

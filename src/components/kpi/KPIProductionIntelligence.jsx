@@ -693,7 +693,7 @@ function AreaOrdersCard({ orderRows, onSelectOrder }) {
 
   return (
     <section id="area-orders" className="kpi-area-surface kpi-area-orders-card premium">
-      <AreaSectionHeader title="Ordenes activas" subtitle="Inspeccion rapida sin salir del KPI" aside={formatNumber(orderRows.length)} />
+      <AreaSectionHeader title="Ordenes activas" subtitle="Inspeccion rapida sin salir del KPI · Solo muestra 10" aside={formatNumber(orderRows.length)} />
       {orderRows.length > 0 ? (
         <div className="ps-table-wrap kpi-area-orders-table-wrap">
           <table className="ps-table acm-table kpi-area-orders-table" aria-label="Ordenes activas del area">
@@ -1087,7 +1087,7 @@ export function ProductionAreaDetailView({ areaCode, onBack, period, customDateF
             <div className="kpi-area-card-head">
               <div>
                 <div className="kpi-seller-section-title" style={{ marginBottom: 4 }}>Ordenes activas del area</div>
-                <span>Inspeccion rapida sin salir del KPI</span>
+                <span>Inspeccion rapida sin salir del KPI · Solo muestra 10</span>
               </div>
               <strong>{formatNumber(orderRows.length)}</strong>
             </div>
