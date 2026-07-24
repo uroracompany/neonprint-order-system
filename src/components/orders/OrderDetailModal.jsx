@@ -209,7 +209,17 @@ export default function OrderDetailModal({
   const displayResponsibleName = responsibleName || user?.displayName || "---";
 
   return (
-    <Modal open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} wide className="order-detail-modal">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`}
+      wide
+      className="order-detail-modal"
+      closeOnBackdrop
+      closeOnEscape
+      hideStripe
+      overlayClassName="order-detail-modal-overlay"
+    >
       <div className="order-detail-shell">
         <div className="order-detail-flow" role="region" aria-label="Progreso de la orden" tabIndex={0}>
           {isExternalDesign ? (

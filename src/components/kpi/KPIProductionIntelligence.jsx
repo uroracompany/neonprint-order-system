@@ -4,6 +4,7 @@ import OrderDetailModal from '../orders/OrderDetailModal'
 import { Icons } from '../../utils/icons'
 import { formatNumber, formatDays } from '../../utils/kpiHelpers'
 import { adminApiFetch } from '../../utils/adminApi'
+import '../clients/AdminClientsModule.css'
 
 const AREA_COLORS = { digital: '#06B6D4', dtf: '#F43F5E', ploteo: '#F59E0B' }
 const AREA_ICONS = { digital: Icons.Image, dtf: Icons.Package, ploteo: Icons.Clipboard }
@@ -28,8 +29,33 @@ function getShortOrderId(orderId) {
   return String(orderId).slice(0, 8).toUpperCase()
 }
 
+function getInitials(name) {
+  return String(name || '?')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join('') || '?'
+}
+
 function getStageLabel(status) {
   return STATUS_LABELS[status] || status || 'Sin estado'
+}
+
+function getStageTone(status) {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized === 'completed') return 'success'
+  if (normalized === 'in_termination') return 'cyan'
+  if (['pending', 'in_production'].includes(normalized)) return 'warning'
+  return 'neutral'
+}
+
+function getDaysTone(days) {
+  const normalized = Number(days) || 0
+  if (normalized >= 8) return 'danger'
+  if (normalized >= 4) return 'warning'
+  if (normalized > 0) return 'info'
+  return 'neutral'
 }
 
 function formatEntityCount(value, singular, plural) {
@@ -658,29 +684,92 @@ function AreaMetricBar({ label, value, pct, color }) {
 }
 
 function AreaOrdersCard({ orderRows, onSelectOrder }) {
+  const handleOrderKeyDown = (event, order) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onSelectOrder(order)
+    }
+  }
+
   return (
     <section id="area-orders" className="kpi-area-surface kpi-area-orders-card premium">
       <AreaSectionHeader title="Ordenes activas" subtitle="Inspeccion rapida sin salir del KPI" aside={formatNumber(orderRows.length)} />
       {orderRows.length > 0 ? (
-        <div className="kpi-area-orders-table" role="table" aria-label="Ordenes activas del area">
-          <div className="kpi-area-orders-head" role="row">
-            <span>Orden</span>
-            <span>Cliente</span>
-            <span>Prioridad</span>
-            <span>Etapa</span>
-            <span>Dias</span>
-          </div>
-          {orderRows.slice(0, 10).map(order => (
-            <button key={`${order.production_file_id || order.id}`} type="button" className="kpi-area-order-row premium" onClick={() => onSelectOrder(order)}>
-              <span className="kpi-production-order-code">#{getShortOrderId(order.id)}</span>
-              <span className="kpi-area-order-client">{order.client_name || 'Sin cliente'}</span>
-              <span className={order.order_type === 'orden 911' ? 'kpi-production-risk-pill danger' : 'kpi-production-risk-pill'}>
-                {order.order_type === 'orden 911' ? '911' : 'Normal'}
-              </span>
-              <span className="kpi-production-stage-pill">{getStageLabel(order.production_file_status)}</span>
-              <span className="kpi-production-days-pill">{formatDays(order.production_stage_days || 0)}</span>
-            </button>
-          ))}
+        <div className="ps-table-wrap kpi-area-orders-table-wrap">
+          <table className="ps-table acm-table kpi-area-orders-table" aria-label="Ordenes activas del area">
+            <thead>
+              <tr>
+                <th>Orden</th>
+                <th>Cliente</th>
+                <th>Prioridad</th>
+                <th>Etapa</th>
+                <th>Tiempo</th>
+                <th aria-label="Acciones" />
+              </tr>
+            </thead>
+            <tbody>
+              {orderRows.slice(0, 10).map(order => {
+                const clientName = order.client_name || 'Sin cliente'
+                const daysTone = getDaysTone(order.production_stage_days)
+                const priorityTone = order.order_type === 'orden 911' ? 'danger' : 'neutral'
+                const stageTone = getStageTone(order.production_file_status)
+                return (
+                  <tr
+                    key={`${order.production_file_id || order.id}`}
+                    className="row-hover acm-client-row kpi-area-order-table-row"
+                    onClick={() => onSelectOrder(order)}
+                    onKeyDown={(event) => handleOrderKeyDown(event, order)}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Ver detalles de la orden ${getShortOrderId(order.id)} de ${clientName}`}
+                  >
+                    <td className="td-pad">
+                      <div className="kpi-area-order-id">
+                        <span className="kpi-area-order-id-icon"><Icons.FileText size={14} /></span>
+                        <span>
+                          <strong>#{getShortOrderId(order.id)}</strong>
+                          <small>Orden activa</small>
+                        </span>
+                      </div>
+                    </td>
+                    <td className="td-pad">
+                      <div className="acm-client-cell">
+                        <span className="acm-avatar acm-avatar-small">{getInitials(clientName)}</span>
+                        <span>
+                          <strong title={clientName}>{clientName}</strong>
+                          <small>{order.production_file_id ? `Archivo #${getShortOrderId(order.production_file_id)}` : 'Sin archivo vinculado'}</small>
+                        </span>
+                      </div>
+                    </td>
+                    <td className="td-pad">
+                      <span className={`acm-badge ${priorityTone}`}>
+                        {order.order_type === 'orden 911' ? '911' : 'Normal'}
+                      </span>
+                    </td>
+                    <td className="td-pad">
+                      <span className={`acm-badge ${stageTone}`}>{getStageLabel(order.production_file_status)}</span>
+                    </td>
+                    <td className="td-pad">
+                      <span className={`acm-badge ${daysTone}`}>{formatDays(order.production_stage_days || 0)}</span>
+                    </td>
+                    <td className="td-pad td-actions" onClick={(event) => event.stopPropagation()}>
+                      <div className="table-actions acm-row-actions">
+                        <button
+                          type="button"
+                          className="table-action-btn view"
+                          onClick={() => onSelectOrder(order)}
+                          title="Ver detalles"
+                          aria-label={`Ver detalles de ${clientName}`}
+                        >
+                          <Icons.Eye />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       ) : (
         <AreaEmptyState title="Sin ordenes para inspeccionar" />

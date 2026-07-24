@@ -1,31 +1,17 @@
-.order-detail-modal.ps-modal {
-  width: min(1040px, calc(100vw - 32px));
-  max-width: 1040px;
-  max-height: min(92vh, 960px);
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  box-shadow: 0 28px 80px rgba(15, 30, 64, 0.22);
-}
-
-.order-detail-modal .ps-modal-header {
-  padding: 20px 26px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 96%, var(--primary) 4%);
-}
-
 .order-detail-modal .ps-modal-title {
-  font-size: 19px;
-  letter-spacing: -0.02em;
+  line-height: 1.2;
+  letter-spacing: 0;
 }
 
 .order-detail-modal .ps-modal-body {
-  padding: 22px 26px 30px;
+  overscroll-behavior: contain;
   background: color-mix(in srgb, var(--surface-alt) 34%, var(--surface) 66%);
 }
 
 .order-detail-shell {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 
 .order-detail-actions-panel {
@@ -117,8 +103,8 @@
 
 .order-detail-content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+  gap: 16px;
 }
 
 .order-detail-column {
@@ -127,15 +113,42 @@
 
 .order-detail-section {
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: 16px;
   box-shadow: var(--shadow-sm);
 }
 
 .order-detail-flow {
-  padding: 4px 2px 0;
+  padding: 0;
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+}
+
+.order-detail-flow .ps-flow {
+  min-width: 720px;
+  margin: 0;
+  padding: 14px 18px;
+  background: var(--surface);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.order-detail-flow .ps-flow-circle {
+  width: 34px;
+  height: 34px;
+  font-size: 12px;
+}
+
+.order-detail-flow .ps-flow-label {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.order-detail-flow .ps-flow-line {
+  margin-inline: 8px;
+  margin-bottom: 18px;
 }
 
 .order-detail-flow:focus-visible {
@@ -156,17 +169,6 @@
 }
 
 @media (max-width: 640px) {
-  .order-detail-modal.ps-modal {
-    width: calc(100vw - 16px);
-    max-height: calc(100dvh - 16px);
-  }
-
-  .order-detail-modal .ps-modal-header,
-  .order-detail-modal .ps-modal-body {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
   .pa-order-actions {
     grid-template-columns: 1fr 1fr;
   }
@@ -176,7 +178,7 @@
   }
 
   .order-detail-flow > * {
-    min-width: 680px;
+    min-width: 660px;
   }
 }
 

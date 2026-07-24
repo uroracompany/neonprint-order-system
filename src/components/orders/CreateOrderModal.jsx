@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "../../../supabaseClient";
 import { Icons } from "../../utils/icons";
 import { ClientSelect } from "../ui/ClientCombobox";
@@ -32,20 +33,123 @@ const EMPTY_FORM = {
   reference_images: [],
 };
 
-export function Modal({ open, onClose, title, children, wide, stickyHeader = false, className = "" }) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  wide,
+  stickyHeader = false,
+  className = "",
+  closeOnBackdrop = false,
+  closeOnEscape = false,
+  hideStripe = false,
+  overlayClassName = "",
+}) {
+  const titleId = useId();
+  const overlayRef = useRef(null);
+  const modalRef = useRef(null);
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const previousActiveElement = document.activeElement;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    const focusCloseButton = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus({ preventScroll: true });
+    });
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && closeOnEscape) {
+        event.preventDefault();
+        onClose?.();
+        return;
+      }
+
+      if (event.key !== "Tab" || !modalRef.current) return;
+
+      const focusableElements = modalRef.current.querySelectorAll(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      const focusable = Array.from(focusableElements).filter(
+        (element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true"
+      );
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        modalRef.current.focus({ preventScroll: true });
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    const handleNativeBackdropPointerDown = (event) => {
+      if (closeOnBackdrop && event.target === overlayRef.current) {
+        onClose?.();
+      }
+    };
+
+    const overlayNode = overlayRef.current;
+
+    document.addEventListener("keydown", handleKeyDown);
+    overlayNode?.addEventListener("pointerdown", handleNativeBackdropPointerDown);
+
+    return () => {
+      window.cancelAnimationFrame(focusCloseButton);
+      document.removeEventListener("keydown", handleKeyDown);
+      overlayNode?.removeEventListener("pointerdown", handleNativeBackdropPointerDown);
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      if (previousActiveElement && typeof previousActiveElement.focus === "function") {
+        previousActiveElement.focus({ preventScroll: true });
+      }
+    };
+  }, [closeOnBackdrop, closeOnEscape, onClose, open]);
+
   if (!open) return null;
-  return (
-    <div className="ps-modal-overlay">
-      <div className={`ps-modal ${wide ? "wide" : "narrow"} ${className}`.trim()}>
-        <div className="ps-modal-stripe" />
+
+  const handleBackdropClick = (event) => {
+    if (closeOnBackdrop && event.target === event.currentTarget) {
+      onClose?.();
+    }
+  };
+
+  const modalElement = (
+    <div ref={overlayRef} className={`ps-modal-overlay ${overlayClassName}`.trim()} onClick={handleBackdropClick}>
+      <div
+        ref={modalRef}
+        className={`ps-modal ${wide ? "wide" : "narrow"} ${className}`.trim()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+      >
+        {!hideStripe && <div className="ps-modal-stripe" aria-hidden="true" />}
         <div className={`ps-modal-header ${stickyHeader ? "is-sticky" : ""}`}>
-          <span className="ps-modal-title">{title}</span>
-          <button className="ps-modal-close" onClick={onClose} aria-label="Cerrar modal"><Icons.Close /></button>
+          <span id={titleId} className="ps-modal-title">{title}</span>
+          <button ref={closeButtonRef} type="button" className="ps-modal-close" onClick={onClose} aria-label="Cerrar modal"><Icons.Close /></button>
         </div>
         <div className="ps-modal-body">{children}</div>
       </div>
     </div>
   );
+
+  return createPortal(modalElement, document.body);
 }
 
 export function Field({ label, required, optional, hint, error, children }) {
