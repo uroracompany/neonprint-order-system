@@ -21,6 +21,60 @@ export const formatDominicanPhone = (value) => {
   return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
 };
 
+export const formatClientPhoneForStorage = (value) => {
+  const normalized = normalizeClientPhone(value);
+  return formatDominicanPhone(normalized || value);
+};
+
+const CLIENT_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const buildClientPayload = (form, { userId = null, includeCreatedBy = false } = {}) => {
+  const payload = {
+    name: String(form?.name || "").trim(),
+    phone: formatClientPhoneForStorage(form?.phone || ""),
+    email: String(form?.email || "").trim() || null,
+    address: String(form?.address || "").trim() || null,
+    notes: String(form?.notes || "").trim() || null,
+  };
+
+  if (includeCreatedBy) payload.created_by = userId || null;
+  return payload;
+};
+
+export const validateClientPayload = (payload) => {
+  const errors = {};
+  const name = String(payload?.name || "").trim();
+  const phone = String(payload?.phone || "").trim();
+  const phoneDigits = normalizeClientPhone(phone);
+  const email = String(payload?.email || "").trim();
+
+  if (!name) {
+    errors.name = "Escribe el nombre del cliente.";
+  } else if (name.length < 2) {
+    errors.name = "El nombre debe tener al menos 2 caracteres.";
+  }
+
+  if (!phone) {
+    errors.phone = "Escribe el numero de telefono del cliente.";
+  } else if (phoneDigits.length < 3) {
+    errors.phone = "El telefono debe tener al menos 3 digitos.";
+  }
+
+  if (email && !CLIENT_EMAIL_PATTERN.test(email)) {
+    errors.email = "Escribe un correo valido.";
+  }
+
+  return errors;
+};
+
+export const validateClientForm = (form, options) => {
+  const payload = buildClientPayload(form, options);
+  return {
+    payload,
+    errors: validateClientPayload(payload),
+  };
+};
+
 export const getClientDisplayName = (client) => {
   if (!client) return "Cliente sin nombre";
   const phone = String(client.phone || "").trim();

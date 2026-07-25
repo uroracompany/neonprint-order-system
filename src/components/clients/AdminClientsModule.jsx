@@ -590,6 +590,10 @@ function ClientDetail({
         <article className="pa-panel acm-detail-card acm-detail-card-commerce">
           <h3>Resumen comercial</h3>
           <div className="acm-stat-list">
+            <StatLine icon={<Icons.AlertCircle />} label="Ordenes 911" value={numberValue(stats.urgent_911_orders)} tone="danger" />
+            <StatLine icon={<Icons.FileText />} label="Ordenes normales" value={numberValue(stats.normal_orders)} tone="info" />
+            <StatLine icon={<Icons.Brush />} label="Ordenes diseno interno" value={numberValue(stats.internal_design_orders)} tone="violet" />
+            <StatLine icon={<Icons.ExternalLink />} label="Ordenes diseno externo" value={numberValue(stats.external_design_orders)} tone="warning" />
             <StatLine icon={<Icons.Orders />} label="Total de órdenes" value={numberValue(stats.total_orders)} tone="info" />
             <StatLine icon={<Icons.Clock />} label="Órdenes activas / pendientes" value={numberValue(stats.active_orders)} tone="warning" />
             <StatLine icon={<Icons.Check />} label="Órdenes completadas" value={numberValue(stats.completed_orders)} tone="success" />

@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { Icons } from "../../utils/icons";
-import { formatDominicanPhone, normalizeClientPhone, normalizeClientText, searchClients } from "../../utils/clients";
+import {
+  formatDominicanPhone,
+  normalizeClientPhone,
+  normalizeClientText,
+  searchClients,
+  validateClientForm,
+} from "../../utils/clients";
 import "./CreateClientModal.css";
 
 const EMPTY_FORM = { name: "", phone: "", email: "", address: "", notes: "" };
@@ -67,7 +73,7 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
     if (error) setError("");
   };
 
-  const validate = () => {
+  const _validate = () => {
     const errors = {};
     const name = form.name.trim();
     const phone = form.phone.trim();
@@ -79,7 +85,10 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
   };
 
   const handleSubmit = async () => {
-    const errors = validate();
+    const { payload, errors } = validateClientForm(form, {
+      userId,
+      includeCreatedBy: true,
+    });
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setError("Completa los campos obligatorios para guardar el cliente.");
@@ -90,15 +99,6 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
     setFieldErrors({});
 
     try {
-      const payload = {
-        name: form.name.trim(),
-        phone: formatDominicanPhone(form.phone.trim()),
-        email: form.email.trim() || null,
-        address: form.address.trim() || null,
-        notes: form.notes.trim() || null,
-        created_by: userId || null,
-      };
-
       const phoneDigits = normalizeClientPhone(payload.phone);
       if (phoneDigits.length >= 3) {
         const existingClients = await searchClients(supabase, payload.phone, 10);

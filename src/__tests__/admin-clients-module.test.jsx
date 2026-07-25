@@ -33,6 +33,10 @@ const detailResponse = {
   client: makeClient(1),
   stats: {
     total_orders: 3,
+    urgent_911_orders: 1,
+    normal_orders: 2,
+    internal_design_orders: 2,
+    external_design_orders: 1,
     active_orders: 1,
     completed_orders: 2,
     cancelled_orders: 0,
@@ -127,6 +131,10 @@ describe("AdminClientsModule", () => {
     expect(await screen.findByRole("heading", { name: "Cliente 1" })).toBeInTheDocument();
     expect(screen.getByText("Información personal")).toBeInTheDocument();
     expect(screen.getByText("Resumen comercial")).toBeInTheDocument();
+    expect(screen.getByText("Ordenes 911")).toBeInTheDocument();
+    expect(screen.getByText("Ordenes normales")).toBeInTheDocument();
+    expect(screen.getByText("Ordenes diseno interno")).toBeInTheDocument();
+    expect(screen.getByText("Ordenes diseno externo")).toBeInTheDocument();
     expect(screen.getByText("Actividad reciente")).toBeInTheDocument();
     expect(supabase.rpc).toHaveBeenCalledWith("admin_get_client_detail", {
       p_client_id: listRows[0].id,
@@ -139,4 +147,3 @@ describe("AdminClientsModule", () => {
     expect(await screen.findByText("Clientes registrados")).toBeInTheDocument();
   });
 });
-

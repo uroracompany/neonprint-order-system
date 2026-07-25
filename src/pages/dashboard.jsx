@@ -62,7 +62,14 @@ import {
   archiveOrder,
 } from "../utils/archive";
 import { getReferenceImages } from "../utils/orderAssets";
-import { formatDominicanPhone, getSelectedClientOrderFields, orderMatchesClientFilter, searchClients } from "../utils/clients";
+import {
+  formatDominicanPhone,
+  getSelectedClientOrderFields,
+  normalizeClientPhone,
+  orderMatchesClientFilter,
+  searchClients,
+  validateClientForm,
+} from "../utils/clients";
 import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
 import { filterActiveNotifications, getActiveUnreadCount, showCreditActionFeedback } from "../utils/notifications";
 import { useAuth } from "../hooks/useAuth";
@@ -1007,7 +1014,7 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
     userForm.role &&
     isPasswordReady;
 
-  const roleDescriptions = {
+  const _roleDescriptions = {
     digital_producer: "Gestiona archivos de producción digital.",
     dtf_producer: "Gestiona archivos de producción DTF.",
     ploteo_producer: "Gestiona archivos de producción ploteo.",
@@ -2865,7 +2872,7 @@ export default function Dashboard() {
       setMaterialToDelete(null);
       fetchMaterials();
       showFeedback("success", "Material eliminado correctamente.");
-    } catch (err) {
+    } catch {
       showFeedback("error", "No se pudo eliminar el material.");
     } finally {
       setMaterialDeleteLoading(false);
@@ -2900,15 +2907,9 @@ export default function Dashboard() {
   };
 
   const handleSaveClient = async () => {
-    const payload = {
-      name: clientForm.name.trim(),
-      phone: clientForm.phone.trim(),
-      email: clientForm.email.trim() || null,
-      address: clientForm.address.trim() || null,
-      notes: clientForm.notes.trim() || null,
-    };
+    const { payload, errors } = validateClientForm(clientForm);
 
-    const nextErrors = {};
+    const nextErrors = errors;
 
     if (!payload.name) {
       nextErrors.name = "Escribe el nombre del cliente.";
@@ -2918,7 +2919,7 @@ export default function Dashboard() {
 
     if (!payload.phone) {
       nextErrors.phone = "Escribe el número de teléfono del cliente.";
-    } else if (phone.length < 3) {
+    } else if (payload.phone.length < 3) {
       nextErrors.phone = "El teléfono debe tener al menos 3 caracteres.";
     }
 
@@ -2929,9 +2930,25 @@ export default function Dashboard() {
     }
 
     setClientFormErrors({});
+    setClientFormError("");
     setSaving(true);
 
     try {
+      const phoneDigits = normalizeClientPhone(payload.phone);
+      if (phoneDigits.length >= 3) {
+        const existingClients = await searchClients(supabase, payload.phone, 10);
+        const duplicateClient = existingClients.find((client) => (
+          normalizeClientPhone(client.phone) === phoneDigits
+          && client.id !== editingClient?.id
+        ));
+
+        if (duplicateClient) {
+          setClientFormErrors({ phone: "Ya existe un cliente registrado con este telefono." });
+          setClientFormError(`El telefono pertenece a "${duplicateClient.name}". Usa ese cliente o registra otro numero.`);
+          return;
+        }
+      }
+
       if (editingClient) {
         const { error } = await supabase
           .from("clients")
@@ -2949,7 +2966,7 @@ export default function Dashboard() {
       setEditingClient(null);
       setClientForm(DEFAULT_CLIENT_FORM);
       setClientFormErrors({});
-      await fetchClients();
+      await Promise.all([fetchClients(), fetchAccountsReceivable(), loadOrders(true)]);
       notif.showActionNotification({
         type: "success",
         title: editingClient ? "Cliente actualizado" : "Cliente registrado",
@@ -2962,7 +2979,7 @@ export default function Dashboard() {
     }
   };
 
-  const handleDeleteClient = async (id) => {
+  const _handleDeleteClient = async (id) => {
     if (deletingClientId === id) {
       try {
         const { error } = await supabase.from("clients").delete().eq("id", id);
@@ -5172,7 +5189,6 @@ function CreditClientDetailView({
   onBack,
   isOpenCreditReceivable,
   getCreditReceivableStatusLabel,
-  getCreditReceivableStatusStyle,
   formatCreditDate,
 }) {
   const clientId = group.client?.id;
