@@ -5,6 +5,7 @@ import { handleAdminUpdateUser } from "../server/admin-update-user-handler.js";
 import { handleAdminDeleteUser } from "../server/admin-delete-user-handler.js";
 import { handleAdminDeleteOrderWithFiles } from "../server/storage-gateway.js";
 import { handleAdminSetUserStatus } from "../server/admin-set-user-status-handler.js";
+import { handleAdminEmployeeDetail } from "../server/admin-employee-detail-handler.js";
 import { rateLimit } from "../server/rateLimit.js";
 
 const ACTIONS = {
@@ -15,6 +16,7 @@ const ACTIONS = {
   "delete-user": handleAdminDeleteUser,
   "delete-order": handleAdminDeleteOrderWithFiles,
   "set-user-status": handleAdminSetUserStatus,
+  "employee-detail": handleAdminEmployeeDetail,
 };
 
 export default async function handler(req, res) {

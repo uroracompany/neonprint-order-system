@@ -1,6 +1,19 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "./auth-middleware.js";
-import { ADMIN_USER_ROLE_SET, getSupabaseAdminEnv, jsonResponse, normalizeUserProfile } from "./admin-user-utils.js";
+import {
+  ADMIN_USER_ROLE_SET,
+  EMAIL_PATTERN,
+  getSupabaseAdminEnv,
+  isMissingEmailColumnError,
+  jsonResponse,
+  normalizeUserProfile,
+} from "./admin-user-utils.js";
+
+const PROFILES_EMAIL_MIGRATION = "supabase/20260604_add_profiles_email_for_admin_edit.sql";
+
+const missingProfilesEmailResponse = () => jsonResponse(500, {
+  error: `La columna profiles.email no existe. Aplica la migracion ${PROFILES_EMAIL_MIGRATION} antes de crear usuarios.`,
+});
 
 export async function handleAdminCreateUser(payload, env = process.env) {
   const envResult = getSupabaseAdminEnv(env);
@@ -23,6 +36,12 @@ export async function handleAdminCreateUser(payload, env = process.env) {
     });
   }
 
+  if (!EMAIL_PATTERN.test(email)) {
+    return jsonResponse(400, {
+      error: "El correo electronico no tiene un formato valido.",
+    });
+  }
+
   if (!ADMIN_USER_ROLE_SET.has(role)) {
     return jsonResponse(400, {
       error: "El rol seleccionado no es valido.",
@@ -41,6 +60,28 @@ export async function handleAdminCreateUser(payload, env = process.env) {
       autoRefreshToken: false,
     },
   });
+
+  const { data: duplicateProfiles, error: duplicateError } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .ilike("email", email)
+    .limit(1);
+
+  if (isMissingEmailColumnError(duplicateError)) {
+    return missingProfilesEmailResponse();
+  }
+
+  if (duplicateError) {
+    return jsonResponse(400, {
+      error: `No se pudo validar el correo: ${duplicateError.message}`,
+    });
+  }
+
+  if (Array.isArray(duplicateProfiles) && duplicateProfiles.length > 0) {
+    return jsonResponse(409, {
+      error: "Ya existe otro usuario con ese correo electronico.",
+    });
+  }
 
   const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
     email,

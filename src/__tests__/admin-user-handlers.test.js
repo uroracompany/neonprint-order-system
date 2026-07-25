@@ -128,6 +128,8 @@ const makeAdminCreateClient = ({
   tokenError = null,
   currentRole = "admin",
   currentProfileError = null,
+  duplicateProfiles = [],
+  duplicateError = null,
 } = {}) => {
   const getUserById = vi.fn(async () => ({
     data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
@@ -152,11 +154,21 @@ const makeAdminCreateClient = ({
     error: currentProfileError,
   }));
 
-  const select = vi.fn(() => ({
+  const duplicateBuilder = {
+    ilike: vi.fn(() => duplicateBuilder),
+    limit: vi.fn(() => duplicateBuilder),
+    then: (resolve, reject) => Promise.resolve({ data: duplicateProfiles, error: duplicateError }).then(resolve, reject),
+  };
+
+  const select = vi.fn((columns) => {
+    if (columns === "id") return duplicateBuilder;
+
+    return {
     eq: vi.fn(() => ({
       single: currentSingle,
     })),
-  }));
+    };
+  });
 
   return {
     auth: {
@@ -173,6 +185,69 @@ const makeAdminCreateClient = ({
     deleteUser,
     getUser,
     getUserById,
+    duplicateBuilder,
+  };
+};
+
+const makeAdminDeleteClient = ({
+  tokenUserId = "admin-1",
+  currentRole = "admin",
+  currentProfileError = null,
+  referenceCounts = {},
+  referenceErrors = {},
+  deleteUserError = null,
+  profileDeleteError = null,
+} = {}) => {
+  const getUser = vi.fn(async () => ({
+    data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
+    error: null,
+  }));
+  const deleteUser = vi.fn(async () => ({ error: deleteUserError }));
+  const currentSingle = vi.fn(async () => ({
+    data: {
+      id: tokenUserId,
+      name: "Admin",
+      email: "admin@example.com",
+      role: currentRole,
+      employment_status: true,
+    },
+    error: currentProfileError,
+  }));
+  const profileDeleteEq = vi.fn(async () => ({ error: profileDeleteError }));
+  const profileDelete = vi.fn(() => ({ eq: profileDeleteEq }));
+
+  const from = vi.fn((table) => ({
+    select: vi.fn((columns, options = {}) => {
+      if (table === "profiles" && !options.head) {
+        return {
+          eq: vi.fn(() => ({
+            single: currentSingle,
+          })),
+        };
+      }
+
+      return {
+        eq: vi.fn((field) => Promise.resolve({
+          count: referenceCounts[`${table}.${field}`] || 0,
+          error: referenceErrors[`${table}.${field}`] || null,
+        })),
+      };
+    }),
+    delete: profileDelete,
+  }));
+
+  return {
+    auth: {
+      getUser,
+      admin: {
+        deleteUser,
+      },
+    },
+    from,
+    getUser,
+    deleteUser,
+    profileDelete,
+    profileDeleteEq,
   };
 };
 
@@ -741,6 +816,82 @@ describe("handleAdminCreateUser", () => {
 
     expect(result.status).toBe(400);
     expect(currentClient.createUser).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid email formats when creating a user", async () => {
+    currentClient = makeAdminCreateClient();
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "correo-invalido",
+      password: "secret1",
+      role: "seller",
+    }, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toMatch(/correo/);
+    expect(currentClient.createUser).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicated emails before creating the auth user", async () => {
+    currentClient = makeAdminCreateClient({ duplicateProfiles: [{ id: "user-2" }] });
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "carlos@example.com",
+      password: "secret1",
+      role: "seller",
+    }, env);
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toMatch(/Ya existe/);
+    expect(currentClient.createUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleAdminDeleteUser", () => {
+  let handleAdminDeleteUser;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleAdminDeleteUser } = await import("../../server/admin-delete-user-handler.js"));
+  });
+
+  it("blocks deleting the current admin account", async () => {
+    currentClient = makeAdminDeleteClient({ tokenUserId: "admin-1" });
+
+    const result = await handleAdminDeleteUser({ userId: "admin-1" }, env);
+
+    expect(result.status).toBe(403);
+    expect(currentClient.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting employees with business references", async () => {
+    currentClient = makeAdminDeleteClient({
+      referenceCounts: {
+        "orders.seller_id": 2,
+      },
+    });
+
+    const result = await handleAdminDeleteUser({ userId: "user-1" }, env);
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toMatch(/referencia/);
+    expect(result.body.references).toEqual([
+      { table: "orders", field: "seller_id", count: 2 },
+    ]);
+    expect(currentClient.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("deletes auth and profile when the employee has no references", async () => {
+    currentClient = makeAdminDeleteClient();
+
+    const result = await handleAdminDeleteUser({ userId: "user-1" }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.deleteUser).toHaveBeenCalledWith("user-1");
+    expect(currentClient.profileDelete).toHaveBeenCalled();
+    expect(currentClient.profileDeleteEq).toHaveBeenCalledWith("id", "user-1");
   });
 });
 

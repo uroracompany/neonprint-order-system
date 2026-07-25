@@ -43,7 +43,7 @@ export async function handleAdminSetUserStatus(payload, env = process.env) {
     .from("profiles")
     .update({ employment_status: nextStatus })
     .eq("id", userId)
-    .select("id,name,email,role,employment_status")
+    .select("id,name,email,role,employment_status,created_at")
     .single();
 
   if (isMissingEmailColumnError(error)) {
@@ -51,7 +51,7 @@ export async function handleAdminSetUserStatus(payload, env = process.env) {
       .from("profiles")
       .update({ employment_status: nextStatus })
       .eq("id", userId)
-      .select("id,name,role,employment_status")
+      .select("id,name,role,employment_status,created_at")
       .single();
     data = fallback.data;
     error = fallback.error;

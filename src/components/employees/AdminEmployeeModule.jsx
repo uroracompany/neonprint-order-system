@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Pagination } from "../ui/Pagination";
 import { Icons } from "../../utils/icons";
-import { getOrderStatusLabel, getPaymentStatusLabel, STATUS_OPTIONS, PAYMENT_OPTIONS, formatDate, isProductionRole, normalizeText } from "../../utils/constants";
+import { getOrderStatusLabel, getPaymentStatusLabel, STATUS_OPTIONS, PAYMENT_OPTIONS, formatDate, isProductionRole } from "../../utils/constants";
 import { adminApiFetch } from "../../utils/adminApi";
 import "./AdminEmployeeModule.css";
 
@@ -31,28 +31,6 @@ const getRoleLabel = (role) => {
   return map[role] || role;
 };
 
-const resolveAssignmentIdsByRole = (order, role) => {
-  const normalizedRole = normalizeText(role);
-  if (["seller", "admin"].includes(normalizedRole)) {
-    return [(order?.seller_id || order?.created_by)].filter(Boolean);
-  }
-  if (normalizedRole === "designer") {
-    return [order?.designer_id].filter(Boolean);
-  }
-  if (normalizedRole === "quote") {
-    return ["quote_id", "quotation_id", "quote_user_id"].map((field) => order?.[field]).filter(Boolean);
-  }
-  if (normalizedRole === "delivery") {
-    return [order?.delivery_id].filter(Boolean);
-  }
-  return [];
-};
-
-const orderMatchesEmployee = (order, userId, role) => {
-  if (!userId) return false;
-  return resolveAssignmentIdsByRole(order, role).includes(userId);
-};
-
 const getOrderTone = (status) => {
   const s = String(status || "").toLowerCase();
   if (["in_completed", "in_delivered"].includes(s)) return "success";
@@ -69,57 +47,49 @@ const getPaymentTone = (status) => {
   return "neutral";
 };
 
-function EmployeeMetricsCards({ profile, orders }) {
+const EMPTY_METRICS = {
+  total_orders: 0,
+  active_orders: 0,
+  completed_orders: 0,
+  delivered_orders: 0,
+  cancelled_orders: 0,
+};
+
+function EmployeeMetricsCards({ profile }) {
   const role = profile?.role;
   const userId = profile?.id;
   const isProduction = isProductionRole(role);
+  const [metrics, setMetrics] = useState(EMPTY_METRICS);
   const [productionMetrics, setProductionMetrics] = useState(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
 
-  const employeeOrders = useMemo(() => {
-    return orders.filter((o) => orderMatchesEmployee(o, userId, role));
-  }, [orders, userId, role]);
-
-  const activeOrders = employeeOrders.filter((o) =>
-    !["cancelled", "in_Completed", "in_Delivered"].includes(o?.status)
-  ).length;
-
-  const completedOrders = employeeOrders.filter((o) =>
-    o?.status === "in_Completed"
-  ).length;
-
-  const deliveredOrders = employeeOrders.filter((o) =>
-    o?.status === "in_Delivered"
-  ).length;
-
-  const cancelledOrders = employeeOrders.filter((o) =>
-    o?.status === "cancelled"
-  ).length;
-
   useEffect(() => {
-    if (!isProduction || !userId) return;
+    if (!userId) return;
     let cancelled = false;
-    async function fetchProductionMetrics() {
+    async function fetchEmployeeMetrics() {
       setLoadingMetrics(true);
       try {
-        const now = new Date();
-        const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        const to = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
-        const res = await adminApiFetch('/api/kpi-data', {
-          action: 'admin_employee_production_metrics',
-          employee_id: userId,
-          date_from: from,
-          date_to: to,
+        const res = await adminApiFetch('/api/admin', {
+          action: 'employee-detail',
+          userId,
+          page: 1,
+          pageSize: 1,
         });
         if (res.response.ok && !cancelled) {
-          setProductionMetrics(res.result);
+          setMetrics(res.result?.metrics || EMPTY_METRICS);
+          setProductionMetrics(res.result?.productionMetrics || null);
         }
       } catch { /* ignore */ }
       if (!cancelled) setLoadingMetrics(false);
     }
-    fetchProductionMetrics();
+    fetchEmployeeMetrics();
     return () => { cancelled = true; };
-  }, [isProduction, userId]);
+  }, [userId]);
+
+  const activeOrders = metrics?.active_orders || 0;
+  const completedOrders = metrics?.completed_orders || 0;
+  const deliveredOrders = metrics?.delivered_orders || 0;
+  const cancelledOrders = metrics?.cancelled_orders || 0;
 
   return (
     <div className="acm-detail-grid">
@@ -141,7 +111,7 @@ function EmployeeMetricsCards({ profile, orders }) {
           <div className="acm-stat-line">
             <span className="acm-stat-icon info"><Icons.Orders /></span>
             <span>Órdenes asignadas</span>
-            <strong>{employeeOrders.length}</strong>
+            <strong>{metrics?.total_orders || 0}</strong>
           </div>
           <div className="acm-stat-line">
             <span className="acm-stat-icon warning"><Icons.Clock /></span>
@@ -258,8 +228,7 @@ function EmployeeMetricsCards({ profile, orders }) {
   );
 }
 
-function EmployeeOrdersPanel({ profile, orders, onViewOrder }) {
-  const role = profile?.role;
+function EmployeeOrdersPanel({ profile, onViewOrder }) {
   const userId = profile?.id;
 
   const [search, setSearch] = useState("");
@@ -267,6 +236,8 @@ function EmployeeOrdersPanel({ profile, orders, onViewOrder }) {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
+  const [employeeOrders, setEmployeeOrders] = useState([]);
+  const [totalOrders, setTotalOrders] = useState(0);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(search.trim()), 250);
@@ -275,30 +246,43 @@ function EmployeeOrdersPanel({ profile, orders, onViewOrder }) {
 
   useEffect(() => setPage(1), [query, statusFilter, paymentFilter]);
 
-  const employeeOrders = useMemo(() => {
-    let filtered = orders.filter((o) => orderMatchesEmployee(o, userId, role));
-    if (query) {
-      const q = normalizeText(query);
-      filtered = filtered.filter((o) =>
-        [o?.client_name, o?.invoice_number, o?.status, o?.id]
-          .some((v) => normalizeText(v).includes(q))
-      );
+  useEffect(() => {
+    if (!userId) {
+      setEmployeeOrders([]);
+      setTotalOrders(0);
+      return undefined;
     }
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((o) => o?.status === statusFilter);
-    }
-    if (paymentFilter !== "all") {
-      filtered = filtered.filter((o) => o?.payment_status === paymentFilter);
-    }
-    return filtered;
-  }, [orders, userId, role, query, statusFilter, paymentFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(employeeOrders.length / ORDER_PAGE_SIZE));
+    let cancelled = false;
+    async function fetchEmployeeOrders() {
+      try {
+        const res = await adminApiFetch('/api/admin', {
+          action: 'employee-detail',
+          userId,
+          page,
+          pageSize: ORDER_PAGE_SIZE,
+          status: statusFilter,
+          paymentStatus: paymentFilter,
+          search: query,
+        });
+        if (res.response.ok && !cancelled) {
+          setEmployeeOrders(Array.isArray(res.result?.orders) ? res.result.orders : []);
+          setTotalOrders(Number(res.result?.total) || 0);
+        }
+      } catch {
+        if (!cancelled) {
+          setEmployeeOrders([]);
+          setTotalOrders(0);
+        }
+      }
+    }
+    fetchEmployeeOrders();
+    return () => { cancelled = true; };
+  }, [userId, page, statusFilter, paymentFilter, query]);
+
+  const totalPages = Math.max(1, Math.ceil(totalOrders / ORDER_PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const paginatedItems = employeeOrders.slice(
-    (safePage - 1) * ORDER_PAGE_SIZE,
-    safePage * ORDER_PAGE_SIZE
-  );
+  const paginatedItems = employeeOrders;
 
   const hasFilters = Boolean(query) || statusFilter !== "all" || paymentFilter !== "all";
 
@@ -320,7 +304,7 @@ function EmployeeOrdersPanel({ profile, orders, onViewOrder }) {
               </button>
             )}
           </div>
-          <span className="pa-results-count">{employeeOrders.length} resultado{employeeOrders.length === 1 ? "" : "s"}</span>
+          <span className="pa-results-count">{totalOrders} resultado{totalOrders === 1 ? "" : "s"}</span>
         </div>
 
         <div className="acm-filter-grid">
@@ -414,7 +398,7 @@ function EmployeeOrdersPanel({ profile, orders, onViewOrder }) {
           </table>
         </div>
 
-        {employeeOrders.length > 0 && (
+        {totalOrders > 0 && (
           <div className="acm-pagination-footer">
             <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
           </div>
@@ -424,7 +408,7 @@ function EmployeeOrdersPanel({ profile, orders, onViewOrder }) {
   );
 }
 
-export default function AdminEmployeeModule({ profile, orders, onBack, onEditUser, onViewOrder, onDeleteUser, currentUserId }) {
+export default function AdminEmployeeModule({ profile, onBack, onEditUser, onViewOrder, onDeleteUser, currentUserId }) {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, []);
@@ -481,9 +465,9 @@ export default function AdminEmployeeModule({ profile, orders, onBack, onEditUse
         </div>
       </div>
 
-      <EmployeeMetricsCards profile={profile} orders={orders} />
+      <EmployeeMetricsCards profile={profile} />
 
-      <EmployeeOrdersPanel profile={profile} orders={orders} onViewOrder={onViewOrder} />
+      <EmployeeOrdersPanel profile={profile} onViewOrder={onViewOrder} />
     </section>
   );
 }

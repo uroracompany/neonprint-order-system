@@ -1776,13 +1776,27 @@ export default function Dashboard() {
     setLoadUsersError(null);
 
     try {
-      const { response, result } = await adminApiFetch("/api/admin", { action: "list-users", page: 1, pageSize: 500 });
+      const pageSize = 500;
+      let page = 1;
+      let total = null;
+      const allUsers = [];
 
-      if (!response.ok) {
-        throw new Error(result?.error || "No se pudieron cargar usuarios.");
+      while (total === null || allUsers.length < total) {
+        const { response, result } = await adminApiFetch("/api/admin", { action: "list-users", page, pageSize });
+
+        if (!response.ok) {
+          throw new Error(result?.error || "No se pudieron cargar usuarios.");
+        }
+
+        const users = Array.isArray(result?.users) ? result.users : [];
+        allUsers.push(...users);
+        total = Number.isFinite(Number(result?.total)) ? Number(result.total) : allUsers.length;
+
+        if (users.length === 0 || page > 100) break;
+        page += 1;
       }
 
-      setProfiles(Array.isArray(result?.users) ? result.users : []);
+      setProfiles(allUsers);
       setLoadingUsers(false);
       return;
     } catch (error) {
@@ -4688,7 +4702,6 @@ export default function Dashboard() {
         {activeTab === "users" && employeeDetailView && selectedEmployeeId ? (
           <AdminEmployeeModule
             profile={usersById[selectedEmployeeId]}
-            orders={orders}
             onBack={closeEmployeeDetail}
             onEditUser={(profile) => openEditUserModal(profile)}
             onViewOrder={(order) => setSelectedOrder(order)}
