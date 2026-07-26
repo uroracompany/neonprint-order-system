@@ -4526,10 +4526,10 @@
   z-index: 5;
   width: 36px;
   height: 36px;
-  border: 1px solid #dbe3ef;
+  border: 1px solid #091127;
   border-radius: 10px;
-  background: #fff;
-  color: var(--text-sub);
+  background: #091127;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4538,10 +4538,10 @@
 }
 
 .pa-carousel-arrow:hover {
-  background: var(--primary-light);
-  border-color: var(--primary);
-  color: var(--primary);
-  box-shadow: var(--shadow-md);
+  background: #091127;
+  border-color: #091127;
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(9, 17, 39, 0.22);
 }
 
 .pa-carousel-arrow-left {
