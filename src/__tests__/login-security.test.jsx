@@ -139,4 +139,28 @@ describe("secure login", () => {
       });
     });
   });
+
+  it("allows admin login when no verified MFA factor is enrolled", async () => {
+    mockProfile({ role: "admin", employment_status: true });
+    authMock.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "admin-user" } },
+      error: null,
+    });
+    authMock.mfa.listFactors.mockResolvedValue({
+      data: { totp: [] },
+      error: null,
+    });
+
+    const user = userEvent.setup();
+    renderLobby();
+
+    await user.type(screen.getByRole("textbox", { name: /correo/i }), "admin@example.com");
+    await user.type(screen.getByLabelText(/contrase/i), " SecurePass123 ");
+    await user.click(screen.getByRole("button", { name: /acceder al sistema/i }));
+
+    await waitFor(() => {
+      expect(authMock.mfa.challengeAndVerify).not.toHaveBeenCalled();
+      expect(screen.getByText(/acceso concedido/i)).toBeInTheDocument();
+    });
+  });
 });

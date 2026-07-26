@@ -66,10 +66,14 @@ const LoadingSession = () => (
 );
 
 export default function ProtectedRoute({ children, allowed = [] }) {
-  const { user, profile, loading, mfaLevel } = useAuth();
+  const { user, profile, loading, mfaLevel, hasVerifiedMfaFactor } = useAuth();
   const allowedRoles = useMemo(() => allowed.filter(Boolean), [allowed]);
 
-  if (loading || (user && profile === undefined) || (profile?.role === "admin" && mfaLevel === undefined)) {
+  if (
+    loading
+    || (user && profile === undefined)
+    || (profile?.role === "admin" && (mfaLevel === undefined || hasVerifiedMfaFactor === undefined))
+  ) {
     return <LoadingSession />;
   }
 
@@ -83,7 +87,7 @@ export default function ProtectedRoute({ children, allowed = [] }) {
     return <Navigate to="/" state={{ loginMessage: "Tu usuario no tiene permisos para entrar a esa sección." }} replace />;
   }
 
-  if (profile.role === "admin" && mfaLevel !== "aal2") {
+  if (profile.role === "admin" && hasVerifiedMfaFactor && mfaLevel !== "aal2") {
     return <Navigate to="/" state={{ loginMessage: "Verifica el segundo factor para continuar." }} replace />;
   }
 

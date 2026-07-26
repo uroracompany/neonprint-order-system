@@ -199,9 +199,9 @@ export default function Lobby() {
     const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
     if (factorsError) throw factorsError;
 
-    const verifiedTotp = factorsData?.totp?.[0];
+    const verifiedTotp = factorsData?.totp?.find((factor) => factor.status === "verified");
     if (!verifiedTotp?.id) {
-      throw new Error("mfa_required");
+      return;
     }
 
     const code = window.prompt("Codigo de verificacion 2FA")?.replace(/\s+/g, "");

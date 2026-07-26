@@ -19,6 +19,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(undefined);
   const [mfaLevel, setMfaLevel] = useState(null);
+  const [hasVerifiedMfaFactor, setHasVerifiedMfaFactor] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
 
@@ -46,17 +47,40 @@ export function AuthProvider({ children }) {
 
   const loadMfaLevel = useCallback(async (nextSession) => {
     if (!nextSession?.access_token) {
-      if (activeRef.current) setMfaLevel(null);
+      if (activeRef.current) {
+        setMfaLevel(null);
+        setHasVerifiedMfaFactor(false);
+      }
       return null;
     }
 
-    if (activeRef.current) setMfaLevel(undefined);
+    if (activeRef.current) {
+      setMfaLevel(undefined);
+      setHasVerifiedMfaFactor(undefined);
+    }
 
-    const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (error) throw error;
+    const [aalResult, factorsResult] = await Promise.all([
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      supabase.auth.mfa.listFactors(),
+    ]);
 
-    const nextLevel = data?.currentLevel || null;
-    if (activeRef.current) setMfaLevel(nextLevel);
+    if (aalResult.error) throw aalResult.error;
+    if (factorsResult.error) throw factorsResult.error;
+
+    const nextLevel = aalResult.data?.currentLevel || null;
+    const factorGroups = [
+      factorsResult.data?.totp,
+      factorsResult.data?.phone,
+      factorsResult.data?.webauthn,
+    ];
+    const hasVerifiedFactor = factorGroups.some((factors) => (
+      Array.isArray(factors) && factors.some((factor) => factor.status === "verified")
+    ));
+
+    if (activeRef.current) {
+      setMfaLevel(nextLevel);
+      setHasVerifiedMfaFactor(hasVerifiedFactor);
+    }
     return nextLevel;
   }, []);
 
@@ -79,6 +103,7 @@ export function AuthProvider({ children }) {
       if (!nextUser) {
         updateProfile(null);
         setMfaLevel(null);
+        setHasVerifiedMfaFactor(false);
       } else if (shouldShowProfileLoading) {
         updateProfile(undefined);
       }
@@ -109,6 +134,7 @@ export function AuthProvider({ children }) {
         userIdRef.current = null;
         updateProfile(null);
         setMfaLevel(null);
+        setHasVerifiedMfaFactor(false);
         setAuthError(error);
       }
       return null;
@@ -125,6 +151,7 @@ export function AuthProvider({ children }) {
         userIdRef.current = null;
         updateProfile(null);
         setMfaLevel(null);
+        setHasVerifiedMfaFactor(false);
       }
   }, [updateProfile]);
 
@@ -146,6 +173,7 @@ export function AuthProvider({ children }) {
           userIdRef.current = null;
           updateProfile(null);
           setMfaLevel(null);
+          setHasVerifiedMfaFactor(false);
           setAuthError(error);
         }
       } finally {
@@ -160,6 +188,7 @@ export function AuthProvider({ children }) {
         if (activeRef.current) {
           updateProfile(null);
           setMfaLevel(null);
+          setHasVerifiedMfaFactor(false);
           setAuthError(error);
         }
       });
@@ -197,9 +226,10 @@ export function AuthProvider({ children }) {
     loading,
     authError,
     mfaLevel,
+    hasVerifiedMfaFactor,
     refresh,
     signOut,
-  }), [authError, loading, mfaLevel, profile, refresh, session, signOut, user]);
+  }), [authError, hasVerifiedMfaFactor, loading, mfaLevel, profile, refresh, session, signOut, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -27,6 +27,7 @@ describe("ProtectedRoute MFA enforcement", () => {
       user: { id: "admin-1" },
       profile: { role: "admin", employment_status: true },
       mfaLevel: "aal1",
+      hasVerifiedMfaFactor: true,
     });
 
     render(
@@ -50,6 +51,30 @@ describe("ProtectedRoute MFA enforcement", () => {
       user: { id: "admin-1" },
       profile: { role: "admin", employment_status: true },
       mfaLevel: "aal2",
+      hasVerifiedMfaFactor: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <Routes>
+          <Route
+            path="/dashboard"
+            element={<ProtectedRoute allowed={["admin"]}><div>Admin OK</div></ProtectedRoute>}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Admin OK")).toBeInTheDocument();
+  });
+
+  it("allows admin sessions without an enrolled MFA factor", () => {
+    useAuthMock.mockReturnValue({
+      loading: false,
+      user: { id: "admin-1" },
+      profile: { role: "admin", employment_status: true },
+      mfaLevel: "aal1",
+      hasVerifiedMfaFactor: false,
     });
 
     render(
