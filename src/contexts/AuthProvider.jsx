@@ -18,6 +18,7 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(undefined);
+  const [mfaLevel, setMfaLevel] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
 
@@ -43,6 +44,22 @@ export function AuthProvider({ children }) {
     return data || null;
   }, [updateProfile]);
 
+  const loadMfaLevel = useCallback(async (nextSession) => {
+    if (!nextSession?.access_token) {
+      if (activeRef.current) setMfaLevel(null);
+      return null;
+    }
+
+    if (activeRef.current) setMfaLevel(undefined);
+
+    const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (error) throw error;
+
+    const nextLevel = data?.currentLevel || null;
+    if (activeRef.current) setMfaLevel(nextLevel);
+    return nextLevel;
+  }, []);
+
   const applySession = useCallback(async (nextSession, event = "UNKNOWN") => {
     setCachedAuthSession(nextSession);
 
@@ -61,15 +78,20 @@ export function AuthProvider({ children }) {
 
       if (!nextUser) {
         updateProfile(null);
+        setMfaLevel(null);
       } else if (shouldShowProfileLoading) {
         updateProfile(undefined);
       }
     }
 
-    if (shouldLoadProfile) {
-      await loadProfile(nextUser.id);
+    const tasks = [];
+    if (shouldLoadProfile) tasks.push(loadProfile(nextUser.id));
+    if (nextUser) tasks.push(loadMfaLevel(nextSession));
+
+    if (tasks.length) {
+      await Promise.all(tasks);
     }
-  }, [loadProfile, updateProfile]);
+  }, [loadMfaLevel, loadProfile, updateProfile]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -86,6 +108,7 @@ export function AuthProvider({ children }) {
         setUser(null);
         userIdRef.current = null;
         updateProfile(null);
+        setMfaLevel(null);
         setAuthError(error);
       }
       return null;
@@ -97,11 +120,12 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(async () => {
     await signOutAuth();
     if (activeRef.current) {
-      setSession(null);
-      setUser(null);
-      userIdRef.current = null;
-      updateProfile(null);
-    }
+        setSession(null);
+        setUser(null);
+        userIdRef.current = null;
+        updateProfile(null);
+        setMfaLevel(null);
+      }
   }, [updateProfile]);
 
   useEffect(() => {
@@ -121,6 +145,7 @@ export function AuthProvider({ children }) {
           setUser(null);
           userIdRef.current = null;
           updateProfile(null);
+          setMfaLevel(null);
           setAuthError(error);
         }
       } finally {
@@ -134,6 +159,7 @@ export function AuthProvider({ children }) {
       void applySession(nextSession, event).catch((error) => {
         if (activeRef.current) {
           updateProfile(null);
+          setMfaLevel(null);
           setAuthError(error);
         }
       });
@@ -170,9 +196,10 @@ export function AuthProvider({ children }) {
     profile,
     loading,
     authError,
+    mfaLevel,
     refresh,
     signOut,
-  }), [authError, loading, profile, refresh, session, signOut, user]);
+  }), [authError, loading, mfaLevel, profile, refresh, session, signOut, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

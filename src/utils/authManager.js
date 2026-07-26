@@ -1,4 +1,9 @@
-import { supabase } from "../../supabaseClient";
+import {
+  clearAuthSessionStorage,
+  isAuthSessionPersistenceEnabled,
+  setAuthSessionPersistence,
+  supabase,
+} from "../../supabaseClient";
 
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
 const USER_CACHE_TTL_MS = 30_000;
@@ -63,6 +68,8 @@ export function clearCachedAuthSession() {
   cachedUser = null;
   lastUserCheckedAt = 0;
 }
+
+export { isAuthSessionPersistenceEnabled, setAuthSessionPersistence };
 
 export async function getAuthSession({ forceRefresh = false } = {}) {
   if (!forceRefresh && isSessionFreshEnough(cachedSession)) {
@@ -145,6 +152,7 @@ export async function signOutAuth() {
       await supabase.auth.signOut();
     } finally {
       clearCachedAuthSession();
+      clearAuthSessionStorage();
     }
   });
 }

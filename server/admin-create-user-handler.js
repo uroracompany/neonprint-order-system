@@ -3,6 +3,7 @@ import { requireAdmin } from "./auth-middleware.js";
 import {
   ADMIN_USER_ROLE_SET,
   EMAIL_PATTERN,
+  getPasswordPolicyError,
   getSupabaseAdminEnv,
   isMissingEmailColumnError,
   jsonResponse,
@@ -27,12 +28,12 @@ export async function handleAdminCreateUser(payload, env = process.env) {
 
   const name = String(payload?.name || "").trim();
   const email = String(payload?.email || "").trim().toLowerCase();
-  const password = String(payload?.password || "").trim();
+  const password = String(payload?.password || "");
   const role = String(payload?.role || "").trim();
 
   if (!name || !email || !password || !role) {
     return jsonResponse(400, {
-      error: "Nombre, email, contraseña y rol son obligatorios.",
+      error: "Nombre, email, contrasena y rol son obligatorios.",
     });
   }
 
@@ -48,10 +49,9 @@ export async function handleAdminCreateUser(payload, env = process.env) {
     });
   }
 
-  if (password.length < 6) {
-    return jsonResponse(400, {
-      error: "La contraseña debe tener al menos 6 caracteres.",
-    });
+  const passwordPolicyError = getPasswordPolicyError(password);
+  if (passwordPolicyError) {
+    return jsonResponse(400, { error: passwordPolicyError });
   }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
@@ -103,7 +103,7 @@ export async function handleAdminCreateUser(payload, env = process.env) {
   const authUserId = authData?.user?.id;
   if (!authUserId) {
     return jsonResponse(500, {
-      error: "No se recibió el id del usuario creado en autenticación.",
+      error: "No se recibio el id del usuario creado en autenticacion.",
     });
   }
 

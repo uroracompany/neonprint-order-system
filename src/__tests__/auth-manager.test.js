@@ -8,6 +8,9 @@ const authMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../../supabaseClient", () => ({
+  clearAuthSessionStorage: vi.fn(),
+  isAuthSessionPersistenceEnabled: vi.fn(() => false),
+  setAuthSessionPersistence: vi.fn(),
   supabase: {
     auth: authMock,
   },

@@ -109,6 +109,21 @@ const DEFAULT_ORDER_FORM = {
   indefinido: false,
 };
 const DEFAULT_USER_FORM = { name: "", email: "", password: "", confirmPassword: "", role: "seller", employment_status: true };
+const ADMIN_PASSWORD_MIN_LENGTH = 12;
+
+const getAdminPasswordPolicyError = (password) => {
+  const value = String(password || "");
+
+  if (value.length < ADMIN_PASSWORD_MIN_LENGTH) {
+    return `La contrasena debe tener al menos ${ADMIN_PASSWORD_MIN_LENGTH} caracteres.`;
+  }
+
+  if (!/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/[0-9]/.test(value)) {
+    return "La contrasena debe incluir mayusculas, minusculas y numeros.";
+  }
+
+  return null;
+};
 const DEFAULT_CLIENT_FORM = { name: "", phone: "", email: "", address: "", notes: "" };
 const getOpenCreditReceivables = (items = []) => items.filter((item) => (
   item?.client_id && ["open", "partial"].includes(item.status)
@@ -1003,11 +1018,12 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
 // Formulario para crea usuarios en el apartado de admin
 function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, onSubmit, saving }) {
   const isEdit = mode === "edit";
-  const passwordValue = userForm.password.trim();
-  const confirmPasswordValue = userForm.confirmPassword.trim();
+  const passwordValue = userForm.password;
+  const confirmPasswordValue = userForm.confirmPassword;
+  const passwordPolicyError = passwordValue ? getAdminPasswordPolicyError(passwordValue) : null;
   const isPasswordReady = isEdit
-    ? (!passwordValue && !confirmPasswordValue) || (passwordValue.length >= 6 && passwordValue === confirmPasswordValue)
-    : passwordValue.length >= 6 && passwordValue === confirmPasswordValue;
+    ? (!passwordValue && !confirmPasswordValue) || (!passwordPolicyError && passwordValue === confirmPasswordValue)
+    : !passwordPolicyError && passwordValue === confirmPasswordValue;
   const isSubmitReady =
     userForm.name.trim() &&
     userForm.email.trim() &&
@@ -1054,7 +1070,7 @@ function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, 
           <div className="pa-form-grid">
             <label className="pa-field">
               <span>{isEdit ? "Nueva contraseña" : "Contraseña"}</span>
-              <input type="password" value={userForm.password} onChange={(e) => setUserForm(prev => ({ ...prev, password: e.target.value }))} placeholder={isEdit ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"} autoComplete="new-password" />
+              <input type="password" value={userForm.password} onChange={(e) => setUserForm(prev => ({ ...prev, password: e.target.value }))} placeholder={isEdit ? "Dejar vacío para no cambiar" : "Mínimo 12 caracteres"} autoComplete="new-password" />
             </label>
             <label className="pa-field">
               <span>Confirmar contraseña</span>
@@ -1263,9 +1279,12 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
     if (!newPassword.trim()) {
       newErrors.newPassword = "La contraseña es obligatoria";
       hasErrors = true;
-    } else if (newPassword.length < 6) {
-      newErrors.newPassword = "Mínimo 6 caracteres";
-      hasErrors = true;
+    } else {
+      const passwordPolicyError = getAdminPasswordPolicyError(newPassword);
+      if (passwordPolicyError) {
+        newErrors.newPassword = passwordPolicyError;
+        hasErrors = true;
+      }
     }
 
     if (!confirmPassword.trim()) {
@@ -1365,7 +1384,7 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
                       type="password"
                       value={newPassword}
                       onChange={(e) => { setNewPassword(e.target.value); setErrors(prev => ({ ...prev, newPassword: "" })); }}
-                      placeholder="Mínimo 6 caracteres"
+                      placeholder="Mínimo 12 caracteres"
                       className={errors.newPassword ? "pa-field-error" : ""}
                     />
                     {errors.newPassword && <small className="pa-field-help error">{errors.newPassword}</small>}
@@ -2603,18 +2622,19 @@ export default function Dashboard() {
   const handleCreateUser = async () => {
     const trimmedName = userForm.name.trim();
     const trimmedEmail = userForm.email.trim().toLowerCase();
-    const trimmedPassword = userForm.password.trim();
-    const trimmedConfirmPassword = userForm.confirmPassword.trim();
+    const password = userForm.password;
+    const confirmPassword = userForm.confirmPassword;
 
     if (!trimmedName || !trimmedEmail || !userForm.role) {
       return showFeedback("error", "Nombre, email y rol son obligatorios.");
     }
 
-    if (!trimmedPassword || trimmedPassword.length < 6) {
-      return showFeedback("error", "La contraseña debe tener al menos 6 caracteres.");
+    const passwordPolicyError = getAdminPasswordPolicyError(password);
+    if (!password || passwordPolicyError) {
+      return showFeedback("error", passwordPolicyError || "La contraseña es obligatoria.");
     }
 
-    if (trimmedPassword !== trimmedConfirmPassword) {
+    if (password !== confirmPassword) {
       return showFeedback("error", "Las contraseñas no coinciden.");
     }
 
@@ -2626,7 +2646,7 @@ export default function Dashboard() {
           action: "create-user",
           name: trimmedName,
           email: trimmedEmail,
-          password: trimmedPassword,
+          password,
           role: userForm.role,
         }));
     } catch (err) {
@@ -2653,18 +2673,19 @@ export default function Dashboard() {
 
     const trimmedName = userForm.name.trim();
     const trimmedEmail = userForm.email.trim().toLowerCase();
-    const trimmedPassword = userForm.password.trim();
-    const trimmedConfirmPassword = userForm.confirmPassword.trim();
+    const password = userForm.password;
+    const confirmPassword = userForm.confirmPassword;
 
     if (!trimmedName || !trimmedEmail || !userForm.role) {
       return showFeedback("error", "Nombre, email y rol son obligatorios.");
     }
 
-    if ((trimmedPassword || trimmedConfirmPassword) && trimmedPassword.length < 6) {
-      return showFeedback("error", "La contraseña debe tener al menos 6 caracteres.");
+    const passwordPolicyError = password ? getAdminPasswordPolicyError(password) : null;
+    if ((password || confirmPassword) && passwordPolicyError) {
+      return showFeedback("error", passwordPolicyError);
     }
 
-    if (trimmedPassword !== trimmedConfirmPassword) {
+    if (password !== confirmPassword) {
       return showFeedback("error", "Las contraseñas no coinciden.");
     }
 
@@ -2677,7 +2698,7 @@ export default function Dashboard() {
           userId: selectedUser.id,
           name: trimmedName,
           email: trimmedEmail,
-          password: trimmedPassword || undefined,
+          password: password || undefined,
           role: userForm.role,
         }));
     } catch (err) {

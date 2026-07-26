@@ -604,11 +604,11 @@ describe("handleAdminUpdateUser", () => {
   it("updates auth password when a valid password is provided", async () => {
     currentClient = makeAdminUpdateClient();
 
-    const result = await handleAdminUpdateUser({ ...validPayload, password: "secret1" }, env);
+    const result = await handleAdminUpdateUser({ ...validPayload, password: "SecurePass123" }, env);
 
     expect(result.status).toBe(200);
     expect(currentClient.authUpdate).toHaveBeenCalledWith("user-1", expect.objectContaining({
-      password: "secret1",
+      password: "SecurePass123",
     }));
   });
 
@@ -653,7 +653,7 @@ describe("handleAdminUpdateUser", () => {
     const result = await handleAdminUpdateUser({ ...validPayload, password: "123" }, env);
 
     expect(result.status).toBe(400);
-    expect(result.body.error).toMatch(/al menos 6/);
+    expect(result.body.error).toMatch(/al menos 12/);
   });
 
   it("rejects invalid roles", async () => {
@@ -773,7 +773,7 @@ describe("handleAdminCreateUser", () => {
     const result = await handleAdminCreateUser({
       name: "Carlos",
       email: "Carlos@Example.com",
-      password: "secret1",
+      password: "SecurePass123",
       role: "designer",
     }, env);
 
@@ -793,7 +793,7 @@ describe("handleAdminCreateUser", () => {
     const result = await handleAdminCreateUser({
       name: "Luis",
       email: "luis@example.com",
-      password: "secret1",
+      password: "SecurePass123",
       role: "dtf_producer",
     }, env);
 
@@ -810,7 +810,7 @@ describe("handleAdminCreateUser", () => {
     const result = await handleAdminCreateUser({
       name: "Carlos",
       email: "carlos@example.com",
-      password: "secret1",
+      password: "SecurePass123",
       role: "owner",
     }, env);
 
@@ -824,7 +824,7 @@ describe("handleAdminCreateUser", () => {
     const result = await handleAdminCreateUser({
       name: "Carlos",
       email: "correo-invalido",
-      password: "secret1",
+      password: "SecurePass123",
       role: "seller",
     }, env);
 
@@ -839,7 +839,7 @@ describe("handleAdminCreateUser", () => {
     const result = await handleAdminCreateUser({
       name: "Carlos",
       email: "carlos@example.com",
-      password: "secret1",
+      password: "SecurePass123",
       role: "seller",
     }, env);
 
@@ -1148,11 +1148,11 @@ describe("handleChangeUserPassword", () => {
 
     const result = await handleChangeUserPassword({
       userId: "user-1",
-      newPassword: "secret1",
+      newPassword: "SecurePass123",
     }, env);
 
     expect(result.status).toBe(200);
-    expect(currentClient.updateUserById).toHaveBeenCalledWith("user-1", { password: "secret1" });
+    expect(currentClient.updateUserById).toHaveBeenCalledWith("user-1", { password: "SecurePass123" });
   });
 
   it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
@@ -1160,7 +1160,7 @@ describe("handleChangeUserPassword", () => {
 
     const result = await handleChangeUserPassword({
       userId: "user-1",
-      newPassword: "secret1",
+      newPassword: "SecurePass123",
     }, {
       VITE_SUPABASE_URL: "https://example.supabase.co",
       SUPABASE_SERVICE_ROLE_KEY: "service-role-key",

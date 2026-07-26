@@ -1,19 +1,21 @@
 import { createClient } from "@supabase/supabase-js";
-import { getSupabaseAdminEnv, jsonResponse } from "./admin-user-utils.js";
+import { getPasswordPolicyError, getSupabaseAdminEnv, jsonResponse } from "./admin-user-utils.js";
 
 export async function handleChangeUserPassword(payload, env = {}) {
   const envResult = getSupabaseAdminEnv(env);
   if (envResult.error) return envResult.error;
   const { supabaseUrl, serviceRoleKey } = envResult;
 
-  const { userId, newPassword } = payload;
+  const userId = String(payload?.userId || "").trim();
+  const newPassword = payload?.newPassword === undefined ? "" : String(payload.newPassword);
 
   if (!userId || !newPassword) {
-    return jsonResponse(400, { error: "ID de usuario y contraseña requeridos" });
+    return jsonResponse(400, { error: "ID de usuario y contrasena requeridos." });
   }
 
-  if (newPassword.length < 6) {
-    return jsonResponse(400, { error: "Mínimo 6 caracteres" });
+  const passwordPolicyError = getPasswordPolicyError(newPassword);
+  if (passwordPolicyError) {
+    return jsonResponse(400, { error: passwordPolicyError });
   }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
@@ -28,5 +30,5 @@ export async function handleChangeUserPassword(payload, env = {}) {
     return jsonResponse(400, { error: error.message });
   }
 
-  return jsonResponse(200, { message: "Contraseña actualizada correctamente." });
+  return jsonResponse(200, { message: "Contrasena actualizada correctamente." });
 }

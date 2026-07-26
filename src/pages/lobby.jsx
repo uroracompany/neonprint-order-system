@@ -1,13 +1,81 @@
 // Supabase client and React imports
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient"
-import { signOutAuth } from "../utils/authManager";
+import { setAuthSessionPersistence, signOutAuth } from "../utils/authManager";
 import { normalizeEmailForAuth } from "../utils/fileValidation";
 
 // Styles & Assets
 import "../css-components/lobby.css"
 import Logo from "../assets/images/logo-neonprint.jpg"
+
+const GENERIC_LOGIN_ERROR = "Credenciales invalidas o acceso no disponible.";
+const MFA_GENERIC_ERROR = "No se pudo validar el segundo factor.";
+
+const ROLE_ROUTES = {
+  admin: "/dashboard",
+  seller: "/page-seller",
+  designer: "/designer",
+  quote: "/quote",
+  digital_producer: "/production",
+  dtf_producer: "/production",
+  ploteo_producer: "/production",
+  delivery: "/delivery",
+};
+
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
+const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || "";
+
+const getCaptchaConfig = () => {
+  if (TURNSTILE_SITE_KEY) {
+    return {
+      provider: "turnstile",
+      siteKey: TURNSTILE_SITE_KEY,
+      scriptId: "np-turnstile-api",
+      scriptSrc: "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
+    };
+  }
+
+  if (HCAPTCHA_SITE_KEY) {
+    return {
+      provider: "hcaptcha",
+      siteKey: HCAPTCHA_SITE_KEY,
+      scriptId: "np-hcaptcha-api",
+      scriptSrc: "https://js.hcaptcha.com/1/api.js?render=explicit",
+    };
+  }
+
+  return null;
+};
+
+const captchaConfig = getCaptchaConfig();
+
+const loadExternalScript = (id, src) => new Promise((resolve, reject) => {
+  if (typeof document === "undefined") {
+    resolve();
+    return;
+  }
+
+  const existing = document.getElementById(id);
+  if (existing) {
+    if (existing.dataset.loaded === "1") resolve();
+    else existing.addEventListener("load", resolve, { once: true });
+    return;
+  }
+
+  const script = document.createElement("script");
+  script.id = id;
+  script.src = src;
+  script.async = true;
+  script.defer = true;
+  script.dataset.loaded = "0";
+  script.addEventListener("load", () => {
+    script.dataset.loaded = "1";
+    resolve();
+  }, { once: true });
+  script.addEventListener("error", reject, { once: true });
+  document.head.appendChild(script);
+});
 
 
 // ICONS (kept inline for simplicity, can be moved to separate files if needed)
@@ -67,6 +135,8 @@ export default function Lobby() {
   const [message, setMessage] = useState(null);
   const [fieldErr, setFieldErr] = useState(false);
   const [focused, setFocused] = useState(null);
+  const captchaNodeRef = useRef(null);
+  const captchaWidgetIdRef = useRef(null);
 
   const clearMsg = () => { setMessage(null); setFieldErr(false); };
   const navigate = useNavigate();
@@ -79,6 +149,70 @@ export default function Lobby() {
     }
   }, [location.state]);
 
+  const getCaptchaToken = async () => {
+    if (!captchaConfig || !captchaNodeRef.current) return "";
+
+    await loadExternalScript(captchaConfig.scriptId, captchaConfig.scriptSrc);
+    const api = window[captchaConfig.provider];
+    if (!api?.render) return "";
+
+    return new Promise((resolve) => {
+      const options = {
+        sitekey: captchaConfig.siteKey,
+        size: "invisible",
+        callback: (token) => resolve(token || ""),
+        "error-callback": () => resolve(""),
+        "expired-callback": () => resolve(""),
+      };
+
+      if (!captchaWidgetIdRef.current) {
+        captchaWidgetIdRef.current = api.render(captchaNodeRef.current, options);
+      } else if (api.reset) {
+        api.reset(captchaWidgetIdRef.current);
+      }
+
+      const execution = api.execute?.(captchaWidgetIdRef.current, { async: true });
+      if (execution?.then) {
+        execution.then((token) => resolve(token || "")).catch(() => resolve(""));
+      }
+    });
+  };
+
+  const loadUserProfile = async (userId) => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("role, employment_status")
+      .eq("id", userId)
+      .single();
+
+    if (error || !data?.role) throw new Error("profile_not_available");
+    return data;
+  };
+
+  const requireAdminMfa = async (profile) => {
+    if (profile.role !== "admin") return;
+
+    const { data: aalData, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aalError) throw aalError;
+    if (aalData?.currentLevel === "aal2") return;
+
+    const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
+    if (factorsError) throw factorsError;
+
+    const verifiedTotp = factorsData?.totp?.[0];
+    if (!verifiedTotp?.id) {
+      throw new Error("mfa_required");
+    }
+
+    const code = window.prompt("Codigo de verificacion 2FA")?.replace(/\s+/g, "");
+    if (!code || code.length < 6) throw new Error("mfa_cancelled");
+
+    const { error } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: verifiedTotp.id,
+      code,
+    });
+    if (error) throw new Error(MFA_GENERIC_ERROR);
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -95,73 +229,44 @@ export default function Lobby() {
     setFieldErr(false);
 
     try {
-
-      // Login with Supabase
+      setAuthSessionPersistence(false);
       setEmail(normalizedEmail);
-      const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      const captchaToken = await getCaptchaToken();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+        options: captchaToken ? { captchaToken } : undefined,
+      });
       if (error) {
-        throw error; //send to catch block
+        throw error;
       }
 
-      // Busca el rol y el estado laboral del usuario para decidir si puede entrar al sistema.
-      const {data: profiles} = await supabase
-      .from("profiles")
-      .select("role, employment_status")
-      .eq("id",data.user.id)
-      .single();
-
-
-
-
-      // Si el usuario fue desactivado por el admin, cerramos la sesión y bloqueamos el acceso.
+      const profiles = await loadUserProfile(data.user.id);
       if (profiles?.employment_status === false) {
         await signOutAuth();
         setMessage({
           type: "error",
-          text: "Tu cuenta está desactivada. Contacta al administrador.",
+          text: GENERIC_LOGIN_ERROR,
         });
         setLoading(false);
         return;
       }
 
+      await requireAdminMfa(profiles);
+
       setMessage({
         type: "success",
         text: "Acceso concedido. Redirigiendo...",
       });
-     
-      // Redirect to dashboard after successful login
+
       setTimeout(() =>{
-        const roleRoutes = {
-          admin: "/dashboard",
-          seller: "/page-seller",
-          designer: "/designer",
-          quote: "/quote",
-          digital_producer: "/production",
-          dtf_producer: "/production",
-          ploteo_producer: "/production",
-          delivery: "/delivery",
-        };
-        navigate(roleRoutes[profiles.role] || "/");
+        navigate(ROLE_ROUTES[profiles.role] || "/");
       });
-
-      
-      // setTimeout(() => {
-      //   navigate("/dashboard");
-      // }, 2000);
-
-    } catch (err) {
-
-      const msg = {
-        400: "Credenciales incorrectas.",
-        401: "Credenciales incorrectas.",
-        403: "Sin permisos de acceso.",
-        404: "Cuenta no encontrada.",
-        429: "Demasiados intentos.",
-      }
-
+    } catch {
+      await signOutAuth();
       setMessage({
         type:"error",
-        text: msg[err?.status] || err.message || "Error de conexión. Intenta de nuevo.",
+        text: GENERIC_LOGIN_ERROR,
       });
 
       setFieldErr(true);
@@ -262,6 +367,8 @@ export default function Lobby() {
                     onChange={e => { setPassword(e.target.value); clearMsg(); }} />
                 </div>
               </div>
+
+              <div ref={captchaNodeRef} aria-hidden="true" style={{ display: "none" }} />
 
               <button className="btn-login" type="submit" disabled={loading}>
                 {loading ? (

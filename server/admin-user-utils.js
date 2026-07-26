@@ -13,6 +13,21 @@ export const ADMIN_USER_ROLES = [
 export const ADMIN_USER_ROLE_SET = new Set(ADMIN_USER_ROLES);
 
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const MIN_ADMIN_PASSWORD_LENGTH = 12;
+
+export function getPasswordPolicyError(password) {
+  const value = String(password || "");
+
+  if (value.length < MIN_ADMIN_PASSWORD_LENGTH) {
+    return `La contrasena debe tener al menos ${MIN_ADMIN_PASSWORD_LENGTH} caracteres.`;
+  }
+
+  if (!/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/[0-9]/.test(value)) {
+    return "La contrasena debe incluir mayusculas, minusculas y numeros.";
+  }
+
+  return null;
+}
 
 export function jsonResponse(status, body) {
   return { status, body };

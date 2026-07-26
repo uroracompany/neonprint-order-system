@@ -3,6 +3,7 @@ import { requireAdmin } from "./auth-middleware.js";
 import {
   ADMIN_USER_ROLE_SET,
   EMAIL_PATTERN,
+  getPasswordPolicyError,
   getSupabaseAdminEnv,
   isMissingEmailColumnError,
   jsonResponse,
@@ -29,7 +30,7 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
   const name = String(payload?.name || "").trim();
   const email = String(payload?.email || "").trim().toLowerCase();
   const role = String(payload?.role || "").trim();
-  const password = String(payload?.password || "").trim();
+  const password = payload?.password === undefined ? "" : String(payload.password);
 
   if (!userId || !name || !email || !role) {
     return jsonResponse(400, {
@@ -39,20 +40,21 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
 
   if (!EMAIL_PATTERN.test(email)) {
     return jsonResponse(400, {
-      error: "El correo electrónico no tiene un formato válido.",
+      error: "El correo electronico no tiene un formato valido.",
     });
   }
 
   if (!ADMIN_USER_ROLE_SET.has(role)) {
     return jsonResponse(400, {
-      error: "El rol seleccionado no es válido.",
+      error: "El rol seleccionado no es valido.",
     });
   }
 
-  if (password && password.length < 6) {
-    return jsonResponse(400, {
-      error: "La contraseña debe tener al menos 6 caracteres.",
-    });
+  if (password) {
+    const passwordPolicyError = getPasswordPolicyError(password);
+    if (passwordPolicyError) {
+      return jsonResponse(400, { error: passwordPolicyError });
+    }
   }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
@@ -83,7 +85,7 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
 
   if (!duplicateError && Array.isArray(duplicateProfiles) && duplicateProfiles.length > 0) {
     return jsonResponse(409, {
-      error: "Ya existe otro usuario con ese correo electrónico.",
+      error: "Ya existe otro usuario con ese correo electronico.",
     });
   }
 
