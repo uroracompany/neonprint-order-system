@@ -3686,6 +3686,41 @@ export default function Dashboard() {
     { label: "Archivadas", value: orders.filter(order => order.is_archived_admin).length },
   ];
 
+  const overviewFlowMetrics = [
+    { label: "Pendientes", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, color: "#F59E0B" },
+    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money />, color: "#06B6D4" },
+    { label: "Diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, color: "#8B5CF6" },
+    { label: "Producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length, icon: <Icons.Brush />, color: "#EF4444" },
+    { label: "Terminación", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)).length, icon: <Icons.Paintbrush />, color: "#EC4899" },
+    { label: "Entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length, icon: <Icons.Truck />, color: "#6366F1" },
+    { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length, icon: <Icons.Check />, color: "#10B981" },
+  ];
+
+  const overviewSystemMetrics = metrics.filter(metric => [
+    "Órdenes totales",
+    "Caja",
+    "En diseño",
+    "En producción",
+    "Crédito pendiente",
+  ].includes(metric.label));
+
+  const overviewOrderTypeMetrics = typeMetrics.filter(metric => [
+    "Órdenes normales",
+    "Órdenes 911",
+  ].includes(metric.label));
+
+  const overviewRecentOrders = orders.slice(0, 5);
+  const overviewActiveOrders = orders.filter(order => (
+    !order.is_archived_admin &&
+    !isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED])
+  ));
+  const overviewActiveOrderMetrics = [
+    { label: "911 activas", detail: "Prioridad", value: loadingOrders ? "..." : overviewActiveOrders.filter(order => order.order_type === "orden 911").length.toLocaleString("es-PE"), icon: <Icons.AlertCircle />, color: "#EF4444" },
+    { label: "Normales activas", detail: "Flujo estándar", value: loadingOrders ? "..." : overviewActiveOrders.filter(order => order.order_type !== "orden 911").length.toLocaleString("es-PE"), icon: <Icons.Orders />, color: "#091127" },
+    { label: "Diseño interno", detail: "Activas", value: loadingOrders ? "..." : overviewActiveOrders.filter(order => order.order_design_type === "INTERNAL_DESING").length.toLocaleString("es-PE"), icon: <Icons.Brush />, color: "#8B5CF6" },
+    { label: "Diseño externo", detail: "Activas", value: loadingOrders ? "..." : overviewActiveOrders.filter(order => order.order_design_type === "EXTERNAL_DESING").length.toLocaleString("es-PE"), icon: <Icons.File />, color: "#06B6D4" },
+  ];
+
   const getSidebarBadge = (loading, value) => (loading ? "..." : value);
 
   const menuItems = [
@@ -3797,95 +3832,164 @@ export default function Dashboard() {
               clients={clients}
             />
 
-            <div className="pa-metrics-grid">
-              {metrics.map((metric) => {
-                const acc = CARD_ACCENTS[metric.accentIdx];
-                return (
-                  <article key={metric.label} className="pa-metric-card"
-                    onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
-                    <div className="pa-metric-glow" style={{ background: acc.glow }} />
-                    <div className="pa-metric-icon" style={{ background: acc.bg, color: acc.color }}>
-                      {metric.icon}
+            <div className="pa-overview-executive-grid">
+              <section className="pa-panel pa-overview-flow-panel">
+                <div className="pa-overview-card-head">
+                  <div>
+                    <h2>Flujo de órdenes</h2>
+                    <p>Estado actual de tus órdenes.</p>
+                  </div>
+                </div>
+                <div className="pa-overview-flow-track">
+                  {overviewFlowMetrics.map(item => (
+                    <article key={item.label} className="pa-overview-flow-step" style={{ "--flow-color": item.color }}>
+                      <span className="pa-overview-flow-step-label">{item.label}</span>
+                      <div className="pa-overview-flow-step-value">
+                        <span className="pa-overview-flow-step-icon">{item.icon}</span>
+                        <strong>{loadingOrders ? "..." : item.value}</strong>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="pa-overview-flow-footer">
+                  <div>
+                    <span>Total de órdenes</span>
+                    <strong>{loadingOrders ? "..." : orders.length.toLocaleString("es-PE")}</strong>
+                  </div>
+                  <button className="pa-btn ghost pa-btn-sm" onClick={() => handleAdminTabChange("orders")}>
+                    Ver todas las órdenes
+                    <Icons.ChevronRight />
+                  </button>
+                </div>
+              </section>
+
+              <div className="pa-overview-secondary-grid">
+                <div className="pa-overview-main-column">
+                  <section className="pa-panel pa-overview-activity-panel">
+                    <div className="pa-overview-card-head pa-overview-card-head-row">
+                      <div>
+                        <h2>Actividad reciente</h2>
+                        <p>Últimas órdenes registradas en el sistema.</p>
+                      </div>
+                      <button className="pa-btn ghost pa-btn-sm" onClick={() => handleAdminTabChange("orders")}>
+                        Ver todas
+                      </button>
                     </div>
-                    <strong>{metric.value}</strong>
-                    <span>{metric.label}</span>
-                  </article>
-                );
-              })}
-            </div>
-            {creditPendingInvoicesCount > 0 && (
-              <div className="pa-credit-dashboard-alert" role="status">
-                <span className="pa-credit-dashboard-alert-icon"><Icons.Receipt /></span>
-                <div>
-                  <span className="pa-section-kicker">Créditos pendientes</span>
-                  <strong>{creditPendingInvoicesCount} factura{creditPendingInvoicesCount === 1 ? "" : "s"} a crédito pendiente{creditPendingInvoicesCount === 1 ? "" : "s"}</strong>
-                  <p>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento administrativo.</p>
+                    <div className="pa-overview-activity-table" role="table" aria-label="Órdenes recientes">
+                      <div className="pa-overview-activity-row pa-overview-activity-row-head" role="row">
+                        <span>Orden</span>
+                        <span>Cliente</span>
+                        <span>Estado</span>
+                        <span>Responsable</span>
+                        <span>Actualizado</span>
+                      </div>
+                      {overviewRecentOrders.length === 0 ? (
+                        <div className="pa-overview-activity-empty">No hay órdenes recientes para mostrar.</div>
+                      ) : overviewRecentOrders.map(order => (
+                        <button key={order.id} type="button" className="pa-overview-activity-row" onClick={() => setSelectedOrder(order)} role="row">
+                          <span>#{order.id?.slice(0, 8) || "---"}</span>
+                          <strong>{order.client_name || "Cliente sin nombre"}</strong>
+                          <span><StatusBadge status={order.status} className="ps-badge" showDot bordered /></span>
+                          <span>{getUserDisplayName(usersById[order.seller_id || order.created_by])}</span>
+                          <span>{formatDate(order.created_at)}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="pa-overview-activity-footer">
+                      Mostrando {overviewRecentOrders.length} de {orders.length} órdenes
+                    </div>
+                  </section>
+
+                  <section className="pa-panel pa-overview-active-orders-panel">
+                    <div className="pa-overview-card-head">
+                      <div>
+                        <h2>Órdenes activas</h2>
+                        <p>Prioridad y carga de diseño en operación.</p>
+                      </div>
+                    </div>
+                    <div className="pa-overview-active-orders-grid">
+                      {overviewActiveOrderMetrics.map(item => (
+                        <article key={item.label} className="pa-overview-active-order-card" style={{ "--active-order-color": item.color }}>
+                          <span className="pa-overview-active-order-icon">{item.icon}</span>
+                          <div>
+                            <span>{item.label}</span>
+                            <strong>{item.value}</strong>
+                            <em>{item.detail}</em>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
                 </div>
-                <button className="pa-btn primary pa-btn-sm" onClick={() => { setActiveTab("credits"); setCreditStatusFilter("open"); setCreditView("list"); }}>
-                  Revisar créditos pendientes
-                </button>
-              </div>
-            )}
-            <div className="pa-two-col">
-              <div className="pa-panel pa-overview-panel">
-                <div className="pa-panel-stripe" />
-                <div className="pa-panel-head">
-                  <div>
-                    <span className="pa-section-kicker">
-                      Monitoreo
-                    </span>
-                    <h2>
-                      Estado del sistema
-                    </h2>
-                  </div>
-                </div>
-                <div className="pa-panel-body">
-                  <div className="pa-stats-list">
-                    {typeMetrics.map(item => <div key={item.label} className="pa-stat-row">
+
+                <aside className="pa-overview-side-column">
+                  <section className="pa-panel pa-overview-commercial-panel">
+                    <div className="pa-overview-card-head">
+                      <div>
+                        <h2>Salud comercial</h2>
+                        <p>Situación financiera y de clientes.</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="pa-overview-credit-summary"
+                      onClick={() => { setActiveTab("credits"); setCreditStatusFilter("open"); setCreditView("list"); }}
+                    >
+                      <span className="pa-overview-credit-summary-icon"><Icons.Receipt /></span>
                       <span>
-                        {item.label}
+                        <small>Créditos pendientes</small>
+                        <strong>{accountsReceivableLoading ? "..." : creditPendingInvoicesCount}</strong>
+                        <em>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento.</em>
                       </span>
-                      <strong>
-                        {item.value}
-                      </strong></div>)
-                    }
-                  </div>
-                </div>
-              </div>
-              <div className="pa-panel pa-overview-panel">
-                <div className="pa-panel-stripe" />
-                <div className="pa-panel-head">
-                  <div>
-                    <span className="pa-section-kicker">
-                      Actividad reciente
-                    </span>
-                    <h2>
-                      órdenes más recientes
-                    </h2>
-                  </div>
-                </div>
-                <div className="pa-panel-body">
-                  <div className="pa-recent-list">
-                    {orders.slice(0, 5).map(order =>
-                      <button key={order.id} className="pa-recent-item" onClick={() => setSelectedOrder(order)}>
-                        <div>
-                          <strong>
-                            {order.client_name || "Cliente sin nombre"}
-                          </strong>
-                          <span>
-                            {getUserDisplayName(usersById[order.seller_id || order.created_by])}
-                          </span>
+                      <Icons.ChevronRight />
+                    </button>
+                    <div className="pa-overview-commercial-mini-grid">
+                      <article>
+                        <span>Clientes</span>
+                        <strong>{clientsLoading ? "..." : clients.length.toLocaleString("es-PE")}</strong>
+                        <Icons.User />
+                      </article>
+                      <article>
+                        <span>Empleados</span>
+                        <strong>{loadingUsers ? "..." : profiles.length}</strong>
+                        <Icons.Users />
+                      </article>
+                    </div>
+                  </section>
+
+                  <section className="pa-panel pa-overview-system-panel">
+                    <div className="pa-overview-card-head">
+                      <div>
+                        <h2>Estado del sistema</h2>
+                        <p>Indicadores clave de operación.</p>
+                      </div>
+                    </div>
+                    <div className="pa-overview-system-list">
+                      {overviewSystemMetrics.map(metric => {
+                        const acc = CARD_ACCENTS[metric.accentIdx];
+                        return (
+                          <div key={metric.label} className="pa-overview-system-row" style={{ "--system-color": acc.color }}>
+                            <span className="pa-overview-system-icon">{metric.icon}</span>
+                            <span>{metric.label}</span>
+                            <strong>{loadingOrders && metric.label !== "Crédito pendiente" ? "..." : metric.value}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="pa-overview-system-types">
+                      {overviewOrderTypeMetrics.map(metric => (
+                        <div key={metric.label}>
+                          <span>{metric.label}</span>
+                          <strong>{loadingOrders ? "..." : metric.value}</strong>
                         </div>
-                        <div className="pa-recent-meta">
-                          <StatusBadge status={order.status} className="ps-badge" showDot bordered />
-                          <span>
-                            {formatDate(order.created_at)}
-                          </span>
-                        </div>
-                      </button>)}
-                  </div>
-                </div>
+                      ))}
+                    </div>
+                    <div className="pa-overview-system-footer">
+                      <span />
+                      <strong>Sistema operativo</strong>
+                    </div>
+                  </section>
+                </aside>
               </div>
             </div>
           </section>
