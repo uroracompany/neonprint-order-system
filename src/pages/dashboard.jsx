@@ -3043,7 +3043,7 @@ export default function Dashboard() {
     const invoices = openInvoices.map((item) => item.invoiceNumber);
     const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
     if (uniqueOrderIds.length === 0) {
-      showFeedback("error", "No hay facturas pendientes para cerrar.");
+      showFeedback("error", "No hay pendientes para cerrar.");
       return;
     }
     setCreditSettleAllTarget({ client, orderIds: uniqueOrderIds, invoices: [...new Set((invoices || []).filter(Boolean))] });
@@ -3070,7 +3070,7 @@ export default function Dashboard() {
   const openCreditSettlementModal = ({ client, orderIds, invoices, mode }) => {
     const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
     if (uniqueOrderIds.length === 0) {
-      showFeedback("error", "No hay facturas pendientes para cerrar.");
+      showFeedback("error", "No hay pendientes para cerrar.");
       return;
     }
 
@@ -3086,7 +3086,7 @@ export default function Dashboard() {
   const handleSettleCreditOrders = async ({ orderIds, notes, onSuccess, setLoadingState }) => {
     const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
     if (uniqueOrderIds.length === 0) {
-      showFeedback("error", "No hay créditos pendientes para cerrar.");
+      showFeedback("error", "No hay pendientes para cerrar.");
       return false;
     }
 
@@ -3099,13 +3099,13 @@ export default function Dashboard() {
     setLoadingState(false);
 
     if (error) {
-      showFeedback("error", error.message || "No se pudo registrar el cierre del crédito.");
+      showFeedback("error", error.message || "No se pudo registrar el cierre del seguimiento.");
       return false;
     }
 
     await Promise.all([loadOrders(true), fetchAccountsReceivable()]);
     if (onSuccess) onSuccess();
-    showFeedback("success", uniqueOrderIds.length === 1 ? "Factura marcada como saldada correctamente." : "Facturas marcadas como saldadas correctamente.");
+    showFeedback("success", uniqueOrderIds.length === 1 ? "Pendiente cerrado correctamente." : "Pendientes cerrados correctamente.");
     return true;
   };
 
@@ -3113,7 +3113,7 @@ export default function Dashboard() {
     if (!recordPaymentClient?.id) return;
     const orderIds = receivablesByClient[recordPaymentClient.id]?.orderIds || [];
     if (orderIds.length === 0) {
-      showFeedback("error", "El cliente no tiene créditos pendientes para cerrar.");
+      showFeedback("error", "El cliente no tiene pendientes para cerrar.");
       return;
     }
 
@@ -3658,7 +3658,7 @@ export default function Dashboard() {
 
   const metrics = [
     { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders />, accentIdx: 0 },
-    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money />, accentIdx: 5 },
+    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Receipt />, accentIdx: 5 },
     { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, accentIdx: 2 },
     { label: "Empleados", value: profiles.length, icon: <Icons.Users />, accentIdx: 3 },
     { label: "Pendientes", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, accentIdx: 1 },
@@ -3667,14 +3667,14 @@ export default function Dashboard() {
     { label: "En entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length, icon: <Icons.Truck />, accentIdx: 8 },
     { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length, icon: <Icons.Check />, accentIdx: 4 },
     { label: "Clientes Registrados", value: clients.length, icon: <Icons.User />, accentIdx: 9 },
-    { label: "Crédito pendiente", value: receivablesTotal, icon: <Icons.Money />, accentIdx: 5 },
+    { label: "Seguimiento pendiente", value: receivablesTotal, icon: <Icons.Receipt />, accentIdx: 5 },
     { label: "Bloqueadas", value: orders.filter(order => order.operational_status === "blocked").length, icon: <Icons.AlertCircle />, accentIdx: 1 },
     { label: "Revisión comercial", value: orders.filter(order => order.commercial_review_required).length, icon: <Icons.Receipt />, accentIdx: 2 },
   ];
 
   const typeMetrics = [
-    { label: "Órdenes normales", value: orders.filter(order => order.order_type !== "orden 911").length },
-    { label: "Órdenes 911", value: orders.filter(order => order.order_type === "orden 911").length },
+    { label: "Normales totales", value: orders.filter(order => order.order_type !== "orden 911").length },
+    { label: "911 totales", value: orders.filter(order => order.order_type === "orden 911").length },
     { label: "Pendientes (Ventas)", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length },
     { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length },
     { label: "En caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length },
@@ -3688,7 +3688,7 @@ export default function Dashboard() {
 
   const overviewFlowMetrics = [
     { label: "Pendientes", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, color: "#F59E0B" },
-    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Money />, color: "#06B6D4" },
+    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Receipt />, color: "#06B6D4" },
     { label: "Diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, color: "#8B5CF6" },
     { label: "Producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length, icon: <Icons.Brush />, color: "#EF4444" },
     { label: "Terminación", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)).length, icon: <Icons.Paintbrush />, color: "#EC4899" },
@@ -3701,12 +3701,12 @@ export default function Dashboard() {
     "Caja",
     "En diseño",
     "En producción",
-    "Crédito pendiente",
+    "Seguimiento pendiente",
   ].includes(metric.label));
 
   const overviewOrderTypeMetrics = typeMetrics.filter(metric => [
-    "Órdenes normales",
-    "Órdenes 911",
+    "Normales totales",
+    "911 totales",
   ].includes(metric.label));
 
   const overviewRecentOrders = orders.slice(0, 5);
@@ -3727,7 +3727,7 @@ export default function Dashboard() {
     { id: "overview", label: "Resumen", icon: <Icons.Dashboard /> },
     { id: "kpi", label: "Inteligencia", icon: <Icons.TrendUp /> },
     { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loadingOrders, orders.length) },
-    { id: "credits", label: "Créditos", icon: <Icons.Receipt />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
+    { id: "credits", label: "Seguimiento", icon: <Icons.AlertCircle />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
     { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clientsTotal) },
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
     { id: "users", label: "Empleados", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
@@ -3761,7 +3761,7 @@ export default function Dashboard() {
             >
               {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
-            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "kpi" ? "KPI" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de Empleados"}</h1></div>
+            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "kpi" ? "KPI" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de seguimiento" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de Empleados"}</h1></div>
           </div>
           <div className="pa-header-right">
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
@@ -3810,7 +3810,7 @@ export default function Dashboard() {
                   </div>
                   <div className="acm-total-badge">
                     <Icons.Receipt />
-                    <strong>{accountsReceivableLoading ? "..." : creditPendingInvoicesCount}</strong> crédito pendiente
+                    <strong>{accountsReceivableLoading ? "..." : creditPendingInvoicesCount}</strong> seguimiento pendiente
                   </div>
                   <div className="acm-total-badge">
                     <Icons.Users />
@@ -3903,8 +3903,8 @@ export default function Dashboard() {
                   <section className="pa-panel pa-overview-active-orders-panel">
                     <div className="pa-overview-card-head">
                       <div>
-                        <h2>Órdenes activas</h2>
-                        <p>Prioridad y carga de diseño en operación.</p>
+                        <h2>Carga activa</h2>
+                        <p>Prioridad y diseño en operación.</p>
                       </div>
                     </div>
                     <div className="pa-overview-active-orders-grid">
@@ -3926,8 +3926,8 @@ export default function Dashboard() {
                   <section className="pa-panel pa-overview-commercial-panel">
                     <div className="pa-overview-card-head">
                       <div>
-                        <h2>Salud comercial</h2>
-                        <p>Situación financiera y de clientes.</p>
+                        <h2>Seguimiento comercial</h2>
+                        <p>Clientes y seguimiento operativo.</p>
                       </div>
                     </div>
                     <button
@@ -3937,7 +3937,7 @@ export default function Dashboard() {
                     >
                       <span className="pa-overview-credit-summary-icon"><Icons.Receipt /></span>
                       <span>
-                        <small>Créditos pendientes</small>
+                        <small>Seguimiento pendiente</small>
                         <strong>{accountsReceivableLoading ? "..." : creditPendingInvoicesCount}</strong>
                         <em>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento.</em>
                       </span>
@@ -3971,7 +3971,7 @@ export default function Dashboard() {
                           <div key={metric.label} className="pa-overview-system-row" style={{ "--system-color": acc.color }}>
                             <span className="pa-overview-system-icon">{metric.icon}</span>
                             <span>{metric.label}</span>
-                            <strong>{loadingOrders && metric.label !== "Crédito pendiente" ? "..." : metric.value}</strong>
+                            <strong>{loadingOrders && metric.label !== "Seguimiento pendiente" ? "..." : metric.value}</strong>
                           </div>
                         );
                       })}
@@ -4210,23 +4210,23 @@ export default function Dashboard() {
           <section className="pa-section">
             <div className="pa-section-heading acm-heading">
               <div>
-                <h2>Gestión de Créditos</h2>
-                <p>Supervisa y da seguimiento a las facturas a crédito de los clientes.</p>
+                <h2>Gestión de seguimiento</h2>
+                <p>Supervisa pendientes administrativos por cliente.</p>
                 <div className="acm-total-badge">
-                  <Icons.Receipt />
-                  <strong>{creditPendingInvoicesCount.toLocaleString("es-PE")}</strong> órdenes a crédito sin pagar
+                  <Icons.AlertCircle />
+                  <strong>{creditPendingInvoicesCount.toLocaleString("es-PE")}</strong> seguimientos pendientes
                 </div>
               </div>
             </div>
-            <div className="acm-filter-panel pa-credit-filter-panel" aria-label="Filtros de créditos">
+            <div className="acm-filter-panel pa-credit-filter-panel" aria-label="Filtros de seguimiento">
               <div className="acm-filter-row">
                 <div className="pa-search-box acm-search">
                   <Icons.Search />
                   <input
                     value={creditSearch}
                     onChange={(event) => setCreditSearch(event.target.value)}
-                    placeholder="Buscar por cliente, telefono, factura u orden..."
-                    aria-label="Buscar créditos"
+                    placeholder="Buscar por cliente, telefono u orden..."
+                    aria-label="Buscar seguimientos"
                   />
                   {creditSearch && (
                     <button className="acm-search-clear" onClick={() => setCreditSearch("")} aria-label="Limpiar búsqueda">
@@ -4250,7 +4250,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="pa-credit-metrics" aria-label="Resumen de créditos">
+            <div className="pa-credit-metrics" aria-label="Resumen de seguimiento">
               <div className="pa-credit-summary-item">
                 <span className="pa-credit-summary-icon client"><Icons.User /></span>
                 <div><strong>{creditClientGroups.length}</strong><span>Clientes filtrados</span></div>
@@ -4269,11 +4269,11 @@ export default function Dashboard() {
               <div className="pa-credit-pending-banner" role="status">
                 <span className="pa-credit-pending-banner-icon"><Icons.AlertCircle /></span>
                 <div>
-                  <strong>{creditPendingInvoicesCount} factura{creditPendingInvoicesCount === 1 ? "" : "s"} a crédito pendiente{creditPendingInvoicesCount === 1 ? "" : "s"}</strong>
+                  <strong>{creditPendingInvoicesCount} seguimiento{creditPendingInvoicesCount === 1 ? "" : "s"} pendiente{creditPendingInvoicesCount === 1 ? "" : "s"}</strong>
                   <span>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento administrativo.</span>
                 </div>
                 <button className="pa-btn secondary pa-btn-sm" onClick={() => setCreditStatusFilter("open")}>
-                  Revisar créditos pendientes
+                  Revisar pendientes
                 </button>
               </div>
             )}
@@ -4283,7 +4283,7 @@ export default function Dashboard() {
               <div className="pa-panel-head pa-panel-head-results">
                 <div>
                   <span className="pa-section-kicker">Seguimiento</span>
-                  <h2>Créditos agrupados por cliente</h2>
+                  <h2>Seguimientos por cliente</h2>
                 </div>
                 <span className="pa-results-count">
                   {creditClientGroups.length} cliente{creditClientGroups.length === 1 ? "" : "s"}
@@ -4294,7 +4294,7 @@ export default function Dashboard() {
                   <thead>
                     <tr>
                       <th>Cliente</th>
-                      <th>Facturas</th>
+                      <th>Órdenes</th>
                       <th>Fechas</th>
                       <th>Estado</th>
                       <th className="pa-credit-actions-col"></th>
@@ -4306,8 +4306,8 @@ export default function Dashboard() {
                         <td colSpan={5} className="ps-table-empty">
                           <div className="acm-empty-state">
                             <Icons.Receipt />
-                            <strong>No hay créditos registrados</strong>
-                            <span>{hasCreditFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Las facturas a crédito aparecerán aquí."}</span>
+                            <strong>No hay seguimientos registrados</strong>
+                            <span>{hasCreditFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Los pendientes de seguimiento aparecerán aquí."}</span>
                             {hasCreditFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setCreditSearch(""); setCreditStatusFilter("open"); }}>Limpiar filtros</button>}
                           </div>
                         </td>
@@ -4335,7 +4335,7 @@ export default function Dashboard() {
                             <td className="td-pad">
                               <div className="pa-credit-badge-stack">
                                 <span className="acm-badge warning">
-                                  {group.pendingCount} factura{group.pendingCount === 1 ? "" : "s"}
+                                  {group.pendingCount} pendiente{group.pendingCount === 1 ? "" : "s"}
                                 </span>
                               </div>
                             </td>
@@ -4347,7 +4347,7 @@ export default function Dashboard() {
                             </td>
                             <td className="td-pad">
                               <span className={`acm-badge ${group.pendingCount > 0 ? "warning" : "success"}`}>
-                                {group.pendingCount > 0 ? "Con saldo pendiente" : "Sin pendientes"}
+                                {group.pendingCount > 0 ? "Con pendientes" : "Sin pendientes"}
                               </span>
                             </td>
                             <td className="td-pad td-actions" onClick={(event) => event.stopPropagation()}>
@@ -4355,7 +4355,7 @@ export default function Dashboard() {
                                 <button
                                   className="table-action-btn view"
                                   onClick={() => { setCreditDetailClientId(clientId); setCreditView("detail"); }}
-                                  title="Ver facturas del cliente"
+                                  title="Ver pendientes del cliente"
                                 >
                                   <Icons.Eye />
                                 </button>
@@ -4372,7 +4372,7 @@ export default function Dashboard() {
                                   <button
                                     className="table-action-btn cancel"
                                     onClick={() => handleOpenCreditSettleAll(group.client, openInvoices)}
-                                    title="Marcar todas como saldadas"
+                                    title="Cerrar pendientes"
                                   >
                                     <Icons.Check />
                                   </button>
@@ -4425,18 +4425,18 @@ export default function Dashboard() {
           />
         )}
 
-        <ModalShell open={!!recordPaymentClient} onClose={() => setRecordPaymentClient(null)} title="Marcar crédito saldado" size="compact">
+        <ModalShell open={!!recordPaymentClient} onClose={() => setRecordPaymentClient(null)} title="Cerrar pendientes" size="compact">
           <div style={{ minWidth: 320 }}>
             <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
               {recordPaymentClient?.name}
             </p>
             <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 18 }}>
-              Facturas pendientes: {receivablesByClient[recordPaymentClient?.id]?.count || 0}
+              Pendientes abiertos: {receivablesByClient[recordPaymentClient?.id]?.count || 0}
             </p>
 
             {(receivablesByClient[recordPaymentClient?.id]?.invoices || []).length > 0 && (
               <div className="pa-field">
-                <span>Numeros de facturacion</span>
+                <span>Referencias</span>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {receivablesByClient[recordPaymentClient?.id].invoices.map((invoiceNumber) => (
                     <span key={invoiceNumber} className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>
@@ -4453,7 +4453,7 @@ export default function Dashboard() {
                 value={recordPaymentForm.notes}
                 onChange={(event) => setRecordPaymentForm(prev => ({ ...prev, notes: event.target.value }))}
                 rows={3}
-                placeholder="Ej: Verificado en el sistema financiero externo"
+                placeholder="Ej: Seguimiento revisado por administración"
               />
             </label>
 
@@ -4462,24 +4462,24 @@ export default function Dashboard() {
                 Cancelar
               </button>
               <button className="pa-btn primary" onClick={handleRecordClientPayment} disabled={recordPaymentLoading}>
-                {recordPaymentLoading ? "Cerrando..." : "Marcar saldado"}
+                {recordPaymentLoading ? "Cerrando..." : "Cerrar pendientes"}
               </button>
             </div>
           </div>
         </ModalShell>
 
-        <ModalShell open={!!creditSettlementTarget} onClose={() => setCreditSettlementTarget(null)} title="Marcar crédito saldado" size="compact">
+        <ModalShell open={!!creditSettlementTarget} onClose={() => setCreditSettlementTarget(null)} title="Cerrar pendientes" size="compact">
           <div style={{ minWidth: 320 }}>
             <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
               {creditSettlementTarget?.client?.name || "Cliente sin nombre"}
             </p>
             <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 18 }}>
-              Facturas a cerrar: {creditSettlementTarget?.orderIds?.length || 0}
+              Pendientes a cerrar: {creditSettlementTarget?.orderIds?.length || 0}
             </p>
 
             {(creditSettlementTarget?.invoices || []).length > 0 && (
               <div className="pa-field">
-                <span>Numeros de facturacion</span>
+                <span>Referencias</span>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {creditSettlementTarget.invoices.map((invoiceNumber) => (
                     <span key={invoiceNumber} className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>
@@ -4496,7 +4496,7 @@ export default function Dashboard() {
                 value={creditSettlementNotes}
                 onChange={(event) => setCreditSettlementNotes(event.target.value)}
                 rows={3}
-                placeholder="Ej: Factura saldada en el sistema financiero externo"
+                placeholder="Ej: Seguimiento revisado por administración"
               />
             </label>
 
@@ -4505,7 +4505,7 @@ export default function Dashboard() {
                 Cancelar
               </button>
               <button className="pa-btn primary" onClick={handleConfirmCreditSettlement} disabled={creditSettlementLoading}>
-                {creditSettlementLoading ? "Cerrando..." : "Marcar saldado"}
+                {creditSettlementLoading ? "Cerrando..." : "Cerrar pendientes"}
               </button>
             </div>
           </div>
@@ -5196,13 +5196,13 @@ export default function Dashboard() {
 
 function CreditPendingAlertModal({ open, invoiceCount, clientCount, clients, saving, onClose, onReview }) {
   return (
-    <ModalShell open={open} onClose={onClose} title="Créditos pendientes" size="compact">
+    <ModalShell open={open} onClose={onClose} title="Seguimientos pendientes" size="compact">
       <div className="pa-credit-alert-modal">
         <div className="pa-credit-alert-hero">
           <span className="pa-credit-alert-hero-icon"><Icons.Receipt /></span>
           <div>
-            <strong>{invoiceCount} factura{invoiceCount === 1 ? "" : "s"} a crédito pendiente{invoiceCount === 1 ? "" : "s"}</strong>
-            <p>{clientCount} cliente{clientCount === 1 ? "" : "s"} tiene{clientCount === 1 ? "" : "n"} facturas pendientes de pago.</p>
+            <strong>{invoiceCount} seguimiento{invoiceCount === 1 ? "" : "s"} pendiente{invoiceCount === 1 ? "" : "s"}</strong>
+            <p>{clientCount} cliente{clientCount === 1 ? "" : "s"} requiere{clientCount === 1 ? "" : "n"} seguimiento administrativo.</p>
           </div>
         </div>
 
@@ -5221,7 +5221,7 @@ function CreditPendingAlertModal({ open, invoiceCount, clientCount, clients, sav
         )}
 
         <p className="pa-credit-alert-note">
-          Este aviso se mostrara una vez al mes mientras existan créditos pendientes.
+          Este aviso se mostrara una vez al mes mientras existan seguimientos pendientes.
         </p>
 
         <div className="pa-modal-actions">
@@ -5229,7 +5229,7 @@ function CreditPendingAlertModal({ open, invoiceCount, clientCount, clients, sav
             {saving ? "Guardando..." : "Entendido"}
           </button>
           <button className="pa-btn primary" onClick={onReview} disabled={saving}>
-            Revisar créditos pendientes
+            Revisar pendientes
           </button>
         </div>
       </div>
@@ -5239,20 +5239,20 @@ function CreditPendingAlertModal({ open, invoiceCount, clientCount, clients, sav
 
 function CreditPendingAlertModalPolished({ open, invoiceCount, clientCount, clients, saving, onClose, onReview }) {
   return (
-    <ModalShell open={open} onClose={onClose} title="Créditos pendientes" size="compact">
+    <ModalShell open={open} onClose={onClose} title="Seguimientos pendientes" size="compact">
       <div className="pa-credit-alert-modal polished">
         <div className="pa-credit-alert-hero polished">
           <span className="pa-credit-alert-hero-icon"><Icons.Receipt /></span>
           <div className="pa-credit-alert-hero-copy">
             <span className="pa-credit-alert-kicker">Seguimiento administrativo</span>
-            <strong>{invoiceCount} factura{invoiceCount === 1 ? "" : "s"} a crédito pendiente{invoiceCount === 1 ? "" : "s"}</strong>
-            <p>{clientCount} cliente{clientCount === 1 ? "" : "s"} requiere{clientCount === 1 ? "" : "n"} seguimiento de pago.</p>
+            <strong>{invoiceCount} seguimiento{invoiceCount === 1 ? "" : "s"} pendiente{invoiceCount === 1 ? "" : "s"}</strong>
+            <p>{clientCount} cliente{clientCount === 1 ? "" : "s"} requiere{clientCount === 1 ? "" : "n"} seguimiento administrativo.</p>
           </div>
         </div>
 
-        <div className="pa-credit-alert-stats" aria-label="Resumen de créditos pendientes">
+        <div className="pa-credit-alert-stats" aria-label="Resumen de seguimientos pendientes">
           <div>
-            <span>Facturas</span>
+            <span>Pendientes</span>
             <strong>{invoiceCount}</strong>
           </div>
           <div>
@@ -5279,7 +5279,7 @@ function CreditPendingAlertModalPolished({ open, invoiceCount, clientCount, clie
         )}
 
         <p className="pa-credit-alert-note polished">
-          Este aviso se mostrara una vez al mes mientras existan créditos pendientes.
+          Este aviso se mostrara una vez al mes mientras existan seguimientos pendientes.
         </p>
 
         <div className="pa-modal-actions pa-credit-alert-actions">
@@ -5287,7 +5287,7 @@ function CreditPendingAlertModalPolished({ open, invoiceCount, clientCount, clie
             {saving ? "Guardando..." : "Entendido"}
           </button>
           <button className="pa-btn primary" onClick={onReview} disabled={saving}>
-            Revisar créditos pendientes
+            Revisar pendientes
           </button>
         </div>
       </div>
@@ -5335,7 +5335,7 @@ function CreditClientDetailView({
         <div className="pa-credit-detail-header">
           <button className="pa-credit-detail-back" onClick={onBack}>
             <Icons.ChevronLeft />
-            Volver a lista de créditos
+            Volver a seguimiento
           </button>
           <button
             className="pa-btn secondary pa-btn-sm"
@@ -5375,8 +5375,8 @@ function CreditClientDetailView({
           <div className="pa-panel-stripe" />
           <div className="pa-panel-head pa-panel-head-results">
             <div>
-              <span className="pa-section-kicker">Facturas</span>
-              <h2>Facturas del cliente</h2>
+              <span className="pa-section-kicker">Pendientes</span>
+              <h2>Órdenes del cliente</h2>
             </div>
           </div>
           <div style={{ padding: "0 14px 14px" }}>
@@ -5386,7 +5386,7 @@ function CreditClientDetailView({
                 <input
                   value={detailSearch}
                   onChange={(e) => setDetailSearch(e.target.value)}
-                  placeholder="Buscar por factura u orden..."
+                  placeholder="Buscar por referencia u orden..."
                 />
                 {detailSearch && (
                   <button className="acm-search-clear" onClick={() => setDetailSearch("")} aria-label="Limpiar búsqueda">
@@ -5411,10 +5411,10 @@ function CreditClientDetailView({
                       checked={allOpenSelected}
                       disabled={openInvoices.length === 0}
                       onChange={() => onToggleAll(clientId, group.invoices)}
-                      aria-label="Seleccionar facturas pendientes"
+                      aria-label="Seleccionar pendientes"
                     />
                   </th>
-                  <th>Factura</th>
+                  <th>Referencia</th>
                   <th>Orden</th>
                   <th>Emision</th>
                   <th>Estado</th>
@@ -5427,8 +5427,8 @@ function CreditClientDetailView({
                     <td colSpan={6} className="ps-table-empty">
                       <div className="acm-empty-state">
                         <Icons.Receipt />
-                        <strong>No hay facturas</strong>
-                        <span>{detailSearch || detailFilter !== "all" ? "Prueba con otros filtros o limpia la búsqueda." : "No hay facturas registradas para este cliente."}</span>
+                        <strong>No hay pendientes</strong>
+                        <span>{detailSearch || detailFilter !== "all" ? "Prueba con otros filtros o limpia la búsqueda." : "No hay pendientes registrados para este cliente."}</span>
                       </div>
                     </td>
                   </tr>
@@ -5451,7 +5451,7 @@ function CreditClientDetailView({
                             disabled={!itemOpen || !item.order_id}
                             onChange={() => onToggleSelection(clientId, item.order_id)}
                             onClick={(e) => e.stopPropagation()}
-                            aria-label={`Seleccionar factura ${item.invoiceNumber}`}
+                            aria-label={`Seleccionar pendiente ${item.invoiceNumber}`}
                           />
                         </td>
                         <td className="td-pad td-name">{item.invoiceNumber}</td>
@@ -5490,7 +5490,7 @@ function CreditClientDetailView({
                                   invoices: [item.invoiceNumber],
                                   mode: "single",
                                 }); }}
-                                title="Marcar factura saldada"
+                                title="Cerrar pendiente"
                               >
                                 <Icons.Check />
                               </button>
@@ -5526,7 +5526,7 @@ function CreditClientDetailView({
                 })}
                 disabled={selectedIds.length === 0}
               >
-                Marcar saldadas
+                Cerrar pendientes
               </button>
             </div>
           </div>

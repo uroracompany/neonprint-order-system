@@ -86,7 +86,7 @@ export function CreditReminderCreateModal({
           </label>
 
           <div className="credit-reminder-section">
-            <span className="credit-reminder-section-title">Facturas asociadas</span>
+            <span className="credit-reminder-section-title">Órdenes asociadas</span>
             <div className="credit-reminder-invoices">
               {invoices.map((item) => (
                 <label key={item.id || item.order_id} className="credit-reminder-invoice">
@@ -103,11 +103,11 @@ export function CreditReminderCreateModal({
                 </label>
               ))}
               {invoices.length === 0 && (
-                <div className="credit-reminder-empty">No hay facturas a credito disponibles para este recordatorio.</div>
+                <div className="credit-reminder-empty">No hay órdenes disponibles para este recordatorio.</div>
               )}
             </div>
             {!hasSelectedCreditOrder && (
-              <small className="credit-reminder-help">Los recordatorios personalizados solo pueden crearse para ordenes a credito.</small>
+              <small className="credit-reminder-help">Selecciona al menos una orden disponible para crear el recordatorio.</small>
             )}
           </div>
 
@@ -146,7 +146,7 @@ export function CreditReminderCreateModal({
               rows={3}
               value={form.note || ""}
               onChange={(event) => onFormChange?.(prev => ({ ...prev, note: event.target.value }))}
-              placeholder="Ej. Llamar para confirmar pago acordado."
+              placeholder="Ej. Llamar para confirmar seguimiento acordado."
               required
               aria-required="true"
             />

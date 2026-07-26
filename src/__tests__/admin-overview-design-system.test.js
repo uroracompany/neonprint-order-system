@@ -11,7 +11,7 @@ describe("Admin overview design-system contract", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
 
     expect(overview).toContain('kicker: "Resumen operativo"');
-    expect(overview).toContain('kicker: "Salud comercial"');
+    expect(overview).toContain('kicker: "Seguimiento comercial"');
     expect(overview).toContain("const QUICK_ACTIONS = [");
     expect(overview).toContain('tab: "credits"');
     expect(overview).toContain('className="pa-carousel-summary-copy"');
@@ -44,7 +44,7 @@ describe("Admin overview design-system contract", () => {
     expect(dashboard).toContain('label: "Normales activas"');
     expect(dashboard).toContain('label: "Diseño interno"');
     expect(dashboard).toContain('label: "Diseño externo"');
-    expect(dashboard).toContain("<h2>Órdenes activas</h2>");
+    expect(dashboard).toContain("<h2>Carga activa</h2>");
     expect(dashboard).toContain('className="pa-overview-active-orders-grid"');
     expect(dashboard).toContain('className="pa-overview-active-order-card"');
     expect(dashboard).toContain('className="pa-overview-secondary-grid"');

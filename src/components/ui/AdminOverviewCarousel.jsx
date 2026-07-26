@@ -10,8 +10,8 @@ const SLIDES = [
   },
   {
     id: "commercial",
-    kicker: "Salud comercial",
-    title: "Clientes, créditos y equipo en una sola lectura.",
+    kicker: "Seguimiento comercial",
+    title: "Clientes y equipo en una sola lectura.",
     variant: "commercial",
   },
   {
@@ -30,7 +30,6 @@ const SLIDES = [
 
 const ICONS = {
   orders: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M16 13H8" /><path d="M16 17H8" /></svg>,
-  money: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2" /><path d="M6 12h.01M18 12h.01" /></svg>,
   file: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" /><path d="M14 2v5h5" /></svg>,
   brush: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.37 2.63 14 7l3 3 4.37-4.37a2.12 2.12 0 1 0-3-3Z" /><path d="M9 12a5 5 0 0 0-5 5v3h3a5 5 0 0 0 5-5Z" /><path d="m14 7-5 5" /></svg>,
   truck: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17H6V5h11v4h3l2 3v5h-2" /><path d="M14 17h-4" /><circle cx="7" cy="17" r="2" /><circle cx="17" cy="17" r="2" /></svg>,
@@ -42,7 +41,7 @@ const ICONS = {
 
 const QUICK_ACTIONS = [
   { label: "Órdenes", tab: "orders", color: "#0f1e40", icon: ICONS.orders },
-  { label: "Créditos", tab: "credits", color: "#F59E0B", icon: ICONS.money },
+  { label: "Seguimiento", tab: "credits", color: "#F59E0B", icon: ICONS.alert },
   { label: "Clientes", tab: "clients", color: "#06B6D4", icon: ICONS.users },
   { label: "Materiales", tab: "materials", color: "#8B5CF6", icon: ICONS.file },
   { label: "Empleados", tab: "users", color: "#F97316", icon: ICONS.users },
@@ -93,7 +92,7 @@ function OperationsSlide({ statusItems, loading }) {
 
 function CommercialSlide({ clients, profiles, creditPendingInvoicesCount }) {
   const items = [
-    { label: "Créditos pendientes", value: creditPendingInvoicesCount, color: "#0f1e40", icon: ICONS.money },
+    { label: "Seguimiento pendiente", value: creditPendingInvoicesCount, color: "#0f1e40", icon: ICONS.alert },
     { label: "Clientes registrados", value: clients.length, color: "#06B6D4", icon: ICONS.users },
     { label: "Empleados", value: profiles.length, color: "#F97316", icon: ICONS.users },
   ];
@@ -130,7 +129,7 @@ function RemindersSlide({ orders, creditPendingInvoicesCount, creditPendingClien
   const blockedCount = orders.filter(order => order.operational_status === "blocked").length;
   const reviewCount = orders.filter(order => order.commercial_review_required).length;
   const items = [
-    { label: "Facturas a crédito", value: creditPendingInvoicesCount, color: "#F59E0B", icon: ICONS.money },
+    { label: "Pendientes de seguimiento", value: creditPendingInvoicesCount, color: "#F59E0B", icon: ICONS.alert },
     { label: "Clientes por seguimiento", value: creditPendingClientCount, color: "#06B6D4", icon: ICONS.users },
     { label: "Órdenes bloqueadas", value: blockedCount, color: "#EF4444", icon: ICONS.alert },
     { label: "Revisión comercial", value: reviewCount, color: "#8B5CF6", icon: ICONS.file },
@@ -170,7 +169,7 @@ export default function AdminOverviewCarousel({
 
   const statusItems = [
     { label: "Pendientes", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.PENDING)).length, color: "#F59E0B", icon: ICONS.orders },
-    { label: "Caja", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_QUOTE)).length, color: "#06B6D4", icon: ICONS.money },
+    { label: "Caja", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_QUOTE)).length, color: "#06B6D4", icon: ICONS.file },
     { label: "Diseño", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_DESIGN)).length, color: "#8B5CF6", icon: ICONS.file },
     { label: "Producción", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_PRODUCTION)).length, color: "#EF4444", icon: ICONS.brush },
     { label: "Terminación", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_TERMINATION)).length, color: "#EC4899", icon: ICONS.brush },

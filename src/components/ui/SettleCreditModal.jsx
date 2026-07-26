@@ -20,7 +20,7 @@ export default function SettleCreditModal({
         <div className="settle-modal-stripe" />
         <div className="settle-modal-header">
           <div className="settle-modal-title">
-            <h3>Marcar crédito saldado</h3>
+            <h3>Cerrar pendientes</h3>
           </div>
           <button className="settle-modal-close" onClick={onClose}>
             <Icons.Close />
@@ -28,12 +28,12 @@ export default function SettleCreditModal({
         </div>
         <div className="settle-modal-body">
           <p>
-            ¿Deseas marcar las facturas pendientes de{" "}
-            <strong>{clientName || "este cliente"}</strong> como saldadas?
+            ¿Deseas cerrar los pendientes de{" "}
+            <strong>{clientName || "este cliente"}</strong>?
           </p>
           {invoiceCount > 0 && (
             <p className="settle-modal-count">
-              <Icons.Receipt /> {invoiceCount} factura{invoiceCount === 1 ? "" : "s"} a cerrar
+              <Icons.Receipt /> {invoiceCount} pendiente{invoiceCount === 1 ? "" : "s"} a cerrar
             </p>
           )}
           {invoices.length > 0 && (
@@ -51,7 +51,7 @@ export default function SettleCreditModal({
               value={notes || ""}
               onChange={(e) => onNotesChange?.(e.target.value)}
               rows={3}
-              placeholder="Ej: Factura saldada en el sistema financiero externo"
+              placeholder="Ej: Seguimiento revisado por administración"
             />
           </label>
         </div>
@@ -68,7 +68,7 @@ export default function SettleCreditModal({
             ) : (
               <>
                 <Icons.Check />
-                Marcar saldado{invoiceCount !== 1 ? "s" : ""}
+                Cerrar pendiente{invoiceCount !== 1 ? "s" : ""}
               </>
             )}
           </button>
