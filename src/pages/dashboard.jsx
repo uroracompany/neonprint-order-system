@@ -3725,7 +3725,7 @@ export default function Dashboard() {
 
   const menuItems = [
     { id: "overview", label: "Resumen", icon: <Icons.Dashboard /> },
-    { id: "kpi", label: "Inteligencia", icon: <Icons.TrendUp /> },
+    { id: "kpi", label: "KPI", icon: <Icons.BarChart /> },
     { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loadingOrders, orders.length) },
     { id: "credits", label: "Seguimiento", icon: <Icons.AlertCircle />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
     { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clientsTotal) },
@@ -3782,7 +3782,7 @@ export default function Dashboard() {
         {activeTab === "kpi" && <KPIModule />}
 
         {activeTab === "overview" &&
-          <section className="pa-section">
+          <section className="pa-section pa-overview-section">
             <div className="pa-section-heading acm-heading">
               <div>
                 <h2>Panel General</h2>
@@ -5315,6 +5315,7 @@ function CreditClientDetailView({
   const allOpenSelected = openInvoices.length > 0 && openInvoices.every((item) => selectedIds.includes(item.order_id));
   const [detailSearch, setDetailSearch] = useState("");
   const [detailFilter, setDetailFilter] = useState("all");
+  const [detailPage, setDetailPage] = useState(1);
 
   const filteredInvoices = useMemo(() => {
     const q = detailSearch.toLowerCase().trim();
@@ -5328,6 +5329,14 @@ function CreditClientDetailView({
       );
     });
   }, [group.invoices, detailFilter, detailSearch, isOpenCreditReceivable]);
+  const CREDIT_DETAIL_PAGE_SIZE = 7;
+  const detailTotalPages = Math.max(1, Math.ceil(filteredInvoices.length / CREDIT_DETAIL_PAGE_SIZE));
+  const safeDetailPage = Math.min(detailPage, detailTotalPages);
+  const paginatedInvoices = filteredInvoices.slice((safeDetailPage - 1) * CREDIT_DETAIL_PAGE_SIZE, safeDetailPage * CREDIT_DETAIL_PAGE_SIZE);
+
+  useEffect(() => {
+    setDetailPage(1);
+  }, [clientId, detailSearch, detailFilter]);
 
   return (
     <section className="pa-section pa-credit-layout">
@@ -5433,7 +5442,7 @@ function CreditClientDetailView({
                     </td>
                   </tr>
                 ) : (
-                  filteredInvoices.map((item) => {
+                  paginatedInvoices.map((item) => {
                     const itemOpen = isOpenCreditReceivable(item);
                     const selected = selectedIds.includes(item.order_id);
                     return (
@@ -5504,6 +5513,11 @@ function CreditClientDetailView({
               </tbody>
             </table>
           </div>
+          {filteredInvoices.length > CREDIT_DETAIL_PAGE_SIZE && (
+            <div className="acm-pagination-footer">
+              <Pagination currentPage={safeDetailPage} totalPages={detailTotalPages} onPageChange={setDetailPage} />
+            </div>
+          )}
           <div className="pa-credit-detail-actions-bar">
             <span className="pa-credit-selection-count">
               {selectedIds.length} seleccionada{selectedIds.length === 1 ? "" : "s"}

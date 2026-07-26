@@ -47,10 +47,19 @@ describe("Admin overview design-system contract", () => {
     expect(dashboard).toContain("<h2>Carga activa</h2>");
     expect(dashboard).toContain('className="pa-overview-active-orders-grid"');
     expect(dashboard).toContain('className="pa-overview-active-order-card"');
+    expect(dashboard).toContain('className="pa-section pa-overview-section"');
     expect(dashboard).toContain('className="pa-overview-secondary-grid"');
     expect(dashboard).toContain('className="pa-overview-main-column"');
+    expect(dashboard).toContain("const paginatedCreditClientGroups = creditClientGroups.slice");
+    expect(dashboard).toContain("const CREDIT_DETAIL_PAGE_SIZE = 7;");
+    expect(dashboard).toContain("const paginatedInvoices = filteredInvoices.slice");
+    expect(dashboard).toContain("<Pagination currentPage={safeDetailPage} totalPages={detailTotalPages} onPageChange={setDetailPage} />");
     expect(dashboard.indexOf('className="pa-panel pa-overview-flow-panel"')).toBeLessThan(dashboard.indexOf('className="pa-overview-secondary-grid"'));
+    expect(adminCss).toContain(".pa-main > .pa-overview-section");
+    expect(adminCss).toContain("max-width: 1800px;");
     expect(adminCss).toContain(".pa-overview-secondary-grid");
+    expect(adminCss).toContain("grid-template-columns: minmax(760px, 1fr) minmax(360px, 520px);");
+    expect(adminCss).toContain("grid-template-columns: 112px minmax(160px, 1.2fr) minmax(128px, 0.85fr) minmax(150px, 1fr) minmax(128px, 0.75fr);");
     expect(adminCss).toContain("align-items: stretch;");
     expect(adminCss).toContain(".pa-overview-active-orders-panel");
     expect(adminCss).toContain(".pa-overview-active-orders-grid");
@@ -65,6 +74,9 @@ describe("Admin overview design-system contract", () => {
     expect(adminCss).toMatch(/\.pa-overview-flow-step-value\s*\{[\s\S]*flex-direction: row-reverse;[\s\S]*justify-content: space-between;/);
     expect(adminCss).toContain("font-size: 30px;");
     expect(adminCss).toContain("margin: 4px 24px 24px;");
+    expect(adminCss).toContain(".pa-credit-filter-panel .acm-filter-row .acm-search input:hover");
+    expect(adminCss).toMatch(/\.pa-credit-filter-panel \.acm-filter-row \.acm-search input\s*\{[\s\S]*border: 0;[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
+    expect(adminCss).toMatch(/\.pa-credit-detail-toolbar select\s*\{[\s\S]*flex: none;[\s\S]*height: 42px;/);
   });
 
   it("keeps order row actions aligned with the shared admin action button base", () => {
