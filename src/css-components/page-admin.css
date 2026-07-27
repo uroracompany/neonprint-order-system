@@ -161,9 +161,9 @@
 .pa-header {
   padding: 0 26px;
   height: 62px;
-  background: linear-gradient(180deg, #f8fbfe, #f0f4f9);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 0 rgba(15, 30, 64, 0.04);
   justify-content: space-between;
   flex-shrink: 0;
 }
@@ -206,6 +206,10 @@
   font-weight: 700;
   color: var(--text);
   margin-top: 1px;
+}
+
+.pa-header .pa-kicker {
+  color: #7b8ca8;
 }
 
 .pa-panel-head h2,
@@ -256,25 +260,51 @@
 }
 
 .pa-header .pa-icon-btn {
-  width: auto;
-  height: auto;
-  background: transparent;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 7px 8px;
-  color: var(--text-sub);
+  width: 42px;
+  height: 42px;
+  background: #ffffff;
+  border: 1.5px solid #dbe3ef;
+  border-radius: 12px;
+  padding: 0;
+  color: #405474;
   display: flex;
   align-items: center;
+  justify-content: center;
   position: relative;
-  transition: all 0.15s;
+  box-shadow: 0 1px 2px rgba(15, 30, 64, 0.04);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .pa-header .pa-icon-btn:hover {
-  background: var(--primary-light);
+  background: #f8fafc;
   border-color: var(--primary);
   color: var(--primary);
   transform: none;
-  box-shadow: none;
+  box-shadow: 0 8px 18px rgba(15, 30, 64, 0.08);
+}
+
+.pa-header .nc-bell-btn {
+  width: 42px;
+  height: 42px;
+  border: 1.5px solid #dbe3ef;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #405474;
+  box-shadow: 0 1px 2px rgba(15, 30, 64, 0.04);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.pa-header .nc-bell-btn:hover,
+.pa-header .nc-bell-btn:focus-visible {
+  background: #f8fafc;
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 8px 18px rgba(15, 30, 64, 0.08);
+}
+
+.pa-header .nc-bell-count {
+  border: 2px solid #ffffff;
+  box-shadow: 0 3px 10px rgba(239, 68, 68, 0.32);
 }
 
 .pa-mobile-toggle:hover,
