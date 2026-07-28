@@ -107,7 +107,7 @@ export function CreditReminderCreateModal({
               )}
             </div>
             {!hasSelectedCreditOrder && (
-              <small className="credit-reminder-help">Selecciona al menos una orden disponible para crear el recordatorio.</small>
+              <small className="credit-reminder-help">Los recordatorios personalizados solo pueden crearse para ordenes a credito.</small>
             )}
           </div>
 

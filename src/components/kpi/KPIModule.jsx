@@ -19,6 +19,7 @@ import { DesignerDetailView } from './KPIDesignIntelligence'
 import { QuoteDetailView } from './KPIQuoteIntelligence'
 import { ProductionAreaDetailView, ProductionEmployeeDetailView } from './KPIProductionIntelligence'
 import { DeliveryDetailView } from './KPIDeliveryIntelligence'
+import '../../css-components/page-kpi.css'
 
 const TABS = [
   { id: 'overview', label: 'Resumen Ejecutivo', icon: <Icons.Dashboard /> },

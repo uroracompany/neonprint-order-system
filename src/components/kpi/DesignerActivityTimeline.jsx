@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useDeferredValue, useMemo } from 'react'
 import { Icons } from '../../utils/icons'
 import { adminApiFetch } from '../../utils/adminApi'
+import KPISearchBox from './KPISearchBox'
+import { matchesKpiSearch } from '../../utils/kpiSearch'
 
 const EVENT_CONFIG = {
   design_file_added:            { icon: Icons.Package,    color: '#8B5CF6', label: 'Subió archivo' },
@@ -141,6 +143,7 @@ export default function DesignerActivityTimeline({ designerId, getDateBounds }) 
   const [loadingMore, setLoadingMore] = useState(false)
   const [offset, setOffset] = useState(0)
   const [searchText, setSearchText] = useState('')
+  const deferredSearchText = useDeferredValue(searchText)
   const [eventTypeFilter, setEventTypeFilter] = useState('all')
   const LIMIT = 10
 
@@ -152,17 +155,15 @@ export default function DesignerActivityTimeline({ designerId, getDateBounds }) 
   const filteredEvents = useMemo(() => {
     return events.filter(event => {
       if (eventTypeFilter !== 'all' && event.type !== eventTypeFilter) return false
-      if (!searchText) return true
-      const term = searchText.toLowerCase()
-      const { desc } = getEventDescription(event)
-      return (
-        desc.toLowerCase().includes(term) ||
-        String(event.order_id || '').toLowerCase().includes(term) ||
-        (event.order_client || '').toLowerCase().includes(term) ||
-        (event.client_name || '').toLowerCase().includes(term)
-      )
+      return matchesKpiSearch(event, deferredSearchText, [
+        item => getEventDescription(item).desc,
+        'order_id',
+        'order_client',
+        'client_name',
+        'invoice_number',
+      ])
     })
-  }, [events, searchText, eventTypeFilter])
+  }, [events, deferredSearchText, eventTypeFilter])
 
   const fetchEvents = useCallback(async (isLoadMore = false) => {
     if (isLoadMore) setLoadingMore(true)
@@ -206,7 +207,15 @@ export default function DesignerActivityTimeline({ designerId, getDateBounds }) 
 
       {total > 0 && (
         <div className="kpi-design-timeline-filters">
-          <div className="kpi-design-timeline-search">
+          <KPISearchBox
+            value={searchText}
+            onChange={setSearchText}
+            onClear={() => setSearchText('')}
+            placeholder="Buscar por actividad, cliente, orden o factura..."
+            resultCount={filteredEvents.length}
+            totalCount={events.length}
+          />
+          <div className="kpi-design-timeline-search" hidden>
             <Icons.Search size={14} color="#94A3B8" />
             <input
               type="text"

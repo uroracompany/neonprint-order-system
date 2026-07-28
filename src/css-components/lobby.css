@@ -451,13 +451,14 @@ body,
     }
 
     .login-right {
-        padding: 48px 24px;
+        justify-content: flex-start;
+        padding: 96px 24px 40px;
     }
 }
 
 @media (max-width:420px) {
     .login-right {
-        padding: 40px 18px;
+        padding: 88px 18px 36px;
     }
 
     .form-inner {

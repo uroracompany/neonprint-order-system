@@ -49,11 +49,6 @@ export function useKPI() {
     }
   }, [])
 
-  const refresh = useCallback(async () => {
-    cacheRef.current.clear()
-    await loadKPI()
-  }, [])
-
   const loadKPI = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -97,6 +92,11 @@ export function useKPI() {
 
   useEffect(() => {
     loadKPI()
+  }, [loadKPI])
+
+  const refresh = useCallback(async () => {
+    cacheRef.current.clear()
+    await loadKPI()
   }, [loadKPI])
 
   const setPeriodAndDates = useCallback((newPeriod, from = '', to = '') => {

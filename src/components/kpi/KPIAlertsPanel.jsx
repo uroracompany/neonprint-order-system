@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icons } from '../../utils/icons'
 import { adminApiFetch } from '../../utils/adminApi'
+import { matchesKpiSearch } from '../../utils/kpiSearch'
 
 const SEVERITY_META = {
   critical: { label: 'Critica', column: 'Criticas', icon: Icons.AlertCircle, tone: 'critical' },
@@ -516,17 +517,17 @@ export default function KPIAlertsPanel({ data, onNavigateTarget }) {
   ), [alerts])
 
   const filteredAlerts = useMemo(() => {
-    const text = query.trim().toLowerCase()
     return alerts.filter(alert => {
-      const haystack = [
-        alert.title,
-        alert.description,
-        alert.affected_area,
-        alert.category,
-        alert.impact,
-        alert.recommended_action,
-      ].join(' ').toLowerCase()
-      if (text && !haystack.includes(text)) return false
+      if (!matchesKpiSearch(alert, query, [
+        'title',
+        'description',
+        'affected_area',
+        'category',
+        'impact',
+        'recommended_action',
+        'alert_key',
+        'entity_id',
+      ])) return false
       if (category !== 'all' && alert.category !== category) return false
       if (severity !== 'all' && alert.severity !== severity) return false
       if (status === 'active' && ['descartada', 'resuelta'].includes(alert.status)) return false

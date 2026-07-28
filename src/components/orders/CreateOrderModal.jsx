@@ -50,6 +50,15 @@ export function Modal({
   const overlayRef = useRef(null);
   const modalRef = useRef(null);
   const closeButtonRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const closeOnBackdropRef = useRef(closeOnBackdrop);
+  const closeOnEscapeRef = useRef(closeOnEscape);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    closeOnBackdropRef.current = closeOnBackdrop;
+    closeOnEscapeRef.current = closeOnEscape;
+  }, [closeOnBackdrop, closeOnEscape, onClose]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -65,9 +74,9 @@ export function Modal({
     });
 
     const handleKeyDown = (event) => {
-      if (event.key === "Escape" && closeOnEscape) {
+      if (event.key === "Escape" && closeOnEscapeRef.current) {
         event.preventDefault();
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
 
@@ -99,8 +108,8 @@ export function Modal({
     };
 
     const handleNativeBackdropPointerDown = (event) => {
-      if (closeOnBackdrop && event.target === overlayRef.current) {
-        onClose?.();
+      if (closeOnBackdropRef.current && event.target === overlayRef.current) {
+        onCloseRef.current?.();
       }
     };
 
@@ -119,14 +128,18 @@ export function Modal({
         previousActiveElement.focus({ preventScroll: true });
       }
     };
-  }, [closeOnBackdrop, closeOnEscape, onClose, open]);
+  }, [open]);
 
   if (!open) return null;
 
   const handleBackdropClick = (event) => {
-    if (closeOnBackdrop && event.target === event.currentTarget) {
-      onClose?.();
+    if (closeOnBackdropRef.current && event.target === event.currentTarget) {
+      onCloseRef.current?.();
     }
+  };
+
+  const handleCloseClick = () => {
+    onCloseRef.current?.();
   };
 
   const modalElement = (
@@ -142,7 +155,7 @@ export function Modal({
         {!hideStripe && <div className="ps-modal-stripe" aria-hidden="true" />}
         <div className={`ps-modal-header ${stickyHeader ? "is-sticky" : ""}`}>
           <span id={titleId} className="ps-modal-title">{title}</span>
-          <button ref={closeButtonRef} type="button" className="ps-modal-close" onClick={onClose} aria-label="Cerrar modal"><Icons.Close /></button>
+          <button ref={closeButtonRef} type="button" className="ps-modal-close" onClick={handleCloseClick} aria-label="Cerrar modal"><Icons.Close /></button>
         </div>
         <div className="ps-modal-body">{children}</div>
       </div>

@@ -130,13 +130,21 @@
 }
 
 .pa-main > * {
-  max-width: 1440px;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
 }
 
 .pa-main > .pa-overview-section {
   width: 100%;
-  max-width: 1800px;
-  transition: max-width 0.24s ease, width 0.24s ease;
+  max-width: none;
+  transition: width 0.24s ease;
+}
+
+.pa-root .ps-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .pa-header,
@@ -318,6 +326,7 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  min-width: 0;
 }
 
 .pa-metrics-grid {
@@ -334,6 +343,7 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+  min-width: 0;
   transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
   animation: fadeIn 0.4s ease;
 }

@@ -4,11 +4,20 @@ import { describe, expect, it } from "vitest";
 
 const readProjectFile = (path) => readFileSync(resolve(path), "utf8");
 
+const getCssBlock = (css, selector) => {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(css);
+  return match?.[1] || "";
+};
+
 describe("Admin overview design-system contract", () => {
   it("keeps the overview carousel anchored to the admin palette and new layout contract", () => {
     const overview = readProjectFile("src/components/ui/AdminOverviewCarousel.jsx");
     const adminCss = readProjectFile("src/css-components/page-admin.css");
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
+    const adminMainChildBlock = getCssBlock(adminCss, ".pa-main > *");
+    const adminOverviewSectionBlock = getCssBlock(adminCss, ".pa-main > .pa-overview-section");
+    const adminTableWrapBlock = getCssBlock(adminCss, ".pa-root .ps-table-wrap");
 
     expect(overview).toContain('kicker: "Resumen operativo"');
     expect(overview).toContain('kicker: "Seguimiento comercial"');
@@ -56,7 +65,16 @@ describe("Admin overview design-system contract", () => {
     expect(dashboard).toContain("<Pagination currentPage={safeDetailPage} totalPages={detailTotalPages} onPageChange={setDetailPage} />");
     expect(dashboard.indexOf('className="pa-panel pa-overview-flow-panel"')).toBeLessThan(dashboard.indexOf('className="pa-overview-secondary-grid"'));
     expect(adminCss).toContain(".pa-main > .pa-overview-section");
-    expect(adminCss).toContain("max-width: 1800px;");
+    expect(adminMainChildBlock).toContain("width: 100%;");
+    expect(adminMainChildBlock).toContain("max-width: none;");
+    expect(adminMainChildBlock).toContain("min-width: 0;");
+    expect(adminMainChildBlock).not.toContain("max-width: 1440px;");
+    expect(adminOverviewSectionBlock).toContain("width: 100%;");
+    expect(adminOverviewSectionBlock).toContain("max-width: none;");
+    expect(adminOverviewSectionBlock).not.toContain("max-width: 1800px;");
+    expect(adminTableWrapBlock).toContain("width: 100%;");
+    expect(adminTableWrapBlock).toContain("max-width: 100%;");
+    expect(adminTableWrapBlock).toContain("overflow-x: auto;");
     expect(adminCss).toContain(".pa-overview-secondary-grid");
     expect(adminCss).toContain("grid-template-columns: minmax(760px, 1fr) minmax(360px, 520px);");
     expect(adminCss).toContain("grid-template-columns: 112px minmax(160px, 1.2fr) minmax(128px, 0.85fr) minmax(150px, 1fr) minmax(128px, 0.75fr);");

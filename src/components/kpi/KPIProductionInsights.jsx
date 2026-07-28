@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { createElement, useMemo, useState } from 'react'
 import {
   ResponsiveContainer,
   BarChart,
@@ -38,6 +38,10 @@ const AREA_COLORS = {
   dtf: '#F43F5E',
   ploteo: '#F59E0B',
 }
+
+const EMPTY_OBJECT = Object.freeze({})
+const EMPTY_ARRAY = Object.freeze([])
+const EMPTY_PRIORITY_BREAKDOWN = Object.freeze({ normal: 0, urgent_911: 0, total: 0, urgent_pct: 0 })
 
 const AREA_ICONS = {
   digital: Icons.Image,
@@ -161,7 +165,7 @@ function MetricCard({ label, value, subtitle, icon: Icon, color, comparison, inv
       <div className="kpi-production-metric-head">
         <span className="kpi-production-metric-label">{label}</span>
         <span className="kpi-production-metric-icon" style={{ background: `${color}18`, color }}>
-          <Icon size={16} />
+          {createElement(Icon, { size: 16 })}
         </span>
       </div>
       <div className="kpi-production-metric-value">{value}</div>
@@ -181,7 +185,7 @@ function InsightTile({ label, value, detail, icon: Icon, tone = 'neutral' }) {
   return (
     <div className={`kpi-production-insight-tile ${tone}`}>
       <span className="kpi-production-insight-icon">
-        <Icon size={16} />
+        {createElement(Icon, { size: 16 })}
       </span>
       <div>
         <span>{label}</span>
@@ -256,21 +260,21 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
   const [areaChartType, setAreaChartType] = useState('bar')
   const [selectedOrder, setSelectedOrder] = useState(null)
 
-  const prod = data?.production_insights || {}
+  const prod = data?.production_insights || EMPTY_OBJECT
   const areas = useMemo(() => buildAreas(prod), [prod])
-  const stageTiming = prod.stage_timing || {}
-  const bottlenecks = Array.isArray(prod.bottlenecks) ? prod.bottlenecks : []
-  const fileStatus = prod.file_status || {}
-  const trend = Array.isArray(prod.trend) ? prod.trend : []
-  const quality = prod.quality || {}
-  const comparison = prod.comparison || {}
-  const history = prod.history || {}
-  const priorityBreakdown = prod.priority_breakdown || { normal: 0, urgent_911: 0, total: 0, urgent_pct: 0 }
-  const areaPriorityBreakdown = Array.isArray(prod.area_priority_breakdown) ? prod.area_priority_breakdown : []
+  const stageTiming = prod.stage_timing || EMPTY_OBJECT
+  const bottlenecks = Array.isArray(prod.bottlenecks) ? prod.bottlenecks : EMPTY_ARRAY
+  const fileStatus = prod.file_status || EMPTY_OBJECT
+  const trend = Array.isArray(prod.trend) ? prod.trend : EMPTY_ARRAY
+  const quality = prod.quality || EMPTY_OBJECT
+  const comparison = prod.comparison || EMPTY_OBJECT
+  const history = prod.history || EMPTY_OBJECT
+  const priorityBreakdown = prod.priority_breakdown || EMPTY_PRIORITY_BREAKDOWN
+  const areaPriorityBreakdown = Array.isArray(prod.area_priority_breakdown) ? prod.area_priority_breakdown : EMPTY_ARRAY
   const areaComparison = Array.isArray(prod.area_comparison) && prod.area_comparison.length > 0 ? prod.area_comparison : areas
-  const capacityDistribution = Array.isArray(prod.capacity_distribution) ? prod.capacity_distribution : []
-  const agingBuckets = Array.isArray(prod.aging_buckets) ? prod.aging_buckets : []
-  const operationalInsights = prod.operational_insights || {}
+  const capacityDistribution = Array.isArray(prod.capacity_distribution) ? prod.capacity_distribution : EMPTY_ARRAY
+  const agingBuckets = Array.isArray(prod.aging_buckets) ? prod.aging_buckets : EMPTY_ARRAY
+  const operationalInsights = prod.operational_insights || EMPTY_OBJECT
   const totals = prod.totals || {
     total_files: prod.total_files || fileStatus.total || 0,
     active_files: (fileStatus.pending || 0) + (fileStatus.in_production || 0) + (fileStatus.in_termination || 0),
@@ -285,15 +289,18 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
     () => getPeriodPayload(history, areaPeriodFilter, areas),
     [history, areaPeriodFilter, areas]
   )
-  const selectedAreaRows = selectedPeriod.areas?.length ? selectedPeriod.areas : (areaPeriodFilter === 'current' ? areas : [])
+  const selectedAreaRows = useMemo(
+    () => (selectedPeriod.areas?.length ? selectedPeriod.areas : (areaPeriodFilter === 'current' ? areas : EMPTY_ARRAY)),
+    [selectedPeriod, areaPeriodFilter, areas]
+  )
   const areaBarData = useMemo(() => toAreaChartRows(selectedAreaRows), [selectedAreaRows])
   const hasSelectedAreaData = areaBarData.some(row => row.Total > 0)
 
-  const filePieData = useMemo(() => Object.entries(STATUS_META)
+  const filePieData = Object.entries(STATUS_META)
     .map(([key, meta]) => ({ key, name: meta.label, centerLabel: meta.centerLabel, value: fileStatus[key] || 0, color: meta.color }))
-    .filter(item => item.value > 0), [fileStatus])
+    .filter(item => item.value > 0)
 
-  const dominantStatus = useMemo(() => {
+  const dominantStatus = (() => {
     const statusRows = Object.entries(STATUS_META).map(([key, meta]) => ({
       key,
       label: meta.centerLabel,
@@ -307,14 +314,14 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
       ...dominant,
       pct: roundDisplay((dominant.value / total) * 100),
     }
-  }, [fileStatus])
+  })()
 
   const statusTotal = Object.keys(STATUS_META).reduce((sum, key) => sum + (Number(fileStatus[key]) || 0), 0)
-  const statusRows = useMemo(() => Object.entries(STATUS_META).map(([key, meta]) => {
+  const statusRows = Object.entries(STATUS_META).map(([key, meta]) => {
     const value = Number(fileStatus[key]) || 0
     const pct = statusTotal > 0 ? roundDisplay((value / statusTotal) * 100) : 0
     return { key, ...meta, value, pct }
-  }), [fileStatus, statusTotal])
+  })
 
   const timingRows = [
     { label: 'Entrada a inicio', value: stageTiming.quote_to_production, color: '#F59E0B' },

@@ -1,4 +1,5 @@
 import { act, useState } from "react";
+import userEvent from "@testing-library/user-event";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { Modal } from "../components/orders/CreateOrderModal";
@@ -39,6 +40,26 @@ function ClosingHarness() {
         <button type="button">Accion interna</button>
       </Modal>
     </div>
+  );
+}
+
+function FocusRetentionHarness() {
+  const [open, setOpen] = useState(true);
+  const [value, setValue] = useState("");
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => setOpen(false)}
+      title="Nueva Orden"
+      stickyHeader
+    >
+      <input
+        aria-label="Numero de Facturacion"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+      />
+    </Modal>
   );
 }
 
@@ -114,5 +135,27 @@ describe("shared Modal portal behavior", () => {
 
     expect(document.body.querySelector("[role='dialog']")).toBeNull();
     expect(document.body.querySelector(".ps-modal-overlay")).toBeNull();
+  });
+
+  it("mantiene el foco del campo activo cuando el formulario se actualiza al escribir", async () => {
+    const user = userEvent.setup();
+    const view = renderReact(<FocusRetentionHarness />);
+
+    await act(async () => {
+      await nextFrame();
+    });
+
+    const closeButton = document.body.querySelector("[aria-label='Cerrar modal']");
+    const input = document.body.querySelector("[aria-label='Numero de Facturacion']");
+
+    expect(document.activeElement).toBe(closeButton);
+
+    await user.click(input);
+    await user.keyboard("A");
+
+    expect(input).toHaveValue("A");
+    expect(document.activeElement).toBe(input);
+
+    view.unmount();
   });
 });

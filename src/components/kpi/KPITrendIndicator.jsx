@@ -1,14 +1,7 @@
-import { useState } from 'react'
-import { Icons } from '../../utils/icons'
 import { formatNumber, getTrendConfig } from '../../utils/kpiHelpers'
 
-export default function KPITrendIndicator({ value, previous, label, icon, size = 'medium' }) {
+export default function KPITrendIndicator({ value, previous, label, icon }) {
   const trend = getTrendConfig(value, previous)
-  const sizeClasses = {
-    small: 'text-sm',
-    medium: 'text-base',
-    large: 'text-lg',
-  }
 
   return (
     <div className="kpi-card" style={{ borderColor: trend.color }}>

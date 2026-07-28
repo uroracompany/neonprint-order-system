@@ -8,7 +8,6 @@ import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import CreateClientModal from "../components/ui/CreateClientModal";
 import {
   canArchiveOrder,
-  archiveOrder,
 } from "../utils/archive";
 import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
@@ -45,10 +44,12 @@ import SharedEditOrderModal from "../components/orders/EditOrderModal";
 import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
+import SellerProfileModule from "../components/seller/SellerProfileModule";
 import { buildStorageSafeFileName, formatFileSize, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
 import { validateReferenceImages, compressImage, canDecodeAsImage, REF_IMAGE_CONFIG } from "../utils/imageValidation";
 import { formatDominicanPhone, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
+import { adminApiFetch } from "../utils/adminApi";
 
 export { default as OrderDetailModal } from "../components/orders/OrderDetailModal";
 
@@ -59,6 +60,17 @@ const isReturnedOrder = (order) => {
     : [ORDER_STATUS.IN_DESIGN];
   return isOrderStatusIn(order.status, validStatuses);
 };
+
+const getInitials = (name) => String(name || "?")
+  .split(/\s+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map(part => part[0]?.toUpperCase())
+  .join("") || "?";
+
+const isInteractiveOrderRowTarget = (target) => Boolean(
+  target?.closest?.("button, a, input, select, textarea, [data-row-action]")
+);
 
 const SELLER_HIDDEN_NOTIFICATION_EVENTS = new Set([
   "admin_edited_order",
@@ -75,6 +87,9 @@ const ACTIVE_WORKFLOW_STATUSES_FOR_SELLER = [
   ORDER_STATUS.IN_COMPLETED,
   ORDER_STATUS.CANCELLED,
 ];
+
+const SELLER_ORDER_COLUMNS = "id,client_id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,invoice_number,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token,reference_images";
+const SELLER_ORDERS_FETCH_LIMIT = 1000;
 
 const isSellerVisibleNotification = (notification) => {
   const eventKind = notification?.metadata?.event_kind;
@@ -129,9 +144,7 @@ function StatusBadge({ status, type = "status" }) {
 function MetricCard({ icon, label, value, sub, accentIdx = 0, trend }) {
   const acc = CARD_ACCENTS[accentIdx];
   return (
-    <div className="ps-card"
-      onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
-      onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
+    <div className="ps-card">
       <div className="ps-card-glow" style={{ background: acc.glow }} />
       {trend !== undefined && <span className="ps-trend-badge"><Icons.TrendUp /> +{trend}%</span>}
       <div className="ps-card-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
@@ -2035,8 +2048,7 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function PageSeller() {
   const navigate = useNavigate();
-  const { user: authUser, signOut } = useAuth();
-  const RELEVANT_COLUMNS = "id,client_id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,invoice_number,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token,reference_images";
+  const { user: authUser, profile: authProfile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -2067,14 +2079,37 @@ export default function PageSeller() {
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
   const [sendingLoading, setSendingLoading] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
+  const toastTimeoutRef = useRef(null);
   const notif = useNotifications(user?.id);
   const orderReviews = useOrderEventReviews(user?.id);
   const pendingOrderReviews = orderReviews.pendingByOrder;
   const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
-  const showToast = (message, type = "success") => {
+  const showToast = useCallback((message, type = "success") => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
     setToastMsg({ message, type });
-    setTimeout(() => setToastMsg(null), 1500);
-  };
+    toastTimeoutRef.current = setTimeout(() => setToastMsg(null), 1500);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+  }, []);
+
+  const runSellerOrderAction = useCallback(async (action, payload = {}) => {
+    const { response, result } = await adminApiFetch("/api/seller-orders", {
+      action,
+      ...payload,
+    });
+
+    if (!response.ok) {
+      throw new Error(result?.error || "No se pudo completar la accion.");
+    }
+
+    return result;
+  }, []);
 
   const fetchOrders = async (sellerId) => {
     if (!sellerId) {
@@ -2085,10 +2120,10 @@ export default function PageSeller() {
     setLoading(true);
     const { data, error } = await supabase
       .from("orders")
-      .select(RELEVANT_COLUMNS)
+      .select(SELLER_ORDER_COLUMNS)
       .eq("seller_id", sellerId)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(SELLER_ORDERS_FETCH_LIMIT);
 
     if (!error && Array.isArray(data)) {
       applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
@@ -2129,10 +2164,10 @@ export default function PageSeller() {
     if (!sellerUserId) return;
     const { data, error } = await supabase
       .from("orders")
-      .select(RELEVANT_COLUMNS)
+      .select(SELLER_ORDER_COLUMNS)
       .eq("seller_id", sellerUserId)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(SELLER_ORDERS_FETCH_LIMIT);
 
     if (!error && data) {
       applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
@@ -2215,36 +2250,54 @@ export default function PageSeller() {
     }
     
     setCancelLoading(true);
-    const { error } = await supabase
-      .from("orders")
-      .update({ status: ORDER_STATUS.CANCELLED, cancellation_reason: String(reason).trim() })
-      .eq("id", cancelingOrder.id);
-    setCancelLoading(false);
-    
-    if (error) {
-      showToast("Error al cancelar la orden", "error");
-      return;
+    try {
+      const result = await runSellerOrderAction("cancel", {
+        order_id: cancelingOrder.id,
+        reason: String(reason).trim(),
+      });
+
+      setCancelingOrder(null);
+      if (result?.order) {
+        applyOrdersSnapshot({
+          orders: orders.map((order) => order.id === result.order.id ? result.order : order),
+          setOrders,
+          setSelectedOrder,
+        });
+      } else {
+        await fetchOrders(user?.id);
+      }
+      await notif.refresh({ showNewToasts: true });
+    } catch (error) {
+      showToast(error?.message || "Error al cancelar la orden", "error");
+    } finally {
+      setCancelLoading(false);
     }
-    
-    setCancelingOrder(null);
-    await fetchOrders(user?.id);
-    await notif.refresh({ showNewToasts: true });
   };
 
   // ── Ver detalles de orden ─────────────────────────────────────────────────
-  const handleViewOrder = async (order) => {
-    const { data } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", order.id)
-      .single();
-    
-    if (data) {
-      openOrderDetail(data);
-    } else {
+  const handleViewOrder = useCallback(async (order) => {
+    if (!order?.id) return;
+
+    try {
+      const result = await runSellerOrderAction("detail", { order_id: order.id });
+      openOrderDetail(result?.order || order);
+    } catch (error) {
+      showToast(error?.message || "No se pudo cargar el detalle de la orden", "error");
       openOrderDetail(order);
     }
-  };
+  }, [openOrderDetail, runSellerOrderAction, showToast]);
+
+  const handleSellerOrderRowClick = useCallback((event, order) => {
+    if (isInteractiveOrderRowTarget(event.target)) return;
+    handleViewOrder(order);
+  }, [handleViewOrder]);
+
+  const handleSellerOrderRowKeyDown = useCallback((event, order) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    if (isInteractiveOrderRowTarget(event.target)) return;
+    event.preventDefault();
+    handleViewOrder(order);
+  }, [handleViewOrder]);
 
   // ── Enviar a Diseño ───────────────────────────────────────────────────────
   const handleSendToDesigner = (order) => {
@@ -2262,40 +2315,21 @@ export default function PageSeller() {
 
     setSendingLoading(true);
 
-    const assignmentPayloads = [
-      { status: ORDER_STATUS.IN_QUOTE, quote_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
-    ];
+    try {
+      await runSellerOrderAction("send_to_quote", {
+        order_id: sendingToQuotation.id,
+        quote_user_id: quoteUserId,
+      });
 
-    let updateError = null;
-
-    for (const payload of assignmentPayloads) {
-      const { error } = await supabase
-        .from("orders")
-        .update(payload)
-        .eq("id", sendingToQuotation.id)
-        .select("id")
-        .single();
-
-      if (!error) {
-        updateError = null;
-        break;
-      }
-
-      updateError = error;
+      setSendingToQuotation(null);
+      setSelectedOrder(null);
+      await fetchOrders(user?.id);
+      await notif.refresh({ showNewToasts: true });
+    } catch (error) {
+      showToast(error?.message || "Error al enviar a caja", "error");
+    } finally {
+      setSendingLoading(false);
     }
-
-    setSendingLoading(false);
-
-    if (updateError) {
-      showToast("Error al enviar a caja", "error");
-      return;
-    }
-
-    setSendingToQuotation(null);
-    setSelectedOrder(null);
-    await fetchOrders(user?.id);
-    await notif.refresh({ showNewToasts: true });
-
   };
 
   const handleConfirmSendToDesigner = async (designerId) => {
@@ -2304,42 +2338,24 @@ export default function PageSeller() {
     setSendingLoading(true);
 
     try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ 
-          status: ORDER_STATUS.IN_DESIGN,
-          designer_id: designerId,
-          return_reason: null,
-          returned_to_designer_at: null
-        })
-        .eq("id", sendingToDesigner.id);
-
-      if (error) {
-        console.error("Error asignando diseñador:", error);
-        showToast(`Error: ${error.message}`, "error");
-        setSendingLoading(false);
-        return;
-      }
+      const result = await runSellerOrderAction("send_to_designer", {
+        order_id: sendingToDesigner.id,
+        designer_id: designerId,
+      });
 
       setSendingToDesigner(null);
       await fetchOrders(user?.id);
       await notif.refresh({ showNewToasts: true });
 
-      const { data: updated } = await supabase
-        .from("orders")
-        .select("*")
-        .eq("id", sendingToDesigner.id)
-        .single();
-      
-      if (updated) {
-        setSelectedOrder(updated);
+      if (result?.order) {
+        setSelectedOrder(result.order);
       }
     } catch (err) {
       console.error("Error inesperado:", err);
       showToast(`Error inesperado: ${err.message}`, "error");
+    } finally {
+      setSendingLoading(false);
     }
-
-    setSendingLoading(false);
   };
 
 
@@ -2354,18 +2370,18 @@ export default function PageSeller() {
     if (!archivingOrder) return;
 
     setArchiveLoading(true);
-    const { error } = await archiveOrder(archivingOrder, ARCHIVE_MODULES.SELLER);
-    setArchiveLoading(false);
-
-    if (error) {
-      showToast("Error al archivar la orden", "error");
-      return;
+    try {
+      const result = await runSellerOrderAction("archive", { order_id: archivingOrder.id });
+      const archivedOrder = result?.order || { ...archivingOrder, is_archived: true };
+      setOrders(prev => prev.map(o =>
+        o.id === archivedOrder.id ? { ...o, ...archivedOrder, is_archived: true } : o
+      ));
+      setArchivingOrder(null);
+    } catch (error) {
+      showToast(error?.message || "Error al archivar la orden", "error");
+    } finally {
+      setArchiveLoading(false);
     }
-
-    setOrders(prev => prev.map(o =>
-      o.id === archivingOrder.id ? { ...o, is_archived: true } : o
-    ));
-    setArchivingOrder(null);
   };
 
   // ── Metrics Values ─────────────────────────────────────────────────────────────
@@ -2378,6 +2394,11 @@ export default function PageSeller() {
   const inTerminacion = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length;
   const completed = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length;
   const returnedCount = orders.filter(o => isReturnedOrder(o)).length;
+  const activeOrdersCount = useMemo(() => orders.filter(o =>
+    !o.is_archived &&
+    !isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED) &&
+    !isOrderStatus(o.status, ORDER_STATUS.CANCELLED)
+  ).length, [orders]);
 
   // Funcionalidad para filtrar las ordenes
   const filtered = useMemo(() => orders.filter(o => {
@@ -2430,15 +2451,21 @@ export default function PageSeller() {
       }
     }
     
-    const isDateFilterActive = filterDate !== "all";
-    
+    const searchMatch = !q ||
+      o.client_name?.toLowerCase().includes(q) ||
+      o.description?.toLowerCase().includes(q) ||
+      o.invoice_number?.toLowerCase().includes(q) ||
+      o.id?.toLowerCase().includes(q);
+    const archiveMatch = filterArchive === "active" ? !o.is_archived : o.is_archived === true;
+    const statusMatch = filterStatus === "all" || isOrderStatus(o.status, filterStatus);
+    const paymentMatch = filterPayment === "all" || o.payment_status === filterPayment;
+
     return (
-      (!q || o.client_name?.toLowerCase().includes(q) || o.description?.toLowerCase().includes(q) || o.id?.toLowerCase().includes(q)) &&
-      (isDateFilterActive ? true :
-        (filterArchive === "active" ? !o.is_archived : o.is_archived === true) &&
-        (filterStatus === "all" || isOrderStatus(o.status, filterStatus))) &&
+      searchMatch &&
+      archiveMatch &&
+      statusMatch &&
       orderMatchesClientFilter(o, filterClient) &&
-      (filterPayment === "all" || o.payment_status === filterPayment) &&
+      paymentMatch &&
       dateMatch
     );
   }), [orders, search, filterDate, filterStatus, filterPayment, filterClient, filterArchive]);
@@ -2447,12 +2474,19 @@ export default function PageSeller() {
   const safePage = Math.min(page, totalPages);
   const paginated = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
 
-  useEffect(() => { setPage(1); }, [filtered.length]);
+  useEffect(() => { setPage(1); }, [search, filterDate, filterStatus, filterPayment, filterClient, filterArchive, viewMode]);
 
   const nav = [
     { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
     { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: orders.filter(o => !o.is_archived).length },
+    { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
   ];
+
+  const pageTitles = {
+    dashboard: "Dashboard",
+    orders: "Gestion de Ordenes",
+    profile: "Mi Perfil",
+  };
 
   // Valores para las cartas metricas
   const metrics = [
@@ -2505,7 +2539,7 @@ export default function PageSeller() {
               {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
             <div>
-              <div className="ps-page-title">{activeTab === "dashboard" ? "Dashboard" : "Gestion de Ordenes"}</div>
+              <div className="ps-page-title">{pageTitles[activeTab] || "Dashboard"}</div>
               <div className="ps-page-date">{new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
             </div>
           </div>
@@ -2539,8 +2573,24 @@ export default function PageSeller() {
           {activeTab === "dashboard" && (
             <>
               <div className="ps-greeting">
-                <h2>Buen dia, <span>{user?.displayName || "Vendedor"}</span> 👋</h2>
-                <p>Aqui tienes el resumen de tu actividad de hoy.</p>
+                <div className="ps-greeting-copy">
+                  <h2>Bienvenido, <span>{user?.displayName || "Vendedor"}</span></h2>
+                  <p>Aqui tienes el resumen de tu actividad de hoy.</p>
+                  <div className="ps-greeting-count" aria-label={`${activeOrdersCount} ordenes activas`}>
+                    <Icons.Orders />
+                    <strong>{activeOrdersCount.toLocaleString("es-DO")}</strong> Órdenes activas
+                  </div>
+                </div>
+                <div className="ps-greeting-actions" aria-label="Acciones principales de ventas">
+                  <button type="button" className="ps-greeting-btn primary" onClick={() => setShowCreate(true)}>
+                    <Icons.Plus />
+                    Crear Órdenes
+                  </button>
+                  <button type="button" className="ps-greeting-btn secondary" onClick={() => setShowNewClientModal(true)}>
+                    <Icons.Users />
+                    Crear Usuarios
+                  </button>
+                </div>
               </div>
               <div className="ps-metrics">
                 {metrics.map((m, i) => <MetricCard key={i} {...m} />)}
@@ -2558,31 +2608,42 @@ export default function PageSeller() {
                 </div>
                 <div className="ps-table-wrap">
                   <table className="ps-table">
-                    <thead><tr>{["Cliente", "Descripcion", "Material", "Estado", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                    <thead><tr>{["Cliente", "Facturación", "Estado", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan={5} className="ps-table-empty">Cargando órdenes...</td>
+                          <td colSpan={4} className="ps-table-empty">Cargando órdenes...</td>
                         </tr>
                       ) : orders.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="ps-table-empty">No hay órdenes disponibles</td>
+                          <td colSpan={4} className="ps-table-empty">No hay órdenes disponibles</td>
                         </tr>
                       ) : (
                         orders.slice(0, 5).map(o => (
-                          <tr key={o.id} className="row-hover" onClick={() => openOrderDetail(o)}>
+                          <tr
+                            key={o.id}
+                            className="row-hover ps-order-row"
+                            tabIndex={0}
+                            onClick={(event) => handleSellerOrderRowClick(event, o)}
+                            onKeyDown={(event) => handleSellerOrderRowKeyDown(event, o)}
+                            aria-label={`Ver detalles de la orden ${o.id?.slice(0, 8) || ""} de ${o.client_name || "cliente sin nombre"}`}
+                          >
                             <td className="td-pad td-name">
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <span>{o.client_name}</span>
-                                <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                              <div className="ps-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getInitials(o.client_name)}</span>
+                                <span className="ps-client-cell-main">
+                                  <strong title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</strong>
+                                  <span className="ps-client-cell-badges">
+                                    <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                                  </span>
+                                </span>
                               </div>
                             </td>
-                            <td className="td-pad td-desc">{o.description}</td>
-                            <td className="td-pad td-mat">{o.material}</td>
+                            <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number || "---"}</td>
                             <td className="td-pad"><StatusBadge status={o.status} /></td>
-                            <td className="td-pad">
-                              <div className="table-actions">
-                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); openOrderDetail(o); }} title="Ver detalles">
+                            <td className="td-pad td-actions" data-row-action>
+                              <div className="table-actions" data-row-action>
+                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
                                   <Icons.Eye />
                                 </button>
                                 {!o.is_archived && (
@@ -2617,6 +2678,10 @@ export default function PageSeller() {
                 </div>
               </div>
             </>
+          )}
+
+          {activeTab === "profile" && (
+            <SellerProfileModule authUser={authUser} fallbackProfile={authProfile} />
           )}
 
           {/* ORDERS TAB */}
@@ -2706,29 +2771,39 @@ export default function PageSeller() {
                 {viewMode === "table" ? (
                   <div className="ps-table-wrap">
                     <table className="ps-table">
-                      <thead><tr>{["ID", "Cliente", "Descripcion", "Material", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                      <thead><tr>{["Cliente", "Facturación", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
                       <tbody>
                         {loading ? (
                           <tr>
-                            <td colSpan={9} className="ps-table-empty">Cargando órdenes...</td>
+                            <td colSpan={7} className="ps-table-empty">Cargando órdenes...</td>
                           </tr>
                         ) : filtered.length === 0 ? (
                           <tr>
-                            <td colSpan={9} className="ps-table-empty">No hay órdenes disponibles</td>
+                            <td colSpan={7} className="ps-table-empty">No hay órdenes disponibles</td>
                           </tr>
                         ) : (
                           paginated.map(o => (
-                            <tr key={o.id} className="row-hover">
-                              <td className="td-pad td-id">{o.id?.slice(0, 8) || "---"}</td>
+                            <tr
+                              key={o.id}
+                              className="row-hover ps-order-row"
+                              tabIndex={0}
+                              onClick={(event) => handleSellerOrderRowClick(event, o)}
+                              onKeyDown={(event) => handleSellerOrderRowKeyDown(event, o)}
+                              aria-label={`Ver detalles de la orden ${o.id?.slice(0, 8) || ""} de ${o.client_name || "cliente sin nombre"}`}
+                            >
                               <td className="td-pad td-name">
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                  <span>{o.client_name}</span>
-                                  <OrderReviewBadge review={pendingOrderReviews[o.id]} />
-                                  {isReturnedOrder(o) && <ReturnedBadge compact />}
+                                <div className="ps-client-cell">
+                                  <span className="acm-avatar acm-avatar-small">{getInitials(o.client_name)}</span>
+                                  <span className="ps-client-cell-main">
+                                    <strong title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</strong>
+                                    <span className="ps-client-cell-badges">
+                                      <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                                      {isReturnedOrder(o) && <ReturnedBadge compact />}
+                                    </span>
+                                  </span>
                                 </div>
                               </td>
-                              <td className="td-pad td-desc">{o.description}</td>
-                              <td className="td-pad td-mat">{o.material}</td>
+                              <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number || "---"}</td>
                               <td className="td-pad"><StatusBadge status={o.status} /></td>
                               <td className="td-pad"><StatusBadge status={o.payment_status} type="payment" /></td>
                               <td className="td-pad">
@@ -2738,8 +2813,8 @@ export default function PageSeller() {
                                 }
                               </td>
                               <td className="td-pad td-date">{new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
-                              <td className="td-pad td-actions">
-                                <div className="table-actions">
+                              <td className="td-pad td-actions" data-row-action>
+                                <div className="table-actions" data-row-action>
                                   <button className="table-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
                                     <Icons.Eye />
                                   </button>
@@ -2799,8 +2874,11 @@ export default function PageSeller() {
                             </div>
                           </div>
                           <div className="ps-order-card-client">
-                            <span>{o.client_name}</span>
-                            <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                            <span className="acm-avatar acm-avatar-small">{getInitials(o.client_name)}</span>
+                            <span className="ps-order-card-client-main">
+                              <span title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</span>
+                              <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                            </span>
                           </div>
                           <div className="ps-order-card-desc">{o.description}</div>
                           <div className="ps-order-card-meta">

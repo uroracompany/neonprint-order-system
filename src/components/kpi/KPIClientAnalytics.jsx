@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useDeferredValue, useRef } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts'
 import { Icons } from '../../utils/icons'
 import { formatNumber, getTrendConfig, KPI_CHART_COLORS } from '../../utils/kpiHelpers'
 import { Pagination } from '../ui/Pagination'
+import KPISearchBox from './KPISearchBox'
+import { matchesKpiSearch } from '../../utils/kpiSearch'
 
 const SEMANTIC = {
   positive: { iconBg: '#DCFCE7', iconColor: '#16A34A', trendBg: '#DCFCE7', trendColor: '#16A34A' },
@@ -16,6 +18,34 @@ const PALETTE = {
   indigo: '#6366F1', red: '#EF4444',
   pie: KPI_CHART_COLORS,
 }
+
+const ALL_KEY = '__all__'
+
+const getClientKey = (item) => String(item?.client_id || item?.client_name || item?.name || '').trim()
+const getClientName = (item) => item?.client_name || item?.name || ''
+
+const CLIENT_SEARCH_FIELDS = [
+  'client_name',
+  'name',
+  'invoice_number',
+  item => item?.materials?.map(material => material.name).join(' '),
+  item => item?.orders?.map(order => [
+    order.invoice_number,
+    order.description,
+    order.material,
+    order.payment_status,
+  ].join(' ')).join(' '),
+  item => Object.keys(item?.months || {}).join(' '),
+]
+
+const filterKpiClients = (items, query) => items.filter(item => matchesKpiSearch(item, query, CLIENT_SEARCH_FIELDS))
+const findKpiClientByKey = (items, key) => items.find(item => getClientKey(item) === key)
+const getSelectedKpiClient = (items, key) => (key === ALL_KEY ? null : findKpiClientByKey(items, key) || items[0] || null)
+const getKpiSearchEmptyText = (query, entity = 'resultados') => (
+  query
+    ? `No encontramos ${entity} para "${query}". Prueba con cliente, factura, material, orden o estado.`
+    : 'No hay datos disponibles para este periodo.'
+)
 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -69,24 +99,31 @@ function getDeliveryBadge(days) {
 
 export default function KPIClientAnalytics({ data }) {
   const [topView, setTopView] = useState('ranking')
-  const [selectedClientIdx, setSelectedClientIdx] = useState(-1)
+  const [selectedClientKey, setSelectedClientKey] = useState(ALL_KEY)
   const [orderSearch, setOrderSearch] = useState('')
-  const [cancelIdx, setCancelIdx] = useState(-1)
+  const deferredOrderSearch = useDeferredValue(orderSearch)
+  const [cancelKey, setCancelKey] = useState(ALL_KEY)
   const [cancelSearch, setCancelSearch] = useState('')
-  const [freqIdx, setFreqIdx] = useState(-1)
+  const deferredCancelSearch = useDeferredValue(cancelSearch)
+  const [freqKey, setFreqKey] = useState(ALL_KEY)
   const [freqSearch, setFreqSearch] = useState('')
-  const [matIdx, setMatIdx] = useState(-1)
+  const deferredFreqSearch = useDeferredValue(freqSearch)
+  const [matKey, setMatKey] = useState(ALL_KEY)
   const [matSearch, setMatSearch] = useState('')
-  const [healthIdx, setHealthIdx] = useState(-1)
+  const deferredMatSearch = useDeferredValue(matSearch)
+  const [healthKey, setHealthKey] = useState(ALL_KEY)
   const [healthSearch, setHealthSearch] = useState('')
+  const deferredHealthSearch = useDeferredValue(healthSearch)
   const [evoMonths, setEvoMonths] = useState(6)
-  const [evoIdx, setEvoIdx] = useState(-1)
+  const [evoKey, setEvoKey] = useState(ALL_KEY)
   const [evoSearch, setEvoSearch] = useState('')
+  const deferredEvoSearch = useDeferredValue(evoSearch)
   const [evoCustom, setEvoCustom] = useState(false)
   const [evoDateFrom, setEvoDateFrom] = useState('')
   const [evoDateTo, setEvoDateTo] = useState('')
-  const [payIdx, setPayIdx] = useState(-1)
+  const [payKey, setPayKey] = useState(ALL_KEY)
   const [paySearch, setPaySearch] = useState('')
+  const deferredPaySearch = useDeferredValue(paySearch)
   const [payPage, setPayPage] = useState(1)
   const [now] = useState(() => Date.now())
 
@@ -295,9 +332,9 @@ export default function KPIClientAnalytics({ data }) {
       {(() => {
         const frequency = kpis.frequency_by_client || []
         if (frequency.length === 0) return null
-        const filteredEvoClients = frequency.filter(c => c.client_name?.toLowerCase().includes(evoSearch.toLowerCase()))
-        const isAllEvo = evoIdx === -1
-        const selectedClient = isAllEvo ? null : frequency[evoIdx] || frequency[0]
+        const filteredEvoClients = filterKpiClients(frequency, deferredEvoSearch)
+        const isAllEvo = evoKey === ALL_KEY
+        const selectedClient = getSelectedKpiClient(frequency, evoKey)
         const nowDate = new Date()
 
         const useCustom = evoCustom && evoDateFrom && evoDateTo
@@ -560,16 +597,23 @@ export default function KPIClientAnalytics({ data }) {
                 <p className="kpi-section-subtitle">{evoSubtitle}</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
-                <div className="kpi-filter-row" style={{ flex: '0 0 auto', margin: 0 }}>
-                  <label>
-                    <span>Buscar</span>
-                    <input type="text" placeholder="Nombre del cliente..." value={evoSearch} onChange={e => { setEvoSearch(e.target.value); setEvoIdx(-1) }} />
-                  </label>
+                <div className="kpi-filter-row" style={{ flex: '1 1 420px', margin: 0 }}>
+                  <KPISearchBox
+                    value={evoSearch}
+                    onChange={value => {
+                      setEvoSearch(value)
+                      if (evoKey !== ALL_KEY && !filterKpiClients(frequency, value).some(cl => getClientKey(cl) === evoKey)) setEvoKey(ALL_KEY)
+                    }}
+                    onClear={() => setEvoSearch('')}
+                    placeholder="Buscar cliente, orden, factura o actividad..."
+                    resultCount={filteredEvoClients.length}
+                    totalCount={frequency.length}
+                  />
                   <label>
                     <span>Cliente</span>
-                    <select value={evoIdx} onChange={e => setEvoIdx(+e.target.value)}>
-                      <option value={-1}>Todos</option>
-                      {filteredEvoClients.map((cl, i) => <option key={i} value={frequency.indexOf(cl)}>{cl.client_name}</option>)}
+                    <select value={evoKey} onChange={e => setEvoKey(e.target.value)}>
+                      <option value={ALL_KEY}>Todos</option>
+                      {filteredEvoClients.map((cl, i) => <option key={`${getClientKey(cl)}-${i}`} value={getClientKey(cl)}>{getClientName(cl)}</option>)}
                     </select>
                   </label>
                 </div>
@@ -612,15 +656,18 @@ export default function KPIClientAnalytics({ data }) {
                   </div>
                 ))}
               </div>
-              <div style={{ height: 280 }} key={`evo-container-${isAllEvo ? 'all' : evoIdx}`}>
+              {filteredEvoClients.length === 0 && (
+                <div className="kpi-search-empty-hint">{getKpiSearchEmptyText(evoSearch, 'clientes')}</div>
+              )}
+              <div style={{ height: 280 }} key={`evo-container-${isAllEvo ? 'all' : evoKey}`}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart key={`evo-chart-${isAllEvo ? 'all' : evoIdx}`} data={evoData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                  <AreaChart key={`evo-chart-${isAllEvo ? 'all' : evoKey}`} data={evoData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                     <defs>
-                      <linearGradient id={`gradCyan-${isAllEvo ? 'all' : evoIdx}`} x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id={`gradCyan-${isAllEvo ? 'all' : evoKey}`} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={PALETTE.cyan} stopOpacity={0.3} />
                         <stop offset="100%" stopColor={PALETTE.cyan} stopOpacity={0} />
                       </linearGradient>
-                      <linearGradient id={`gradGreen-${isAllEvo ? 'all' : evoIdx}`} x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id={`gradGreen-${isAllEvo ? 'all' : evoKey}`} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={PALETTE.green} stopOpacity={0.3} />
                         <stop offset="100%" stopColor={PALETTE.green} stopOpacity={0} />
                       </linearGradient>
@@ -629,8 +676,8 @@ export default function KPIClientAnalytics({ data }) {
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip content={<ChartTooltip />} wrapperStyle={{ zIndex: 9999 }} />
-                    <Area type="monotone" dataKey="Clientes" stroke={PALETTE.cyan} fill={`url(#gradCyan-${isAllEvo ? 'all' : evoIdx})`} strokeWidth={2} hide={!isAllEvo} />
-                    <Area type="monotone" dataKey="Órdenes" stroke={PALETTE.green} fill={`url(#gradGreen-${isAllEvo ? 'all' : evoIdx})`} strokeWidth={2} />
+                    <Area type="monotone" dataKey="Clientes" stroke={PALETTE.cyan} fill={`url(#gradCyan-${isAllEvo ? 'all' : evoKey})`} strokeWidth={2} hide={!isAllEvo} />
+                    <Area type="monotone" dataKey="Órdenes" stroke={PALETTE.green} fill={`url(#gradGreen-${isAllEvo ? 'all' : evoKey})`} strokeWidth={2} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -794,21 +841,20 @@ export default function KPIClientAnalytics({ data }) {
         const totalPending = credito + parcial + pendingPayment
         if (totalPending === 0) return null
 
-        const filteredPayClients = byClient.filter(cl =>
-          cl.client_name?.toLowerCase().includes(paySearch.toLowerCase())
-        )
-        const isPayAll = payIdx === -1
+        const filteredPayClients = filterKpiClients(byClient, deferredPaySearch)
+        const isPayAll = payKey === ALL_KEY
         let payClient, payDetail
         if (isPayAll) {
+          const paySource = filteredPayClients
           payClient = { client_name: 'Todos los clientes' }
           payDetail = {
-            credito_count: credito,
-            parcial_count: parcial,
-            total_pending: byClient.reduce((s, c) => s + c.total_pending, 0),
-            orders: byClient.flatMap(c => c.orders),
+            credito_count: paySource.reduce((s, c) => s + (c.credito_count || 0), 0),
+            parcial_count: paySource.reduce((s, c) => s + (c.parcial_count || 0), 0),
+            total_pending: paySource.reduce((s, c) => s + (c.total_pending || 0), 0),
+            orders: paySource.flatMap(c => c.orders || []),
           }
         } else {
-          payClient = filteredPayClients[payIdx] || filteredPayClients[0]
+          payClient = findKpiClientByKey(byClient, payKey) || filteredPayClients[0]
           payDetail = payClient || null
         }
 
@@ -916,15 +962,23 @@ export default function KPIClientAnalytics({ data }) {
 
             {byClient.length > 0 && (
               <div className="kpi-filter-row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
-                <label>
-                  <span>Buscar</span>
-                    <input type="text" placeholder="Nombre del cliente..." value={paySearch} onChange={e => { setPaySearch(e.target.value); setPayIdx(-1); setPayPage(1) }} />
-                </label>
+                <KPISearchBox
+                  value={paySearch}
+                  onChange={value => {
+                    setPaySearch(value)
+                    if (payKey !== ALL_KEY && !filterKpiClients(byClient, value).some(cl => getClientKey(cl) === payKey)) setPayKey(ALL_KEY)
+                    setPayPage(1)
+                  }}
+                  onClear={() => setPaySearch('')}
+                  placeholder="Buscar cliente, factura o estado de pago..."
+                  resultCount={filteredPayClients.length}
+                  totalCount={byClient.length}
+                />
                 <label>
                   <span>Cliente</span>
-                    <select value={payIdx} onChange={e => { setPayIdx(+e.target.value); setPayPage(1) }}>
-                    <option value={-1}>Todos</option>
-                    {filteredPayClients.map((cl, i) => <option key={i} value={byClient.indexOf(cl)}>{cl.client_name}</option>)}
+                    <select value={payKey} onChange={e => { setPayKey(e.target.value); setPayPage(1) }}>
+                    <option value={ALL_KEY}>Todos</option>
+                    {filteredPayClients.map((cl, i) => <option key={`${getClientKey(cl)}-${i}`} value={getClientKey(cl)}>{getClientName(cl)}</option>)}
                   </select>
                 </label>
               </div>
@@ -1019,12 +1073,12 @@ export default function KPIClientAnalytics({ data }) {
       {(() => {
         const materialsByClient = kpis.materials_by_client || []
         if (materialsByClient.length === 0) return null
-        const filteredMatClients = materialsByClient.filter(cl => cl.client_name?.toLowerCase().includes(matSearch.toLowerCase()))
-        const isAllMat = matIdx === -1
+        const filteredMatClients = filterKpiClients(materialsByClient, deferredMatSearch)
+        const isAllMat = matKey === ALL_KEY
         let matClient, matMaterials, matTotal
         if (isAllMat) {
           const globalMats = {}
-          materialsByClient.forEach(cl => {
+          filteredMatClients.forEach(cl => {
             cl.materials.forEach(m => {
               globalMats[m.name] = (globalMats[m.name] || 0) + m.count
             })
@@ -1036,10 +1090,16 @@ export default function KPIClientAnalytics({ data }) {
           matTotal = matMaterials.reduce((s, m) => s + m.count, 0)
           matClient = { client_name: 'Todos los clientes' }
         } else {
-          const cl = materialsByClient[matIdx] || materialsByClient[0]
+          const cl = findKpiClientByKey(materialsByClient, matKey) || filteredMatClients[0]
+          if (!cl) {
+            matClient = { client_name: 'Sin resultados' }
+            matMaterials = []
+            matTotal = 0
+          } else {
           matClient = cl
           matMaterials = cl.materials || []
           matTotal = matMaterials.reduce((s, m) => s + m.count, 0)
+          }
         }
         const matPie = matMaterials.slice(0, 6).map((m, i) => ({
           name: m.name?.length > 16 ? m.name.slice(0, 16) + '...' : m.name,
@@ -1056,25 +1116,35 @@ export default function KPIClientAnalytics({ data }) {
                 <p className="kpi-section-subtitle">Materiales que más consume cada cliente.</p>
               </div>
               <div className="kpi-filter-row" style={{ flex: '0 0 auto' }}>
-                <label>
-                  <span>Buscar</span>
-                  <input type="text" placeholder="Nombre del cliente..." value={matSearch} onChange={e => { setMatSearch(e.target.value); setMatIdx(-1) }} />
-                </label>
+                <KPISearchBox
+                  value={matSearch}
+                  onChange={value => {
+                    setMatSearch(value)
+                    if (matKey !== ALL_KEY && !filterKpiClients(materialsByClient, value).some(cl => getClientKey(cl) === matKey)) setMatKey(ALL_KEY)
+                  }}
+                  onClear={() => setMatSearch('')}
+                  placeholder="Buscar cliente, material o tipo de orden..."
+                  resultCount={filteredMatClients.length}
+                  totalCount={materialsByClient.length}
+                />
                 <label>
                   <span>Cliente</span>
-                  <select value={matIdx} onChange={e => setMatIdx(+e.target.value)}>
-                    <option value={-1}>Todos</option>
-                    {filteredMatClients.map((cl, i) => <option key={i} value={materialsByClient.indexOf(cl)}>{cl.client_name}</option>)}
+                  <select value={matKey} onChange={e => setMatKey(e.target.value)}>
+                    <option value={ALL_KEY}>Todos</option>
+                    {filteredMatClients.map((cl, i) => <option key={`${getClientKey(cl)}-${i}`} value={getClientKey(cl)}>{getClientName(cl)}</option>)}
                   </select>
                 </label>
               </div>
             </div>
+            {filteredMatClients.length === 0 && (
+              <div className="kpi-search-empty-hint">{getKpiSearchEmptyText(matSearch, 'clientes')}</div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'stretch' }}>
               <div className="kpi-card" style={{ padding: '32px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
                 <div style={{ width: '100%', height: 260, position: 'relative' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie key={matIdx} data={matPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
+                      <Pie key={matKey} data={matPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
                         {matPie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
                       <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
@@ -1090,7 +1160,7 @@ export default function KPIClientAnalytics({ data }) {
                     </PieChart>
                   </ResponsiveContainer>
                   <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-                    <div style={{ fontSize: 36, fontWeight: 800, color: '#091127', lineHeight: 1 }}><AnimatedNumber key={matIdx} value={matTotal} /></div>
+                    <div style={{ fontSize: 36, fontWeight: 800, color: '#091127', lineHeight: 1 }}><AnimatedNumber key={matKey} value={matTotal} /></div>
                     <div style={{ fontSize: 11, fontWeight: 500, color: '#94A3B8', marginTop: 4, letterSpacing: '0.03em' }}>usos</div>
                   </div>
                 </div>
@@ -1130,14 +1200,14 @@ export default function KPIClientAnalytics({ data }) {
       })()}
 
       {cancellationData.length > 0 && (() => {
-        const filteredCancel = cancellationData.filter(cl => cl.client_name?.toLowerCase().includes(cancelSearch.toLowerCase()))
-        const isAllCancel = cancelIdx === -1
+        const filteredCancel = filterKpiClients(cancellationData, deferredCancelSearch)
+        const isAllCancel = cancelKey === ALL_KEY
         let c, completed
         if (isAllCancel) {
-          const agg = cancellationData.reduce((a, cl) => ({ total_orders: a.total_orders + (cl.total_orders || 0), cancelled_orders: a.cancelled_orders + (cl.cancelled_orders || 0) }), { total_orders: 0, cancelled_orders: 0 })
+          const agg = filteredCancel.reduce((a, cl) => ({ total_orders: a.total_orders + (cl.total_orders || 0), cancelled_orders: a.cancelled_orders + (cl.cancelled_orders || 0) }), { total_orders: 0, cancelled_orders: 0 })
           c = { client_name: 'Todos los clientes', total_orders: agg.total_orders, cancelled_orders: agg.cancelled_orders, cancel_rate: agg.total_orders > 0 ? Math.round((agg.cancelled_orders / agg.total_orders) * 1000) / 10 : 0 }
         } else {
-          c = cancellationData[cancelIdx] || cancellationData[0]
+          c = findKpiClientByKey(cancellationData, cancelKey) || filteredCancel[0] || { client_name: 'Sin resultados', total_orders: 0, cancelled_orders: 0, cancel_rate: 0 }
         }
         completed = (c.total_orders || 0) - (c.cancelled_orders || 0)
         const cancelPie = [
@@ -1154,26 +1224,36 @@ export default function KPIClientAnalytics({ data }) {
                 <p className="kpi-section-subtitle">Tasa de cancelación por cliente.</p>
               </div>
               <div className="kpi-filter-row" style={{ flex: '0 0 auto' }}>
-                <label>
-                  <span>Buscar</span>
-                  <input type="text" placeholder="Nombre del cliente..." value={cancelSearch} onChange={e => { setCancelSearch(e.target.value); setCancelIdx(-1) }} />
-                </label>
+                <KPISearchBox
+                  value={cancelSearch}
+                  onChange={value => {
+                    setCancelSearch(value)
+                    if (cancelKey !== ALL_KEY && !filterKpiClients(cancellationData, value).some(cl => getClientKey(cl) === cancelKey)) setCancelKey(ALL_KEY)
+                  }}
+                  onClear={() => setCancelSearch('')}
+                  placeholder="Buscar cliente, cancelaciones u ordenes..."
+                  resultCount={filteredCancel.length}
+                  totalCount={cancellationData.length}
+                />
                 <label>
                   <span>Cliente</span>
-                  <select value={cancelIdx} onChange={e => setCancelIdx(+e.target.value)}>
-                    <option value={-1}>Todos</option>
-                    {filteredCancel.map((cl, i) => <option key={i} value={cancellationData.indexOf(cl)}>{cl.client_name}</option>)}
+                  <select value={cancelKey} onChange={e => setCancelKey(e.target.value)}>
+                    <option value={ALL_KEY}>Todos</option>
+                    {filteredCancel.map((cl, i) => <option key={`${getClientKey(cl)}-${i}`} value={getClientKey(cl)}>{getClientName(cl)}</option>)}
                   </select>
                 </label>
               </div>
             </div>
+            {filteredCancel.length === 0 && (
+              <div className="kpi-search-empty-hint">{getKpiSearchEmptyText(cancelSearch, 'clientes')}</div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'stretch' }}>
               <div className="kpi-card" style={{ padding: '32px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
                 <div style={{ width: '100%', height: 260, position: 'relative' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie key={cancelIdx} data={cancelPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
+                      <Pie key={cancelKey} data={cancelPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
                         {cancelPie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
                       <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
@@ -1189,7 +1269,7 @@ export default function KPIClientAnalytics({ data }) {
                     </PieChart>
                   </ResponsiveContainer>
                     <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-                      <div style={{ fontSize: 36, fontWeight: 800, color: c.cancel_rate >= 20 ? '#DC2626' : c.cancel_rate >= 10 ? '#D97706' : '#16A34A', lineHeight: 1 }}><AnimatedNumber key={cancelIdx} value={c.cancel_rate} />%</div>
+                      <div style={{ fontSize: 36, fontWeight: 800, color: c.cancel_rate >= 20 ? '#DC2626' : c.cancel_rate >= 10 ? '#D97706' : '#16A34A', lineHeight: 1 }}><AnimatedNumber key={cancelKey} value={c.cancel_rate} />%</div>
                       <div style={{ fontSize: 11, fontWeight: 500, color: '#94A3B8', marginTop: 4, letterSpacing: '0.03em' }}>cancelación</div>
                       {!isAllCancel && (() => {
                         const avgRate = cancellationData.length > 0
@@ -1328,20 +1408,20 @@ export default function KPIClientAnalytics({ data }) {
       )}
 
       {frequencyData.length > 0 && (() => {
-        const filteredFreq = frequencyData.filter(cl => cl.client_name?.toLowerCase().includes(freqSearch.toLowerCase()))
-        const isAllFreq = freqIdx === -1
+        const filteredFreq = filterKpiClients(frequencyData, deferredFreqSearch)
+        const isAllFreq = freqKey === ALL_KEY
         let freqClient, freqTotal, freqActiveMonths, freqAvg
         if (isAllFreq) {
-          const agg = frequencyData.reduce((a, c) => ({
+          const agg = filteredFreq.reduce((a, c) => ({
             total_orders: a.total_orders + (c.total_orders || 0),
             active_months: a.active_months + (c.active_months || 0),
           }), { total_orders: 0, active_months: 0 })
           freqClient = { client_name: 'Todos los clientes' }
           freqTotal = agg.total_orders
           freqActiveMonths = agg.active_months
-          freqAvg = frequencyData.length > 0 ? (agg.total_orders / frequencyData.length).toFixed(1) : '0.0'
+          freqAvg = filteredFreq.length > 0 ? (agg.total_orders / filteredFreq.length).toFixed(1) : '0.0'
         } else {
-          freqClient = frequencyData[freqIdx] || frequencyData[0]
+          freqClient = findKpiClientByKey(frequencyData, freqKey) || filteredFreq[0] || { client_name: 'Sin resultados', total_orders: 0, active_months: 0, orders_per_month: '0.0' }
           freqTotal = freqClient.total_orders || 0
           freqActiveMonths = freqClient.active_months || 0
           freqAvg = freqClient.orders_per_month || '0.0'
@@ -1368,9 +1448,9 @@ export default function KPIClientAnalytics({ data }) {
         let freqPie, freqPieTotal
         if (isAllFreq) {
           freqPie = [
-            { name: 'Clientes', value: frequencyData.length, color: barColor },
+            { name: 'Clientes', value: filteredFreq.length, color: barColor },
           ]
-          freqPieTotal = frequencyData.length
+          freqPieTotal = filteredFreq.length
         } else {
           const months = freqClient.months || {}
           const monthEntries = Object.entries(months).sort((a, b) => a[0].localeCompare(b[0]))
@@ -1397,26 +1477,36 @@ export default function KPIClientAnalytics({ data }) {
                 <p className="kpi-section-subtitle">Promedio de órdenes mensuales por cliente.</p>
               </div>
               <div className="kpi-filter-row" style={{ flex: '0 0 auto' }}>
-                <label>
-                  <span>Buscar</span>
-                  <input type="text" placeholder="Nombre del cliente..." value={freqSearch} onChange={e => { setFreqSearch(e.target.value); setFreqIdx(-1) }} />
-                </label>
+                <KPISearchBox
+                  value={freqSearch}
+                  onChange={value => {
+                    setFreqSearch(value)
+                    if (freqKey !== ALL_KEY && !filterKpiClients(frequencyData, value).some(cl => getClientKey(cl) === freqKey)) setFreqKey(ALL_KEY)
+                  }}
+                  onClear={() => setFreqSearch('')}
+                  placeholder="Buscar cliente, mes o frecuencia..."
+                  resultCount={filteredFreq.length}
+                  totalCount={frequencyData.length}
+                />
                 <label>
                   <span>Cliente</span>
-                  <select value={freqIdx} onChange={e => setFreqIdx(+e.target.value)}>
-                    <option value={-1}>Todos</option>
-                    {filteredFreq.map((cl, i) => <option key={i} value={frequencyData.indexOf(cl)}>{cl.client_name}</option>)}
+                  <select value={freqKey} onChange={e => setFreqKey(e.target.value)}>
+                    <option value={ALL_KEY}>Todos</option>
+                    {filteredFreq.map((cl, i) => <option key={`${getClientKey(cl)}-${i}`} value={getClientKey(cl)}>{getClientName(cl)}</option>)}
                   </select>
                 </label>
               </div>
             </div>
+            {filteredFreq.length === 0 && (
+              <div className="kpi-search-empty-hint">{getKpiSearchEmptyText(freqSearch, 'clientes')}</div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'stretch' }}>
               <div className="kpi-card" style={{ padding: '32px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
                 <div style={{ width: '100%', height: 260, position: 'relative' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie key={freqIdx} data={freqPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke={isGold ? '#D4A017' : 'none'}>
+                      <Pie key={freqKey} data={freqPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke={isGold ? '#D4A017' : 'none'}>
                         {freqPie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
                       <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
@@ -1432,7 +1522,7 @@ export default function KPIClientAnalytics({ data }) {
                     </PieChart>
                   </ResponsiveContainer>
                   <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-                    <div style={{ fontSize: 36, fontWeight: 800, color: '#091127', lineHeight: 1 }}><AnimatedNumber key={freqIdx} value={isAllFreq ? freqAvg : freqTotal} /></div>
+                    <div style={{ fontSize: 36, fontWeight: 800, color: '#091127', lineHeight: 1 }}><AnimatedNumber key={freqKey} value={isAllFreq ? freqAvg : freqTotal} /></div>
                     <div style={{ fontSize: 11, fontWeight: 500, color: '#94A3B8', marginTop: 4, letterSpacing: '0.03em' }}>{isAllFreq ? 'promedio' : 'órdenes'}</div>
                   </div>
                 </div>
@@ -1505,15 +1595,15 @@ export default function KPIClientAnalytics({ data }) {
       })()}
 
       {orderTypeData.length > 0 && (() => {
-        const filteredOrders = orderTypeData.filter(c => c.client_name?.toLowerCase().includes(orderSearch.toLowerCase()))
-        const isAll = selectedClientIdx === -1
+        const filteredOrders = filterKpiClients(orderTypeData, deferredOrderSearch)
+        const isAll = selectedClientKey === ALL_KEY
         let client, total, pctNormal, pctUrgent
         if (isAll) {
-          const agg = orderTypeData.reduce((a, c) => ({ normal: a.normal + (c.normal || 0), urgent_911: a.urgent_911 + (c.urgent_911 || 0) }), { normal: 0, urgent_911: 0 })
+          const agg = filteredOrders.reduce((a, c) => ({ normal: a.normal + (c.normal || 0), urgent_911: a.urgent_911 + (c.urgent_911 || 0) }), { normal: 0, urgent_911: 0 })
           client = { client_name: 'Todos los clientes', normal: agg.normal, urgent_911: agg.urgent_911 }
           total = agg.normal + agg.urgent_911
         } else {
-          client = orderTypeData[selectedClientIdx] || orderTypeData[0]
+          client = findKpiClientByKey(orderTypeData, selectedClientKey) || filteredOrders[0] || { client_name: 'Sin resultados', normal: 0, urgent_911: 0 }
           total = (client.normal || 0) + (client.urgent_911 || 0)
         }
         pctNormal = total > 0 ? Math.round((client.normal / total) * 100) : 0
@@ -1532,26 +1622,36 @@ export default function KPIClientAnalytics({ data }) {
                 <p className="kpi-section-subtitle">Distribución de órdenes normales vs urgentes (911).</p>
               </div>
               <div className="kpi-filter-row" style={{ flex: '0 0 auto' }}>
-                <label>
-                  <span>Buscar</span>
-                  <input type="text" placeholder="Nombre del cliente..." value={orderSearch} onChange={e => { setOrderSearch(e.target.value); setSelectedClientIdx(-1) }} />
-                </label>
+                <KPISearchBox
+                  value={orderSearch}
+                  onChange={value => {
+                    setOrderSearch(value)
+                    if (selectedClientKey !== ALL_KEY && !filterKpiClients(orderTypeData, value).some(cl => getClientKey(cl) === selectedClientKey)) setSelectedClientKey(ALL_KEY)
+                  }}
+                  onClear={() => setOrderSearch('')}
+                  placeholder="Buscar cliente, orden normal o 911..."
+                  resultCount={filteredOrders.length}
+                  totalCount={orderTypeData.length}
+                />
                 <label>
                   <span>Cliente</span>
-                  <select value={selectedClientIdx} onChange={e => setSelectedClientIdx(+e.target.value)}>
-                    <option value={-1}>Todos</option>
-                    {filteredOrders.map((c, i) => <option key={i} value={orderTypeData.indexOf(c)}>{c.client_name}</option>)}
+                  <select value={selectedClientKey} onChange={e => setSelectedClientKey(e.target.value)}>
+                    <option value={ALL_KEY}>Todos</option>
+                    {filteredOrders.map((c, i) => <option key={`${getClientKey(c)}-${i}`} value={getClientKey(c)}>{getClientName(c)}</option>)}
                   </select>
                 </label>
               </div>
             </div>
+            {filteredOrders.length === 0 && (
+              <div className="kpi-search-empty-hint">{getKpiSearchEmptyText(orderSearch, 'clientes')}</div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'stretch' }}>
               <div className="kpi-card" style={{ padding: '32px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
                 <div style={{ width: '100%', height: 260, position: 'relative' }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie key={selectedClientIdx} data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
+                        <Pie key={selectedClientKey} data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
                           {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                         </Pie>
                         <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
@@ -1567,7 +1667,7 @@ export default function KPIClientAnalytics({ data }) {
                       </PieChart>
                     </ResponsiveContainer>
                     <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-                      <div style={{ fontSize: 36, fontWeight: 800, color: '#091127', lineHeight: 1 }}><AnimatedNumber key={selectedClientIdx} value={total} /></div>
+                      <div style={{ fontSize: 36, fontWeight: 800, color: '#091127', lineHeight: 1 }}><AnimatedNumber key={selectedClientKey} value={total} /></div>
                       <div style={{ fontSize: 11, fontWeight: 500, color: '#94A3B8', marginTop: 4, letterSpacing: '0.03em' }}>órdenes</div>
                     </div>
                   </div>
@@ -1632,9 +1732,9 @@ export default function KPIClientAnalytics({ data }) {
           ...frequency.map(c => c.client_name),
           ...cancellation.map(c => c.client_name),
           ...delivery.map(c => c.client_name),
-        ])]
-        const filteredHealthClients = clientNames.filter(n => n?.toLowerCase().includes(healthSearch.toLowerCase()))
-        const isAllHealth = healthIdx === -1
+        ])].filter(Boolean)
+        const filteredHealthClients = clientNames.filter(name => matchesKpiSearch(name, deferredHealthSearch, [value => value]))
+        const isAllHealth = healthKey === ALL_KEY
 
         const calcScore = (name) => {
           const freq = frequency.find(c => c.client_name === name)
@@ -1656,7 +1756,7 @@ export default function KPIClientAnalytics({ data }) {
 
         let scores, selectedName, selectedScore
         if (isAllHealth) {
-          scores = clientNames.map(n => ({ name: n, ...calcScore(n) })).sort((a, b) => b.total - a.total)
+          scores = filteredHealthClients.map(n => ({ name: n, ...calcScore(n) })).sort((a, b) => b.total - a.total)
           selectedName = 'Todos los clientes'
           selectedScore = {
             total: scores.length > 0 ? Math.round(scores.reduce((s, c) => s + c.total, 0) / scores.length) : 0,
@@ -1665,7 +1765,7 @@ export default function KPIClientAnalytics({ data }) {
             delivScore: scores.length > 0 ? Math.round(scores.reduce((s, c) => s + c.delivScore, 0) / scores.length) : 0,
           }
         } else {
-          selectedName = clientNames[healthIdx] || clientNames[0]
+          selectedName = clientNames.find(name => name === healthKey) || filteredHealthClients[0] || clientNames[0]
           selectedScore = calcScore(selectedName)
         }
 
@@ -1686,19 +1786,29 @@ export default function KPIClientAnalytics({ data }) {
                 <p className="kpi-section-subtitle">Indicador combinado de frecuencia, cancelación y entrega.</p>
               </div>
               <div className="kpi-filter-row" style={{ flex: '0 0 auto' }}>
-                <label>
-                  <span>Buscar</span>
-                  <input type="text" placeholder="Nombre del cliente..." value={healthSearch} onChange={e => { setHealthSearch(e.target.value); setHealthIdx(-1) }} />
-                </label>
+                <KPISearchBox
+                  value={healthSearch}
+                  onChange={value => {
+                    setHealthSearch(value)
+                    if (healthKey !== ALL_KEY && !clientNames.filter(name => matchesKpiSearch(name, value, [item => item])).includes(healthKey)) setHealthKey(ALL_KEY)
+                  }}
+                  onClear={() => setHealthSearch('')}
+                  placeholder="Buscar cliente por salud o actividad..."
+                  resultCount={filteredHealthClients.length}
+                  totalCount={clientNames.length}
+                />
                 <label>
                   <span>Cliente</span>
-                  <select value={healthIdx} onChange={e => setHealthIdx(+e.target.value)}>
-                    <option value={-1}>Todos</option>
-                    {filteredHealthClients.map((n, i) => <option key={i} value={clientNames.indexOf(n)}>{n}</option>)}
+                  <select value={healthKey} onChange={e => setHealthKey(e.target.value)}>
+                    <option value={ALL_KEY}>Todos</option>
+                    {filteredHealthClients.map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </label>
               </div>
             </div>
+            {filteredHealthClients.length === 0 && (
+              <div className="kpi-search-empty-hint">{getKpiSearchEmptyText(healthSearch, 'clientes')}</div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'stretch' }}>
               <div className="kpi-card" style={{ padding: '32px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
                 <div style={{ width: 140, height: 140, position: 'relative' }}>

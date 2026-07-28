@@ -84,3 +84,62 @@ export async function requireAdmin(authHeader = "", env = process.env) {
     env
   );
 }
+
+export async function requireAuthenticated(authHeader = "", env = process.env, options = {}) {
+  const accessToken = getBearerToken(authHeader);
+  const allowedRoles = Array.isArray(options.allowedRoles) ? options.allowedRoles : [];
+
+  if (!accessToken) {
+    debugAuth("missing-token", {}, env);
+    return { authorized: false, status: 401, error: "Token de autenticacion requerido." };
+  }
+
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    debugAuth("missing-config", { hasUrl: Boolean(env.SUPABASE_URL), hasServiceRole: Boolean(env.SUPABASE_SERVICE_ROLE_KEY) }, env);
+    return { authorized: false, status: 500, error: "Configuracion de Supabase incompleta." };
+  }
+
+  const supabaseAdmin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
+  const user = authData?.user;
+
+  if (authError && isAuthConnectivityError(authError)) {
+    debugAuth("auth-connectivity-error", { authError: authError?.message }, env);
+    return {
+      authorized: false,
+      status: 503,
+      error: "No se pudo validar la sesion con Supabase Auth. Revisa la conexion TLS/certificados del servidor local.",
+    };
+  }
+
+  if (authError || !user?.id) {
+    debugAuth("invalid-token", { authError: authError?.message }, env);
+    return { authorized: false, status: 401, error: "Tu sesion expiro o no es valida. Inicia sesion nuevamente." };
+  }
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("id,name,email,role,employment_status,created_at")
+    .eq("id", user.id)
+    .single();
+
+  if (profileError || !profile) {
+    debugAuth("profile-not-found", { userId: user.id, profileError: profileError?.message }, env);
+    return { authorized: false, status: 403, error: "Tu perfil no esta disponible." };
+  }
+
+  if (profile.employment_status === false) {
+    debugAuth("inactive-profile", { userId: user.id, role: profile.role }, env);
+    return { authorized: false, status: 403, error: "Tu usuario esta inactivo." };
+  }
+
+  if (allowedRoles.length && !allowedRoles.includes(profile.role)) {
+    debugAuth("role-not-allowed", { userId: user.id, role: profile.role }, env);
+    return { authorized: false, status: 403, error: "No tienes permisos para esta accion." };
+  }
+
+  return { authorized: true, user, profile, supabaseAdmin };
+}

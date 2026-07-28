@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { createElement, useState, useEffect, useCallback, useMemo } from 'react'
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar, AreaChart, Area } from 'recharts'
 import OrderDetailModal from '../orders/OrderDetailModal'
 import { Icons } from '../../utils/icons'
@@ -19,6 +19,7 @@ const CHART_PERIODS = [
   { key: '3m', label: '3m' },
   { key: '6m', label: '6m' },
 ]
+const SHOW_LEGACY_KPI_SECTIONS = false
 
 function getAreaDisplayName(areaCode, fallback) {
   return AREA_FULL_LABELS[areaCode] || fallback || areaCode || 'Area de Produccion'
@@ -429,7 +430,7 @@ function AreaDetailHeader({ areaName, periodLabel, AreaIcon, onBack }) {
 
       <div className="kpi-area-premium-title-row">
         <div className="kpi-area-premium-title">
-          <div className="kpi-area-premium-icon"><AreaIcon size={24} /></div>
+            <div className="kpi-area-premium-icon">{createElement(AreaIcon, { size: 24 })}</div>
           <div>
             <h2>{areaName}</h2>
             <p>Centro de inteligencia del area</p>
@@ -476,7 +477,7 @@ function AreaExecutivePanel({ areaName, total_files, total_orders, completed, co
 function AreaHealthChip({ label, value, tone, icon: Icon }) {
   return (
     <div className={`kpi-area-health-chip ${tone}`}>
-      <div className="kpi-area-health-icon"><Icon size={16} /></div>
+      <div className="kpi-area-health-icon">{createElement(Icon, { size: 16 })}</div>
       <div>
         <span>{label}</span>
         <strong>{value}</strong>
@@ -1038,7 +1039,7 @@ export function ProductionAreaDetailView({ areaCode, onBack, period, customDateF
           <AreaOrdersCard orderRows={orderRows} onSelectOrder={setSelectedOrder} />
           <AreaCapacityCard loadDistribution={loadDistribution} total_files={total_files} totalEmployees={totalEmployees} />
 
-          {false && (
+          {SHOW_LEGACY_KPI_SECTIONS && (
             <>
           <div className="kpi-card kpi-area-legacy-hidden" style={{ padding: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -1142,7 +1143,7 @@ export function ProductionAreaDetailView({ areaCode, onBack, period, customDateF
           )}
         </div>
 
-        {false && loadDistribution.length > 0 && (() => {
+        {SHOW_LEGACY_KPI_SECTIONS && loadDistribution.length > 0 && (() => {
           const totalCompleted = loadDistribution.reduce((s, u) => s + (u.completed || 0), 0)
           const totalLoad = loadDistribution.reduce((s, u) => s + (u.current_load || 0), 0)
           const avgEfficiency = loadDistribution.length > 0 ? Math.round(loadDistribution.reduce((s, u) => s + (u.efficiency_score || 0), 0) / loadDistribution.length) : 0
@@ -1245,7 +1246,7 @@ export function ProductionAreaDetailView({ areaCode, onBack, period, customDateF
 
         <AreaStatusTimingCard statusTimeBreakdown={statusTimeBreakdown} />
 
-        {false && statusTimeBreakdown.length > 0 && (
+        {SHOW_LEGACY_KPI_SECTIONS && statusTimeBreakdown.length > 0 && (
           <div className="kpi-card" style={{ padding: 24, marginBottom: 24 }}>
             <div className="kpi-seller-section-title" style={{ marginBottom: 4 }}>Tiempo Promedio por Estado</div>
             <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 16 }}>Dias promedio en cada fase del proceso</div>
@@ -1263,7 +1264,7 @@ export function ProductionAreaDetailView({ areaCode, onBack, period, customDateF
 
         <AreaComparisonSection comparison={comparison} />
 
-        {false && comparison && (() => {
+        {SHOW_LEGACY_KPI_SECTIONS && comparison && (() => {
           const items = [
             { label: 'Archivos', change: comparison.total_files?.change_pct },
             { label: 'Completados', change: comparison.completed?.change_pct },

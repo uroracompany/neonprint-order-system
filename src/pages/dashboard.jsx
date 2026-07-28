@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
@@ -79,11 +79,10 @@ import useNotifications from "../hooks/useNotifications";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
-import KPIModule from "../components/kpi/KPIModule";
 import "../css-components/page-seller.css";
 import "../css-components/page-admin.css";
-import "../css-components/page-kpi.css";
 
+const KPIModule = lazy(() => import("../components/kpi/KPIModule"));
 
 const DEFAULT_ORDER_FORM = {
   id: "",
@@ -3126,7 +3125,7 @@ export default function Dashboard() {
 
     await Promise.all([loadOrders(true), fetchAccountsReceivable()]);
     if (onSuccess) onSuccess();
-    showFeedback("success", uniqueOrderIds.length === 1 ? "Pendiente cerrado correctamente." : "Pendientes cerrados correctamente.");
+    showFeedback("success", uniqueOrderIds.length === 1 ? "Factura marcada como saldada correctamente." : "Pendientes cerrados correctamente.");
     return true;
   };
 
@@ -3800,7 +3799,11 @@ export default function Dashboard() {
         </header>
         <main className="pa-main">
 
-        {activeTab === "kpi" && <KPIModule />}
+        {activeTab === "kpi" && (
+          <Suspense fallback={<div className="pa-feedback info">Cargando KPI...</div>}>
+            <KPIModule />
+          </Suspense>
+        )}
 
         {activeTab === "overview" &&
           <section className="pa-section pa-overview-section">
@@ -4142,7 +4145,7 @@ export default function Dashboard() {
                           <div className="acm-empty-state">
                             <Icons.Search />
                             <strong>No se encontraron órdenes</strong>
-                            <span>{(search || statusFilter !== "all" || dateFilter !== "all" || ownerFilter !== "all" || clientFilter !== "all" || archiveFilter !== "active" || interventionFilter !== "all" || operationalFilter !== "all") ? "Prueba con otros filtros o limpia la búsqueda." : "Las órdenes del sistema aparecerán aquí."}</span>
+                            <span>{(search || statusFilter !== "all" || dateFilter !== "all" || ownerFilter !== "all" || clientFilter !== "all" || archiveFilter !== "active" || interventionFilter !== "all" || operationalFilter !== "all") ? "Intenta con otros filtros o limpia la búsqueda." : "Las órdenes del sistema aparecerán aquí."}</span>
                           </div>
                         </td>
                       </tr>
@@ -4232,7 +4235,7 @@ export default function Dashboard() {
             <div className="pa-section-heading acm-heading">
               <div>
                 <h2>Gestión de seguimiento</h2>
-                <p>Supervisa pendientes administrativos por cliente.</p>
+                <p>Supervisa pendientes administrativos agrupados por cliente.</p>
                 <div className="acm-total-badge">
                   <Icons.AlertCircle />
                   <strong>{creditPendingInvoicesCount.toLocaleString("es-PE")}</strong> seguimientos pendientes
@@ -4246,7 +4249,7 @@ export default function Dashboard() {
                   <input
                     value={creditSearch}
                     onChange={(event) => setCreditSearch(event.target.value)}
-                    placeholder="Buscar por cliente, telefono u orden..."
+                    placeholder="Buscar por cliente, telefono, factura u orden..."
                     aria-label="Buscar seguimientos"
                   />
                   {creditSearch && (
@@ -4287,11 +4290,11 @@ export default function Dashboard() {
             </div>
 
             {creditPendingInvoicesCount > 0 && (
-              <div className="pa-credit-pending-banner" role="status">
+              <div className="pa-credit-pending-banner pa-credit-dashboard-alert" role="status">
                 <span className="pa-credit-pending-banner-icon"><Icons.AlertCircle /></span>
                 <div>
                   <strong>{creditPendingInvoicesCount} seguimiento{creditPendingInvoicesCount === 1 ? "" : "s"} pendiente{creditPendingInvoicesCount === 1 ? "" : "s"}</strong>
-                  <span>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento administrativo.</span>
+                  <span>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento administrativo. Este aviso se mostrara una vez al mes mientras existan créditos pendientes.</span>
                 </div>
                 <button className="pa-btn secondary pa-btn-sm" onClick={() => setCreditStatusFilter("open")}>
                   Revisar pendientes
@@ -4328,7 +4331,7 @@ export default function Dashboard() {
                           <div className="acm-empty-state">
                             <Icons.Receipt />
                             <strong>No hay seguimientos registrados</strong>
-                            <span>{hasCreditFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Los pendientes de seguimiento aparecerán aquí."}</span>
+                            <span>{hasCreditFilters ? "Intenta con otros filtros o limpia la búsqueda." : "Los pendientes de seguimiento aparecerán aquí."}</span>
                             {hasCreditFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setCreditSearch(""); setCreditStatusFilter("open"); }}>Limpiar filtros</button>}
                           </div>
                         </td>
@@ -4393,7 +4396,7 @@ export default function Dashboard() {
                                   <button
                                     className="table-action-btn cancel"
                                     onClick={() => handleOpenCreditSettleAll(group.client, openInvoices)}
-                                    title="Cerrar pendientes"
+                                    title="Marcar todas como saldadas"
                                   >
                                     <Icons.Check />
                                   </button>
@@ -4526,7 +4529,7 @@ export default function Dashboard() {
                 Cancelar
               </button>
               <button className="pa-btn primary" onClick={handleConfirmCreditSettlement} disabled={creditSettlementLoading}>
-                {creditSettlementLoading ? "Cerrando..." : "Cerrar pendientes"}
+                {creditSettlementLoading ? "Cerrando..." : "Marcar todas como saldadas"}
               </button>
             </div>
           </div>
@@ -4942,7 +4945,7 @@ export default function Dashboard() {
                           <div className="acm-empty-state">
                             <Icons.Users />
                             <strong>No encontramos empleados</strong>
-                            <span>{hasUserFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Crea el primer empleado para comenzar."}</span>
+                            <span>{hasUserFilters ? "Intenta con otros filtros o limpia la búsqueda." : "Crea el primer empleado para comenzar."}</span>
                             {hasUserFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setUserSearch(""); setRoleFilter("all"); setEmploymentFilter("all"); }}>Limpiar filtros</button>}
                           </div>
                         </td>
@@ -5458,7 +5461,7 @@ function CreditClientDetailView({
                       <div className="acm-empty-state">
                         <Icons.Receipt />
                         <strong>No hay pendientes</strong>
-                        <span>{detailSearch || detailFilter !== "all" ? "Prueba con otros filtros o limpia la búsqueda." : "No hay pendientes registrados para este cliente."}</span>
+                        <span>{detailSearch || detailFilter !== "all" ? "Intenta con otros filtros o limpia la búsqueda." : "No hay pendientes registrados para este cliente."}</span>
                       </div>
                     </td>
                   </tr>
@@ -5520,7 +5523,7 @@ function CreditClientDetailView({
                                   invoices: [item.invoiceNumber],
                                   mode: "single",
                                 }); }}
-                                title="Cerrar pendiente"
+                                title="Marcar saldadas"
                               >
                                 <Icons.Check />
                               </button>
@@ -5561,7 +5564,7 @@ function CreditClientDetailView({
                 })}
                 disabled={selectedIds.length === 0}
               >
-                Cerrar pendientes
+                Marcar saldadas
               </button>
             </div>
           </div>

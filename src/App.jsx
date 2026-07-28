@@ -1,19 +1,20 @@
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
 import { Routes, Route, BrowserRouter } from 'react-router-dom'
 import ProtectedRoute from './ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AuthProvider } from './contexts/AuthProvider'
 import AdminInterventionAlert from './components/orders/AdminInterventionAlert'
+import { lazyWithRetry } from './utils/lazyWithRetry'
 import './App.css'
 
-const Lobby = lazy(() => import('./pages/lobby'))
-const Dashboard = lazy(() => import('./pages/dashboard'))
-const PageDesigner = lazy(() => import('./pages/page-designer'))
-const PageSeller = lazy(() => import('./pages/pages-seller'))
-const PageQuote = lazy(() => import('./pages/page-quote'))
-const PageProduction = lazy(() => import('./pages/page-production'))
-const PageDelivery = lazy(() => import('./pages/page-delivery'))
-const PageTracking = lazy(() => import('./pages/page-tracking'))
+const Lobby = lazyWithRetry(() => import('./pages/lobby'))
+const Dashboard = lazyWithRetry(() => import('./pages/dashboard'))
+const PageDesigner = lazyWithRetry(() => import('./pages/page-designer'))
+const PageSeller = lazyWithRetry(() => import('./pages/pages-seller'))
+const PageQuote = lazyWithRetry(() => import('./pages/page-quote'))
+const PageProduction = lazyWithRetry(() => import('./pages/page-production'))
+const PageDelivery = lazyWithRetry(() => import('./pages/page-delivery'))
+const PageTracking = lazyWithRetry(() => import('./pages/page-tracking'))
 
 function App() {
   return (

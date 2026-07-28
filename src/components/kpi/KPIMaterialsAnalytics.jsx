@@ -1,10 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useDeferredValue, useMemo } from 'react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   PieChart, Pie, Cell, LineChart, Line, Legend, AreaChart, Area,
 } from 'recharts'
 import { formatNumber, getTrendConfig, KPI_CHART_COLORS, getPeriodBounds, getComparePeriodBounds } from '../../utils/kpiHelpers'
 import { Icons } from '../../utils/icons'
+import KPISearchBox from './KPISearchBox'
+import { matchesKpiSearch } from '../../utils/kpiSearch'
 
 const PALETTE = {
   cyan: '#06B6D4', green: '#10B981', rose: '#F43F5E', amber: '#F59E0B',
@@ -14,6 +16,27 @@ const PALETTE = {
 }
 
 const PAGE_SIZE = 7
+const EMPTY_ARRAY = Object.freeze([])
+const EMPTY_OBJECT = Object.freeze({})
+const ALL_KEY = '__all__'
+const DISTINCT_KEY = '__distinct__'
+
+const getMaterialKey = (item) => String(item?.material_id || item?.name || '').trim()
+
+const MATERIAL_SEARCH_FIELDS = [
+  'name',
+  item => item?.top_clients?.map(client => client.client_name).join(' '),
+  item => Object.keys(item?.daily || {}).join(' '),
+  item => (item?.monthly_trend || []).map(point => point.month).join(' '),
+]
+
+const filterKpiMaterials = (items, query) => items.filter(item => matchesKpiSearch(item, query, MATERIAL_SEARCH_FIELDS))
+const findKpiMaterialByKey = (items, key) => items.find(item => getMaterialKey(item) === key)
+const getMaterialEmptyText = (query) => (
+  query
+    ? `No encontramos resultados para "${query}". Prueba con cliente, factura, material, orden o estado.`
+    : 'No hay datos disponibles para este periodo.'
+)
 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -73,30 +96,32 @@ function Pagination({ page, total, pageSize, onPage }) {
 }
 
 export default function KPIMaterialsAnalytics({ data }) {
-  const [selectedMaterial, setSelectedMaterial] = useState(-1)
+  const [selectedMaterialKey, setSelectedMaterialKey] = useState(ALL_KEY)
   const [materialSearch, setMaterialSearch] = useState('')
+  const deferredMaterialSearch = useDeferredValue(materialSearch)
   const [page, setPage] = useState(0)
   const [detailTab, setDetailTab] = useState('ranking')
   const [compPage, setCompPage] = useState(0)
   const [evoMatSearch, setEvoMatSearch] = useState('')
-  const [evoMatIdx, setEvoMatIdx] = useState(-1)
+  const deferredEvoMatSearch = useDeferredValue(evoMatSearch)
+  const [evoMatKey, setEvoMatKey] = useState(ALL_KEY)
   const [evoMonths, setEvoMonths] = useState(1)
   const [evoCustom, setEvoCustom] = useState(false)
   const [evoDateFrom, setEvoDateFrom] = useState('')
   const [evoDateTo, setEvoDateTo] = useState('')
   const [evoChartType, setEvoChartType] = useState('area')
-  const [orderTypeMatIdx, setOrderTypeMatIdx] = useState(-1)
+  const [orderTypeMatKey, setOrderTypeMatKey] = useState(ALL_KEY)
   const [topClientsPage, setTopClientsPage] = useState(0)
 
-  const kpis = data?.client_kpis || {}
-  const materialAnalytics = kpis.material_analytics || {}
+  const kpis = data?.client_kpis || EMPTY_OBJECT
+  const materialAnalytics = kpis.material_analytics || EMPTY_OBJECT
   const materialComparison = kpis.material_comparison || null
-  const summary = materialAnalytics.summary || []
-  const orderTypeByMaterial = materialAnalytics.order_type_by_material || []
+  const summary = materialAnalytics.summary || EMPTY_ARRAY
+  const orderTypeByMaterial = materialAnalytics.order_type_by_material || EMPTY_ARRAY
 
   const filteredSummary = useMemo(() =>
-    summary.filter(m => m.name?.toLowerCase().includes(materialSearch.toLowerCase())),
-    [summary, materialSearch]
+    filterKpiMaterials(summary, deferredMaterialSearch),
+    [summary, deferredMaterialSearch]
   )
 
   const totalCurrent = useMemo(() => summary.reduce((s, m) => s + m.total_orders, 0), [summary])
@@ -116,8 +141,8 @@ export default function KPIMaterialsAnalytics({ data }) {
   const trendMaterials = getTrendConfig(summary.length, materialsCountPrev)
 
   const filteredEvoMats = useMemo(() =>
-    summary.filter(m => m.name?.toLowerCase().includes(evoMatSearch.toLowerCase())),
-    [summary, evoMatSearch]
+    filterKpiMaterials(summary, deferredEvoMatSearch),
+    [summary, deferredEvoMatSearch]
   )
 
   const evoData = useMemo(() => {
@@ -133,9 +158,10 @@ export default function KPIMaterialsAnalytics({ data }) {
     const isDaily = useCustom ? totalDays <= 31 : evoMonths === 1
     const isWeekly = useCustom ? totalDays > 31 && totalDays <= 120 : evoMonths === 3
 
-    const selectedMat = evoMatIdx >= 0 ? filteredEvoMats[evoMatIdx] : null
-    const showDistinct = evoMatIdx === -2
+    const selectedMat = evoMatKey !== ALL_KEY && evoMatKey !== DISTINCT_KEY ? findKpiMaterialByKey(summary, evoMatKey) : null
+    const showDistinct = evoMatKey === DISTINCT_KEY
     const hasComp = !!(materialComparison?.summary?.length)
+    const materialSource = filteredEvoMats
 
     const findCompMat = (name) => materialComparison?.summary?.find(m => m.name === name) || null
     const aggCompDaily = () => {
@@ -184,13 +210,13 @@ export default function KPIMaterialsAnalytics({ data }) {
 
       let currentDaily, prevDaily
       if (showDistinct) {
-        currentDaily = distinctDaily(summary, currentDates)
+        currentDaily = distinctDaily(materialSource, currentDates)
         prevDaily = hasComp ? distinctDaily(materialComparison.summary, prevDates) : {}
       } else if (selectedMat) {
         currentDaily = selectedMat.daily || {}
         prevDaily = hasComp ? (findCompMat(selectedMat.name)?.daily || {}) : {}
       } else {
-        currentDaily = sumDaily(summary, currentDates)
+        currentDaily = sumDaily(materialSource, currentDates)
         prevDaily = hasComp ? aggCompDaily() : {}
       }
 
@@ -258,7 +284,7 @@ export default function KPIMaterialsAnalytics({ data }) {
         return matArr.filter(m => weekDays.some(d => (m.daily?.[d] || 0) > 0)).length
       }
 
-      const currentMats = selectedMat ? [selectedMat] : summary
+      const currentMats = selectedMat ? [selectedMat] : materialSource
       const prevMats = hasComp
         ? (selectedMat
             ? [findCompMat(selectedMat.name)].filter(Boolean)
@@ -315,7 +341,7 @@ export default function KPIMaterialsAnalytics({ data }) {
     }
 
     if (showDistinct) {
-      const currMats = summary
+      const currMats = materialSource
       const prevMats = hasComp ? materialComparison.summary : []
       return monthLabels.map((m, i) => ({
         name: `Mes ${i + 1}`,
@@ -324,7 +350,7 @@ export default function KPIMaterialsAnalytics({ data }) {
       }))
     }
 
-    const currentMap = selectedMat ? buildMonthMap([selectedMat]) : buildMonthMap(summary)
+    const currentMap = selectedMat ? buildMonthMap([selectedMat]) : buildMonthMap(materialSource)
     const prevMap = hasComp
       ? (selectedMat
           ? buildMonthMap([findCompMat(selectedMat.name)].filter(Boolean))
@@ -336,11 +362,11 @@ export default function KPIMaterialsAnalytics({ data }) {
       Materiales: currentMap[m] || 0,
       ...(hasComp ? { 'Período anterior': prevMap[prevMonthLabels[i]] || 0 } : {}),
     }))
-  }, [evoMatIdx, filteredEvoMats, evoMonths, evoCustom, evoDateFrom, evoDateTo, summary, materialComparison])
+  }, [evoMatKey, filteredEvoMats, evoMonths, evoCustom, evoDateFrom, evoDateTo, summary, materialComparison])
 
   const evoSubtitle = useMemo(() => {
-    const selectedMat = evoMatIdx >= 0 ? filteredEvoMats[evoMatIdx] : null
-    const showDistinct = evoMatIdx === -2
+    const selectedMat = evoMatKey !== ALL_KEY && evoMatKey !== DISTINCT_KEY ? findKpiMaterialByKey(summary, evoMatKey) : null
+    const showDistinct = evoMatKey === DISTINCT_KEY
     const useCustom = evoCustom && evoDateFrom && evoDateTo
     const hasComp = !!(materialComparison?.summary?.length)
     const compSuffix = hasComp ? ' vs período anterior' : ''
@@ -357,7 +383,7 @@ export default function KPIMaterialsAnalytics({ data }) {
     return useCustom
       ? `Total de materiales utilizados del ${evoDateFrom} al ${evoDateTo}${compSuffix}.`
       : `Total de materiales utilizados en los últimos ${evoMonths} mes${evoMonths > 1 ? 'es' : ''}${compSuffix}.`
-  }, [evoMatIdx, filteredEvoMats, evoMonths, evoCustom, evoDateFrom, evoDateTo, materialComparison])
+  }, [evoMatKey, summary, evoMonths, evoCustom, evoDateFrom, evoDateTo, materialComparison])
 
   const starMaterials = useMemo(() =>
     summary.filter(m => m.total_orders >= 5 && (m.cancel_rate || 0) < 10)
@@ -389,8 +415,9 @@ export default function KPIMaterialsAnalytics({ data }) {
   }, [summary])
 
   const orderTypePieData = useMemo(() => {
-    if (orderTypeMatIdx >= 0 && summary[orderTypeMatIdx]) {
-      const m = summary[orderTypeMatIdx]
+    const selectedOrderTypeMat = orderTypeMatKey !== ALL_KEY ? findKpiMaterialByKey(summary, orderTypeMatKey) : null
+    if (selectedOrderTypeMat) {
+      const m = selectedOrderTypeMat
       return [
         { name: 'Normal', value: m.normal_orders || 0, color: PALETTE.cyan },
         { name: '911 (Urgente)', value: m.urgent_orders || 0, color: PALETTE.rose },
@@ -402,11 +429,11 @@ export default function KPIMaterialsAnalytics({ data }) {
       { name: 'Normal', value: totalNormal, color: PALETTE.cyan },
       { name: '911 (Urgente)', value: totalUrgent, color: PALETTE.rose },
     ].filter(d => d.value > 0)
-  }, [orderTypeByMaterial, orderTypeMatIdx, summary])
+  }, [orderTypeByMaterial, orderTypeMatKey, summary])
 
   if (!data) return null
 
-  const selectedMat = selectedMaterial >= 0 ? filteredSummary[selectedMaterial] : null
+  const selectedMat = selectedMaterialKey !== ALL_KEY ? findKpiMaterialByKey(filteredSummary, selectedMaterialKey) : null
   const detailPageData = selectedMat
     ? [selectedMat]
     : filteredSummary.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -439,16 +466,23 @@ export default function KPIMaterialsAnalytics({ data }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
             <div className="kpi-filter-row" style={{ flex: '0 0 auto', margin: 0 }}>
-              <label>
-                <span>Buscar</span>
-                <input type="text" placeholder="Nombre del material..." value={evoMatSearch} onChange={e => { setEvoMatSearch(e.target.value); setEvoMatIdx(-1) }} />
-              </label>
+              <KPISearchBox
+                value={evoMatSearch}
+                onChange={value => {
+                  setEvoMatSearch(value)
+                  if (evoMatKey !== ALL_KEY && evoMatKey !== DISTINCT_KEY && !filterKpiMaterials(summary, value).some(material => getMaterialKey(material) === evoMatKey)) setEvoMatKey(ALL_KEY)
+                }}
+                onClear={() => setEvoMatSearch('')}
+                placeholder="Buscar material, cliente o periodo..."
+                resultCount={filteredEvoMats.length}
+                totalCount={summary.length}
+              />
               <label>
                 <span>Material</span>
-                <select value={evoMatIdx} onChange={e => setEvoMatIdx(+e.target.value)}>
-                  <option value={-1}>Todos</option>
-                  <option value={-2}>Materiales diferentes</option>
-                  {filteredEvoMats.map((m, i) => <option key={i} value={summary.indexOf(m)}>{m.name}</option>)}
+                <select value={evoMatKey} onChange={e => setEvoMatKey(e.target.value)}>
+                  <option value={ALL_KEY}>Todos</option>
+                  <option value={DISTINCT_KEY}>Materiales diferentes</option>
+                  {filteredEvoMats.map((m, i) => <option key={`${getMaterialKey(m)}-${i}`} value={getMaterialKey(m)}>{m.name}</option>)}
                 </select>
               </label>
             </div>
@@ -499,7 +533,10 @@ export default function KPIMaterialsAnalytics({ data }) {
             const compColor = '#94A3B8'
             return (
               <>
-                <div style={{ height: 280 }} key={`evo-mat-${evoMatIdx}-${evoMonths}-${evoCustom}-${evoChartType}`}>
+                {filteredEvoMats.length === 0 && (
+                  <div className="kpi-search-empty-hint">{getMaterialEmptyText(evoMatSearch)}</div>
+                )}
+                <div style={{ height: 280 }} key={`evo-mat-${evoMatKey}-${evoMonths}-${evoCustom}-${evoChartType}`}>
                   <ResponsiveContainer width="100%" height="100%">
                     {evoChartType === 'bar' ? (
                       <BarChart data={evoData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
@@ -545,7 +582,7 @@ export default function KPIMaterialsAnalytics({ data }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 12, height: 3, borderRadius: 2, background: PALETTE.cyan }} />
                     <span style={{ fontSize: 12, fontWeight: 500, color: '#475569' }}>
-                      {evoMatIdx >= 0 ? filteredEvoMats[evoMatIdx]?.name : evoMatIdx === -2 ? 'Materiales diferentes' : 'Todos los materiales'}
+                      {evoMatKey !== ALL_KEY && evoMatKey !== DISTINCT_KEY ? findKpiMaterialByKey(summary, evoMatKey)?.name : evoMatKey === DISTINCT_KEY ? 'Materiales diferentes' : 'Todos los materiales'}
                     </span>
                   </div>
                   {hasComp && (
@@ -700,17 +737,17 @@ export default function KPIMaterialsAnalytics({ data }) {
               <span className="kpi-section-kicker">Distribución</span>
               <h2 className="kpi-section-title">Tipo de Orden por Material</h2>
               <p className="kpi-section-subtitle">
-                {orderTypeMatIdx >= 0
-                  ? `Órdenes normales vs urgentes de ${summary[orderTypeMatIdx]?.name || ''}.`
+                {orderTypeMatKey !== ALL_KEY
+                  ? `Órdenes normales vs urgentes de ${findKpiMaterialByKey(summary, orderTypeMatKey)?.name || ''}.`
                   : 'Participación de órdenes normales vs urgentes en el período.'}
               </p>
             </div>
             <div className="kpi-filter-row" style={{ flex: '0 0 auto', margin: 0 }}>
               <label>
                 <span>Material</span>
-                <select value={orderTypeMatIdx} onChange={e => setOrderTypeMatIdx(+e.target.value)}>
-                  <option value={-1}>Todos</option>
-                  {summary.map((m, i) => <option key={i} value={i}>{m.name}</option>)}
+                <select value={orderTypeMatKey} onChange={e => setOrderTypeMatKey(e.target.value)}>
+                  <option value={ALL_KEY}>Todos</option>
+                  {summary.map((m, i) => <option key={`${getMaterialKey(m)}-${i}`} value={getMaterialKey(m)}>{m.name}</option>)}
                 </select>
               </label>
             </div>
@@ -792,26 +829,36 @@ export default function KPIMaterialsAnalytics({ data }) {
       {detailTab === 'ranking' && (
         <div className="kpi-card" style={{ padding: 24 }}>
           <div className="kpi-filter-row" style={{ marginBottom: 16 }}>
-              <label>
-                <span>Buscar</span>
-                <div style={{ position: 'relative' }}>
-                  <Icons.Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
-                  <input type="text" placeholder="Nombre del material..." value={materialSearch}
-                    onChange={e => { setMaterialSearch(e.target.value); setSelectedMaterial(-1); setPage(0); setTopClientsPage(0) }}
-                    style={{ paddingLeft: 32 }} />
-                </div>
-              </label>
+              <KPISearchBox
+                value={materialSearch}
+                onChange={value => {
+                  setMaterialSearch(value)
+                  if (selectedMaterialKey !== ALL_KEY && !filterKpiMaterials(summary, value).some(material => getMaterialKey(material) === selectedMaterialKey)) setSelectedMaterialKey(ALL_KEY)
+                  setPage(0)
+                  setTopClientsPage(0)
+                }}
+                onClear={() => {
+                  setMaterialSearch('')
+                  setPage(0)
+                  setTopClientsPage(0)
+                }}
+                placeholder="Buscar material, cliente o uso..."
+                resultCount={filteredSummary.length}
+                totalCount={summary.length}
+              />
               <label>
                 <span>Material</span>
-                <select value={selectedMaterial} onChange={e => { setSelectedMaterial(+e.target.value); setPage(0); setTopClientsPage(0) }}>
-                  <option value={-1}>Todos</option>
-                  {filteredSummary.map((m, i) => <option key={i} value={filteredSummary.indexOf(m)}>{m.name}</option>)}
+                <select value={selectedMaterialKey} onChange={e => { setSelectedMaterialKey(e.target.value); setPage(0); setTopClientsPage(0) }}>
+                  <option value={ALL_KEY}>Todos</option>
+                  {filteredSummary.map((m, i) => <option key={`${getMaterialKey(m)}-${i}`} value={getMaterialKey(m)}>{m.name}</option>)}
                 </select>
               </label>
             </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {detailPageData.map((m, i) => {
+            {detailPageData.length === 0 ? (
+              <div className="kpi-search-empty-hint">{getMaterialEmptyText(materialSearch)}</div>
+            ) : detailPageData.map((m, i) => {
               const rank = selectedMat ? 1 : page * PAGE_SIZE + i + 1
               const pct = totalCurrent > 0 ? Math.round((m.total_orders / totalCurrent) * 100) : 0
               const topClient = m.top_clients?.[0]

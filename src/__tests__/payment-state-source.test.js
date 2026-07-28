@@ -17,8 +17,8 @@ describe("payment state integration source guards", () => {
 
   it("muestra el estado de pago en las tarjetas de delivery", () => {
     const source = readSource("src/pages/page-delivery.jsx");
-    const renderOrderCardStart = source.indexOf("const renderOrderCard = (order) => (");
-    const renderOrderCardEnd = source.indexOf("return (", renderOrderCardStart);
+    const renderOrderCardStart = source.indexOf("const renderOrderCard = (order) => {");
+    const renderOrderCardEnd = source.indexOf("const renderOrderSection", renderOrderCardStart);
     const renderOrderCardSource = source.slice(renderOrderCardStart, renderOrderCardEnd);
 
     expect(renderOrderCardStart).toBeGreaterThan(-1);
