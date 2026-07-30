@@ -12,28 +12,19 @@ import {
 import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
-import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
-import FileUploadZone from "../components/ui/FileUploadZone";
+import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import {
   ORDER_STATUS,
   isPaymentCredit,
   isPaymentPaid,
   isPaymentPartial,
   PAYMENT_COLORS,
-  PRODUCTION_AREAS,
-  QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
-  MATERIAL_OPTIONS,
   ARCHIVE_MODULES,
   getOrderStatusConfig,
   isOrderStatus,
   isOrderStatusIn,
-  getFileNameFromUrl,
 } from "../utils/constants";
-import { getOrderFiles, getReferenceImages, hasAnyOrderAsset, normalizeAssetUrls, serializeReferenceImages } from "../utils/orderAssets";
-import { buildProductionFileRows } from "../utils/production";
-import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
-import FileCard from "../components/FileCard";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
@@ -45,10 +36,7 @@ import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
 import SellerProfileModule from "../components/seller/SellerProfileModule";
-import { buildStorageSafeFileName, formatFileSize, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../utils/uploadOrderAsset";
-import { validateReferenceImages, compressImage, canDecodeAsImage, REF_IMAGE_CONFIG } from "../utils/imageValidation";
-import { formatDominicanPhone, getSelectedClientOrderFields, loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
-import { applyOrdersSnapshot } from "../utils/orderRealtime";
+import { loadClients, searchClients } from "../utils/clients";
 import { adminApiFetch } from "../utils/adminApi";
 
 export { default as OrderDetailModal } from "../components/orders/OrderDetailModal";
@@ -88,8 +76,19 @@ const ACTIVE_WORKFLOW_STATUSES_FOR_SELLER = [
   ORDER_STATUS.CANCELLED,
 ];
 
-const SELLER_ORDER_COLUMNS = "id,client_id,client_name,description,material,size,quantity,price,status,payment_status,created_at,created_by,designer_id,production_id,delivery_id,order_type,seller_id,quote_id,preview_image,client_contact,invoice_number,delivery_date,order_file_url,order_design_type,order_code,is_archived,is_archived_designer,is_archived_quote,is_archived_admin,termination_type,invoice_payment,return_reason,returned_to_designer_at,cancellation_reason,tracking_token,reference_images";
-const SELLER_ORDERS_FETCH_LIMIT = 1000;
+const SELLER_ORDER_PAGE_SIZE = 15;
+const EMPTY_SELLER_SUMMARY = {
+  todayOrders: 0,
+  pending: 0,
+  inDesign: 0,
+  inQuote: 0,
+  inProduction: 0,
+  inTermination: 0,
+  completed: 0,
+  returned: 0,
+  active: 0,
+  unarchived: 0,
+};
 
 const isSellerVisibleNotification = (notification) => {
   const eventKind = notification?.metadata?.event_kind;
@@ -97,27 +96,6 @@ const isSellerVisibleNotification = (notification) => {
 };
 
 const PHONE_PLACEHOLDER = "Seleccionar Cliente";
-
-function ProductionAreaSelect({ value, onChange, className = "ps-form-input", isError }) {
-  return (
-    <select className={`${className}${isError ? " ps-input-error" : ""}`} value={value || ""} onChange={(event) => onChange(event.target.value)}>
-      <option value="">Tipo de produccion</option>
-      {PRODUCTION_AREAS.map((area) => (
-        <option key={area.code} value={area.code}>{area.label}</option>
-      ))}
-    </select>
-  );
-}
-
-const isValidDominicanPhone = (value) => {
-  const digits = String(value || "").replace(/\D/g, "");
-  const normalized = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-
-  if (normalized.length !== 10) return false;
-
-  const areaCode = normalized.slice(0, 3);
-  return ["809", "829", "849"].includes(areaCode);
-};
 
 const CARD_ACCENTS = [
   { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
@@ -175,1774 +153,6 @@ function Modal({ open, onClose, title, children, wide, stickyHeader = false }) {
 }
 
 // CAMPO DE FORMULARIO QUE RECIBE VALORES
-function Field({ label, required, optional, hint, error, children }) {
-  return (
-    <div className={`ps-field ${error ? "ps-field-error" : ""}`}>
-      <label className="ps-label">
-        {label}
-        {required && <span className="ps-label-req">*</span>}
-        {optional && <span className="ps-label-opt">(opcional)</span>}
-      </label>
-      {hint && <p className="ps-field-hint">{hint}</p>}
-      <div className={`ps-field-input-wrapper ${error ? "has-error" : ""}`}>
-        {children}
-      </div>
-      {error && <p className="ps-field-error-message">{error}</p>}
-    </div>
-  );
-}
-
-
-
-
-
-// ─── Selector de diferentes materiales ──────────────────────────────────────────────────
-export function MultiMaterialSelector({ selected = [], onChange, options = [] }) {
-  const [open, setOpen] = useState(false);
-  const [customMode, setCustomMode] = useState(false);
-  const [customValue, setCustomValue] = useState("");
-  const ref = useRef(null);
-  const customInputRef = useRef(null);
-
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setCustomMode(false); setCustomValue(""); } };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const toggle = (mat) => {
-    onChange(selected.includes(mat) ? selected.filter(m => m !== mat) : [...selected, mat]);
-  };
-  const remove = (mat) => onChange(selected.filter(m => m !== mat));
-
-  const handleAddCustom = () => {
-    const val = customValue.trim();
-    if (val && !selected.includes(val)) {
-      onChange([...selected, val]);
-    }
-    setCustomValue("");
-    setCustomMode(false);
-  };
-
-  const handleCustomKeyDown = (e) => {
-    if (e.key === "Enter") { e.preventDefault(); handleAddCustom(); }
-    if (e.key === "Escape") { setCustomMode(false); setCustomValue(""); }
-  };
-
-  useEffect(() => {
-    if (customMode && customInputRef.current) customInputRef.current.focus();
-  }, [customMode]);
-
-  const isCustomMaterial = (mat) => !options.includes(mat);
-
-  return (
-    <div className="ps-multimat" ref={ref}>
-      {/* Chips + trigger */}
-      <div className={`ps-multimat-box ${open ? "focused" : ""}`} onClick={() => setOpen(p => !p)}>
-        {selected.length === 0
-          ? <span className="ps-multimat-placeholder">Seleccionar materiales...</span>
-          : selected.map(m => (
-            <span key={m} className={`ps-chip ${isCustomMaterial(m) ? "ps-chip--custom" : ""}`}>
-              {isCustomMaterial(m) && <span className="ps-chip-custom-icon"><Icons.Plus /></span>}
-              {m}
-              <button className="ps-chip-remove" onClick={e => { e.stopPropagation(); remove(m); }}><Icons.X /></button>
-            </span>
-          ))
-        }
-        <span className="ps-multimat-arrow"><Icons.ChevronDown /></span>
-      </div>
-
-      {/* Dropdown */}
-      {open && (
-        <div className="ps-multimat-dropdown">
-          {/* Agregar personalizado (primero) */}
-          {!customMode ? (
-            <div className="ps-multimat-option ps-multimat-add" onClick={() => setCustomMode(true)}>
-              <span className="ps-multimat-add-icon"><Icons.Plus /></span>
-              Agregar material personalizado
-            </div>
-          ) : (
-            <div className="ps-multimat-custom-form">
-              <input
-                ref={customInputRef}
-                className="ps-multimat-custom-input"
-                placeholder="Escribe el nombre del material..."
-                value={customValue}
-                onChange={e => setCustomValue(e.target.value)}
-                onKeyDown={handleCustomKeyDown}
-              />
-              <button className="ps-multimat-custom-btn" onClick={handleAddCustom} disabled={!customValue.trim()}>
-                Agregar
-              </button>
-            </div>
-          )}
-
-          {/* Separador */}
-          <div className="ps-multimat-divider" />
-
-          {options.map(mat => (
-            <div key={mat} className={`ps-multimat-option ${selected.includes(mat) ? "selected" : ""}`} onClick={() => toggle(mat)}>
-              <span className="ps-multimat-check">{selected.includes(mat) ? "✓" : ""}</span>
-              {mat}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── CREATE ORDER MODAL ───────────────────────────────────────────────────────
-const EMPTY_FORM = {
-  design_file_areas: [],
-  design_file_labels: [],
-  client_id: null,
-  client_name: "",
-  client_phone: "",
-  invoice_number: "",
-  description: "",
-  materials: [],       // array — multi-select
-  termination_type: "", // tipo de terminación
-  order_type: "",       // "orden normal" | "orden 911"
-  design_type: "",       // "INTERNAL_DESING" | "EXTERNAL_DESING"
-  delivery_date: "",       // ISO date string o "" (indefinido)
-  indefinido: false,    // si true, fecha queda como indefinida
-  design_files: [],     // archivos de diseño externo
-  design_preview: null, // imagen preview de diseño externo
-  reference_images: [], // imágenes de referencia (opcional)
-};
-
-function CreateOrderModal({
-  open,
-  onClose,
-  onCreated,
-  userId,
-  materialOptions,
-  clients = [],
-  clientsLoading = false,
-  onClientSearch,
-  onAddNewClient,
-  clientToSelect = null,
-  onClientToSelectConsumed,
-}) {
-  const fileInputRef = useRef(null);
-  const previewInputRef = useRef(null);
-  const refImagesInputRef = useRef(null);
-
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [missingLabelIndices, setMissingLabelIndices] = useState([]);
-  const [missingAreaIndices, setMissingAreaIndices] = useState([]);
-
-  const set = (k, v) => {
-    setForm(p => ({ ...p, [k]: v }));
-    // Limpiar error del campo cuando se edita
-    if (fieldErrors[k]) {
-      setFieldErrors(p => {
-        const next = { ...p };
-        delete next[k];
-        return next;
-      });
-    }
-  };
-
-  const applySelectedClient = useCallback((client) => {
-    if (!client) {
-      setForm(p => ({ ...p, ...getSelectedClientOrderFields(null) }));
-      return;
-    }
-
-    const fields = getSelectedClientOrderFields(client, "client_phone");
-    if (fields.client_phone) fields.client_phone = formatDominicanPhone(fields.client_phone);
-
-    setForm(p => ({ ...p, ...fields }));
-    setFieldErrors(p => {
-      const next = { ...p };
-      delete next.client_name;
-      delete next.client_phone;
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!open || !clientToSelect?.id) return;
-    applySelectedClient(clientToSelect);
-    onClientToSelectConsumed?.();
-  }, [applySelectedClient, clientToSelect, onClientToSelectConsumed, open]);
-
-  // Función de validación que retorna objeto de errores por campo
-  const validateForm = () => {
-    const errors = {};
-    
-    if (!form.client_id) {
-      errors.client_id = "Debes seleccionar un cliente registrado.";
-    }
-    if (!form.client_name.trim()) {
-      errors.client_name = "Selecciona un cliente registrado para completar el nombre.";
-    }
-    if (!form.client_phone.trim()) {
-      errors.client_phone = "Selecciona un cliente registrado con telefono.";
-    }
-    if (!form.description.trim()) {
-      errors.description = "La descripción del trabajo es requerida.";
-    }
-    if (form.materials.length === 0) {
-      errors.materials = "Selecciona al menos un material.";
-    }
-    if (!form.order_type) {
-      errors.order_type = "Selecciona el tipo de orden.";
-    }
-    if (!form.design_type) {
-      errors.design_type = "Indica si el diseño es interno o externo.";
-    }
-    if (!form.invoice_number.trim()) {
-      errors.invoice_number = "El número de facturación es requerido.";
-    }
-    if (form.client_phone.trim() && !isValidDominicanPhone(form.client_phone)) {
-      errors.client_phone = "El teléfono debe ser un número válido de República Dominicana (809, 829 o 849).";
-    }
-    if (!form.indefinido && !form.delivery_date) {
-      errors.delivery_date = "Selecciona una fecha de entrega o marca 'Por definir'.";
-    }
-    if (form.design_type === "EXTERNAL_DESING" && form.design_files.length === 0) {
-      errors.design_files = "Debe subir al menos un archivo de diseño.";
-    }
-    if (form.design_type === "EXTERNAL_DESING" && form.design_files.length > 0) {
-      const missingAreas = form.design_file_areas
-        .map((a, i) => (!a ? i : -1))
-        .filter(i => i !== -1);
-      const missingLabels = form.design_file_labels
-        .map((l, i) => (!l?.trim() ? i : -1))
-        .filter(i => i !== -1);
-
-      setMissingAreaIndices(missingAreas);
-      setMissingLabelIndices(missingLabels);
-
-      const msgs = [];
-      if (missingAreas.length > 0) msgs.push("un tipo de producción");
-      if (missingLabels.length > 0) msgs.push("un nombre de representación");
-      if (msgs.length > 0) {
-        errors.design_files = `Cada archivo debe tener ${msgs.join(" y ")}.`;
-      }
-    } else {
-      setMissingAreaIndices([]);
-      setMissingLabelIndices([]);
-    }
-    if (form.design_type === "EXTERNAL_DESING" && !form.design_preview) {
-      errors.design_preview = "Debe agregar una imagen de la orden de trabajo.";
-    }
-    
-    return errors;
-  };
-
-  // ── Submit ─────────────────────────────────────────────────────────────
-  const withTimeout = (promise, ms) => {
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("timeout")), ms)
-    );
-    return Promise.race([promise, timeout]);
-  };
-
-  const handleSubmit = async () => {
-    const errors = validateForm();
-
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      setError("Por favor, corrige los errores en el formulario.");
-      requestAnimationFrame(() => {
-        const el = document.querySelector(".ps-field-error");
-        el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setFieldErrors({});
-    setMissingLabelIndices([]);
-    setMissingAreaIndices([]);
-
-    try {
-      await withTimeout((async () => {
-        // Auto-asignar como indefinido si no hay fecha ni marcación
-        if (!form.delivery_date) {
-          form.indefinido = true;
-        }
-
-        const orderId = crypto.randomUUID();
-
-        let fileUrls = [];
-        let previewUrl = null;
-        let refImageUrls = [];
-        const uploadedUrls = [];
-        const cleanupUploadedUrls = () => Promise.all(
-          uploadedUrls.map(({ bucket, url }) => removeOrderAssetByPublicUrl({ bucket, url }))
-        );
-
-        // Upload files BEFORE inserting the order
-        if (form.design_files.length > 0 || form.design_preview || form.reference_images.length > 0) {
-          try {
-            for (let i = 0; i < form.design_files.length; i++) {
-              const file = form.design_files[i];
-              const fileName = buildStorageSafeFileName(file, `${i}-`);
-              const publicUrl = await uploadOrderAsset({
-                bucket: "order-docs",
-                path: `orders/${orderId}/files/${fileName}`,
-                file,
-              });
-
-              if (publicUrl) {
-                fileUrls.push(publicUrl);
-                uploadedUrls.push({ bucket: "order-docs", url: publicUrl });
-              }
-            }
-          } catch {
-            await cleanupUploadedUrls();
-            throw new Error("Error al subir los archivos. Verifica que no sean demasiado grandes y que tu conexión esté estable.");
-          }
-
-          if (form.design_preview) {
-            try {
-              const fileName = buildStorageSafeFileName(form.design_preview, "preview-");
-              previewUrl = await uploadOrderAsset({
-                bucket: "order-previews",
-                path: `orders/${orderId}/preview/${fileName}`,
-                file: form.design_preview,
-              });
-              if (previewUrl) uploadedUrls.push({ bucket: "order-previews", url: previewUrl });
-            } catch (err) {
-              console.error("Preview upload failed:", err);
-              await cleanupUploadedUrls();
-              const msg = err?.message || "";
-              if (/mime type/i.test(msg)) {
-                throw new Error("Formato de imagen no soportado para la previsualización. Usa JPG, PNG, WebP, SVG o PDF.");
-              }
-              if (/size|grande|large/i.test(msg)) {
-                throw new Error("La imagen de previsualización es demasiado grande. Máximo 10MB.");
-              }
-              throw new Error("Error al subir la imagen de previsualización. Verifica el formato y el tamaño.");
-            }
-          }
-
-          if (form.reference_images.length > 0) {
-            try {
-              const validation = validateReferenceImages(form.reference_images);
-              if (!validation.valid) {
-                throw new Error(validation.errors.join(". "));
-              }
-              for (let i = 0; i < form.reference_images.length; i++) {
-                const file = await compressImage(form.reference_images[i]);
-                const fileName = buildStorageSafeFileName(file, `ref-${i}-`);
-                const publicUrl = await uploadOrderAsset({
-                  bucket: "order-docs",
-                  path: `orders/${orderId}/ref-images/${fileName}`,
-                  file,
-                });
-                if (publicUrl) {
-                  refImageUrls.push(publicUrl);
-                  uploadedUrls.push({ bucket: "order-docs", url: publicUrl });
-                }
-              }
-            } catch {
-              await cleanupUploadedUrls();
-              throw new Error("Error al subir las imágenes de referencia. Verifica que no sean demasiado grandes.");
-            }
-          }
-        }
-
-        // Now insert the order with URLs already included
-        const payload = {
-          id: orderId,
-          client_id: form.client_id,
-          client_name: form.client_name.trim(),
-          client_contact: form.client_phone.trim() || null,
-          invoice_number: form.invoice_number.trim(),
-          description: form.description.trim(),
-          material: form.materials.join(", "),
-          termination_type: form.termination_type.trim() || null,
-          order_type: form.order_type,
-          order_design_type: form.design_type,
-          delivery_date: form.indefinido ? null : (form.delivery_date || null),
-          status: ORDER_STATUS.PENDING,
-          payment_status: "Pending_Payment",
-          seller_id: userId,
-          created_by: userId,
-        };
-
-        if (previewUrl) payload.preview_image = previewUrl;
-        if (refImageUrls.length > 0) payload.reference_images = serializeReferenceImages(refImageUrls);
-
-        const { error: insertError } = await supabase.from("orders").insert([payload]).select().single();
-        if (insertError) {
-          await cleanupUploadedUrls();
-          throw new Error("No se pudo crear la orden. Intenta nuevamente.");
-        }
-
-        if (fileUrls.length > 0) {
-          const productionRows = buildProductionFileRows({
-            orderId,
-            urls: fileUrls,
-            files: form.design_files,
-            areaCodes: form.design_file_areas,
-            publicLabels: form.design_file_labels,
-            userId,
-          });
-
-          const { error: productionFilesError } = await supabase
-            .from("order_production_files")
-            .insert(productionRows);
-
-          if (productionFilesError) {
-            await cleanupUploadedUrls();
-            throw new Error("No se pudo guardar la clasificacion de produccion de los archivos.");
-          }
-
-          // Update legacy field for backward compatibility
-          const { error: updateLegacyError } = await supabase
-            .from("orders")
-            .update({ order_file_url: JSON.stringify(fileUrls) })
-            .eq("id", orderId);
-
-          if (updateLegacyError) {
-            await cleanupUploadedUrls();
-            throw new Error("No se pudieron asociar los archivos a la orden.");
-          }
-        }
-      })(), 60000);
-
-      handleClose(); onCreated?.();
-    } catch (err) {
-      if (err.message === "timeout") {
-        setError("La orden está tardando más de lo normal. Verifica tu conexión a internet e intenta de nuevo.");
-      } else {
-        setError(err.message || "No se pudo crear la orden. Intenta nuevamente.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleClose = () => {
-    setForm(EMPTY_FORM);
-    setError("");
-    setFieldErrors({});
-    onClose();
-  };
-
-  return (
-    <Modal open={open} onClose={handleClose} title="Nueva Orden" stickyHeader>
-      {error && <div className="ps-form-error">{error}</div>}
-
-      {/* ─ Sección 1: Datos del cliente ─ */}
-      <div className="ps-form-section-title">
-        <span className="ps-form-section-num">1</span> Datos del cliente
-      </div>
-      <div className="ps-form-grid">
-        <div className="col-full">
-          <Field label="Cliente registrado" required hint="Busca y selecciona un cliente registrado.">
-            <ClientSelect
-              clients={clients}
-              loading={clientsLoading}
-              value={form.client_id}
-              onSelect={applySelectedClient}
-              onSearch={onClientSearch}
-              onAddNewClient={onAddNewClient}
-              placeholder="Seleccionar cliente registrado"
-            />
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
-            <input className="ps-form-input" placeholder="Seleccionar cliente"
-              value={form.client_name} readOnly disabled />
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Telefono / Contacto" required hint="Se completa desde el cliente registrado" error={fieldErrors.client_phone}>
-            <div className="ps-input-icon-wrap">
-              <span className="ps-input-icon"><Icons.Phone /></span>
-              <input className="ps-form-input with-icon" placeholder={PHONE_PLACEHOLDER}
-                value={form.client_phone} readOnly disabled maxLength="12" />
-            </div>
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Número de Facturación" required error={fieldErrors.invoice_number}>
-            <input className="ps-form-input" placeholder="Ej: FAC-001-2024"
-              value={form.invoice_number} onChange={e => set("invoice_number", e.target.value)} />
-          </Field>
-        </div>
-      </div>
-
-      {/* ─ Sección 2: Detalles del trabajo ─ */}
-      <div className="ps-form-section-title">
-        <span className="ps-form-section-num">2</span> Detalles del trabajo
-      </div>
-      <div className="ps-form-grid">
-        <div className="col-full">
-          <Field label="Descripcion del trabajo" required error={fieldErrors.description}>
-            <textarea className="ps-form-input textarea" placeholder="Describe el trabajo solicitado por el cliente..."
-              value={form.description} onChange={e => set("description", e.target.value)} />
-          </Field>
-        </div>
-
-        {/* Multi-material */}
-        <div className="col-full">
-          <Field label="Materiales" required hint="Puedes seleccionar más de un material" error={fieldErrors.materials}>
-            <MultiMaterialSelector selected={form.materials} onChange={v => set("materials", v)} options={materialOptions} />
-          </Field>
-        </div>
-
-        {/* Tipo de terminación */}
-        <div className="col-full">
-          <Field label="Tipo de terminación" optional hint="Describe el tipo de terminación del trabajo">
-            <input className="ps-form-input" placeholder="Ej: Brillante, Mate, Con marco..."
-              value={form.termination_type} onChange={e => set("termination_type", e.target.value)} />
-          </Field>
-        </div>
-
-        {/* Tipo de orden */}
-        <div className="col-full">
-          <Field label="Tipo de orden" required error={fieldErrors.order_type}>
-            <div className="ps-order-type-group">
-              {[
-                { val: "orden normal", label: "Orden Normal", desc: "Flujo estándar de produccion" },
-                { val: "orden 911", label: "Orden 911", desc: "Urgente — prioridad maxima", urgent: true },
-              ].map(opt => (
-                <label key={opt.val} className={`ps-order-type-card ${form.order_type === opt.val ? "selected" : ""} ${opt.urgent ? "urgent" : ""}`}>
-                  <input type="radio" name="order_type" value={opt.val}
-                    checked={form.order_type === opt.val}
-                    onChange={() => set("order_type", opt.val)}
-                    style={{ display: "none" }} />
-                  <div className="ps-order-type-label">{opt.label}</div>
-                  <div className="ps-order-type-desc">{opt.desc}</div>
-                </label>
-              ))}
-            </div>
-          </Field>
-        </div>
-
-        {/* Tipo de diseño */}
-        <div className="col-full">
-          <Field label="Tipo de diseno" required error={fieldErrors.design_type}>
-            <div className="ps-order-type-group">
-              {[
-                { val: "INTERNAL_DESING", label: "Diseño Interno", desc: "El diseno lo realiza NeonPrint" },
-                { val: "EXTERNAL_DESING", label: "Diseño Externo", desc: "El cliente entrega su diseno" },
-              ].map(opt => (
-                <label key={opt.val} className={`ps-order-type-card ${form.design_type === opt.val ? "selected" : ""}`}>
-                  <input type="radio" name="design_type" value={opt.val}
-                    checked={form.design_type === opt.val}
-                    onChange={() => set("design_type", opt.val)}
-                    style={{ display: "none" }} />
-                  <div className="ps-order-type-label">{opt.label}</div>
-                  <div className="ps-order-type-desc">{opt.desc}</div>
-                </label>
-              ))}
-            </div>
-          </Field>
-        </div>
-
-        {/* Campos para DISEÑO EXTERNO */}
-        {form.design_type === "EXTERNAL_DESING" && (
-          <>
-            <div className="col-full">
-              <Field label="Archivos de diseño" required error={fieldErrors.design_files} hint="Sube los archivos de diseño del cliente (obligatorio)">
-                <FileUploadZone
-                  mode="attachment"
-                  multiple
-                  inputRef={fileInputRef}
-                  buttonLabel="Subir archivos"
-                  hint="Archivos del diseño (PDF, AI, PNG, JPG...)"
-                  onFilesAccepted={(files) => {
-                    set("design_files", [...form.design_files, ...files]);
-                    set("design_file_areas", [...form.design_file_areas, ...files.map(() => "")]);
-                    set("design_file_labels", [...form.design_file_labels, ...files.map(() => "")]);
-                    setFieldErrors(prev => ({ ...prev, design_files: "" }));
-                  }}
-                />
-                {form.design_files.length > 0 && (
-                  <div className="ps-files-list ps-files-list-designer">
-                    {form.design_files.map((file, i) => (
-                      <div key={i} className={missingLabelIndices.includes(i) || missingAreaIndices.includes(i) ? 'ps-file-missing' : ''}>
-                      <FileCard
-                        name={file.name}
-                        secondaryText={formatFileSize(file.size)}
-                        onRemove={() => {
-                          set("design_files", form.design_files.filter((_, idx) => idx !== i));
-                          set("design_file_areas", form.design_file_areas.filter((_, idx) => idx !== i));
-                          set("design_file_labels", form.design_file_labels.filter((_, idx) => idx !== i));
-                        }}
-                      >
-                        <div className="production-file-meta ps-production-file-fields">
-                          <label className="production-file-field">
-                            <span className="production-file-field-label">Nombre visible en seguimiento</span>
-                            <input
-                              className={`ps-form-input${missingLabelIndices.includes(i) ? " ps-input-error" : ""}`}
-                              value={form.design_file_labels[i] || ""}
-                              onChange={(event) => {
-                                set("design_file_labels", form.design_file_labels.map((label, idx) => idx === i ? event.target.value : label));
-                                setMissingLabelIndices([]);
-                                setFieldErrors(prev => ({ ...prev, design_files: "" }));
-                              }}
-                              placeholder="Ej: Banner principal"
-                              aria-label={`Nombre visible en seguimiento de ${file.name}`}
-                            />
-                          </label>
-                          <label className="production-file-field">
-                            <span className="production-file-field-label">Área de producción</span>
-                            <ProductionAreaSelect
-                              value={form.design_file_areas[i]}
-                              isError={missingAreaIndices.includes(i)}
-                              onChange={(value) => {
-                                set("design_file_areas", form.design_file_areas.map((area, idx) => idx === i ? value : area));
-                                setMissingAreaIndices([]);
-                                setFieldErrors(prev => ({ ...prev, design_files: "" }));
-                              }}
-                            />
-                          </label>
-                        </div>
-                      </FileCard>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Field>
-            </div>
-
-            <div className="col-full">
-              <Field label="Imagen de la orden de trabajo" required error={fieldErrors.design_preview} hint="Vista previa del diseño (obligatorio)">
-                {!form.design_preview ? (
-                  <FileUploadZone
-                    mode="image"
-                    replaceMode
-                    inputRef={previewInputRef}
-                    buttonLabel="Subir imagen de preview"
-                    hint="Imagen de la orden de trabajo (PNG, JPG...)"
-                    onFilesAccepted={([file]) => {
-                      setFieldErrors(prev => ({ ...prev, design_preview: "" }));
-                      set("design_preview", file);
-                    }}
-                  />
-                ) : (
-                  <div className="ps-preview-showcase">
-                    <FileUploadZone
-                      mode="image"
-                      replaceMode
-                      inputRef={previewInputRef}
-                      className="file-upload-zone--hidden-picker"
-                      buttonLabel="Cambiar imagen"
-                      onFilesAccepted={([file]) => {
-                        setFieldErrors(prev => ({ ...prev, design_preview: "" }));
-                        set("design_preview", file);
-                      }}
-                    />
-                    <div className="ps-preview-card">
-                      <img src={URL.createObjectURL(form.design_preview)} alt="Preview" className="ps-preview-img-main" />
-                      <div className="ps-preview-card-overlay">
-                        <span className="ps-preview-card-label">Vista previa del diseño</span>
-                        <div className="ps-preview-card-actions">
-                          <button className="ps-preview-change-btn" onClick={() => previewInputRef.current?.click()}>Cambiar</button>
-                          <button className="ps-preview-del-btn" onClick={() => set("design_preview", null)}><Icons.Trash /></button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </Field>
-            </div>
-          </>
-        )}
-
-        {/* Fecha de entrega */}
-        <div className="col-full">
-          <Field label="Fecha de entrega" optional error={fieldErrors.delivery_date}>
-            <div className="ps-date-row">
-              <div className="ps-input-icon-wrap" style={{ flex: 1 }}>
-                <span className="ps-input-icon"><Icons.Calendar /></span>
-                <input
-                  className="ps-form-input with-icon"
-                  type="date"
-                  value={form.delivery_date}
-                  disabled={form.indefinido}
-                  onChange={e => set("delivery_date", e.target.value)}
-                  style={{ opacity: form.indefinido ? 0.4 : 1 }}
-                />
-              </div>
-              <label className="ps-indefinido-check" style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
-                <input 
-                  type="checkbox" 
-                  checked={form.indefinido} 
-                  onChange={e => set("indefinido", e.target.checked)}
-                  style={{ width: "16px", height: "16px", margin: 0, cursor: "pointer" }}
-                />
-                <span style={{ fontSize: "13px", color: "#64748b" }}>Por definir</span>
-              </label>
-            </div>
-          </Field>
-        </div>
-
-        <div className="col-full">
-          <Field label="Imágenes de referencia" hint="Sube imágenes de referencia para la orden (opcional)">
-            <FileUploadZone
-              mode="image"
-              multiple
-              inputRef={refImagesInputRef}
-              maxFiles={REF_IMAGE_CONFIG.MAX_COUNT}
-              existingCount={form.reference_images.length}
-              buttonLabel="Subir imágenes"
-              hint="Imágenes de referencia (Máx 3, 20MB c/u. Soporta JPG, PNG, WebP, GIF, HEIC y HEIF)"
-              onFilesAccepted={async (rawFiles, { showError }) => {
-                const validFiles = [];
-                const errors = [];
-                for (const file of rawFiles) {
-                  const result = await canDecodeAsImage(file);
-                  if (result.valid) {
-                    validFiles.push(file);
-                  } else {
-                    errors.push(`"${file.name}": ${result.error}`);
-                  }
-                }
-                const combined = [...form.reference_images, ...validFiles];
-                const validation = validateReferenceImages(combined);
-                const message = [
-                  ...errors,
-                  ...(!validation.valid ? validation.errors : []),
-                ].join(". ");
-                if (message) {
-                  showError(message);
-                }
-                if (!validation.valid) {
-                  return;
-                }
-                setFieldErrors(prev => {
-                  const next = { ...prev };
-                  delete next.reference_images;
-                  return next;
-                });
-                set("reference_images", combined);
-              }}
-            />
-            {form.reference_images.length > 0 && (
-              <div className="ps-files-list">
-                {form.reference_images.map((file, i) => (
-                  <div key={i} className="ps-file-item">
-                    <img src={URL.createObjectURL(file)} alt={file.name} className="ps-ref-thumb" />
-                    <span className="ps-file-name">{file.name}</span>
-                    <button className="ps-file-remove" onClick={(e) => { e.stopPropagation(); set("reference_images", form.reference_images.filter((_, idx) => idx !== i)); }}>
-                      <Icons.X />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Field>
-        </div>
-      </div>
-
-      <div className="ps-form-actions">
-        <button className="ps-btn-cancel" onClick={handleClose}>Cancelar</button>
-        <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Guardando..." : "Crear Orden →"}
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-// ─── EDIT ORDER MODAL ─────────────────────────────────────────────────────────
-function LegacyEditOrderModal({
-  open,
-  onClose,
-  order,
-  onUpdated,
-  materialOptions = [],
-  clients = [],
-  clientsLoading = false,
-  onClientSearch,
-}) {
-  const fileInputRef = useRef(null);
-  const previewInputRef = useRef(null);
-  const refImagesInputRef = useRef(null);
-
-  const [form, setForm] = useState({
-    client_id: null,
-    client_name: "",
-    client_contact: "",
-    invoice_number: "",
-    description: "",
-    materials: [],
-    termination_type: "",
-    delivery_date: "",
-  });
-  const [existingFiles, setExistingFiles] = useState([]);
-  const [newFiles, setNewFiles] = useState([]);
-  const [newFileAreas, setNewFileAreas] = useState([]);
-  const [newFileLabels, setNewFileLabels] = useState([]);
-  const [existingPreview, setExistingPreview] = useState(null);
-  const [newPreview, setNewPreview] = useState(null);
-  const [existingRefImages, setExistingRefImages] = useState([]);
-  const [newRefImages, setNewRefImages] = useState([]);
-  const [removedRefImageUrls, setRemovedRefImageUrls] = useState([]);
-  const [removedFileUrls, setRemovedFileUrls] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [missingLabelIndices, setMissingLabelIndices] = useState([]);
-  const [missingAreaIndices, setMissingAreaIndices] = useState([]);
-
-  useEffect(() => {
-    if (order) {
-      setForm({
-        client_id: order.client_id || null,
-        client_name: order.client_name || "",
-        client_contact: order.client_contact || "",
-        invoice_number: order.invoice_number || "",
-        description: order.description || "",
-        materials: order.material ? order.material.split(", ").filter(Boolean) : [],
-        termination_type: order.termination_type || "",
-        delivery_date: order.delivery_date ? order.delivery_date.split("T")[0] : "",
-      });
-
-      const parseFiles = (fileUrl) => {
-        return normalizeAssetUrls(fileUrl);
-      };
-
-      setExistingFiles(parseFiles(order.order_file_url));
-      setExistingPreview(order.preview_image || null);
-      setExistingRefImages(parseFiles(order.reference_images));
-      setNewFiles([]);
-      setNewFileAreas([]);
-      setNewFileLabels([]);
-      setNewPreview(null);
-      setNewRefImages([]);
-      setRemovedRefImageUrls([]);
-      setRemovedFileUrls([]);
-      setFieldErrors({});
-      setError("");
-    }
-  }, [order]);
-
-  const set = (k, v) => {
-    setForm(p => ({ ...p, [k]: v }));
-    // Limpiar error del campo cuando se edita
-    if (fieldErrors[k]) {
-      setFieldErrors(p => {
-        const next = { ...p };
-        delete next[k];
-        return next;
-      });
-    }
-  };
-
-  // Función de validación que retorna objeto de errores por campo
-  const applySelectedClient = (client) => {
-    if (!client) {
-      setForm(p => ({ ...p, ...getSelectedClientOrderFields(null, "client_contact") }));
-      return;
-    }
-
-    const fields = getSelectedClientOrderFields(client, "client_contact");
-    if (fields.client_contact) fields.client_contact = formatDominicanPhone(fields.client_contact);
-
-    setForm(p => ({ ...p, ...fields }));
-    setFieldErrors(p => {
-      const next = { ...p };
-      delete next.client_id;
-      delete next.client_name;
-      delete next.client_contact;
-      return next;
-    });
-  };
-
-  const validateForm = () => {
-    const errors = {};
-    
-    if (!form.client_id) {
-      errors.client_id = "Debes seleccionar un cliente registrado.";
-    }
-    if (!form.client_name.trim()) {
-      errors.client_name = "Selecciona un cliente registrado para completar el nombre.";
-    }
-    if (!form.client_contact.trim()) {
-      errors.client_contact = "Selecciona un cliente registrado con telefono.";
-    }
-    if (!form.description.trim()) {
-      errors.description = "La descripción es requerida.";
-    }
-    if (newFiles.length > 0) {
-      const missingAreas = newFileAreas
-        .map((a, i) => (!a ? i : -1))
-        .filter(i => i !== -1);
-      const missingLabels = newFileLabels
-        .map((l, i) => (!l?.trim() ? i : -1))
-        .filter(i => i !== -1);
-
-      setMissingAreaIndices(missingAreas);
-      setMissingLabelIndices(missingLabels);
-
-      const msgs = [];
-      if (missingAreas.length > 0) msgs.push("un tipo de producción");
-      if (missingLabels.length > 0) msgs.push("un nombre de representación");
-      if (msgs.length > 0) {
-        errors.order_files = `Cada archivo nuevo debe tener ${msgs.join(" y ")}.`;
-      }
-    } else {
-      setMissingAreaIndices([]);
-      setMissingLabelIndices([]);
-    }
-    if (form.client_contact.trim() && !isValidDominicanPhone(form.client_contact)) {
-      errors.client_contact = "El teléfono debe ser un número válido de República Dominicana (809, 829 o 849).";
-    }
-    
-    return errors;
-  };
-
-  const handleRemoveExistingFile = (url) => {
-    setRemovedFileUrls(prev => [...prev, url]);
-    setExistingFiles(prev => prev.filter(f => f !== url));
-  };
-
-  const handleAddNewFiles = (e) => {
-    const files = Array.from(e.target.files);
-    setNewFiles(prev => [...prev, ...files]);
-    setNewFileAreas(prev => [...prev, ...files.map(() => "")]);
-    setNewFileLabels(prev => [...prev, ...files.map(() => "")]);
-    e.target.value = "";
-  };
-
-  const handleRemoveNewFile = (index) => {
-    setNewFiles(prev => prev.filter((_, i) => i !== index));
-    setNewFileAreas(prev => prev.filter((_, i) => i !== index));
-    setNewFileLabels(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleRemoveExistingPreview = () => {
-    if (existingPreview) {
-      setRemovedFileUrls(prev => [...prev, existingPreview]);
-    }
-    setExistingPreview(null);
-  };
-
-  const handleAddNewPreview = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (!REF_IMAGE_CONFIG.PREVIEW_ALLOWED_TYPES.includes(file.type)) {
-        setFieldErrors(prev => ({ ...prev, design_preview: "Formato no soportado. Usa JPG, PNG, WebP, SVG o PDF." }));
-        e.target.value = "";
-        return;
-      }
-      setFieldErrors(prev => ({ ...prev, design_preview: "" }));
-      setNewPreview(file);
-      e.target.value = "";
-    }
-  };
-
-  const handleRemoveNewPreview = () => {
-    setNewPreview(null);
-  };
-
-  const handleSubmit = async () => {
-    const errors = validateForm();
-    
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      setError("Por favor, corrige los errores en el formulario.");
-      requestAnimationFrame(() => {
-        const el = document.querySelector(".ps-field-error");
-        el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setFieldErrors({});
-    setMissingLabelIndices([]);
-    setMissingAreaIndices([]);
-
-    // 1. Upload files first (no disparan el trigger de orders)
-    let fileUrls = [...existingFiles];
-    const newFileUrls = [];
-    try {
-      for (let i = 0; i < newFiles.length; i++) {
-        const file = newFiles[i];
-        const fileName = buildStorageSafeFileName(file, `${i}-`);
-        const publicUrl = await uploadOrderAsset({
-          bucket: "order-docs",
-          path: `orders/${order.id}/files/${fileName}`,
-          file,
-        });
-
-        if (publicUrl) {
-          fileUrls.push(publicUrl);
-          newFileUrls.push(publicUrl);
-        }
-      }
-    } catch (uploadError) {
-      setLoading(false);
-      setError(uploadError?.message || "Error al subir los archivos de diseño.");
-      return;
-    }
-
-    if (newFileUrls.length > 0) {
-      const productionRows = buildProductionFileRows({
-        orderId: order.id,
-        urls: newFileUrls,
-        files: newFiles,
-        areaCodes: newFileAreas,
-        publicLabels: newFileLabels,
-        userId: order.seller_id || order.created_by,
-      });
-
-      const { error: productionFilesError } = await supabase
-        .from("order_production_files")
-        .insert(productionRows);
-
-      if (productionFilesError) {
-        setLoading(false);
-        setError("No se pudo guardar la clasificacion de produccion de los archivos.");
-        return;
-      }
-    }
-
-    let previewUrl = existingPreview;
-    if (newPreview) {
-      try {
-        const fileName = buildStorageSafeFileName(newPreview, "preview-");
-        previewUrl = await uploadOrderAsset({
-          bucket: "order-previews",
-          path: `orders/${order.id}/preview/${fileName}`,
-          file: newPreview,
-        });
-      } catch (uploadError) {
-        setLoading(false);
-        setError(uploadError?.message || "Error al subir el preview de la orden.");
-        return;
-      }
-    } else if (!existingPreview) {
-      previewUrl = null;
-    }
-
-    let refImageUrls = [...existingRefImages];
-    if (newRefImages.length > 0) {
-      const totalCount = existingRefImages.length + newRefImages.length;
-      if (totalCount > REF_IMAGE_CONFIG.MAX_COUNT) {
-        setLoading(false);
-        setError(`Solo se permiten hasta ${REF_IMAGE_CONFIG.MAX_COUNT} imágenes de referencia por orden.`);
-        return;
-      }
-      const validation = validateReferenceImages(newRefImages);
-      if (!validation.valid) {
-        setLoading(false);
-        setError(validation.errors.join(". "));
-        return;
-      }
-      try {
-        for (let i = 0; i < newRefImages.length; i++) {
-          const file = await compressImage(newRefImages[i]);
-          const fileName = buildStorageSafeFileName(file, `ref-${i}-`);
-          const publicUrl = await uploadOrderAsset({
-            bucket: "order-docs",
-            path: `orders/${order.id}/ref-images/${fileName}`,
-            file,
-          });
-          if (publicUrl) refImageUrls.push(publicUrl);
-        }
-      } catch (uploadError) {
-        setLoading(false);
-        setError(uploadError?.message || "Error al subir las imágenes de referencia.");
-        return;
-      }
-    }
-
-    // 2. ÚNICO update a orders → 1 sola ejecución del trigger
-    const { error: err } = await supabase
-      .from("orders")
-      .update({
-        client_id: form.client_id,
-        client_name: form.client_name.trim(),
-        client_contact: form.client_contact.trim() || null,
-        invoice_number: form.invoice_number.trim(),
-        description: form.description.trim(),
-        material: form.materials.join(", "),
-        termination_type: form.termination_type.trim() || null,
-        delivery_date: form.delivery_date || null,
-        order_file_url: JSON.stringify(fileUrls),
-        preview_image: previewUrl,
-        reference_images: refImageUrls.length > 0 ? serializeReferenceImages(refImageUrls) : [],
-      })
-      .eq("id", order.id);
-
-    if (err) {
-      setLoading(false);
-      setError("Error al actualizar: " + err.message);
-      return;
-    }
-
-    if (removedFileUrls.length > 0) {
-      const { error: removeProductionFilesError } = await supabase
-        .from("order_production_files")
-        .delete()
-        .eq("order_id", order.id)
-        .in("url", removedFileUrls);
-
-      if (removeProductionFilesError) {
-        setLoading(false);
-        setError("La orden se actualizo, pero no se pudieron retirar archivos de produccion.");
-        return;
-      }
-    }
-
-    await Promise.all([
-      ...removedFileUrls.flatMap((url) => [
-        removeOrderAssetByPublicUrl({ bucket: "order-docs", url }),
-        removeOrderAssetByPublicUrl({ bucket: "order-previews", url }),
-      ]),
-      ...removedRefImageUrls.map((url) =>
-        removeOrderAssetByPublicUrl({ bucket: "order-docs", url })
-      ),
-      !previewUrl && existingPreview
-        ? removeOrderAssetByPublicUrl({ bucket: "order-previews", url: existingPreview })
-        : Promise.resolve({ removed: false, error: null }),
-    ]);
-
-    setLoading(false);
-    onUpdated?.();
-    onClose();
-  };
-
-  const parseFileName = (url) => {
-    if (!url) return "Archivo";
-    const parts = url.split("/");
-    const fileName = parts[parts.length - 1];
-    const nameParts = fileName.split("-");
-    nameParts.shift();
-    nameParts.shift();
-    nameParts.shift();
-    return nameParts.join("-") || fileName;
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title={`Editar Orden #${order?.id?.slice(0, 8).toUpperCase()}`}>
-      {error && <div className="ps-form-error">{error}</div>}
-
-      <div className="ps-form-section-title">
-        <span className="ps-form-section-num">1</span> Datos del cliente
-      </div>
-      <div className="ps-form-grid">
-        <div className="col-full">
-          <Field label="Cliente registrado" required error={fieldErrors.client_id} hint="Selecciona el cliente registrado de esta orden.">
-            <ClientSelect
-              clients={clients}
-              loading={clientsLoading}
-              value={form.client_id}
-              onSelect={applySelectedClient}
-              onSearch={onClientSearch}
-              placeholder="Seleccionar cliente registrado"
-            />
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
-            <input className="ps-form-input" value={form.client_name} readOnly disabled />
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Contacto" required hint="Se completa desde el cliente registrado." error={fieldErrors.client_contact}>
-            <input className="ps-form-input" placeholder={PHONE_PLACEHOLDER} value={form.client_contact} readOnly disabled maxLength="12" />
-          </Field>
-        </div>
-      </div>
-
-      <div className="ps-form-section-title" style={{ marginTop: 20 }}>
-        <span className="ps-form-section-num">2</span> Detalles de la orden
-      </div>
-      <div className="ps-form-grid">
-        <div className="col-full">
-          <Field label="Descripción" required error={fieldErrors.description}>
-            <textarea className="ps-form-input textarea" value={form.description} onChange={e => set("description", e.target.value)} />
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Material" optional>
-            <MultiMaterialSelector selected={form.materials} onChange={v => set("materials", v)} options={materialOptions} />
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Tipo de terminación" optional>
-            <input className="ps-form-input" value={form.termination_type} onChange={e => set("termination_type", e.target.value)} placeholder="Ej: Brillante, Mate, Con marco..." />
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Fecha de entrega" optional>
-            <div className="ps-input-icon-wrap">
-              <span className="ps-input-icon"><Icons.Calendar /></span>
-              <input className="ps-form-input with-icon" type="date" value={form.delivery_date} onChange={e => set("delivery_date", e.target.value)} />
-            </div>
-          </Field>
-        </div>
-      </div>
-
-      <div className="ps-form-section-title" style={{ marginTop: 20 }}>
-        <span className="ps-form-section-num">3</span> Archivos y Preview
-      </div>
-      <div className="ps-form-grid">
-        <div className="col-full">
-          <Field label="Archivos adjuntos" hint="Archivos de diseño existentes y nuevos" error={fieldErrors.order_files}>
-                {existingFiles.length > 0 && (
-              <div className="ps-files-list" style={{ marginBottom: 12 }}>
-                {existingFiles.map((url, i) => (
-                  <FileCard
-                    key={i}
-                    name={parseFileName(url)}
-                    url={url}
-                    onRemove={() => handleRemoveExistingFile(url)}
-                  />
-                ))}
-              </div>
-            )}
-            {newFiles.length > 0 && (
-              <div className="ps-files-list" style={{ marginBottom: 12 }}>
-                {newFiles.map((file, i) => (
-                  <div key={i} className={missingLabelIndices.includes(i) || missingAreaIndices.includes(i) ? 'ps-file-missing' : ''}>
-                  <FileCard
-                    name={file.name}
-                    secondaryText={formatFileSize(file.size)}
-                    onRemove={() => handleRemoveNewFile(i)}
-                  >
-                    <div className="production-file-meta ps-production-file-fields">
-                      <label className="production-file-field">
-                        <span className="production-file-field-label">Nombre visible en seguimiento</span>
-                        <input
-                          className={`ps-form-input${missingLabelIndices.includes(i) ? " ps-input-error" : ""}`}
-                          value={newFileLabels[i] || ""}
-                          onChange={(event) => {
-                            setNewFileLabels(newFileLabels.map((label, idx) => idx === i ? event.target.value : label));
-                            setMissingLabelIndices([]);
-                            setFieldErrors(prev => ({ ...prev, order_files: "" }));
-                          }}
-                          placeholder="Ej: Banner principal"
-                          aria-label={`Nombre visible en seguimiento de ${file.name}`}
-                        />
-                      </label>
-                      <label className="production-file-field">
-                        <span className="production-file-field-label">Área de producción</span>
-                        <ProductionAreaSelect
-                          value={newFileAreas[i]}
-                          isError={missingAreaIndices.includes(i)}
-                          onChange={(value) => {
-                            setNewFileAreas(newFileAreas.map((area, idx) => idx === i ? value : area));
-                            setMissingAreaIndices([]);
-                            setFieldErrors(prev => ({ ...prev, order_files: "" }));
-                          }}
-                        />
-                      </label>
-                    </div>
-                  </FileCard>
-                  </div>
-                ))}
-              </div>
-            )}
-            <FileUploadZone
-              mode="attachment"
-              multiple
-              inputRef={fileInputRef}
-              buttonLabel="Agregar archivos"
-              hint="PDF, AI, PNG, JPG..."
-              onFilesAccepted={(files) => handleAddNewFiles({ target: { files, value: "" } })}
-            />
-          </Field>
-        </div>
-
-        <div className="col-full">
-          <Field label="Imagen de preview" hint="Vista previa del diseño">
-            {(existingPreview || newPreview) ? (
-              <div className="ps-preview-showcase">
-                <FileUploadZone
-                  mode="image"
-                  replaceMode
-                  inputRef={previewInputRef}
-                  className="file-upload-zone--hidden-picker"
-                  buttonLabel="Cambiar imagen"
-                  onFilesAccepted={(files) => handleAddNewPreview({ target: { files, value: "" } })}
-                />
-                <div className="ps-preview-card">
-                  <img
-                    src={newPreview ? URL.createObjectURL(newPreview) : existingPreview}
-                    alt="Preview"
-                    className="ps-preview-img-main"
-                  />
-                  <div className="ps-preview-card-overlay">
-                    <span className="ps-preview-card-label">
-                      {newPreview ? "Nueva preview" : "Preview actual"}
-                    </span>
-                    <div className="ps-preview-card-actions">
-                      <button className="ps-preview-change-btn" onClick={() => previewInputRef.current?.click()}>
-                        {newPreview ? "Cancelar" : "Cambiar"}
-                      </button>
-                      <button className="ps-preview-del-btn" onClick={newPreview ? handleRemoveNewPreview : handleRemoveExistingPreview}>
-                        <Icons.Trash />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <FileUploadZone
-                mode="image"
-                replaceMode
-                inputRef={previewInputRef}
-                buttonLabel="Subir imagen de preview"
-                hint="Imagen de la orden de trabajo (PNG, JPG...)"
-                onFilesAccepted={(files) => handleAddNewPreview({ target: { files, value: "" } })}
-              />
-            )}
-          </Field>
-        </div>
-
-        <div className="col-full">
-          <Field label="Imágenes de referencia" hint="Sube imágenes de referencia para la orden (opcional)">
-            {existingRefImages.length > 0 && (
-              <div className="ps-files-list" style={{ marginBottom: 12 }}>
-                {existingRefImages.map((url, i) => (
-                  <div key={i} className="ps-file-item">
-                    <img src={url} alt={parseFileName(url)} className="ps-ref-thumb" />
-                    <span className="ps-file-name">{parseFileName(url)}</span>
-                    <button className="ps-file-remove" onClick={() => {
-                      setExistingRefImages(existingRefImages.filter((_, idx) => idx !== i));
-                      setRemovedRefImageUrls([...removedRefImageUrls, url]);
-                    }}>
-                      <Icons.X />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {newRefImages.length > 0 && (
-              <div className="ps-files-list" style={{ marginBottom: 12 }}>
-                {newRefImages.map((file, i) => (
-                  <div key={i} className="ps-file-item" style={{ borderColor: "var(--cyan)", background: "rgba(6, 182, 212, 0.04)" }}>
-                    <img src={URL.createObjectURL(file)} alt={file.name} className="ps-ref-thumb" style={{ borderColor: "var(--cyan)" }} />
-                    <span className="ps-file-name">{file.name}</span>
-                    <button className="ps-file-remove" onClick={() => setNewRefImages(newRefImages.filter((_, idx) => idx !== i))}>
-                      <Icons.X />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <FileUploadZone
-              mode="image"
-              multiple
-              inputRef={refImagesInputRef}
-              maxFiles={REF_IMAGE_CONFIG.MAX_COUNT}
-              existingCount={existingRefImages.length + newRefImages.length}
-              buttonLabel="Subir imágenes"
-              hint="Imágenes de referencia (Máx 3, 20MB c/u. Soporta JPG, PNG, WebP, GIF, HEIC y HEIF)"
-              onFilesAccepted={async (rawFiles, { showError }) => {
-                const validFiles = [];
-                const errors = [];
-                for (const file of rawFiles) {
-                  const result = await canDecodeAsImage(file);
-                  if (result.valid) {
-                    validFiles.push(file);
-                  } else {
-                    errors.push(`"${file.name}": ${result.error}`);
-                  }
-                }
-                if (errors.length > 0) {
-                  showError(errors.join(". "));
-                }
-                if (validFiles.length > 0) {
-                  setNewRefImages([...newRefImages, ...validFiles]);
-                }
-              }}
-            />
-          </Field>
-        </div>
-      </div>
-
-      <div className="ps-form-actions">
-        <button className="ps-btn-cancel" onClick={onClose}>Cancelar</button>
-        <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Guardando..." : "Guardar Cambios →"}
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-// ─── ORDER DETAIL MODAL ───────────────────────────────────────────────────────
-function LegacyOrderDetailModal({ open, onClose, order, user, onSendToDesigner, onSendToQuotation }) {
-  const hasOrder = Boolean(order);
-  const created = hasOrder ? new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" }) : "";
-  const statusConfig = hasOrder ? getOrderStatusConfig(order.status) : getOrderStatusConfig(ORDER_STATUS.PENDING);
-  const orderFileUrls = getOrderFiles(order);
-  const referenceImageUrls = getReferenceImages(order);
-  const hasAssets = hasAnyOrderAsset(order);
-  const [designerName, setDesignerName] = useState("");
-  
-  useEffect(() => {
-    if (!order?.designer_id) {
-      setDesignerName("");
-      return;
-    }
-
-    if (order?.designer_id) {
-      supabase
-        .from("profiles")
-        .select("name")
-        .eq("id", order.designer_id)
-        .single()
-        .then(({ data }) => {
-          if (data?.name) {
-            setDesignerName(data.name);
-          } else {
-            setDesignerName("Diseñador");
-          }
-        });
-    }
-  }, [order?.designer_id]);
-
-  if (!hasOrder) return null;
-
-  return (
-    <Modal open={open} onClose={onClose} title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`} wide>
-      {/* Flow Tracker - Diferente según tipo de orden */}
-      {order.order_design_type === "EXTERNAL_DESING" ? (
-        <FlowTrackerExternal status={order.status} />
-      ) : (
-        <FlowTracker status={order.status} />
-      )}
-
-      {/* Grid Principal */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: 22 }}>
-        
-        {/* COLUMNA IZQUIERDA — Cliente & Trabajo */}
-        <div>
-          {/* Card: Información del Cliente */}
-          <div style={{
-            background: "var(--surface-alt)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            padding: 20,
-            marginBottom: 18,
-            position: "relative",
-            overflow: "hidden"
-          }}>
-            <div style={{
-              position: "absolute",
-              top: 0, right: 0,
-              width: 100, height: 100,
-              background: "linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, transparent 100%)",
-              borderRadius: "0 0 0 100px",
-              pointerEvents: "none"
-            }} /> 
-            
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
-              <div style={{
-                width: 50, height: 50,
-                borderRadius: "50%",
-                background: "var(--pink)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#fff", fontSize: 22, fontWeight: 700,
-                flexShrink: 0
-              }}>
-                {order.client_name?.charAt(0)?.toUpperCase()}
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", margin: 0, marginBottom: 5 }}>
-                  {order.client_name}
-                </p>
-                {order.client_contact && (
-                  <p style={{ fontSize: 12, color: "var(--text-sub)", margin: 0, display: "flex", alignItems: "center", gap: 5 }}>
-                    <Icons.Phone />{order.client_contact}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div style={{ paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-              <p style={{ fontSize: 13, color: "var(--text-sub)", lineHeight: 1.6, margin: 0 }}>
-                {order.description}
-              </p>
-            </div>
-          </div>
-
-          {/* Card: Especificaciones del Trabajo */}
-          <div style={{
-            background: "var(--surface)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            padding: 20,
-            marginBottom: 18
-          }}>
-            <p style={{
-              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
-              textTransform: "uppercase", letterSpacing: "0.07em",
-              marginBottom: 14, margin: "0 0 14px 0"
-            }}>Especificaciones</p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {[
-                { label: "Material", value: order.material, icon: <Icons.Paintbrush /> },
-                { label: "Tipo de terminación", value: order.termination_type || "---", icon: <Icons.Check /> },
-                { label: "Tipo de orden", value: order.order_type, icon: <Icons.Package /> },
-                { label: "Núm. Facturación", value: order.invoice_number || "---", icon: <Icons.FileText /> },
-                { label: "Diseño", 
-                  value: order.order_design_type === "INTERNAL_DESING" ? "Diseño interno" :
-                         order.order_design_type === "EXTERNAL_DESING" ? "Diseño externo" : "---", 
-                  icon: <Icons.Edit /> },
-                { label: "Fecha entrega", value: order.delivery_date || "Indefinida", icon: <Icons.Calendar /> },
-              ].map((item, i) => (
-                <div key={i} style={{
-                  display: "grid", gridTemplateColumns: "28px 1fr auto",
-                  gap: 10, alignItems: "center", paddingBottom: 11,
-                  borderBottom: i < 5 ? "1px solid var(--border)" : "none"
-                }}>
-                  <div style={{ color: "var(--text-muted)" }}>{item.icon}</div>
-                  <div>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 3px 0", fontWeight: 600 }}>
-                      {item.label}
-                    </p>
-                    <p style={{ fontSize: 13, color: "var(--text)", margin: 0, fontWeight: 600 }}>
-                      {item.value}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* COLUMNA DERECHA — Estado & Pago */}
-        <div>
-          {/* Card: Estado Actual */}
-          <div style={{
-            background: "var(--surface)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            padding: 20,
-            marginBottom: 18,
-            position: "relative",
-            overflow: "hidden"
-          }}>
-            <div style={{
-              position: "absolute", top: 0, right: -30,
-              width: 100, height: 100,
-              background: statusConfig?.bg || "rgba(0,0,0,0.02)",
-              borderRadius: "50%",
-              pointerEvents: "none"
-            }} />
-
-            <p style={{
-              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
-              textTransform: "uppercase", letterSpacing: "0.07em",
-              marginBottom: 14
-            }}>Estado & Pago</p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 7px 0", fontWeight: 600 }}>
-                  ESTADO ACTUAL
-                </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <StatusBadge status={order.status} />
-                  {isReturnedOrder(order) && <ReturnedBadge />}
-                </div>
-              </div>
-
-              <div>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 7px 0", fontWeight: 600 }}>
-                  ESTADO DE PAGO
-                </p>
-                <StatusBadge status={order.payment_status} type="payment" />
-              </div>
-
-              {isReturnedOrder(order) && (
-                <div style={{
-                  background: "#FEF2F2",
-                  border: "1px solid #FECACA",
-                  borderRadius: "var(--radius-md)",
-                  padding: 14,
-                }}>
-                  <p style={{ fontSize: 11, color: "#991B1B", margin: "0 0 6px 0", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                    Orden devuelta
-                  </p>
-                  <p style={{ fontSize: 13, color: "#7F1D1D", margin: 0, lineHeight: 1.55 }}>
-                    {order.return_reason}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Botón Enviar a Diseño / Cotización */}
-            {!isOrderStatusIn(order.status, ACTIVE_WORKFLOW_STATUSES_FOR_SELLER) && (
-              <div style={{ marginTop: 16 }}>
-                <OrderAssignmentAction
-                  order={order}
-                  label={order.order_design_type === "EXTERNAL_DESING" ? "Enviar a Caja" : "Enviar a Diseño"}
-                  onClick={order.order_design_type === "EXTERNAL_DESING" ? onSendToQuotation : onSendToDesigner}
-                  bare
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Card: Información Sistema */}
-          <div style={{
-            background: "var(--surface-alt)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            padding: 16,
-            marginBottom: 18
-          }}>
-            <p style={{
-              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
-              textTransform: "uppercase", letterSpacing: "0.07em",
-              marginBottom: 12
-            }}>Información del Sistema</p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {[
-                { label: "ID Orden", value: order.id?.slice(0, 8), icon: <Icons.Key /> },
-                { label: "Creada", value: created, icon: <Icons.Clock /> },
-                { label: "Responsable", value: user?.displayName || "---", icon: <Icons.User /> },
-                ...(order.designer_id ? [{ label: "Diseñador", value: designerName || "Asignado", icon: <Icons.Edit style={{ color: "#8B5CF6" }} /> }] : []),
-              ].map((item, i) => (
-                <div key={i} style={{
-                  display: "grid", gridTemplateColumns: "20px 1fr auto",
-                  gap: 8, alignItems: "center"
-                }}>
-                  <span style={{ color: "var(--text-muted)" }}>{item.icon}</span>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
-                    {item.label}
-                  </p>
-                  <p style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, margin: 0, textAlign: "right" }}>
-                    {item.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Card: Link de Seguimiento */}
-          <div style={{
-            background: "var(--surface)",
-            border: "1.5px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            padding: 16,
-            marginBottom: 18
-          }}>
-            <p style={{
-              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
-              textTransform: "uppercase", letterSpacing: "0.07em",
-              marginBottom: 12
-            }}>🔗 Link de Seguimiento</p>
-
-            <TrackingLinkField orderId={order.id} />
-          </div>
-        </div>
-      </div>
-
-      {/* Archivos Adjuntos — Full Width */}
-      {hasAssets && (
-        <div style={{
-          marginTop: 18,
-          background: "var(--surface)",
-          border: "1.5px solid var(--border)",
-          borderRadius: "var(--radius-lg)",
-          padding: 20,
-          boxShadow: "var(--shadow-sm)"
-        }}>
-          <p style={{
-            fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
-            textTransform: "uppercase", letterSpacing: "0.07em",
-            marginBottom: 16,
-            display: "flex", alignItems: "center", gap: 8
-          }}>
-            <Icons.File /> Archivos Adjuntos
-          </p>
-
-          <div style={{ display: "grid", gridTemplateColumns: order.preview_image && orderFileUrls.length > 0 ? "1fr 1fr" : "1fr", gap: 16 }}>
-            {order.preview_image && (
-              <div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icons.Eye /> Orden de Trabajo
-                </p>
-                <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                  <img 
-                    src={order.preview_image} 
-                    alt="preview" 
-                    style={{
-                      width: "100%", 
-                      borderRadius: "var(--radius-md)",
-                      border: "1px solid var(--border)",
-                      cursor: "pointer",
-                      transition: "transform 0.2s, box-shadow 0.2s",
-                    }}
-                    onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
-                    onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
-                  />
-                </a>
-              </div>
-            )}
-
-            {orderFileUrls.length > 0 && (
-              <div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icons.Brush /> Diseño del cliente
-                </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {orderFileUrls.map((url, index) => (
-                    <FileCard
-                      key={index}
-                      name={getFileNameFromUrl(url)}
-                      url={url}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          {referenceImageUrls.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                <Icons.Image /> Imágenes de referencia
-              </p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                {referenceImageUrls.map((url, index) => (
-                  <a key={index} href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
-                    <img
-                      src={url}
-                      alt={`Ref ${index + 1}`}
-                      style={{
-                        width: 120,
-                        height: 120,
-                        objectFit: "cover",
-                        borderRadius: "var(--radius-md)",
-                        border: "1px solid var(--border)",
-                        cursor: "pointer",
-                        transition: "transform 0.2s, box-shadow 0.2s",
-                      }}
-                      onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
-                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
-                    />
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-          </div>
-        )}
-    </Modal>
-  );
-}
-
-// ─── ENVIAR A DISEÑO MODAL ───────────────────────────────────────────
 function ReturnedBadge({ compact = false }) {
   return (
     <span className={`ps-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta desde caja">
@@ -1970,12 +180,12 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
         {isPaid || isPartial || isCredit ? (
           <>
             <p style={{ fontSize: 14, color: "#991B1B", marginBottom: 16, lineHeight: 1.5, fontWeight: 500 }}>
-              ⚠️ No se puede cancelar esta orden
+              âš ï¸ No se puede cancelar esta orden
             </p>
             <p style={{ fontSize: 13, color: "#7F1D1D", marginBottom: 20, lineHeight: 1.5 }}>
               {isPartial
-                ? "Esta orden tiene pago parcial. No se puede cancelar hasta que esté totalmente pagada."
-                : "Esta orden ya ha sido pagada. No se permite cancelar órdenes con pago confirmado. Si necesitas anular esta orden, contacta con el administrador."}
+                ? "Esta orden tiene pago parcial. No se puede cancelar hasta que este totalmente pagada."
+                : "Esta orden ya ha sido pagada. No se permite cancelar ordenes con pago confirmado. Si necesitas anular esta orden, contacta con el administrador."}
             </p>
             {order && (
               <p style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 16 }}>
@@ -1994,14 +204,14 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
         ) : (
           <>
             <p style={{ fontSize: 14, color: "#4A5E80", marginBottom: 16, lineHeight: 1.5 }}>
-              ¿Estás seguro de que deseas cancelar esta orden?{order && (
+              Estas seguro de que deseas cancelar esta orden?{order && (
                 <span style={{ display: "block", marginTop: 8, fontWeight: 500, color: "#0f1e40" }}>
                   Orden #{order.id?.slice(0, 8)} - {order.client_name}
                 </span>
               )}
             </p>
             <p style={{ fontSize: 13, color: "#8899B5", marginBottom: 20, lineHeight: 1.5 }}>
-              El estado de la orden cambiará a "Cancelada" y esta acción no podra ser revertida fácilmente.
+              El estado de la orden cambiara a "Cancelada" y esta accion no podra ser revertida facilmente.
             </p>
             <div style={{ marginBottom: 20 }}>
               <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#0f1e40", marginBottom: 8 }}>
@@ -2040,26 +250,30 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
   );
 }
 
-// ─── ARCHIVAR ORDEN VENTANA DE CONFIRMACION ───────────────────────────────────────────
+// â”€â”€â”€ ARCHIVAR ORDEN VENTANA DE CONFIRMACION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 
 
-// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ MAIN PAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function PageSeller() {
   const navigate = useNavigate();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [orders, setOrders] = useState([]);
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [ordersTotal, setOrdersTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [sellerSummary, setSellerSummary] = useState(EMPTY_SELLER_SUMMARY);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
   const [filterClient, setFilterClient] = useState("all");
   const [filterArchive, setFilterArchive] = useState("active");
   const [page, setPage] = useState(1);
-  const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
   const [showCreate, setShowCreate] = useState(false);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
@@ -2080,6 +294,9 @@ export default function PageSeller() {
   const [sendingLoading, setSendingLoading] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
   const toastTimeoutRef = useRef(null);
+  const ordersRequestIdRef = useRef(0);
+  const visibleOrdersLoadIdRef = useRef(0);
+  const visibleOrdersLoadingRef = useRef(false);
   const notif = useNotifications(user?.id);
   const orderReviews = useOrderEventReviews(user?.id);
   const pendingOrderReviews = orderReviews.pendingByOrder;
@@ -2111,27 +328,94 @@ export default function PageSeller() {
     return result;
   }, []);
 
-  const fetchOrders = async (sellerId) => {
-    if (!sellerId) {
+  const fetchOrders = useCallback(async ({
+    nextPage = page,
+    includeDashboard = true,
+    silent = false,
+  } = {}) => {
+    if (!authUser?.id) {
       setOrders([]);
+      setRecentOrders([]);
+      setOrdersTotal(0);
+      setTotalPages(1);
+      setSellerSummary(EMPTY_SELLER_SUMMARY);
+      visibleOrdersLoadingRef.current = false;
       setLoading(false);
       return;
     }
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("orders")
-      .select(SELLER_ORDER_COLUMNS)
-      .eq("seller_id", sellerId)
-      .order("created_at", { ascending: false })
-      .limit(SELLER_ORDERS_FETCH_LIMIT);
 
-    if (!error && Array.isArray(data)) {
-      applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
-    } else {
-      setOrders([]);
+    const requestId = ordersRequestIdRef.current + 1;
+    ordersRequestIdRef.current = requestId;
+    const isVisibleLoad = !silent;
+    const visibleLoadId = isVisibleLoad ? visibleOrdersLoadIdRef.current + 1 : null;
+    if (isVisibleLoad) {
+      visibleOrdersLoadIdRef.current = visibleLoadId;
+      visibleOrdersLoadingRef.current = true;
+      setLoading(true);
     }
-    setLoading(false);
-  };
+
+    try {
+      const result = await runSellerOrderAction("list", {
+        page: nextPage,
+        pageSize: SELLER_ORDER_PAGE_SIZE,
+        search: debouncedSearch,
+        status: filterStatus,
+        paymentStatus: filterPayment,
+        clientId: filterClient,
+        archive: filterArchive,
+        dateFilter: filterDate,
+        includeDashboard,
+      });
+
+      if (requestId !== ordersRequestIdRef.current) return;
+
+      const resolvedTotalPages = Math.max(Number(result?.totalPages) || 1, 1);
+      if (nextPage > resolvedTotalPages) {
+        setPage(resolvedTotalPages);
+        return;
+      }
+
+      const nextOrders = Array.isArray(result?.orders) ? result.orders : [];
+      setOrders(nextOrders);
+      setRecentOrders(Array.isArray(result?.recent_orders) ? result.recent_orders : []);
+      setOrdersTotal(Number(result?.total) || 0);
+      setTotalPages(resolvedTotalPages);
+      setSellerSummary({ ...EMPTY_SELLER_SUMMARY, ...(result?.summary || {}) });
+      if (Number(result?.page) && Number(result.page) !== page) setPage(Number(result.page));
+      setSelectedOrder((current) => {
+        if (!current?.id) return current;
+        return nextOrders.find((order) => order.id === current.id) || current;
+      });
+    } catch (error) {
+      if (requestId !== ordersRequestIdRef.current) return;
+      if (silent) {
+        console.warn("No se pudo refrescar ordenes en segundo plano:", error?.message || error);
+      } else {
+        showToast(error?.message || "No se pudieron cargar las ordenes", "error");
+        setOrders([]);
+        setRecentOrders([]);
+        setOrdersTotal(0);
+        setTotalPages(1);
+        setSellerSummary(EMPTY_SELLER_SUMMARY);
+      }
+    } finally {
+      if (isVisibleLoad && visibleLoadId === visibleOrdersLoadIdRef.current) {
+        visibleOrdersLoadingRef.current = false;
+        setLoading(false);
+      }
+    }
+  }, [
+    authUser?.id,
+    debouncedSearch,
+    filterArchive,
+    filterClient,
+    filterDate,
+    filterPayment,
+    filterStatus,
+    page,
+    runSellerOrderAction,
+    showToast,
+  ]);
 
   const openOrderDetail = useCallback((order) => {
     setSelectedOrder(order);
@@ -2140,10 +424,15 @@ export default function PageSeller() {
 
 
 
-  // Carga inicial + listener de sesión
+  // Carga inicial + listener de sesiÃ³n
   useEffect(() => {
     if (!authUser) {
       setUser(null);
+      setOrders([]);
+      setRecentOrders([]);
+      setOrdersTotal(0);
+      setTotalPages(1);
+      setSellerSummary(EMPTY_SELLER_SUMMARY);
       return;
     }
 
@@ -2155,24 +444,31 @@ export default function PageSeller() {
       authUser.email?.split("@")[0];
 
     setUser({ ...authUser, displayName });
-    fetchOrders(authUser.id);
   }, [authUser]);
 
-  // Sincronización en tiempo real + refresco al volver a la página
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterDate, filterStatus, filterPayment, filterClient, filterArchive]);
+
+  useEffect(() => {
+    fetchOrders({ nextPage: page, includeDashboard: true });
+  }, [fetchOrders, page]);
+
+  // SincronizaciÃ³n en tiempo real + refresco al volver a la pÃ¡gina
   const sellerUserId = user?.id;
   const refreshSellerOrdersSilently = useCallback(async () => {
     if (!sellerUserId) return;
-    const { data, error } = await supabase
-      .from("orders")
-      .select(SELLER_ORDER_COLUMNS)
-      .eq("seller_id", sellerUserId)
-      .order("created_at", { ascending: false })
-      .limit(SELLER_ORDERS_FETCH_LIMIT);
-
-    if (!error && data) {
-      applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
-    }
-  }, [sellerUserId]);
+    if (visibleOrdersLoadingRef.current) return;
+    await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
+  }, [fetchOrders, page, sellerUserId]);
 
   useOrdersRealtimeSync({
     userId: sellerUserId,
@@ -2213,14 +509,14 @@ export default function PageSeller() {
     showToast("Cliente creado correctamente.");
   };
 
-  // ── Funcion para cancelar orden ───────────────────────────────────────────────────────
+  // â”€â”€ Funcion para cancelar orden â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleCancelOrder = (order) => {
     if (isPaymentPartial(order?.payment_status)) {
       showToast("No se puede cancelar una orden con pago parcial", "error");
       return;
     }
 
-    // Validación: No permitir cancelar órdenes pagadas
+    // ValidaciÃ³n: No permitir cancelar Ã³rdenes pagadas
     if (isPaymentPaid(order?.payment_status)) {
       showToast("No se puede cancelar una orden que ya ha sido pagada", "error");
       return;
@@ -2231,7 +527,7 @@ export default function PageSeller() {
   const handleConfirmCancel = async (reason) => {
     if (!cancelingOrder) return;
     
-    // Validación adicional: Verificar nuevamente que no esté pagada
+    // ValidaciÃ³n adicional: Verificar nuevamente que no estÃ© pagada
     if (isPaymentPartial(cancelingOrder?.payment_status)) {
       showToast("No se puede cancelar una orden con pago parcial", "error");
       setCancelingOrder(null);
@@ -2257,15 +553,8 @@ export default function PageSeller() {
       });
 
       setCancelingOrder(null);
-      if (result?.order) {
-        applyOrdersSnapshot({
-          orders: orders.map((order) => order.id === result.order.id ? result.order : order),
-          setOrders,
-          setSelectedOrder,
-        });
-      } else {
-        await fetchOrders(user?.id);
-      }
+      if (result?.order) setSelectedOrder((current) => current?.id === result.order.id ? result.order : current);
+      await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
       await notif.refresh({ showNewToasts: true });
     } catch (error) {
       showToast(error?.message || "Error al cancelar la orden", "error");
@@ -2274,7 +563,7 @@ export default function PageSeller() {
     }
   };
 
-  // ── Ver detalles de orden ─────────────────────────────────────────────────
+  // â”€â”€ Ver detalles de orden â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleViewOrder = useCallback(async (order) => {
     if (!order?.id) return;
 
@@ -2299,12 +588,12 @@ export default function PageSeller() {
     handleViewOrder(order);
   }, [handleViewOrder]);
 
-  // ── Enviar a Diseño ───────────────────────────────────────────────────────
+  // â”€â”€ Enviar a DiseÃ±o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleSendToDesigner = (order) => {
     setSendingToDesigner(order);
   };
 
-  // ── Enviar a Cotización (Diseño Externo) ─────────────────────────────────
+  // â”€â”€ Enviar a CotizaciÃ³n (DiseÃ±o Externo) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleSendToQuotation = (order) => {
     setSelectedOrder(null);
     setSendingToQuotation(order);
@@ -2323,7 +612,7 @@ export default function PageSeller() {
 
       setSendingToQuotation(null);
       setSelectedOrder(null);
-      await fetchOrders(user?.id);
+      await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
       await notif.refresh({ showNewToasts: true });
     } catch (error) {
       showToast(error?.message || "Error al enviar a caja", "error");
@@ -2344,7 +633,7 @@ export default function PageSeller() {
       });
 
       setSendingToDesigner(null);
-      await fetchOrders(user?.id);
+      await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
       await notif.refresh({ showNewToasts: true });
 
       if (result?.order) {
@@ -2359,7 +648,7 @@ export default function PageSeller() {
   };
 
 
-  // ── Funcion para archivar orden ───────────────────────────────────────────────────────
+  // â”€â”€ Funcion para archivar orden â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleArchiveOrder = (order) => {
     if (!canArchiveOrder(order, ARCHIVE_MODULES.SELLER, user?.id)) return;
     setArchivingOrder(order);
@@ -2372,10 +661,8 @@ export default function PageSeller() {
     setArchiveLoading(true);
     try {
       const result = await runSellerOrderAction("archive", { order_id: archivingOrder.id });
-      const archivedOrder = result?.order || { ...archivingOrder, is_archived: true };
-      setOrders(prev => prev.map(o =>
-        o.id === archivedOrder.id ? { ...o, ...archivedOrder, is_archived: true } : o
-      ));
+      if (result?.order) setSelectedOrder((current) => current?.id === result.order.id ? result.order : current);
+      await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
       setArchivingOrder(null);
     } catch (error) {
       showToast(error?.message || "Error al archivar la orden", "error");
@@ -2384,104 +671,15 @@ export default function PageSeller() {
     }
   };
 
-  // ── Metrics Values ─────────────────────────────────────────────────────────────
-  const today = new Date().toDateString();
-  const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === today).length;
-  const inQuote = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.PENDING)).length;
-  const inDesign = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DESIGN)).length;
-  const inCotizacion = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length;
-  const inProd = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length;
-  const inTerminacion = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length;
-  const completed = orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length;
-  const returnedCount = orders.filter(o => isReturnedOrder(o)).length;
-  const activeOrdersCount = useMemo(() => orders.filter(o =>
-    !o.is_archived &&
-    !isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED) &&
-    !isOrderStatus(o.status, ORDER_STATUS.CANCELLED)
-  ).length, [orders]);
-
-  // Funcionalidad para filtrar las ordenes
-  const filtered = useMemo(() => orders.filter(o => {
-    const q = search.toLowerCase();
-    const orderDate = new Date(o.created_at);
-    const now = new Date();
-    
-    let dateMatch = true;
-    if (filterDate !== "all") {
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-      const days3 = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000);
-      const days7 = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const yearStart = new Date(now.getFullYear(), 0, 1);
-      const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-      const min30Ago = new Date(now.getTime() - 30 * 60 * 1000);
-      const min10Ago = new Date(now.getTime() - 10 * 60 * 1000);
-      
-      switch (filterDate) {
-        case "today":
-          dateMatch = orderDate >= today;
-          break;
-        case "yesterday":
-          dateMatch = orderDate >= yesterday && orderDate < today;
-          break;
-        case "3days":
-          dateMatch = orderDate >= days3;
-          break;
-        case "7days":
-          dateMatch = orderDate >= days7;
-          break;
-        case "thismonth":
-          dateMatch = orderDate >= monthStart;
-          break;
-        case "thisyear":
-          dateMatch = orderDate >= yearStart;
-          break;
-        case "1hour":
-          dateMatch = orderDate >= hourAgo;
-          break;
-        case "30min":
-          dateMatch = orderDate >= min30Ago;
-          break;
-        case "10min":
-          dateMatch = orderDate >= min10Ago;
-          break;
-        default:
-          dateMatch = true;
-      }
-    }
-    
-    const searchMatch = !q ||
-      o.client_name?.toLowerCase().includes(q) ||
-      o.description?.toLowerCase().includes(q) ||
-      o.invoice_number?.toLowerCase().includes(q) ||
-      o.id?.toLowerCase().includes(q);
-    const archiveMatch = filterArchive === "active" ? !o.is_archived : o.is_archived === true;
-    const statusMatch = filterStatus === "all" || isOrderStatus(o.status, filterStatus);
-    const paymentMatch = filterPayment === "all" || o.payment_status === filterPayment;
-
-    return (
-      searchMatch &&
-      archiveMatch &&
-      statusMatch &&
-      orderMatchesClientFilter(o, filterClient) &&
-      paymentMatch &&
-      dateMatch
-    );
-  }), [orders, search, filterDate, filterStatus, filterPayment, filterClient, filterArchive]);
-
-  const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
+  // â”€â”€ Metrics Values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
-
-  useEffect(() => { setPage(1); }, [search, filterDate, filterStatus, filterPayment, filterClient, filterArchive, viewMode]);
+  const activeOrdersCount = sellerSummary.active;
 
   const nav = [
     { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
-    { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: orders.filter(o => !o.is_archived).length },
+    { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: sellerSummary.unarchived },
     { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
   ];
-
   const pageTitles = {
     dashboard: "Dashboard",
     orders: "Gestion de Ordenes",
@@ -2490,16 +688,15 @@ export default function PageSeller() {
 
   // Valores para las cartas metricas
   const metrics = [
-    { icon: <Icons.Orders />, label: "Ordenes hoy", value: todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
-    { icon: <Icons.Package />, label: "Pendientes", value: inQuote, sub: "Ordenes Pendientes", accentIdx: 1 },
-    { icon: <Icons.Edit />, label: "En diseño", value: inDesign, sub: "En proceso de diseño", accentIdx: 2 },
-    { icon: <Icons.Package />, label: "En caja", value: inCotizacion, sub: "Esperando aprobación", accentIdx: 5 },
-    { icon: <Icons.Package />, label: "En producción", value: inProd, sub: "Siendo impresas", accentIdx: 3 },
-    { icon: <Icons.Package />, label: "Terminación", value: inTerminacion, sub: "En proceso final", accentIdx: 2 },
-    { icon: <Icons.Truck />, label: "Completadas", value: completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
-    { icon: <Icons.X />, label: "Devueltas", value: returnedCount, sub: "Pendientes de corrección", accentIdx: 3 },
+    { icon: <Icons.Orders />, label: "Ordenes hoy", value: sellerSummary.todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
+    { icon: <Icons.Package />, label: "Pendientes", value: sellerSummary.pending, sub: "Ordenes Pendientes", accentIdx: 1 },
+    { icon: <Icons.Edit />, label: "En diseño", value: sellerSummary.inDesign, sub: "En proceso de diseño", accentIdx: 2 },
+    { icon: <Icons.Package />, label: "En caja", value: sellerSummary.inQuote, sub: "Esperando aprobación", accentIdx: 5 },
+    { icon: <Icons.Package />, label: "En producción", value: sellerSummary.inProduction, sub: "Siendo impresas", accentIdx: 3 },
+    { icon: <Icons.Package />, label: "Terminación", value: sellerSummary.inTermination, sub: "En proceso final", accentIdx: 2 },
+    { icon: <Icons.Truck />, label: "Completadas", value: sellerSummary.completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
+    { icon: <Icons.X />, label: "Devueltas", value: sellerSummary.returned, sub: "Pendientes de corrección", accentIdx: 3 },
   ];
-
   const visibleSellerNotifications = useMemo(
     () => notif.notifications.filter(isSellerVisibleNotification),
     [notif.notifications]
@@ -2518,7 +715,7 @@ export default function PageSeller() {
   return (
     <div className="ps-root">
 
-      {/* ── SIDEBAR ── */}
+      {/* â”€â”€ SIDEBAR â”€â”€ */}
       <Sidebar 
         isOpen={sidebarOpen}
         activeTab={activeTab}
@@ -2531,7 +728,7 @@ export default function PageSeller() {
         showCreateButton={true}
       />
 
-      {/* ── MAIN ── */}
+      {/* â”€â”€ MAIN â”€â”€ */}
       <div className="ps-main-wrap">
         <header className="ps-topbar">
           <div className="ps-topbar-left">
@@ -2544,7 +741,7 @@ export default function PageSeller() {
             </div>
           </div>
           <div className="ps-topbar-right">
-            <button className="ps-icon-btn" onClick={() => fetchOrders(user?.id)}><Icons.Refresh /></button>
+            <button className="ps-icon-btn" onClick={() => fetchOrders({ nextPage: page, includeDashboard: true })}><Icons.Refresh /></button>
             <div className="ps-topbar-divider" />
             {/* Boton para agregar  registrar Nuevo Cliente */}
             <button className="ps-topbar-client-btn" onClick={() => setShowNewClientModal(true)}>
@@ -2578,13 +775,13 @@ export default function PageSeller() {
                   <p>Aqui tienes el resumen de tu actividad de hoy.</p>
                   <div className="ps-greeting-count" aria-label={`${activeOrdersCount} ordenes activas`}>
                     <Icons.Orders />
-                    <strong>{activeOrdersCount.toLocaleString("es-DO")}</strong> Órdenes activas
+                    <strong>{activeOrdersCount.toLocaleString("es-DO")}</strong> Ordenes activas
                   </div>
                 </div>
                 <div className="ps-greeting-actions" aria-label="Acciones principales de ventas">
                   <button type="button" className="ps-greeting-btn primary" onClick={() => setShowCreate(true)}>
                     <Icons.Plus />
-                    Crear Órdenes
+                    Crear Ordenes
                   </button>
                   <button type="button" className="ps-greeting-btn secondary" onClick={() => setShowNewClientModal(true)}>
                     <Icons.Users />
@@ -2608,18 +805,18 @@ export default function PageSeller() {
                 </div>
                 <div className="ps-table-wrap">
                   <table className="ps-table">
-                    <thead><tr>{["Cliente", "Facturación", "Estado", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                    <thead><tr>{["Cliente", "Facturacion", "Estado", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan={4} className="ps-table-empty">Cargando órdenes...</td>
+                          <td colSpan={4} className="ps-table-empty">Cargando Ordenes...</td>
                         </tr>
-                      ) : orders.length === 0 ? (
+                      ) : recentOrders.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="ps-table-empty">No hay órdenes disponibles</td>
+                          <td colSpan={4} className="ps-table-empty">No hay Ordenes disponibles</td>
                         </tr>
                       ) : (
-                        orders.slice(0, 5).map(o => (
+                        recentOrders.map(o => (
                           <tr
                             key={o.id}
                             className="row-hover ps-order-row"
@@ -2740,10 +937,10 @@ export default function PageSeller() {
                       <option value="1hour">Hace 1 hora</option>
                       <option value="today">Hoy</option>
                       <option value="yesterday">Ayer</option>
-                      <option value="3days">Hace 3 días</option>
-                      <option value="7days">Hace 7 días</option>
+                      <option value="3days">Hace 3 dias</option>
+                      <option value="7days">Hace 7 dias</option>
                       <option value="thismonth">Este mes</option>
-                      <option value="thisyear">Este año</option>
+                      <option value="thisyear">Este ano</option>
                     </select>
                     <span className="ps-select-arrow"><Icons.ChevronDown /></span>
                   </div>
@@ -2764,25 +961,25 @@ export default function PageSeller() {
                     </button>
                   </div>
                 </div>
-                <span className="ps-filters-count">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</span>
+                <span className="ps-filters-count">{ordersTotal} resultado{ordersTotal !== 1 ? "s" : ""}</span>
               </div>
               <div className="ps-panel">
                 <div className="ps-panel-stripe" />
                 {viewMode === "table" ? (
                   <div className="ps-table-wrap">
                     <table className="ps-table">
-                      <thead><tr>{["Cliente", "Facturación", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                      <thead><tr>{["Cliente", "Facturacion", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
                       <tbody>
                         {loading ? (
                           <tr>
-                            <td colSpan={7} className="ps-table-empty">Cargando órdenes...</td>
+                            <td colSpan={7} className="ps-table-empty">Cargando Ordenes...</td>
                           </tr>
-                        ) : filtered.length === 0 ? (
+                        ) : orders.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="ps-table-empty">No hay órdenes disponibles</td>
+                            <td colSpan={7} className="ps-table-empty">No hay Ordenes disponibles</td>
                           </tr>
                         ) : (
-                          paginated.map(o => (
+                          orders.map(o => (
                             <tr
                               key={o.id}
                               className="row-hover ps-order-row"
@@ -2860,11 +1057,11 @@ export default function PageSeller() {
                 ) : (
                   <div className="ps-cards-grid">
                     {loading ? (
-                      <div className="ps-cards-empty">Cargando órdenes...</div>
-                    ) : filtered.length === 0 ? (
-                      <div className="ps-cards-empty">No hay órdenes disponibles</div>
+                      <div className="ps-cards-empty">Cargando Ordenes...</div>
+                    ) : orders.length === 0 ? (
+                      <div className="ps-cards-empty">No hay Ordenes disponibles</div>
                     ) : (
-                      paginated.map(o => (
+                      orders.map(o => (
                         <div key={o.id} className="ps-order-card">
                           <div className="ps-order-card-header">
                             <span className="ps-order-card-id">#{o.id?.slice(0, 8).toUpperCase() || "---"}</span>
@@ -2938,7 +1135,7 @@ export default function PageSeller() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onCreated={async () => {
-          await fetchOrders(user?.id);
+          await fetchOrders({ nextPage: 1, includeDashboard: true });
           await notif.refresh({ showNewToasts: true });
         }}
         userId={user?.id}
@@ -2954,7 +1151,7 @@ export default function PageSeller() {
         open={!!editingOrder}
         onClose={() => setEditingOrder(null)}
         order={editingOrder}
-        onUpdated={() => fetchOrders(user?.id)}
+        onUpdated={() => fetchOrders({ nextPage: page, includeDashboard: true })}
         materialOptions={materialOptions}
         clients={clients}
         clientsLoading={clientsLoading}
@@ -3011,104 +1208,6 @@ export default function PageSeller() {
           </div>
           <span className="ps-toast-message">{toastMsg.message}</span>
         </div>
-      )}
-    </div>
-  );
-}
-
-function TrackingLinkField({ orderId }) {
-  const [token, setToken] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!orderId) return;
-    supabase
-      .from("orders")
-      .select("tracking_token")
-      .eq("id", orderId)
-      .single()
-      .then(({ data }) => {
-        if (data?.tracking_token) setToken(data.tracking_token);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [orderId]);
-
-  const trackingUrl = token ? `${window.location.origin}/track/${token}` : null;
-
-  const handleCopy = async () => {
-    if (!trackingUrl) return;
-    try {
-      await navigator.clipboard.writeText(trackingUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      const textArea = document.createElement("textarea");
-      textArea.value = trackingUrl;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textArea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-        <div style={{ width: 14, height: 14, border: "2px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%" }} />
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Cargando...</span>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {trackingUrl ? (
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            type="text"
-            readOnly
-            value={trackingUrl}
-            onClick={(e) => e.target.select()}
-            style={{
-              flex: 1,
-              padding: "8px 12px",
-              fontSize: 12,
-              fontFamily: "'SF Mono', 'Fira Code', monospace",
-              border: "1.5px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--surface-alt)",
-              color: "var(--text)",
-              outline: "none",
-              cursor: "text",
-            }}
-          />
-          <button
-            onClick={handleCopy}
-            style={{
-              padding: "8px 14px",
-              background: copied ? "#10B981" : "var(--primary)",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              color: "#fff",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              transition: "background 0.2s",
-              fontFamily: "'Poppins', sans-serif",
-            }}
-          >
-            {copied ? "✓ Copiado" : "Copiar"}
-          </button>
-        </div>
-      ) : (
-        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, fontStyle: "italic" }}>
-          El link estará disponible cuando la orden tenga un token de seguimiento.
-        </p>
       )}
     </div>
   );

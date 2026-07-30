@@ -27,6 +27,11 @@ const viteConfig = readFileSync(
   "utf8",
 );
 
+const sellerOrderActionsHandler = readFileSync(
+  resolve("server/seller-order-actions-handler.js"),
+  "utf8",
+);
+
 const getCssBlock = (css, selector) => {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = new RegExp(`${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(css);
@@ -81,10 +86,10 @@ describe("Seller visual contract with Admin clients", () => {
     expect(sellerPage).not.toContain("Buen dia");
     expect(sellerPage).not.toContain("👋");
     expect(sellerPage).toContain("Bienvenido,");
-    expect(sellerPage).toContain("Crear Órdenes");
+    expect(sellerPage).toContain("Crear Ordenes");
     expect(sellerPage).toContain("Crear Usuarios");
     expect(sellerPage).toContain("activeOrdersCount");
-    expect(sellerPage).toContain("Órdenes activas");
+    expect(sellerPage).toContain("Ordenes activas");
 
     expect(greeting).toContain("display: flex;");
     expect(greeting).toContain("justify-content: space-between;");
@@ -169,29 +174,70 @@ describe("Seller visual contract with Admin clients", () => {
 
   it("routes sensitive seller order actions through the authenticated server handler", () => {
     expect(sellerPage).toContain('adminApiFetch("/api/seller-orders"');
+    expect(sellerPage).toContain('runSellerOrderAction("list"');
     expect(sellerPage).toContain('runSellerOrderAction("detail"');
     expect(sellerPage).toContain('runSellerOrderAction("cancel"');
     expect(sellerPage).toContain('runSellerOrderAction("send_to_designer"');
     expect(sellerPage).toContain('runSellerOrderAction("send_to_quote"');
     expect(sellerPage).toContain('runSellerOrderAction("archive"');
     expect(sellerPage).not.toContain("isDateFilterActive ? true");
-    expect(sellerPage).toContain("const archiveMatch = filterArchive === \"active\" ? !o.is_archived : o.is_archived === true;");
-    expect(sellerPage).toContain("const statusMatch = filterStatus === \"all\" || isOrderStatus(o.status, filterStatus);");
-    expect(sellerPage).toContain("const paymentMatch = filterPayment === \"all\" || o.payment_status === filterPayment;");
-    expect(sellerPage).toContain("SELLER_ORDERS_FETCH_LIMIT = 1000");
+    expect(sellerPage).not.toContain("SELLER_ORDERS_FETCH_LIMIT");
+    expect(sellerPage).not.toContain("const filtered = useMemo");
+    expect(sellerPage).not.toContain("const paginated =");
+    expect(sellerPage).toContain("const [ordersTotal, setOrdersTotal] = useState(0);");
+    expect(sellerPage).toContain("const [recentOrders, setRecentOrders] = useState([]);");
+    expect(sellerPage).toContain("const [sellerSummary, setSellerSummary] = useState(EMPTY_SELLER_SUMMARY);");
+    expect(sellerPage).toContain("pageSize: SELLER_ORDER_PAGE_SIZE");
+    expect(sellerPage).toContain("search: debouncedSearch");
+    expect(sellerPage).toContain("orders.map(o =>");
+    expect(sellerPage).toContain("recentOrders.map(o =>");
+    expect(sellerPage).toContain("ordersTotal} resultado");
+    expect(sellerOrderActionsHandler).toContain("list: handleList");
+    expect(sellerOrderActionsHandler).toContain(".select(\"*\", { count: \"exact\" })");
+    expect(sellerOrderActionsHandler).toContain("applySellerListFilters");
+    expect(sellerOrderActionsHandler).toContain("recent_orders");
+    expect(sellerOrderActionsHandler).toContain("summary: buildSummary");
     expect(viteConfig).toContain("import { handleSellerOrderAction } from './server/seller-order-actions-handler.js'");
     expect(viteConfig).toContain('createApiHandler("/api/seller-orders", handleSellerOrderAction)');
+  });
+
+  it("keeps seller order loading states stable and free of mojibake", () => {
+    expect(sellerPage).not.toContain("Cargando Ã");
+    expect(sellerPage).not.toContain("Cargando Ã³rdenes");
+    expect(sellerPage).not.toContain("No hay Ã");
+    expect(sellerPage).not.toContain("No hay Ã³rdenes");
+    expect(sellerPage).toContain("Cargando Ordenes...");
+    expect(sellerPage).toContain("No hay Ordenes disponibles");
+    expect(sellerPage).toContain("const visibleOrdersLoadIdRef = useRef(0);");
+    expect(sellerPage).toContain("const visibleOrdersLoadingRef = useRef(false);");
+    expect(sellerPage).toContain("visibleOrdersLoadingRef.current = true;");
+    expect(sellerPage).toContain("if (visibleOrdersLoadingRef.current) return;");
+    expect(sellerPage).toContain('console.warn("No se pudo refrescar ordenes en segundo plano:"');
+  });
+
+  it("removes unused local legacy seller modals", () => {
+    expect(sellerPage).not.toContain("function CreateOrderModal(");
+    expect(sellerPage).not.toContain("function LegacyEditOrderModal");
+    expect(sellerPage).not.toContain("function LegacyOrderDetailModal");
+    expect(sellerPage).not.toContain("function TrackingLinkField");
+    expect(sellerPage).not.toContain("const EMPTY_FORM");
+    expect(sellerPage).not.toContain("function ProductionAreaSelect");
+    expect(sellerPage).not.toContain("function Field(");
+    expect(sellerPage).toContain('import SharedCreateOrderModal from "../components/orders/CreateOrderModal";');
+    expect(sellerPage).toContain('import SharedEditOrderModal from "../components/orders/EditOrderModal";');
+    expect(sellerPage).toContain('import SharedOrderDetailModal from "../components/orders/OrderDetailModal";');
+    expect(sellerPage).toContain('export { default as OrderDetailModal } from "../components/orders/OrderDetailModal";');
   });
 
   it("keeps seller order tables compact while preserving full details in the modal", () => {
     const dashboardRecentTable = getSourceSlice(
       sellerPage,
-      '<thead><tr>{["Cliente", "Facturación", "Estado", ""].map',
+      '<thead><tr>{["Cliente", "Facturacion", "Estado", ""].map',
       '{activeTab === "orders" && ('
     );
     const ordersTable = getSourceSlice(
       sellerPage,
-      '<thead><tr>{["Cliente", "Facturación", "Estado", "Pago", "Tipo", "Fecha", ""].map',
+      '<thead><tr>{["Cliente", "Facturacion", "Estado", "Pago", "Tipo", "Fecha", ""].map',
       '<Pagination currentPage={safePage}'
     );
 
