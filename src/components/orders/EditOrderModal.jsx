@@ -19,6 +19,7 @@ import {
   validateReferenceImages,
 } from "../../utils/imageValidation";
 import { formatDominicanPhone, getSelectedClientOrderFields } from "../../utils/clients";
+import { adminApiFetch } from "../../utils/adminApi";
 import { executeAdminOrderCommand } from "../../utils/adminOrderCommands";
 import {
   Field,
@@ -47,6 +48,7 @@ export default function EditOrderModal({
   clients = [],
   clientsLoading = false,
   onClientSearch,
+  editMode = "admin",
 }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
@@ -77,6 +79,8 @@ export default function EditOrderModal({
   const [fieldErrors, setFieldErrors] = useState({});
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
+  const isSellerEdit = editMode === "seller";
+  const isSellerEditBlocked = isSellerEdit && order?.status === "in_Quote";
 
   useEffect(() => {
     if (!order) return;
@@ -223,6 +227,11 @@ export default function EditOrderModal({
   };
 
   const handleSubmit = async () => {
+    if (isSellerEditBlocked) {
+      setError("No se puede editar una orden en cotizacion.");
+      return;
+    }
+
     const errors = validateForm();
 
     if (Object.keys(errors).length > 0) {
@@ -265,16 +274,18 @@ export default function EditOrderModal({
       return;
     }
 
-    if (newFileUrls.length > 0) {
-      const productionRows = buildProductionFileRows({
+    const productionRows = newFileUrls.length > 0
+      ? buildProductionFileRows({
         orderId: order.id,
         urls: newFileUrls,
         files: newFiles,
         areaCodes: newFileAreas,
         publicLabels: newFileLabels,
         userId: order.seller_id || order.created_by,
-      });
+      })
+      : [];
 
+    if (!isSellerEdit && productionRows.length > 0) {
       const { error: productionFilesError } = await supabase
         .from("order_production_files")
         .insert(productionRows);
@@ -336,8 +347,36 @@ export default function EditOrderModal({
       }
     }
 
+    const sellerChanges = {
+      client_id: form.client_id,
+      client_name: form.client_name.trim(),
+      client_contact: form.client_contact.trim() || null,
+      invoice_number: form.invoice_number.trim(),
+      description: form.description.trim(),
+      material: form.materials.join(", "),
+      termination_type: form.termination_type.trim() || null,
+      delivery_date: form.delivery_date || null,
+      order_file_url: JSON.stringify(fileUrls),
+      preview_image: previewUrl,
+      reference_images: refImageUrls.length > 0 ? serializeReferenceImages(refImageUrls) : [],
+    };
+
     let updateError;
     try {
+      if (isSellerEdit) {
+        const { response, result } = await adminApiFetch("/api/seller-orders", {
+          action: "update",
+          order_id: order.id,
+          expected_updated_at: order.updated_at,
+          changes: sellerChanges,
+          production_files: productionRows,
+          removed_file_urls: removedFileUrls,
+        });
+
+        if (!response.ok) {
+          throw new Error(result?.error || "No se pudo actualizar la orden.");
+        }
+      } else {
       await executeAdminOrderCommand(supabase, {
         orderId: order.id,
         action: "update_requirements",
@@ -362,6 +401,7 @@ export default function EditOrderModal({
           },
         },
       });
+      }
     } catch (commandError) {
       updateError = commandError;
     }
@@ -372,7 +412,7 @@ export default function EditOrderModal({
       return;
     }
 
-    if (removedFileUrls.length > 0) {
+    if (!isSellerEdit && removedFileUrls.length > 0) {
       const { error: removeProductionFilesError } = await supabase
         .from("order_production_files")
         .delete()

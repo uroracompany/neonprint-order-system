@@ -8,6 +8,16 @@ export const filterActiveNotifications = (notifications = []) => (
   Array.isArray(notifications) ? notifications.filter(isActiveNotification) : []
 );
 
+export const isArchivedNotification = (notification) => (
+  Boolean(notification) &&
+  notification.is_archived === true &&
+  notification.deleted_at == null
+);
+
+export const filterArchivedNotifications = (notifications = []) => (
+  Array.isArray(notifications) ? notifications.filter(isArchivedNotification) : []
+);
+
 export const getActiveUnreadCount = (notifications = []) => (
   filterActiveNotifications(notifications).filter((notification) => !notification.is_read).length
 );

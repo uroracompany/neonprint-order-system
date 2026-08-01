@@ -81,6 +81,8 @@ export default function NotificationCenter({
   onArchive,
   onDelete,
   onDismissToast,
+  onViewAll,
+  viewAllLabel = "Ver todas",
 }) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
@@ -96,6 +98,10 @@ export default function NotificationCenter({
   }, []);
 
   const activeNotifications = filterActiveNotifications(notifications);
+  const handleViewAll = () => {
+    setOpen(false);
+    onViewAll?.();
+  };
   const toastRoot = typeof document !== "undefined" ? document.body : null;
   const toastStack = toasts.length > 0 && (
     <div className="nc-toast-stack">
@@ -122,11 +128,15 @@ export default function NotificationCenter({
             <div className="nc-panel-head">
               <div>
                 <strong>Notificaciones</strong>
-                <span className="nc-panel-sub">{unreadCount} sin leer</span>
+                <span className="nc-unread-badge">
+                  <Icons.Bell aria-hidden="true" />
+                  {unreadCount} sin leer
+                </span>
               </div>
               {activeNotifications.length > 0 && (
                 <button className="nc-link-btn" onClick={onMarkAllAsRead}>
-                  Marcar todas leídas
+                  <Icons.CheckCircle />
+                  Marcar todas como leídas
                 </button>
               )}
             </div>
@@ -151,14 +161,14 @@ export default function NotificationCenter({
                     </div>
                     <div className="nc-item-actions">
                       {!n.is_read && (
-                        <button className="nc-action-btn" onClick={() => onMarkAsRead(n.id)} title="Marcar como leída">
+                        <button className="nc-action-btn mark-read" onClick={() => onMarkAsRead(n.id)} title="Marcar como leída">
                           <Icons.Check />
                         </button>
                       )}
-                      <button className="nc-action-btn" onClick={() => onArchive(n.id)} title="Archivar">
+                      <button className="nc-action-btn archive" onClick={() => onArchive(n.id)} title="Archivar">
                         <Icons.Archive />
                       </button>
-                      <button className="nc-action-btn danger" onClick={() => onDelete(n.id)} title="Eliminar">
+                      <button className="nc-action-btn delete" onClick={() => onDelete(n.id)} title="Eliminar">
                         <Icons.Trash />
                       </button>
                     </div>
@@ -166,6 +176,19 @@ export default function NotificationCenter({
                 ))
               )}
             </div>
+
+            {onViewAll && (
+              <div className="nc-panel-footer">
+                <button
+                  type="button"
+                  className="nc-view-all-btn"
+                  onClick={handleViewAll}
+                  aria-label="Ver todas las notificaciones"
+                >
+                  {viewAllLabel}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

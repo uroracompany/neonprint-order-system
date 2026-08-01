@@ -1,4 +1,5 @@
 import { jsonResponse, requireAuthenticated } from "./auth-middleware.js";
+import { createClient } from "@supabase/supabase-js";
 
 const ORDER_STATUS = {
   PENDING: "pending",
@@ -15,6 +16,24 @@ const SELLER_ARCHIVABLE_STATUSES = new Set([
   ORDER_STATUS.CANCELLED,
   ORDER_STATUS.IN_COMPLETED,
   ORDER_STATUS.IN_DELIVERED,
+]);
+
+const SELLER_EDIT_BLOCKED_STATUSES = new Set([
+  ORDER_STATUS.IN_QUOTE,
+]);
+
+const SELLER_EDITABLE_ORDER_FIELDS = new Set([
+  "client_id",
+  "client_name",
+  "client_contact",
+  "invoice_number",
+  "description",
+  "material",
+  "termination_type",
+  "delivery_date",
+  "order_file_url",
+  "preview_image",
+  "reference_images",
 ]);
 
 const normalizeText = (value) => String(value || "").trim();
@@ -121,7 +140,7 @@ const buildSummary = (orders = [], nowValue) => {
 };
 
 const applySellerListFilters = (query, payload = {}, sellerId) => {
-  let nextQuery = query.eq("seller_id", sellerId);
+  let nextQuery = query.or(`seller_id.eq.${sellerId},created_by.eq.${sellerId}`);
   const status = normalizeText(payload.status || payload.filterStatus || "all");
   const paymentStatus = normalizeText(payload.paymentStatus || payload.payment_status || payload.filterPayment || "all");
   const clientId = normalizeText(payload.clientId || payload.client_id || payload.filterClient || "all");
@@ -161,10 +180,68 @@ const applySellerListFilters = (query, payload = {}, sellerId) => {
   return nextQuery;
 };
 
+const applySellerOwnershipFilter = (query, sellerId) => (
+  query.or(`seller_id.eq.${sellerId},created_by.eq.${sellerId}`)
+);
+
 const isAdminProfile = (profile) => profile?.role === "admin";
 
 const isOwnedByProfile = (order, profile) =>
   Boolean(order?.seller_id === profile?.id || order?.created_by === profile?.id);
+
+const buildAuthenticatedSupabase = (auth, env) => {
+  const anonKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  if (!env.SUPABASE_URL || !anonKey || !auth?.accessToken) return null;
+
+  return createClient(env.SUPABASE_URL, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      headers: {
+        Authorization: `Bearer ${auth.accessToken}`,
+      },
+    },
+  });
+};
+
+const sanitizeSellerOrderChanges = (changes = {}) => {
+  const sanitized = {};
+  Object.entries(changes || {}).forEach(([field, value]) => {
+    if (!SELLER_EDITABLE_ORDER_FIELDS.has(field)) return;
+    if (value === undefined) return;
+    sanitized[field] = value;
+  });
+  return sanitized;
+};
+
+const sanitizeProductionFileRows = (rows = [], order, actorId) => {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row) => ({
+      order_id: order.id,
+      url: normalizeText(row?.url),
+      filename: normalizeText(row?.filename) || "Archivo",
+      public_label: normalizeText(row?.public_label || row?.publicLabel),
+      production_area_code: normalizeText(row?.production_area_code || row?.productionAreaCode),
+      status: normalizeText(row?.status) || "pending",
+      created_by: actorId,
+      updated_by: actorId,
+    }))
+    .filter((row) => row.url && row.public_label && row.production_area_code);
+};
+
+const sanitizeUrlList = (urls = []) => (
+  Array.isArray(urls) ? urls.map(normalizeText).filter(Boolean) : []
+);
+
+const timestampsMatch = (left, right) => {
+  if (!left || !right) return true;
+  const leftTime = new Date(left).getTime();
+  const rightTime = new Date(right).getTime();
+  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+    return String(left) === String(right);
+  }
+  return leftTime === rightTime;
+};
 
 const debugSellerOrderAction = (message, details = {}, env = process.env) => {
   if (env.SELLER_ORDER_ACTIONS_DEBUG !== "1") return;
@@ -272,6 +349,66 @@ async function handleCancel(payload, auth, env) {
   return jsonResponse(200, { order: updated.order });
 }
 
+async function handleUpdate(payload, auth, env) {
+  const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
+  if (loaded.response) return loaded.response;
+
+  if (!isAdminProfile(auth.profile) && loaded.order.is_archived) {
+    return jsonResponse(409, { error: "No se puede editar una orden archivada en Ventas." });
+  }
+
+  if (!isAdminProfile(auth.profile) && SELLER_EDIT_BLOCKED_STATUSES.has(loaded.order.status)) {
+    return jsonResponse(409, { error: "No se puede editar una orden en cotizacion." });
+  }
+
+  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt;
+  if (!timestampsMatch(loaded.order.updated_at, expectedUpdatedAt)) {
+    return jsonResponse(409, { error: "La orden cambio mientras la editabas. Actualiza los datos e intenta nuevamente." });
+  }
+
+  const changes = sanitizeSellerOrderChanges(payload.changes || payload.payload || payload);
+  if (Object.keys(changes).length === 0) {
+    return jsonResponse(400, { error: "No hay cambios permitidos para actualizar." });
+  }
+
+  const productionFileRows = sanitizeProductionFileRows(
+    payload.production_files || payload.productionFiles,
+    loaded.order,
+    auth.profile.id
+  );
+  const removedFileUrls = sanitizeUrlList(payload.removed_file_urls || payload.removedFileUrls);
+
+  const supabaseWriter = buildAuthenticatedSupabase(auth, env) || auth.supabaseAdmin;
+  const updated = await updateOwnedOrder(supabaseWriter, loaded.order, changes, env);
+  if (updated.response) return updated.response;
+
+  if (productionFileRows.length > 0) {
+    const { error } = await auth.supabaseAdmin
+      .from("order_production_files")
+      .insert(productionFileRows);
+
+    if (error) {
+      debugSellerOrderAction("production-files-insert-error", { orderId: loaded.order.id, error: error.message }, env);
+      return jsonResponse(400, { error: "La orden se actualizo, pero no se pudo guardar la clasificacion de produccion de los archivos." });
+    }
+  }
+
+  if (removedFileUrls.length > 0) {
+    const { error } = await auth.supabaseAdmin
+      .from("order_production_files")
+      .delete()
+      .eq("order_id", loaded.order.id)
+      .in("url", removedFileUrls);
+
+    if (error) {
+      debugSellerOrderAction("production-files-delete-error", { orderId: loaded.order.id, error: error.message }, env);
+      return jsonResponse(400, { error: "La orden se actualizo, pero no se pudieron retirar archivos de produccion." });
+    }
+  }
+
+  return jsonResponse(200, { order: updated.order });
+}
+
 async function handleSendToDesigner(payload, auth, env) {
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
@@ -353,16 +490,22 @@ async function handleList(payload, auth, env) {
     listQuery
       .order("created_at", { ascending: false })
       .range(from, to),
-    auth.supabaseAdmin
-      .from("orders")
-      .select("id,status,created_at,is_archived,return_reason,order_design_type")
-      .eq("seller_id", sellerId),
-    payload.includeDashboard === false ? Promise.resolve({ data: [], error: null }) : auth.supabaseAdmin
-      .from("orders")
-      .select("*")
-      .eq("seller_id", sellerId)
-      .order("created_at", { ascending: false })
-      .range(0, 4),
+    applySellerOwnershipFilter(
+      auth.supabaseAdmin
+        .from("orders")
+        .select("id,status,created_at,is_archived,return_reason,order_design_type"),
+      sellerId
+    ),
+    payload.includeDashboard === false
+      ? Promise.resolve({ data: [], error: null })
+      : applySellerOwnershipFilter(
+        auth.supabaseAdmin
+          .from("orders")
+          .select("*"),
+        sellerId
+      )
+        .order("created_at", { ascending: false })
+        .range(0, 4),
   ]);
 
   if (listResult.error) {
@@ -395,6 +538,7 @@ async function handleList(payload, auth, env) {
 const ACTION_HANDLERS = {
   list: handleList,
   detail: handleDetail,
+  update: handleUpdate,
   cancel: handleCancel,
   send_to_designer: handleSendToDesigner,
   send_to_quote: handleSendToQuote,

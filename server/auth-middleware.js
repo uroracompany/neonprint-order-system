@@ -141,5 +141,5 @@ export async function requireAuthenticated(authHeader = "", env = process.env, o
     return { authorized: false, status: 403, error: "No tienes permisos para esta accion." };
   }
 
-  return { authorized: true, user, profile, supabaseAdmin };
+  return { authorized: true, user, profile, supabaseAdmin, accessToken };
 }

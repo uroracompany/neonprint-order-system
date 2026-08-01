@@ -157,6 +157,9 @@ describe("useNotifications", () => {
       expect(result.current.notifications).toHaveLength(1);
     });
     expect(result.current.notifications[0].id).toBe("active-notification");
+    expect(result.current.archivedNotifications).toHaveLength(1);
+    expect(result.current.archivedNotifications[0].id).toBe("archived-notification");
+    expect(result.current.archivedCount).toBe(1);
     expect(result.current.unreadCount).toBe(1);
   });
 
@@ -173,6 +176,8 @@ describe("useNotifications", () => {
       await first.result.current.archive("notification-1");
     });
     expect(first.result.current.notifications).toHaveLength(0);
+    expect(first.result.current.archivedNotifications).toHaveLength(1);
+    expect(first.result.current.archivedNotifications[0].id).toBe("notification-1");
     first.unmount();
 
     setupSupabase({ notificationRows: [makeNotification({ is_archived: true })] });
@@ -182,11 +187,17 @@ describe("useNotifications", () => {
       expect(second.result.current.loading).toBe(false);
     });
     expect(second.result.current.notifications).toHaveLength(0);
+    expect(second.result.current.archivedNotifications).toHaveLength(1);
   });
 
   it("keeps a deleted notification hidden after remounting the hook", async () => {
     supabase.rpc.mockResolvedValue({ data: 1, error: null });
-    setupSupabase({ notificationRows: [makeNotification()] });
+    setupSupabase({
+      notificationRows: [
+        makeNotification(),
+        makeNotification({ id: "archived-notification", is_archived: true }),
+      ],
+    });
     const first = renderHook(() => useNotifications(userId));
 
     await waitFor(() => {
@@ -208,14 +219,48 @@ describe("useNotifications", () => {
     expect(second.result.current.notifications).toHaveLength(0);
   });
 
+  it("bulk deletes notifications by scope and clears the matching local list", async () => {
+    setupSupabase({
+      notificationRows: [
+        makeNotification({ id: "active-notification" }),
+        makeNotification({ id: "archived-notification", is_archived: true }),
+      ],
+    });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+      expect(result.current.archivedNotifications).toHaveLength(1);
+    });
+
+    await act(async () => {
+      await result.current.deleteNotificationsByScope("archived");
+    });
+
+    expect(result.current.notifications).toHaveLength(1);
+    expect(result.current.archivedNotifications).toHaveLength(0);
+
+    await act(async () => {
+      await result.current.deleteNotificationsByScope("active");
+    });
+
+    expect(result.current.notifications).toHaveLength(0);
+  });
+
   it("clears visible notifications immediately when the authenticated user changes", async () => {
-    setupSupabase({ notificationRows: [makeNotification()] });
+    setupSupabase({
+      notificationRows: [
+        makeNotification(),
+        makeNotification({ id: "archived-notification", is_archived: true }),
+      ],
+    });
     const { result, rerender } = renderHook(({ id }) => useNotifications(id), {
       initialProps: { id: userId },
     });
 
     await waitFor(() => {
       expect(result.current.notifications).toHaveLength(1);
+      expect(result.current.archivedNotifications).toHaveLength(1);
     });
     expect(result.current.unreadCount).toBe(1);
 
@@ -225,6 +270,7 @@ describe("useNotifications", () => {
     await waitFor(() => {
       expect(result.current.notifications).toHaveLength(0);
     });
+    expect(result.current.archivedNotifications).toHaveLength(0);
     expect(result.current.unreadCount).toBe(0);
     expect(result.current.toasts).toHaveLength(0);
   });
@@ -303,6 +349,7 @@ describe("useNotifications", () => {
 
     await waitFor(() => {
       expect(result.current.notifications).toHaveLength(0);
+      expect(result.current.archivedNotifications).toHaveLength(1);
       expect(result.current.toasts).toHaveLength(0);
     });
 

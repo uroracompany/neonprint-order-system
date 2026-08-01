@@ -262,6 +262,86 @@ describe("handleSellerOrderAction", () => {
     expect(result.body.order.client_name).toBe("Propio");
   });
 
+  it("includes orders created by the seller even when seller_id is missing", async () => {
+    currentClient = makeSellerOrderClient({
+      orders: [
+        { id: "o1", seller_id: null, created_by: "seller-1", status: "pending", payment_status: "pendiente", created_at: "2026-07-28T10:00:00.000Z", is_archived: false },
+        { id: "o2", seller_id: "seller-2", created_by: "seller-1", status: "pending", payment_status: "pendiente", created_at: "2026-07-28T11:00:00.000Z", is_archived: false },
+        { id: "o3", seller_id: null, created_by: "seller-2", status: "pending", payment_status: "pendiente", created_at: "2026-07-28T12:00:00.000Z", is_archived: false },
+      ],
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", page: 1, pageSize: 10 }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.orders.map((order) => order.id)).toEqual(["o2", "o1"]);
+    expect(result.body.orders.some((order) => order.id === "o3")).toBe(false);
+  });
+
+  it("updates editable fields on an owned order without allowing protected fields", async () => {
+    currentClient = makeSellerOrderClient({
+      orders: [
+        {
+          id: "o1",
+          seller_id: "seller-1",
+          created_by: null,
+          status: "pending",
+          payment_status: "pendiente",
+          client_name: "Cliente viejo",
+          description: "Descripcion vieja",
+          updated_at: "2026-07-28T10:00:00.000Z",
+          is_archived: false,
+        },
+      ],
+    });
+
+    const result = await handleSellerOrderAction({
+      action: "update",
+      order_id: "o1",
+      expected_updated_at: "2026-07-28T10:00:00.000Z",
+      changes: {
+        client_name: "Cliente nuevo",
+        description: "Descripcion nueva",
+        status: "cancelled",
+        payment_status: "pagado",
+        seller_id: "seller-2",
+      },
+    }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.order.client_name).toBe("Cliente nuevo");
+    expect(result.body.order.description).toBe("Descripcion nueva");
+    expect(result.body.order.status).toBe("pending");
+    expect(result.body.order.payment_status).toBe("pendiente");
+    expect(result.body.order.seller_id).toBe("seller-1");
+  });
+
+  it("blocks seller edits for quote, archived, stale, and foreign orders", async () => {
+    currentClient = makeSellerOrderClient({
+      orders: [
+        { id: "quote", seller_id: "seller-1", status: "in_Quote", updated_at: "2026-07-28T10:00:00.000Z", is_archived: false },
+        { id: "archived", seller_id: "seller-1", status: "pending", updated_at: "2026-07-28T10:00:00.000Z", is_archived: true },
+        { id: "stale", seller_id: "seller-1", status: "pending", updated_at: "2026-07-28T10:00:00.000Z", is_archived: false },
+        { id: "foreign", seller_id: "seller-2", status: "pending", updated_at: "2026-07-28T10:00:00.000Z", is_archived: false },
+      ],
+    });
+
+    const quote = await handleSellerOrderAction({ action: "update", order_id: "quote", changes: { description: "Nueva" } }, env);
+    const archived = await handleSellerOrderAction({ action: "update", order_id: "archived", changes: { description: "Nueva" } }, env);
+    const stale = await handleSellerOrderAction({
+      action: "update",
+      order_id: "stale",
+      expected_updated_at: "2026-07-28T09:00:00.000Z",
+      changes: { description: "Nueva" },
+    }, env);
+    const foreign = await handleSellerOrderAction({ action: "update", order_id: "foreign", changes: { description: "Nueva" } }, env);
+
+    expect(quote.status).toBe(409);
+    expect(archived.status).toBe(409);
+    expect(stale.status).toBe(409);
+    expect(foreign.status).toBe(403);
+  });
+
   it("cancels an owned unpaid order and rejects paid or partial orders", async () => {
     currentClient = makeSellerOrderClient({
       orders: [

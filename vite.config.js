@@ -11,6 +11,7 @@ import { handleGetUserEmail } from './server/get-user-email-handler.js'
 import { handleChangeUserPassword } from './server/change-user-password-handler.js'
 import { handleKpiData } from './server/kpi-data-handler.js'
 import { handleSellerProfile } from './server/seller-profile-handler.js'
+import { handleDesignerProfile } from './server/designer-profile-handler.js'
 import { handleSellerOrderAction } from './server/seller-order-actions-handler.js'
 import {
   handleAdminDeleteOrderWithFiles,
@@ -164,6 +165,7 @@ return {
       createApiHandler("/api/change-user-password", handleChangeUserPassword),
       createApiHandler("/api/kpi-data", handleKpiData),
       createApiHandler("/api/seller-profile", handleSellerProfile),
+      createApiHandler("/api/designer-profile", handleDesignerProfile),
       createApiHandler("/api/seller-orders", handleSellerOrderAction),
       createApiHandler("/api/files-initiate-upload", handleInitiateFileUpload),
       createApiHandler("/api/files-complete-upload", handleCompleteFileUpload),

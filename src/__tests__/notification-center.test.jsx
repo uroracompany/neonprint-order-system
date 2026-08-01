@@ -88,6 +88,129 @@ describe("NotificationCenter", () => {
     expect(getComputedStyle(document.querySelector(".nc-link-btn")).fontFamily).toContain("Poppins");
   });
 
+  it("keeps designer notification modal styling independent from section theme variables", () => {
+    render(
+      <div
+        style={{
+          "--surface": "#111827",
+          "--border": "#7c3aed",
+          "--text": "#fef2f2",
+          "--text-sub": "#fde68a",
+          "--text-muted": "#f97316",
+          "--primary": "#dc2626",
+        }}
+      >
+        <NotificationCenter
+          {...baseProps}
+          notifications={notifications}
+          unreadCount={1}
+          toasts={[]}
+          onDismissToast={vi.fn()}
+        />
+      </div>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Notificaciones, 1 sin leer" }));
+
+    expect(getComputedStyle(document.querySelector(".nc-bell-btn")).width).toBe("40px");
+    expect(getComputedStyle(document.querySelector(".nc-bell-btn")).borderTopColor).not.toBe("rgb(124, 58, 237)");
+    expect(getComputedStyle(document.querySelector(".nc-panel")).backgroundColor).toBe("rgb(255, 255, 255)");
+    expect(getComputedStyle(document.querySelector(".nc-panel")).borderTopColor).toBe("rgb(221, 227, 239)");
+    expect(getComputedStyle(document.querySelector(".nc-panel-head strong")).color).toBe("rgb(15, 30, 64)");
+    expect(getComputedStyle(document.querySelector(".nc-item-msg")).color).toBe("rgb(74, 94, 128)");
+  });
+
+  it("renders unread count as a badge and keeps mark-all as an icon button", () => {
+    const onMarkAllAsRead = vi.fn();
+    render(
+      <NotificationCenter
+        {...baseProps}
+        notifications={notifications}
+        unreadCount={1}
+        toasts={[]}
+        onDismissToast={vi.fn()}
+        onMarkAllAsRead={onMarkAllAsRead}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Notificaciones, 1 sin leer" }));
+
+    const unreadBadge = screen.getByText("1 sin leer");
+    const markAllButton = screen.getByRole("button", { name: "Marcar todas como leídas" });
+
+    expect(unreadBadge).toHaveClass("nc-unread-badge");
+    expect(unreadBadge.querySelector("svg")).toBeInTheDocument();
+    expect(getComputedStyle(unreadBadge).fontWeight).toBe("600");
+    expect(getComputedStyle(unreadBadge).backgroundColor).toBe("rgb(239, 246, 255)");
+    expect(getComputedStyle(unreadBadge).borderTopColor).toBe("rgb(191, 219, 254)");
+    expect(getComputedStyle(unreadBadge).color).toBe("rgb(30, 64, 175)");
+    expect(markAllButton.querySelector("svg")).toBeInTheDocument();
+
+    fireEvent.click(markAllButton);
+
+    expect(onMarkAllAsRead).toHaveBeenCalledTimes(1);
+  });
+
+  it("assigns visual action classes to notification action buttons", () => {
+    render(
+      <NotificationCenter
+        {...baseProps}
+        notifications={notifications}
+        unreadCount={1}
+        toasts={[]}
+        onDismissToast={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Notificaciones, 1 sin leer" }));
+
+    expect(getComputedStyle(document.querySelector(".nc-item-actions")).opacity).toBe("1");
+    expect(screen.getByTitle("Marcar como leída")).toHaveClass("mark-read");
+    expect(screen.getByTitle("Archivar")).toHaveClass("archive");
+    expect(screen.getByTitle("Eliminar")).toHaveClass("delete");
+  });
+
+  it("keeps the full notifications shortcut hidden unless a destination is provided", () => {
+    render(
+      <NotificationCenter
+        {...baseProps}
+        notifications={notifications}
+        unreadCount={1}
+        toasts={[]}
+        onDismissToast={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Notificaciones, 1 sin leer" }));
+
+    expect(screen.queryByRole("button", { name: "Ver todas las notificaciones" })).not.toBeInTheDocument();
+  });
+
+  it("renders a full notifications shortcut that calls onViewAll and closes the mini tray", () => {
+    const onViewAll = vi.fn();
+    render(
+      <NotificationCenter
+        {...baseProps}
+        notifications={[]}
+        unreadCount={0}
+        toasts={[]}
+        onDismissToast={vi.fn()}
+        onViewAll={onViewAll}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Notificaciones" }));
+    const viewAllButton = screen.getByRole("button", { name: "Ver todas las notificaciones" });
+
+    expect(viewAllButton).toHaveTextContent("Ver todas");
+    expect(getComputedStyle(viewAllButton).transitionProperty).not.toContain("transform");
+
+    fireEvent.click(viewAllButton);
+
+    expect(onViewAll).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("No hay notificaciones")).not.toBeInTheDocument();
+  });
+
   it("maps generic metadata variants to the expected toast visual classes", () => {
     render(
       <NotificationCenter

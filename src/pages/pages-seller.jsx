@@ -36,6 +36,8 @@ import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
 import SellerProfileModule from "../components/seller/SellerProfileModule";
+import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
+import "../components/designer/DesignerNotificationsModule.css";
 import { loadClients, searchClients } from "../utils/clients";
 import { adminApiFetch } from "../utils/adminApi";
 
@@ -48,6 +50,12 @@ const isReturnedOrder = (order) => {
     : [ORDER_STATUS.IN_DESIGN];
   return isOrderStatusIn(order.status, validStatuses);
 };
+
+const canSellerEditOrder = (order) => (
+  Boolean(order) &&
+  !order.is_archived &&
+  !isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)
+);
 
 const getInitials = (name) => String(name || "?")
   .split(/\s+/)
@@ -674,29 +682,9 @@ export default function PageSeller() {
   // â”€â”€ Metrics Values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const safePage = Math.min(page, totalPages);
   const activeOrdersCount = sellerSummary.active;
+  const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
+  const editedOrdersCount = orders.filter(o => o?.metadata?.event_kind === "admin_edited_order").length;
 
-  const nav = [
-    { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
-    { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: sellerSummary.unarchived },
-    { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
-  ];
-  const pageTitles = {
-    dashboard: "Dashboard",
-    orders: "Gestion de Ordenes",
-    profile: "Mi Perfil",
-  };
-
-  // Valores para las cartas metricas
-  const metrics = [
-    { icon: <Icons.Orders />, label: "Ordenes hoy", value: sellerSummary.todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
-    { icon: <Icons.Package />, label: "Pendientes", value: sellerSummary.pending, sub: "Ordenes Pendientes", accentIdx: 1 },
-    { icon: <Icons.Edit />, label: "En diseño", value: sellerSummary.inDesign, sub: "En proceso de diseño", accentIdx: 2 },
-    { icon: <Icons.Package />, label: "En caja", value: sellerSummary.inQuote, sub: "Esperando aprobación", accentIdx: 5 },
-    { icon: <Icons.Package />, label: "En producción", value: sellerSummary.inProduction, sub: "Siendo impresas", accentIdx: 3 },
-    { icon: <Icons.Package />, label: "Terminación", value: sellerSummary.inTermination, sub: "En proceso final", accentIdx: 2 },
-    { icon: <Icons.Truck />, label: "Completadas", value: sellerSummary.completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
-    { icon: <Icons.X />, label: "Devueltas", value: sellerSummary.returned, sub: "Pendientes de corrección", accentIdx: 3 },
-  ];
   const visibleSellerNotifications = useMemo(
     () => notif.notifications.filter(isSellerVisibleNotification),
     [notif.notifications]
@@ -712,6 +700,31 @@ export default function PageSeller() {
     [visibleSellerNotifications]
   );
 
+  const nav = [
+    { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
+    { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: sellerSummary.unarchived },
+    { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
+    { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: visibleSellerUnreadCount },
+  ];
+  const pageTitles = {
+    dashboard: "Dashboard",
+    orders: "Gestion de Ordenes",
+    notifications: "Notificaciones",
+    profile: "Mi Perfil",
+  };
+
+  // Valores para las cartas metricas
+  const metrics = [
+    { icon: <Icons.Orders />, label: "Ordenes hoy", value: sellerSummary.todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
+    { icon: <Icons.Package />, label: "Pendientes", value: sellerSummary.pending, sub: "Ordenes Pendientes", accentIdx: 1 },
+    { icon: <Icons.Edit />, label: "En diseño", value: sellerSummary.inDesign, sub: "En proceso de diseño", accentIdx: 2 },
+    { icon: <Icons.Package />, label: "En caja", value: sellerSummary.inQuote, sub: "Esperando aprobación", accentIdx: 5 },
+    { icon: <Icons.Package />, label: "En producción", value: sellerSummary.inProduction, sub: "Siendo impresas", accentIdx: 3 },
+    { icon: <Icons.Package />, label: "Terminación", value: sellerSummary.inTermination, sub: "En proceso final", accentIdx: 2 },
+    { icon: <Icons.Truck />, label: "Completadas", value: sellerSummary.completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
+    { icon: <Icons.X />, label: "Devueltas", value: sellerSummary.returned, sub: "Pendientes de corrección", accentIdx: 3 },
+  ];
+
   return (
     <div className="ps-root">
 
@@ -725,7 +738,7 @@ export default function PageSeller() {
         menuItems={nav.map(item => ({ ...item, icon: item.icon }))}
         onLogout={handleLogout}
         onCreateNew={() => setShowCreate(true)}
-        showCreateButton={true}
+        showCreateButton={false}
       />
 
       {/* â”€â”€ MAIN â”€â”€ */}
@@ -761,6 +774,7 @@ export default function PageSeller() {
               onArchive={notif.archive}
               onDelete={notif.deleteNotification}
               onDismissToast={notif.dismissToast}
+              onViewAll={() => setActiveTab("notifications")}
             />
           </div>
         </header>
@@ -773,9 +787,19 @@ export default function PageSeller() {
                 <div className="ps-greeting-copy">
                   <h2>Bienvenido, <span>{user?.displayName || "Vendedor"}</span></h2>
                   <p>Aqui tienes el resumen de tu actividad de hoy.</p>
-                  <div className="ps-greeting-count" aria-label={`${activeOrdersCount} ordenes activas`}>
-                    <Icons.Orders />
-                    <strong>{activeOrdersCount.toLocaleString("es-DO")}</strong> Ordenes activas
+                  <div className="ps-greeting-badges">
+                    <div className="ps-greeting-count" aria-label={`${activeOrdersCount} ordenes activas`}>
+                      <Icons.Orders />
+                      <strong>{activeOrdersCount.toLocaleString("es-DO")}</strong> Ordenes activas
+                    </div>
+                    <div className="ps-greeting-count ps-greeting-count--returned" aria-label={`${returnedOrdersCount} órdenes devueltas`}>
+                      <Icons.ArrowLeft />
+                      <strong>{returnedOrdersCount.toLocaleString("es-DO")}</strong> Devueltas
+                    </div>
+                    <div className="ps-greeting-count ps-greeting-count--edited" aria-label={`${editedOrdersCount} órdenes editadas por administrador`}>
+                      <Icons.Edit />
+                      <strong>{editedOrdersCount.toLocaleString("es-DO")}</strong> Editadas por Administrador
+                    </div>
                   </div>
                 </div>
                 <div className="ps-greeting-actions" aria-label="Acciones principales de ventas">
@@ -843,7 +867,7 @@ export default function PageSeller() {
                                 <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
                                   <Icons.Eye />
                                 </button>
-                                {!o.is_archived && (
+                                {canSellerEditOrder(o) && (
                                   <button className="table-action-btn edit" onClick={e => { e.stopPropagation(); setEditingOrder(o); }} title="Editar orden">
                                     <Icons.Edit />
                                   </button>
@@ -1015,7 +1039,7 @@ export default function PageSeller() {
                                   <button className="table-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
                                     <Icons.Eye />
                                   </button>
-                                  {!o.is_archived && (
+                                  {canSellerEditOrder(o) && (
                                     <button className="table-action-btn edit" onClick={() => setEditingOrder(o)} title="Editar orden">
                                       <Icons.Edit />
                                     </button>
@@ -1062,62 +1086,57 @@ export default function PageSeller() {
                       <div className="ps-cards-empty">No hay Ordenes disponibles</div>
                     ) : (
                       orders.map(o => (
-                        <div key={o.id} className="ps-order-card">
+                        <div key={o.id} className="ps-order-card" onClick={() => handleViewOrder(o)}>
                           <div className="ps-order-card-header">
-                            <span className="ps-order-card-id">#{o.id?.slice(0, 8).toUpperCase() || "---"}</span>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                            <span className="ps-order-card-id">{o.invoice_number || "---"}</span>
+                            <div className="ps-order-card-badges">
                               <StatusBadge status={o.status} />
                               {isReturnedOrder(o) && <ReturnedBadge compact />}
+                              <OrderReviewBadge review={pendingOrderReviews[o.id]} />
                             </div>
                           </div>
                           <div className="ps-order-card-client">
                             <span className="acm-avatar acm-avatar-small">{getInitials(o.client_name)}</span>
-                            <span className="ps-order-card-client-main">
-                              <span title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</span>
-                              <OrderReviewBadge review={pendingOrderReviews[o.id]} />
-                            </span>
+                            <span>{o.client_name || "Sin cliente"}</span>
                           </div>
-                          <div className="ps-order-card-desc">{o.description}</div>
                           <div className="ps-order-card-meta">
-                            <span className="ps-order-card-material">{o.material}</span>
                             <StatusBadge status={o.payment_status} type="payment" />
                           </div>
                           <div className="ps-order-card-footer">
                             <span className="ps-order-card-date">
-                              {new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}
+                              {new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}
                             </span>
                             <div className="ps-order-card-type">
                               {o.order_type === "orden 911" ? (
-                                <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B" }}>911</span>
+                                <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B", border: "1px solid #EF444420" }}>911</span>
                               ) : (
-                                <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40" }}>Normal</span>
+                                <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>Normal</span>
                               )}
                             </div>
                           </div>
                           <div className="ps-order-card-actions">
-                            <button className="card-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
+                            <button className="card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
                               <Icons.Eye />
                             </button>
-                            {!o.is_archived && (
-                              <button className="card-action-btn edit" onClick={() => setEditingOrder(o)} title="Editar">
+                            {canSellerEditOrder(o) && (
+                              <button className="card-action-btn edit" onClick={(event) => { event.stopPropagation(); setEditingOrder(o); }} title="Editar">
                                 <Icons.Edit />
                               </button>
                             )}
                             {!isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && !isPaymentCredit(o.payment_status) && (
-                              <button className="card-action-btn cancel" onClick={() => handleCancelOrder(o)} title="Cancelar">
-                                <Icons.Trash />
-                              </button>
-                            )}
-                            {isPaymentPaid(o.payment_status) && !o.is_archived && !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && (
-                              <button className="card-action-btn cancel" disabled title="No se puede cancelar: orden pagada" style={{ opacity: 0.5, cursor: "not-allowed" }}>
+                              <button className="card-action-btn cancel" onClick={(event) => { event.stopPropagation(); handleCancelOrder(o); }} title="Cancelar">
                                 <Icons.Trash />
                               </button>
                             )}
                             {canArchiveOrder(o, ARCHIVE_MODULES.SELLER, user?.id) ? (
-                              <button className="card-action-btn archive" onClick={() => handleArchiveOrder(o)} title="Archivar">
+                              <button className="card-action-btn archive" onClick={(event) => { event.stopPropagation(); handleArchiveOrder(o); }} title="Archivar">
                                 <Icons.Archived />
                               </button>
-                            ) : o.is_archived ? null : null}
+                            ) : o.is_archived ? (
+                              <button className="card-action-btn archive" disabled title="Orden archivada">
+                                <Icons.Check />
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       ))
@@ -1127,6 +1146,21 @@ export default function PageSeller() {
                 <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
               </div>
             </>
+          )}
+
+          {activeTab === "notifications" && (
+            <DesignerNotificationsModule
+              notifications={visibleSellerNotifications}
+              archivedNotifications={notif.archivedNotifications}
+              unreadCount={visibleSellerUnreadCount}
+              loading={notif.loading}
+              archivedLoading={notif.archivedLoading}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDeleteAll={notif.deleteNotificationsByScope}
+            />
           )}
         </main>
       </div>
@@ -1156,6 +1190,7 @@ export default function PageSeller() {
         clients={clients}
         clientsLoading={clientsLoading}
         onClientSearch={handleClientSearch}
+        editMode="seller"
       />
       <SharedOrderDetailModal
         open={!!selectedOrder}

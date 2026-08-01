@@ -54,12 +54,15 @@ describe("admin order modal consistency", () => {
     expect(editOrderModal).toContain("export default function EditOrderModal");
     expect(seller).toContain('import SharedEditOrderModal from "../components/orders/EditOrderModal";');
     expect(seller).toContain("<SharedEditOrderModal");
+    expect(seller).toContain('editMode="seller"');
     expect(seller).not.toContain("export function EditOrderModal");
     expect(dashboard).toContain('import SharedEditOrderModal from "../components/orders/EditOrderModal";');
     expect(dashboard).toContain("<SharedEditOrderModal");
     expect(dashboard).not.toContain("./pages-seller");
     expect(dashboard).not.toContain("SellerEditOrderModal");
     expect(dashboard).not.toContain("<AdminOrderFormModal");
+    expect(editOrderModal).toContain('adminApiFetch("/api/seller-orders"');
+    expect(editOrderModal).toContain('editMode = "admin"');
   });
 
   it("admin and sales order assignment actions use the shared component", () => {

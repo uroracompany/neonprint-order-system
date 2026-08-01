@@ -76,6 +76,14 @@ describe("Cloudflare R2 hybrid storage", () => {
     expect(uploadUtil).toContain('status: "failed"');
   });
 
+  it("blocks seller file writes while an order is in quote", () => {
+    const gateway = readProjectFile("server/storage-gateway.js");
+
+    expect(gateway).toContain('const SELLER_FILE_WRITE_BLOCKED_STATUSES = new Set(["in_Quote"])');
+    expect(gateway).toContain('role === "seller" && SELLER_FILE_WRITE_BLOCKED_STATUSES.has(order?.status)');
+    expect(gateway).toContain("No se pueden modificar archivos de una orden en cotizacion.");
+  });
+
   it("removes direct designer Supabase bucket listing so r2 URLs remain visible", () => {
     const designer = readProjectFile("src/pages/page-designer.jsx");
 

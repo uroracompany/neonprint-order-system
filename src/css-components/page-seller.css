@@ -415,7 +415,6 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 10px;
   padding: 5px 12px;
   border: 1px solid #dbe3ef;
   border-radius: 20px;
@@ -434,6 +433,29 @@
 .ps-greeting-count strong {
   color: var(--text);
   font-weight: 700;
+}
+.ps-greeting-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ps-greeting-count--returned {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+.ps-greeting-count--edited {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+.ps-greeting-count--returned strong,
+.ps-greeting-count--edited strong,
+.ps-greeting-count--returned svg,
+.ps-greeting-count--edited svg {
+  color: currentColor;
+  opacity: 1;
 }
 .ps-greeting-actions {
   display: flex;
@@ -2041,6 +2063,12 @@ select option { background: var(--surface); color: var(--text); }
   padding: 3px 8px;
   border-radius: 4px;
   font-weight: 600;
+}
+
+.ps-order-card-files {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
 }
 
 .ps-order-card-actions {

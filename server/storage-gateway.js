@@ -28,6 +28,7 @@ const PRODUCER_AREA_BY_ROLE = {
 };
 
 const PREORDER_R2_ROLES = new Set(["admin", "seller", "designer"]);
+const SELLER_FILE_WRITE_BLOCKED_STATUSES = new Set(["in_Quote"]);
 
 const ORDER_FILE_BUCKET_LIMITS = {
   "order-docs": 200 * MB,
@@ -365,6 +366,13 @@ const loadOrderForAccess = async ({ supabaseAdmin, orderId, userId, role }) => {
   return { order };
 };
 
+const validateOrderFileWriteAccess = ({ order, role }) => {
+  if (role === "seller" && SELLER_FILE_WRITE_BLOCKED_STATUSES.has(order?.status)) {
+    return jsonResponse(409, { error: "No se pueden modificar archivos de una orden en cotizacion." });
+  }
+  return null;
+};
+
 const collectLegacySupabaseTargets = (order) => {
   const targets = [];
   const addUrl = (bucket, url) => {
@@ -684,6 +692,9 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
     return access.error;
   }
 
+  const writeAccessError = validateOrderFileWriteAccess({ order: access.order, role: profile.role });
+  if (writeAccessError) return writeAccessError;
+
   if (!shouldUseR2({ bucket, sizeBytes, env })) {
     return jsonResponse(200, {
       provider: "supabase",
@@ -737,6 +748,8 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
 
   const access = await loadOrderForAccess({ supabaseAdmin, orderId, userId: user.id, role: profile.role });
   if (access.error) return access.error;
+  const writeAccessError = validateOrderFileWriteAccess({ order: access.order, role: profile.role });
+  if (writeAccessError) return writeAccessError;
 
   if (provider === "r2") {
     const fileId = String(payload?.fileId || payload?.file?.id || "").trim();

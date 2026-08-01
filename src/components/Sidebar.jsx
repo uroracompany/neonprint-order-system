@@ -71,7 +71,7 @@ export default function Sidebar({
             {item.icon}
             {isOpen && <span>{item.label}</span>}
             {isOpen && item.badge !== undefined && (
-              <span className={`sb-nav-badge ${activeTab === item.id ? "active-badge" : ""}`}>
+              <span className={`sb-nav-badge ${activeTab === item.id ? "active-badge" : ""} ${item.badgeClassName || ""}`.trim()}>
                 {item.badge}
               </span>
             )}
