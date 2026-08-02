@@ -1,81 +1,33 @@
-# Pipeline Changes: Resolver Bloqueos de Supabase Auth por Concurrencia
+## Changes Summary
 
-## Coder
+### File 1: `src/css-components/page-quote.css`
 
-### Archivos agregados
+1. **Change 1** — Added 4 new card CSS variables (`--pq-card-border`, `--pq-card-radius`, `--pq-card-shadow`, `--pq-card-shadow-hover`) to `:root` after the existing shadow variables.
 
-- `src/utils/authManager.js`
-  - Centraliza operaciones Auth.
-  - Deduplica llamadas concurrentes a `getSession`.
-  - Serializa `refreshSession`, `getUser` y `signOut`.
-  - Mantiene cache de sesion/usuario.
-  - Agrega logs seguros solo con `VITE_AUTH_DEBUG=1`.
+2. **Change 2** — Added `margin-bottom: 28px` to `.pq-metrics-grid`.
 
-- `src/contexts/AuthProvider.jsx`
-  - Proveedor global de sesion, usuario y perfil.
-  - Registra un unico `onAuthStateChange`.
-  - Suscribe cambios realtime del perfil del usuario activo.
-  - Usa un nombre sin colision con `authStateContext.js` para evitar resolucion stale/case-insensitive en Windows/Vite.
+3. **Change 3** — Replaced `.pq-metric-card` styles: removed flex layout, increased padding to `22px 22px`, increased `min-height` to `140px`, simplified transition, added `cursor: default`.
 
-- `src/contexts/authStateContext.js`
-  - Contexto React separado para evitar colisiones y cumplir Fast Refresh.
+4. **Change 4** — Split the combined `.pq-metric-card:hover, .pq-order-card:hover` rule into two separate rules. Metric card hover now uses `transform: none` and `--pq-card-shadow-hover`. Order card hover keeps original behavior.
 
-- `src/hooks/useAuth.js`
-  - Hook publico para consumir Auth sin exponer logica interna.
+5. **Change 5** — Replaced `.pq-metric-icon` styles: removed fixed dimensions/gradient background, now uses `display: flex`, `border-radius: 10px`, `padding: 10px`, `margin-bottom: 16px`, `width: fit-content`.
 
-- `src/__tests__/auth-manager.test.js`
-  - Pruebas de concurrencia para token, refresh y logout.
+6. **Change 6** — Replaced `.pq-metric-copy span` and `.pq-metric-copy strong` with three new classes: `.pq-metric-value`, `.pq-metric-label`, `.pq-metric-sub`.
 
-### Archivos modificados
+7. **Change 7** — Added `.pq-metric-glow` rule (absolute positioned circle element) after the hover rule block.
 
-- `src/App.jsx`
-  - Envuelve rutas con `AuthProvider`.
-  - Importa desde `./contexts/AuthProvider` para evitar el blanco causado por resolver un contexto sin `AuthProvider`.
+### File 2: `src/pages/page-quote.jsx`
 
-- `src/ProtectedRoute.jsx`
-  - Usa `useAuth`.
-  - Elimina `supabase.auth.getUser()` directo.
-  - Elimina listener de `focus` y canal de perfil duplicado.
+8. **Change 8** — Added `CARD_ACCENTS` array with 5 color configs. Updated `metrics` array to include `accentIdx` and `sub` properties. Added `MetricCard` component function that renders icon, value, label, sub text, and glow circle with per-card accent colors.
 
-- `src/utils/adminApi.js`
-  - Usa `authManager.getFreshAccessToken()`.
-  - Elimina llamadas directas a `getSession` y `refreshSession`.
-  - Usa `signOutAuth()` para limpiar sesion invalida.
+9. **Change 9** — Replaced the inline `<article>` rendering in `.pq-metrics-grid` with `<MetricCard>` component usage via `.map()`.
 
-- `src/pages/dashboard.jsx`
-  - Usa `useAuth`.
-  - Elimina `loadSession` con `supabase.auth.getUser()`.
-  - Carga ordenes/usuarios admin solo cuando ya existe `authUser`.
+### What to test
 
-- `src/pages/page-quote.jsx`
-  - Usa `useAuth`.
-  - Elimina verificacion Auth local.
-
-- `src/pages/pages-seller.jsx`
-  - Usa `useAuth`.
-  - Elimina `getUser()` y `onAuthStateChange()` locales.
-
-- `src/pages/page-production.jsx`
-  - Usa `useAuth`.
-  - Obtiene rol productor desde `profile` compartido.
-
-- `src/pages/page-designer.jsx`
-  - Usa `useAuth`.
-  - Sincroniza `userRef` desde el contexto.
-
-- `src/pages/page-delivery.jsx`
-  - Usa `useAuth`.
-  - Elimina `getUser()` local.
-
-- `src/pages/lobby.jsx`
-  - Mantiene `signInWithPassword`.
-  - Usa `signOutAuth()` para cerrar sesion si la cuenta esta desactivada.
-
-### Impacto esperado
-
-- Se reduce la rafaga de operaciones Auth durante carga inicial.
-- `Dashboard` ya no dispara `getUser + getSession + refreshSession` en paralelo.
-- Solo quedan llamadas Auth directas en:
-  - `authManager`
-  - `AuthProvider` para el unico listener global
-  - `lobby` para login.
+- All 5 metric cards render with correct values and labels
+- Each card has a distinct color accent (navy, amber, emerald, violet, cyan)
+- Glow circle is visible but subtle (positioned top-right of each card)
+- Sub-text ("Activas en caja", "Requieren seguimiento", etc.) appears in each card
+- Cards have no hover lift effect (flat interaction)
+- Order card hover behavior is unchanged
+- No regressions in other Quote module features (filters, modals, credit section)

@@ -14,6 +14,7 @@ import SettleCreditModal from "../components/ui/SettleCreditModal";
 import {
   ORDER_STATUS,
   PAYMENT_STATUS,
+  PAYMENT_COLORS,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   ARCHIVE_MODULES,
@@ -35,6 +36,7 @@ import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
+import "../css-components/page-seller.css";
 import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
@@ -75,6 +77,7 @@ const isOrderAssignedToQuote = (order, quoteUserId) => Boolean(order?.id) && has
 const canArchiveQuoteOrder = (order, userId) => canArchiveOrder(order, ARCHIVE_MODULES.QUOTE, userId);
 // Verifica si una orden fue devuelta (tiene estado de diseño/pendiente Y razón de devolución)
 const isReturnedOrder = (order) => isOrderStatusIn(order?.status, [ORDER_STATUS.IN_DESIGN, ORDER_STATUS.PENDING]) && Boolean(String(order?.return_reason || "").trim());
+const getInitials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 const isOpenCreditReceivable = (item) => ["open", "partial"].includes(item?.status);
 const formatCreditDate = (value) => (value ? formatDate(value) : "---");
 const getCreditIssuedAt = (item) => item?.issued_at || item?.created_at || item?.order?.created_at || null;
@@ -1053,10 +1056,26 @@ export default function PageQuote() {
   
   // Estados de búsqueda y filtrado
   const [search, setSearch] = useState(""); // Texto de búsqueda
+  const [filterType, setFilterType] = useState("all"); // Filtro por tipo de orden
   const [filterStatus, setFilterStatus] = useState("all"); // Filtro por estado de orden
+  const [filterPayment, setFilterPayment] = useState("all"); // Filtro por estado de pago
   const [filterDate, setFilterDate] = useState("all"); // Filtro por fecha
   const [filterClient, setFilterClient] = useState("all"); // Filtro por cliente registrado
+  const [filterSeller, setFilterSeller] = useState("all"); // Filtro por vendedor responsable
   const [filterArchive, setFilterArchive] = useState("active"); // Mostrar activas o archivadas
+
+  const hasActiveFilters = (
+    search.trim() !== "" ||
+    filterType !== "all" ||
+    filterStatus !== "all" ||
+    filterPayment !== "all" ||
+    filterDate !== "all" ||
+    filterClient !== "all" ||
+    filterSeller !== "all" ||
+    filterArchive !== "active"
+  );
+
+  const [viewMode, setViewMode] = useState("table"); // Vista predeterminada: tabla
   const [clients, setClients] = useState([]);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
@@ -2363,9 +2382,18 @@ export default function PageQuote() {
         resolveSellerName(order, sellerDirectory),
       ];
 
+      const orderTypeValue = String(order.order_type || "normal").trim().toLowerCase();
+      const matchesType =
+        filterType === "all" ||
+        (filterType === "911" && (orderTypeValue === "orden 911" || orderTypeValue.includes("911"))) ||
+        (filterType === "normal" && orderTypeValue !== "orden 911" && !orderTypeValue.includes("911"));
+
       const matchesSearch = !query || searchableValues.some(value => normalizeText(value).includes(query));
       const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
+      const matchesPayment = filterPayment === "all" || order.payment_status === filterPayment;
       const matchesClient = orderMatchesClientFilter(order, filterClient);
+      const sellerId = resolveSellerId(order);
+      const matchesSeller = filterSeller === "all" || sellerId === filterSeller;
       const matchesArchive =
         filterArchive === "all" ||
         (filterArchive === "active" && !order.is_archived_quote) ||
@@ -2380,9 +2408,9 @@ export default function PageQuote() {
         (filterDate === "7days" && createdAt >= sevenDaysAgo) ||
         (filterDate === "month" && createdAt >= startOfMonth);
 
-      return matchesSearch && matchesStatus && matchesClient && matchesArchive && matchesDate;
+      return matchesType && matchesSearch && matchesStatus && matchesPayment && matchesClient && matchesSeller && matchesArchive && matchesDate;
     });
-  }, [orders, search, filterStatus, filterClient, filterArchive, filterDate, sellerDirectory]);
+  }, [orders, search, filterType, filterStatus, filterPayment, filterClient, filterSeller, filterArchive, filterDate, sellerDirectory]);
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
@@ -2390,13 +2418,44 @@ export default function PageQuote() {
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
-  const metrics = [
-    { label: "Órdenes asignadas", value: orders.length, icon: <Icons.Orders /> },
-    { label: "Pendientes de pago", value: orders.filter(order => order.payment_status !== "pagado" && !order.is_archived_quote).length, icon: <Icons.Money /> },
-    { label: "Pagadas", value: orders.filter(order => order.payment_status === "pagado").length, icon: <Icons.Check /> },
-    { label: "Crédito pendiente", value: accountsReceivableLoading ? "..." : creditPendingInvoicesCount, icon: <Icons.Receipt /> },
-    { label: "Archivadas", value: orders.filter(order => order.is_archived_quote).length, icon: <Icons.Archive /> },
+  const activeOrdersCount = orders.filter(o => !o.is_archived_quote).length;
+  const pendingPaymentCount = orders.filter(o => o.payment_status !== "pagado" && !o.is_archived_quote).length;
+  const partialPaymentCount = orders.filter(o => isPaymentPartial(o.payment_status)).length;
+  const paidTodayCount = orders.filter(o => {
+    if (!isPaymentPaid(o.payment_status)) return false;
+    const updated = new Date(o.updated_at);
+    const now = new Date();
+    return updated.toDateString() === now.toDateString();
+  }).length;
+
+  const CARD_ACCENTS = [
+    { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
+    { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
+    { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
+    { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
+    { color: "#06B6D4", bg: "#CFFAFE", glow: "#CFFAFE" },
   ];
+
+  const metrics = [
+    { label: "Órdenes asignadas", value: orders.length, icon: <Icons.Orders />, accentIdx: 0, sub: "Activas en caja" },
+    { label: "Pendientes de pago", value: orders.filter(order => order.payment_status !== "pagado" && !order.is_archived_quote).length, icon: <Icons.Money />, accentIdx: 1, sub: "Requieren seguimiento" },
+    { label: "Pagadas", value: orders.filter(order => order.payment_status === "pagado").length, icon: <Icons.Check />, accentIdx: 2, sub: "Completadas" },
+    { label: "Crédito pendiente", value: accountsReceivableLoading ? "..." : creditPendingInvoicesCount, icon: <Icons.Receipt />, accentIdx: 3, sub: "Por cobrar" },
+    { label: "Archivadas", value: orders.filter(order => order.is_archived_quote).length, icon: <Icons.Archive />, accentIdx: 4, sub: "Solo consulta" },
+  ];
+
+  function MetricCard({ icon, label, value, sub, accentIdx = 0 }) {
+    const acc = CARD_ACCENTS[accentIdx];
+    return (
+      <article className="pq-metric-card">
+        <div className="pq-metric-glow" style={{ background: acc.glow }} />
+        <div className="pq-metric-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
+        <div className="pq-metric-value">{value}</div>
+        <div className="pq-metric-label">{label}</div>
+        {sub && <div className="pq-metric-sub" style={{ color: acc.color }}>{sub}</div>}
+      </article>
+    );
+  }
 
   const getSidebarBadge = (isLoading, value) => (isLoading ? "..." : value);
 
@@ -2408,7 +2467,7 @@ export default function PageQuote() {
 
   const dashboardRecentOrders = orders
     .filter(order => !order.is_archived_quote)
-    .slice(0, 4);
+    .slice(0, 5);
 
   return (
     <div className="pq-root">
@@ -2425,19 +2484,24 @@ export default function PageQuote() {
       <main className="pq-main">
         <header className="pq-header">
           <div className="pq-header-left">
-            <button className="pq-mobile-toggle" onClick={() => setSidebarOpen(prev => !prev)} aria-label="Toggle sidebar">
-              <Icons.Menu />
+            <button className="pq-icon-btn" onClick={() => setSidebarOpen(prev => !prev)}>
+              {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
             <div>
-              
               {/* Nombre del apartado de la pantalla */}
-              <h1 className="pq-header-title">
+              <div className="pq-header-title">
                 {activeTab === "dashboard" ? "Panel de Caja" : activeTab === "credits" ? "Gestión de Créditos" : "Mis órdenes de caja"}
-              </h1>
+              </div>
+              <div className="pq-page-date">
+                {new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+              </div>
             </div>
           </div>
 
           <div className="pq-header-actions">
+            <button className="pq-icon-btn" onClick={() => fetchOrdersRef.current(user?.id)} title="Recargar" aria-label="Recargar">
+              <Icons.Refresh />
+            </button>
             <button className="pq-header-client-btn" onClick={() => setShowNewClientModal(true)} title="Agregar nuevo cliente">
               <Icons.Plus /> Nuevo Cliente
             </button>
@@ -2456,57 +2520,128 @@ export default function PageQuote() {
 
         {activeTab === "dashboard" && (
           <section className="pq-section">
-            <div className="pq-metrics-grid">
-              {metrics.map(metric => (
-                <article key={metric.label} className="pq-metric-card">
-                  <div className="pq-metric-icon">{metric.icon}</div>
-                  <div className="pq-metric-copy">
-                    <span>{metric.label}</span>
-                    <strong>{metric.value}</strong>
+            <div className="pq-greeting">
+              <div className="pq-greeting-copy">
+                <h2>Bienvenido, <span>{profile?.name || "Caja"}</span></h2>
+                <p>Aquí tienes el resumen de tu actividad de hoy.</p>
+                <div className="pq-greeting-badges">
+                  <div className="pq-greeting-count">
+                    <Icons.Orders />
+                    <strong>{activeOrdersCount}</strong> Órdenes activas
                   </div>
-                </article>
+                  <div className="pq-greeting-count pq-greeting-count--pending">
+                    <Icons.Money />
+                    <strong>{pendingPaymentCount}</strong> Pendientes de pago
+                  </div>
+                  <div className="pq-greeting-count pq-greeting-count--partial">
+                    <Icons.Clock />
+                    <strong>{partialPaymentCount}</strong> Pago parcial
+                  </div>
+                  <div className="pq-greeting-count pq-greeting-count--credit">
+                    <Icons.Receipt />
+                    <strong>{accountsReceivableLoading ? "..." : creditPendingInvoicesCount}</strong> Crédito pendiente
+                  </div>
+                  <div className="pq-greeting-count pq-greeting-count--paid-today">
+                    <Icons.Check />
+                    <strong>{paidTodayCount}</strong> Pagadas hoy
+                  </div>
+                </div>
+              </div>
+              <div className="pq-greeting-actions">
+                <button type="button" className="pq-greeting-btn primary" onClick={() => setShowNewClientModal(true)}>
+                  <Icons.Plus />
+                  Nuevo Cliente
+                </button>
+              </div>
+            </div>
+
+            <div className="pq-metrics-grid">
+              {metrics.map((m, i) => (
+                <MetricCard key={i} {...m} />
               ))}
             </div>
 
-            <div className="pq-panel pq-recent-panel">
-              <div className="pq-panel-head">
+            <section className="pa-panel acm-table-panel pq-recent-panel">
+              <div className="pa-panel-stripe" />
+              <div className="pa-panel-head pa-panel-head-results pq-panel-head">
                 <div>
-                  <span className="pq-section-kicker">Actividad reciente</span>
-                  <h2>Órdenes para Caja <span className="pq-orders-count">({dashboardRecentOrders.length})</span></h2>
+                  <h2>Órdenes recientes</h2>
+                  <p className="acm-panel-description">Las 5 órdenes más recientes del área de caja.</p>
                 </div>
-                <button className="pq-link-btn" onClick={() => setActiveTab("orders")}>Ver todas</button>
+                <button className="pq-link-btn" onClick={() => setActiveTab("orders")}>
+                  <span>Ver todas</span>
+                  <Icons.ArrowRight />
+                </button>
               </div>
+              <div className="ps-table-wrap pq-recent-table-wrap">
+                <table className="ps-table pq-table pq-recent-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Tipo de orden</th>
+                      <th>Estado</th>
+                      <th>Pago</th>
+                      <th aria-label="Acciones" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr><td colSpan={5} className="ps-table-empty pq-table-empty">Cargando órdenes...</td></tr>
+                    ) : dashboardRecentOrders.length === 0 ? (
+                      <tr><td colSpan={5} className="ps-table-empty pq-table-empty">No hay órdenes asignadas actualmente.</td></tr>
+                    ) : (
+                      dashboardRecentOrders.map(order => {
+                        const normalizedOrderType = (() => {
+                          const type = String(order.order_type || "normal").trim();
+                          if (!type || type.toLowerCase() === "normal") return "Normal";
+                          if (type.toLowerCase().includes("911")) return "911";
+                          return type.charAt(0).toUpperCase() + type.slice(1);
+                        })();
 
-              {loading ? (
-                <div className="pq-empty-panel">Cargando órdenes...</div>
-              ) : dashboardRecentOrders.length === 0 ? (
-                <div className="pq-empty-panel">No hay órdenes asignadas actualmente.</div>
-              ) : (
-                <div className="pq-recent-list">
-                  {dashboardRecentOrders.map(order => (
-                    <button key={order.id} type="button" className="pq-recent-item" onClick={() => handleViewOrder(order)}>
-                      <div className="pq-recent-primary">
-                      <div className="pq-recent-item-header">
-                        <span className="pq-recent-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-                        <span className="pq-recent-client">{order.client_name || "Cliente sin nombre"}</span>
-                      </div>
-                      </div>
-                      <div className="pq-recent-item-footer">
-                        <div className="pq-recent-badges">
-                          <OrderReviewBadge review={pendingOrderReviews[order.id]} />
-                          {isReturnedOrder(order) && <ReturnedBadge compact />}
-                          <StatusBadge status={order.status} className="pq-badge" />
-                          <PaymentBadge status={order.payment_status} className="pq-badge" />
-                        </div>
-                        <span className="pq-recent-view-btn" aria-hidden="true">
-                          <Icons.Eye />
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+                        return (
+                          <tr key={order.id} className="row-hover pq-order-row"
+                              onClick={() => handleViewOrder(order)}
+                              tabIndex={0}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleViewOrder(order); } }}>
+                            <td className="td-pad td-name">
+                              <div className="pq-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                                <span className="pq-client-cell-main">
+                                  <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                </span>
+                              </div>
+                            </td>
+                            <td className="td-pad td-order-type">
+                              {String(order.order_type || "normal").trim().toLowerCase() === "orden 911"
+                                ? <span className="pq-order-type-badge pq-order-type-badge--alert">911</span>
+                                : <span className="pq-order-type-badge pq-order-type-badge--normal">Normal</span>
+                              }
+                            </td>
+                            <td className="td-pad">
+                              <div className="pq-status-stack">
+                                <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                {isReturnedOrder(order) && <ReturnedBadge compact />}
+                                <StatusBadge status={order.status} className="pq-badge" />
+                              </div>
+                            </td>
+                            <td className="td-pad">
+                              <PaymentBadge status={order.payment_status} className="pq-badge" />
+                            </td>
+                            <td className="td-pad td-actions" data-row-action>
+                            <div className="table-actions" data-row-action>
+                              <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
+                                <Icons.Eye />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </section>
         )}
         {activeTab === "credits" && creditView === "list" && (
@@ -2701,112 +2836,330 @@ export default function PageQuote() {
         )}
 
         {activeTab === "orders" && (
-          // Vista de listado principal de órdenes, con filtros y búsqueda.
           <section className="pq-section">
-            {/* Filtros y búsqueda */}
-            <div className="pq-filters">
-              <div className="pq-search-box">
-                <Icons.Search />
+            <div className="ps-filters">
+              <div className="ps-search-wrap">
+                <span className="ps-search-icon"><Icons.Search /></span>
                 <input
-                  type="text"
-                  className="pq-search-input"
-                  placeholder="Buscar por cliente, facturacion, ID, vendedor o descripcion..."
+                  className="ps-input with-icon"
+                  placeholder="Buscar por cliente, factura, vendedor o descripción..."
                   value={search}
-                  onChange={event => setSearch(event.target.value)}
+                  onChange={event => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
                 />
               </div>
 
-              <select className="pq-input" value={filterStatus} onChange={event => setFilterStatus(event.target.value)}>
-                <option value="all">Todos los estados</option>
-                {STATUS_OPTIONS.map(status => (
-                  <option key={status} value={status}>{getOrderStatusConfig(status).label}</option>
-                ))}
-              </select>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <div className="ps-select-wrap">
+                  <select
+                    className="ps-input"
+                    style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+                    value={filterType}
+                    onChange={event => {
+                      setFilterType(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="all">Todos los tipos</option>
+                    <option value="normal">Normal</option>
+                    <option value="911">911 - Urgente</option>
+                  </select>
+                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+                </div>
 
-              <select className="pq-input" value={filterDate} onChange={event => setFilterDate(event.target.value)}>
-                <option value="all">Todas las fechas</option>
-                <option value="today">Hoy</option>
-                <option value="yesterday">Ayer</option>
-                <option value="3days">Últimos 3 días</option>
-                <option value="7days">Últimos 7 días</option>
-                <option value="month">Este mes</option>
-              </select>
+                <div className="ps-select-wrap">
+                  <select
+                    className="ps-input"
+                    style={{ minWidth: 150, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+                    value={filterStatus}
+                    onChange={event => {
+                      setFilterStatus(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="all">Todos los estados</option>
+                    {STATUS_OPTIONS.map(status => (
+                      <option key={status} value={status}>{getOrderStatusConfig(status).label}</option>
+                    ))}
+                  </select>
+                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+                </div>
 
-              <ClientFilterSelect
-                clients={clients}
-                value={filterClient}
-                onChange={setFilterClient}
-                className="pq-input"
-                allLabel="Todos los clientes"
-              />
+                <div className="ps-select-wrap">
+                  <select
+                    className="ps-input"
+                    style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+                    value={filterPayment}
+                    onChange={event => {
+                      setFilterPayment(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="all">Pago: Todos</option>
+                    {Object.entries(PAYMENT_COLORS).map(([key, value]) => (
+                      <option key={key} value={key}>{value.label}</option>
+                    ))}
+                  </select>
+                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+                </div>
 
+                <div className="ps-select-wrap">
+                  <select
+                    className="ps-input"
+                    style={{ minWidth: 150, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+                    value={filterDate}
+                    onChange={event => {
+                      setFilterDate(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="all">Todas las fechas</option>
+                    <option value="today">Hoy</option>
+                    <option value="yesterday">Ayer</option>
+                    <option value="3days">Últimos 3 días</option>
+                    <option value="7days">Últimos 7 días</option>
+                    <option value="month">Este mes</option>
+                  </select>
+                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+                </div>
 
+                <div className="ps-select-wrap">
+                  <ClientFilterSelect
+                    clients={clients}
+                    value={filterClient}
+                    onChange={value => {
+                      setFilterClient(value);
+                      setPage(1);
+                    }}
+                    className="ps-input"
+                    allLabel="Todos los clientes"
+                  />
+                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+                </div>
 
-              <select className="pq-input" value={filterArchive} onChange={event => setFilterArchive(event.target.value)}>
-                <option value="active">Activas</option>
-                <option value="archived">Archivadas</option>
-                <option value="all">Todas</option>
-              </select>
+                <div className="ps-select-wrap">
+                  <select
+                    className="ps-input"
+                    style={{ minWidth: 150, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+                    value={filterSeller}
+                    onChange={event => {
+                      setFilterSeller(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="all">Todos los vendedores</option>
+                    {Object.entries(sellerDirectory).map(([sellerId, sellerName]) => (
+                      <option key={sellerId} value={sellerId}>{sellerName || "Vendedor"}</option>
+                    ))}
+                  </select>
+                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+                </div>
 
-              <span className="pq-results-count">{filteredOrders.length} orden{filteredOrders.length !== 1 ? "es" : ""}</span>
+                <div className="ps-select-wrap">
+                  <select
+                    className="ps-input"
+                    style={{ minWidth: 120, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+                    value={filterArchive}
+                    onChange={event => {
+                      setFilterArchive(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="active">Activas</option>
+                    <option value="archived">Archivadas</option>
+                    <option value="all">Todas</option>
+                  </select>
+                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+                </div>
+
+                <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
+                  <button
+                    onClick={() => setViewMode("table")}
+                    className={`ps-view-toggle ${viewMode === "table" ? "active" : ""}`}
+                    title="Vista de tabla"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  </button>
+                  <button
+                    onClick={() => setViewMode("cards")}
+                    className={`ps-view-toggle ${viewMode === "cards" ? "active" : ""}`}
+                    title="Vista de tarjetas"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+                <span className="ps-filters-count">{filteredOrders.length} orden{filteredOrders.length !== 1 ? "es" : ""}</span>
+                {hasActiveFilters && (
+                  <button
+                    className="pq-btn pq-btn-secondary"
+                    onClick={() => {
+                      setSearch("");
+                      setFilterType("all");
+                      setFilterStatus("all");
+                      setFilterPayment("all");
+                      setFilterDate("all");
+                      setFilterClient("all");
+                      setFilterSeller("all");
+                      setFilterArchive("active");
+                      setPage(1);
+                    }}
+                  >
+                    <Icons.X /> Limpiar filtros
+                  </button>
+                )}
+              </div>
             </div>
 
-            {loading ? (
-              <div className="pq-empty-panel">Cargando órdenes...</div>
-            ) : filteredOrders.length === 0 ? (
-              <div className="pq-empty-panel">No hay órdenes que coincidan con los filtros.</div>
-            ) : (
-              <div className="pq-orders-grid">
-                {paginatedOrders.map(order => (
-                  <article key={order.id} className="pq-order-card">
-                    <div className="pq-order-top">
-                      <div className="pq-order-identity">
-                        <span className="pq-order-id">#{order.id ? order.id.slice(0, 8).toUpperCase() : "---"}</span>
-                        <span className="pq-order-date">
-                          <Icons.Clock /> {order.created_at ? new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" }) : "---"}
+            <div className={`ps-panel${viewMode === "cards" ? " ps-panel--transparent" : ""}`}>
+              <div className="ps-panel-stripe" />
+              {loading ? (
+                <div className="ps-cards-empty">Cargando órdenes...</div>
+              ) : filteredOrders.length === 0 ? (
+                <div className="ps-cards-empty">No hay órdenes que coincidan con los filtros.</div>
+              ) : viewMode === "table" ? (
+                <div className="ps-table-wrap">
+                  <table className="ps-table">
+                    <thead>
+                      <tr>
+                        <th>Cliente</th>
+                        <th>Tipo</th>
+                        <th>Estado</th>
+                        <th>Pago</th>
+                        <th>Fecha</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedOrders.map(order => (
+                        <tr
+                          key={order.id}
+                          className="row-hover ps-order-row"
+                          tabIndex={0}
+                          onClick={() => handleViewOrder(order)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              handleViewOrder(order);
+                            }
+                          }}
+                        >
+                          <td className="td-pad td-name">
+                            <div className="ps-client-cell">
+                              <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                              <span className="ps-client-cell-main">
+                                <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                <span className="ps-client-cell-badges">
+                                  <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                  {isReturnedOrder(order) && <ReturnedBadge compact />}
+                                </span>
+                              </span>
+                            </div>
+                          </td>
+                          <td className="td-pad">
+                            {String(order.order_type || "normal").trim().toLowerCase() === "orden 911" || String(order.order_type || "normal").trim().toLowerCase().includes("911") ? (
+                              <span className="pq-order-type-badge pq-order-type-badge--alert">911</span>
+                            ) : (
+                              <span className="pq-order-type-badge pq-order-type-badge--normal">Normal</span>
+                            )}
+                          </td>
+                          <td className="td-pad"><StatusBadge status={order.status} className="pq-badge" /></td>
+                          <td className="td-pad"><PaymentBadge status={order.payment_status} className="pq-badge" /></td>
+                          <td className="td-pad td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "long", year: "numeric" })}</td>
+                          <td className="td-pad td-actions" data-row-action>
+                            <div className="table-actions" data-row-action>
+                              <button className="table-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
+                                <Icons.Eye />
+                              </button>
+                              {canArchiveQuoteOrder(order, user?.id) && (
+                                <button className="table-action-btn archive" onClick={event => { event.stopPropagation(); setArchivingOrder(order); }} title="Archivar orden">
+                                  <Icons.Archive />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="ps-cards-grid">
+                  {paginatedOrders.map(order => {
+                    const isUrgent = String(order.order_type || "").toLowerCase().includes("911");
+                    return (
+                    <article
+                      key={order.id}
+                      className="ps-order-card"
+                      onClick={() => handleViewOrder(order)}
+                      data-order-type={isUrgent ? "911" : "normal"}
+                    >
+                      {/* Cliente: Avatar + Nombre + ID + Badges */}
+                      <div className="ps-order-card-client">
+                        <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                        <span className="ps-order-card-client-main">
+                          <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                          <span className="ps-order-card-client-badges">
+                            <span className="ps-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                            <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                            {isReturnedOrder(order) && <ReturnedBadge compact />}
+                          </span>
                         </span>
                       </div>
-                      <div className="pq-order-badges">
-                        <OrderReviewBadge review={pendingOrderReviews[order.id]} />
-                        {isReturnedOrder(order) && <ReturnedBadge compact />}
-                        <StatusBadge status={order.status} className="pq-badge" />
-                        <PaymentBadge status={order.payment_status} className="pq-badge" />
+
+                      {/* Tipo + Estado */}
+                      <div className="ps-order-card-fields">
+                        <div className="ps-order-card-field">
+                          <span className="ps-order-card-field-label">Tipo</span>
+                          {isUrgent
+                            ? <span className="acm-badge danger">911</span>
+                            : <span className="acm-badge neutral">Normal</span>
+                          }
+                        </div>
+                        <div className="ps-order-card-field">
+                          <span className="ps-order-card-field-label">Estado</span>
+                          <StatusBadge status={order.status} className="acm-badge" bordered />
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="pq-order-heading">
-                      <div className="pq-order-client">{order.client_name || "Cliente sin nombre"}</div>
-                      <div className="pq-order-description">{order.description || "Sin descripción"}</div>
-                    </div>
+                      {/* Pago + Fecha */}
+                      <div className="ps-order-card-fields">
+                        <div className="ps-order-card-field">
+                          <span className="ps-order-card-field-label">Pago</span>
+                          <PaymentBadge status={order.payment_status} className="acm-badge" bordered />
+                        </div>
+                        <div className="ps-order-card-field">
+                          <span className="ps-order-card-field-label">Fecha</span>
+                          <span className="ps-order-card-date">
+                            {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                          </span>
+                        </div>
+                      </div>
 
-                    <div className="pq-order-meta">
-                      <span><Icons.User /> {resolveSellerName(order, sellerDirectory)}</span>
-                      <span><Icons.File /> {order.material || "Material no definido"}</span>
-                    </div>
-                    {/* Acciones de la orden */}
-                    <div className="pq-order-footer">
-                      {/* Botón para ver detalles de la orden */}
-                      <button className="pq-btn pq-btn-ghost" onClick={() => handleViewOrder(order)}>
-                        <Icons.Eye />
-                        Ver detalles
-                      </button>
-                      {/* Botón para archivar la orden */}
-                      {canArchiveQuoteOrder(order, user?.id) && (
-                        <button
-                          className="pq-btn pq-btn-inline-archive"
-                          onClick={() => setArchivingOrder(order)}
-                        >
-                          <Icons.Archive />
-                          Archivar
+                      {/* Acciones */}
+                      <div className="ps-order-card-actions">
+                        <button className="card-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
+                          <Icons.Eye />
                         </button>
-                      )}
-                    </div>
-                  </article>
-                ))}
+                        {canArchiveQuoteOrder(order, user?.id) && (
+                          <button className="card-action-btn archive" onClick={event => { event.stopPropagation(); setArchivingOrder(order); }} title="Archivar orden">
+                            <Icons.Archived />
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                    );
+                  })}
                 </div>
               )}
+
               <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
-            </section>
+            </div>
+          </section>
         )}
       </main>
 

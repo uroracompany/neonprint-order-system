@@ -1965,32 +1965,45 @@ select option { background: var(--surface); color: var(--text); }
 }
 
 .ps-order-card {
-  background: var(--surface);
-  border: 1px solid var(--seller-client-border);
-  border-radius: var(--seller-client-radius);
-  padding: 16px;
+  background: rgba(255, 255, 255, 0.3);
+  border: 1px solid #bfd4ee;
+  border-radius: 18px;
+  padding: 14px 14px 12px;
   cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  box-shadow: var(--seller-client-shadow);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s ease;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .ps-order-card:hover {
-  border-color: var(--seller-client-border);
-  box-shadow: var(--seller-client-shadow-hover);
+  border-color: #9cc0e5;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
 }
 
 .ps-order-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  gap: 8px;
+  min-height: 26px;
 }
 
 .ps-order-card-id {
   font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-weight: 700;
+  color: #4b5d74;
   letter-spacing: 0.5px;
+}
+
+.ps-order-card-badges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .ps-order-card-client {
@@ -1998,10 +2011,12 @@ select option { background: var(--surface); color: var(--text); }
   align-items: flex-start;
   gap: 10px;
   flex-wrap: nowrap;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 6px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1.2;
+  min-height: 30px;
+  margin: 2px 0 4px;
 }
 
 .ps-order-card-client-main {
@@ -2051,11 +2066,39 @@ select option { background: var(--surface); color: var(--text); }
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+
+.ps-order-card-row {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #d8e6f3;
+  background: rgba(230, 239, 249, 0.55);
+  min-height: 46px;
+}
+
+.ps-order-card-row--date {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #d8e6f3;
+}
+
+.ps-order-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5b6d82;
 }
 
 .ps-order-card-date {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 13px;
+  color: #1f2937;
+  text-align: right;
+  font-weight: 600;
 }
 
 .ps-order-card-type .ps-badge {
@@ -2072,11 +2115,12 @@ select option { background: var(--surface); color: var(--text); }
 }
 
 .ps-order-card-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid #d8e6f3;
 }
 
 .card-action-btn {
@@ -2084,9 +2128,9 @@ select option { background: var(--surface); color: var(--text); }
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 32px;
+  height: 34px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s;
 }

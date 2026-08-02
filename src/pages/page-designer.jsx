@@ -1587,7 +1587,7 @@ export default function PageDesigner() {
                 </div>
                 <span className="ps-filters-count">{filteredOrders.length} visible{filteredOrders.length !== 1 ? "s" : ""}</span>
               </div>
-              <div className="ps-panel">
+              <div className={`ps-panel${viewMode === "cards" ? " ps-panel--transparent" : ""}`}>
                 <div className="ps-panel-stripe" />
                 {viewMode === "table" ? (
                   <div className="ps-table-wrap">
@@ -1642,7 +1642,7 @@ export default function PageDesigner() {
                                 {order.order_type === "orden 911" ? <span className="acm-badge danger">911</span> : <span className="acm-badge neutral">Normal</span>}
                               </td>
                               <td className="td-pad"><StatusBadge status={order.status} className="acm-badge" showDot={false} bordered /></td>
-                              <td className="td-pad">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                              <td className="td-pad"><span className="ps-date-badge">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span></td>
                               <td className="td-pad">
                                 {fileCount > 0
                                   ? <span className="acm-badge info">{fileCount} {fileCount === 1 ? "Archivo" : "Archivos"}</span>
@@ -1675,31 +1675,52 @@ export default function PageDesigner() {
                   <div className="ps-cards-grid">
                     {paginatedOrders.map(order => {
                       const fileCount = getOrderFiles(order).length + (orderFiles?.[order.id]?.length || 0);
+                      const isUrgent = String(order.order_type || "").toLowerCase().includes("911");
                       return (
-                      <div key={order.id} className="ps-order-card" onClick={() => handleViewOrder(order)}>
-                        <div className="ps-order-card-header">
-                          <span className="ps-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-                          <div className="ps-order-card-badges">
-                            {isReturnedOrder(order) && <ReturnedBadge compact />}
-                            {isNewOrder(order) && <span className="acm-badge pd-new-order-badge">Nuevo</span>}
-                            <OrderReviewBadge review={pendingOrderReviews[order.id]} />
-                            {getEditLabel(order) && <span className="acm-badge warning">{getEditLabel(order)}</span>}
+                      <div
+                        key={order.id}
+                        className="ps-order-card"
+                        onClick={() => handleViewOrder(order)}
+                        data-order-type={isUrgent ? "911" : "normal"}
+                      >
+                        <div className="ps-order-card-client">
+                          <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                          <span className="ps-order-card-client-main">
+                            <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                            <span className="ps-order-card-client-badges">
+                              <span className="ps-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                              {isReturnedOrder(order) && <ReturnedBadge compact />}
+                              {isNewOrder(order) && <span className="acm-badge pd-new-order-badge">Nuevo</span>}
+                              <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                              {getEditLabel(order) && <span className="acm-badge warning">{getEditLabel(order)}</span>}
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className="ps-order-card-fields">
+                          <div className="ps-order-card-field">
+                            <span className="ps-order-card-field-label">Tipo</span>
+                            {isUrgent
+                              ? <span className="acm-badge danger">911</span>
+                              : <span className="acm-badge neutral">Normal</span>
+                            }
+                          </div>
+                          <div className="ps-order-card-field">
+                            <span className="ps-order-card-field-label">Estado</span>
                             <StatusBadge status={order.status} className="acm-badge" bordered />
                           </div>
                         </div>
-                        <div className="ps-order-card-client">{order.client_name}</div>
+
                         <div className="ps-order-card-footer">
-                          <span className="ps-order-card-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
-                          {order.order_type === "orden 911"
-                            ? <span className="acm-badge danger" style={{ fontSize: 10, padding: "3px 8px" }}>911</span>
-                            : <span className="acm-badge neutral" style={{ fontSize: 10, padding: "3px 8px" }}>Normal</span>
-                          }
-                        </div>
-                        <div className="ps-order-card-files">
+                          <span className="ps-order-card-date">
+                            {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </span>
                           {fileCount > 0
                             ? <span className="acm-badge info">{fileCount} {fileCount === 1 ? "Archivo" : "Archivos"}</span>
-                            : <span className="acm-badge neutral">Sin archivos</span>}
+                            : <span className="acm-badge neutral">Sin archivos</span>
+                          }
                         </div>
+
                         <div className="ps-order-card-actions">
                           <button className="card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                             <Icons.Eye />
