@@ -1189,11 +1189,13 @@ export default function PageDesigner() {
     return matchesSearch && matchesType && matchesStatus && matchesClient && matchesDate && matchesArchive;
   });
 
-  const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
+  const effectivePerPage = viewMode === "cards" ? 10 : PER_PAGE;
+  const totalPages = Math.ceil(filteredOrders.length / effectivePerPage) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
+  useEffect(() => { setPage(1); }, [viewMode]);
 
   const shouldEnableOrdersScroll = filteredOrders.length > 7;
 
@@ -1629,7 +1631,6 @@ export default function PageDesigner() {
                                   <span className="ps-client-cell-main">
                                     <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                                     <span className="ps-client-cell-badges">
-                                      <span style={{ fontFamily: "monospace", fontSize: 11, color: "#6b7280" }}>#{order.id?.slice(0, 8).toUpperCase()}</span>
                                       {isReturnedOrder(order) && <ReturnedBadge compact />}
                                       {isNewOrder(order) && <span className="acm-badge pd-new-order-badge">Nuevo</span>}
                                       <OrderReviewBadge review={pendingOrderReviews[order.id]} />

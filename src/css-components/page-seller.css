@@ -54,6 +54,10 @@
   --seller-client-radius: 14px;
   --seller-client-shadow: 0 10px 28px rgba(15, 30, 64, .055);
   --seller-client-shadow-hover: 0 12px 30px rgba(15, 30, 64, .07);
+
+  --banner-border: 1px solid #dbe3ef;
+  --banner-radius: 14px;
+  --banner-shadow: 0 10px 28px rgba(15, 30, 64, .055);
 }
 
 /* ── RESET ─────────────────────────────────────────────────────── */
@@ -1948,203 +1952,224 @@ select option { background: var(--surface); color: var(--text); }
   border-color: var(--primary);
 }
 
-/* ── Card View ─────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════
+   ORDER CARDS REDESIGN - Banner Style (matching Designer module)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Grid Container ─────────────────────────────────────────────── */
 .ps-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  padding: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100% / 3), 1fr));
+  gap: 20px;
+  padding: 0 20px 20px;
+  background: transparent;
+  border: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .ps-cards-empty {
   grid-column: 1 / -1;
   text-align: center;
-  padding: 48px 20px;
-  color: var(--text-muted);
+  padding: 60px 24px;
+  color: var(--text-muted, #8899b5);
   font-size: 14px;
-}
-
-.ps-order-card {
-  background: rgba(255, 255, 255, 0.3);
-  border: 1px solid #bfd4ee;
-  border-radius: 18px;
-  padding: 14px 14px 12px;
-  cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s ease;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
+}
+
+.ps-cards-empty svg {
+  opacity: 0.4;
+}
+
+.ps-panel--transparent {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.ps-panel--transparent .ps-panel-stripe {
+  display: none;
+}
+
+/* ── Card Base (Banner style) ───────────────────────────────────── */
+.ps-order-card {
+  background: var(--surface, #fff);
+  border: var(--banner-border);
+  border-radius: var(--banner-radius);
+  box-shadow: var(--banner-shadow);
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
 }
 
 .ps-order-card:hover {
-  border-color: #9cc0e5;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
-  transform: translateY(-1px);
+  border-color: var(--banner-border);
+  box-shadow: var(--banner-shadow);
+  transform: none;
 }
 
-.ps-order-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  min-height: 26px;
-}
-
-.ps-order-card-id {
-  font-size: 12px;
-  font-weight: 700;
-  color: #4b5d74;
-  letter-spacing: 0.5px;
-}
-
-.ps-order-card-badges {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
+/* ── Client Section (Avatar + Name + ID + Badges) ───────────────── */
 .ps-order-card-client {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  flex-wrap: nowrap;
-  font-size: 18px;
-  font-weight: 800;
-  color: #111827;
-  line-height: 1.2;
-  min-height: 30px;
-  margin: 2px 0 4px;
+  padding: 12px 18px 10px;
+  border-bottom: 1px solid var(--border, #dde3ef);
+  font-size: inherit;
+  font-weight: inherit;
+  min-height: unset;
+  margin: 0;
 }
 
 .ps-order-card-client-main {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
+  flex: 1;
 }
 
-.ps-order-card-client-main > span:first-child {
+.ps-order-card-client-main > strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #0f1e40);
+  line-height: 1.3;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ps-order-card-desc {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-bottom: 12px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.4;
+.ps-order-card-client-main > span:first-child {
+  min-width: unset;
+  overflow: unset;
+  text-overflow: unset;
 }
 
-.ps-order-card-meta {
+.ps-order-card-client-badges {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
-.ps-order-card-material {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--primary);
-  background: rgba(15, 30, 64, 0.06);
-  padding: 4px 10px;
-  border-radius: 6px;
+.ps-order-card-id {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  font-family: 'SF Mono', 'Fira Code', monospace, 'Poppins', sans-serif;
+  letter-spacing: 0.02em;
 }
 
+/* ── Fields Row (Tipo + Estado / Pago + Fecha) ──────────────────── */
+.ps-order-card-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 0;
+}
+
+.ps-order-card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 18px;
+}
+
+.ps-order-card-field:first-child {
+  border-right: 1px solid var(--border, #dde3ef);
+}
+
+.ps-order-card-field-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted, #8899b5);
+  line-height: 1;
+}
+
+.ps-order-card-field .acm-badge,
+.ps-order-card-field .ps-badge,
+.ps-order-card-field .pq-badge {
+  width: fit-content;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────── */
 .ps-order-card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 10px 18px;
   gap: 8px;
-}
-
-.ps-order-card-row {
-  display: grid;
-  grid-template-columns: 78px 1fr;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid #d8e6f3;
-  background: rgba(230, 239, 249, 0.55);
-  min-height: 46px;
-}
-
-.ps-order-card-row--date {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: #d8e6f3;
-}
-
-.ps-order-card-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #5b6d82;
+  border-top: 1px solid var(--border, #dde3ef);
 }
 
 .ps-order-card-date {
-  font-size: 13px;
-  color: #1f2937;
-  text-align: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
   font-weight: 600;
+  color: var(--text-sub, #4a5e80);
+  background: var(--surface-alt, #f5f7fb);
+  border: 1px solid var(--border, #dde3ef);
+  padding: 5px 10px;
+  border-radius: 8px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-align: left;
+}
+
+.ps-order-card-footer .acm-badge,
+.ps-order-card-footer .ps-badge,
+.ps-order-card-footer .pq-badge {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.ps-order-card-type {
+  display: flex;
+  align-items: center;
 }
 
 .ps-order-card-type .ps-badge {
   font-size: 10px;
   padding: 3px 8px;
-  border-radius: 4px;
-  font-weight: 600;
 }
 
-.ps-order-card-files {
-  display: flex;
-  align-items: center;
-  margin-top: 8px;
-}
-
+/* ── Actions (Icon-only buttons) ────────────────────────────────── */
 .ps-order-card-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 2px;
-  padding-top: 10px;
-  border-top: 1px solid #d8e6f3;
+  grid-template-columns: repeat(auto-fill, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border, #dde3ef);
 }
 
 .card-action-btn {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 34px;
+  height: 32px;
   border: 1px solid transparent;
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  flex: 1;
 }
 
-.card-action-btn.edit {
-  color: #d97706;
-  border-color: #fde68a;
-  background: #fffbeb;
-}
-
-.card-action-btn.edit:hover {
-  background: #d97706;
-  color: #fff;
-  border-color: #d97706;
+.card-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
 .card-action-btn.view {
@@ -2157,6 +2182,20 @@ select option { background: var(--surface); color: var(--text); }
   background: #1d4ed8;
   color: #fff;
   border-color: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
+}
+
+.card-action-btn.edit {
+  color: #d97706;
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.card-action-btn.edit:hover {
+  background: #d97706;
+  color: #fff;
+  border-color: #d97706;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
 }
 
 .card-action-btn.cancel {
@@ -2169,6 +2208,7 @@ select option { background: var(--surface); color: var(--text); }
   background: #dc2626;
   color: #fff;
   border-color: #dc2626;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
 }
 
 .card-action-btn.archive {
@@ -2181,7 +2221,61 @@ select option { background: var(--surface); color: var(--text); }
   background: #F59E0B;
   color: #fff;
   border-color: #F59E0B;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
 }
+
+/* ── Badge Overrides for Cards ──────────────────────────────────── */
+.ps-order-card .acm-badge,
+.ps-order-card .ps-badge,
+.ps-order-card .pq-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.ps-order-card .pd-returned-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+}
+
+.ps-order-card .pd-new-order-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .ps-cards-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .ps-order-card-client,
+  .ps-order-card-fields,
+  .ps-order-card-footer,
+  .ps-order-card-actions {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .ps-order-card-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .ps-order-card-field:first-child {
+    border-right: none;
+    border-bottom: 1px solid var(--border, #dde3ef);
+  }
+
+  .ps-order-card-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── SELLER NOTIFICATION TOAST ─────────────────────────────────────── */
 /* Stack flotante donde se apilan las notificaciones del vendedor. */
 .ps-notification-stack {

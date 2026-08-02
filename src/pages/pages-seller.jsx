@@ -85,6 +85,7 @@ const ACTIVE_WORKFLOW_STATUSES_FOR_SELLER = [
 ];
 
 const SELLER_ORDER_PAGE_SIZE = 15;
+const SELLER_CARD_PAGE_SIZE = 10;
 const EMPTY_SELLER_SUMMARY = {
   todayOrders: 0,
   pending: 0,
@@ -365,7 +366,7 @@ export default function PageSeller() {
     try {
       const result = await runSellerOrderAction("list", {
         page: nextPage,
-        pageSize: SELLER_ORDER_PAGE_SIZE,
+        pageSize: viewMode === "cards" ? SELLER_CARD_PAGE_SIZE : SELLER_ORDER_PAGE_SIZE,
         search: debouncedSearch,
         status: filterStatus,
         paymentStatus: filterPayment,
@@ -422,6 +423,7 @@ export default function PageSeller() {
     filterStatus,
     page,
     runSellerOrderAction,
+    viewMode,
     showToast,
   ]);
 
@@ -465,6 +467,10 @@ export default function PageSeller() {
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, filterDate, filterStatus, filterPayment, filterClient, filterArchive]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [viewMode]);
 
   useEffect(() => {
     fetchOrders({ nextPage: page, includeDashboard: true });
@@ -987,7 +993,7 @@ export default function PageSeller() {
                 </div>
                 <span className="ps-filters-count">{ordersTotal} resultado{ordersTotal !== 1 ? "s" : ""}</span>
               </div>
-              <div className="ps-panel">
+              <div className={`ps-panel${viewMode === "cards" ? " ps-panel--transparent" : ""}`}>
                 <div className="ps-panel-stripe" />
                 {viewMode === "table" ? (
                   <div className="ps-table-wrap">
@@ -1085,35 +1091,48 @@ export default function PageSeller() {
                     ) : orders.length === 0 ? (
                       <div className="ps-cards-empty">No hay Ordenes disponibles</div>
                     ) : (
-                      orders.map(o => (
-                        <div key={o.id} className="ps-order-card" onClick={() => handleViewOrder(o)}>
-                          <div className="ps-order-card-header">
-                            <span className="ps-order-card-id">{o.invoice_number || "---"}</span>
-                            <div className="ps-order-card-badges">
-                              <StatusBadge status={o.status} />
-                              {isReturnedOrder(o) && <ReturnedBadge compact />}
-                              <OrderReviewBadge review={pendingOrderReviews[o.id]} />
-                            </div>
-                          </div>
+                      orders.map(o => {
+                        const isUrgent = String(o.order_type || "").toLowerCase().includes("911");
+                        return (
+                        <div
+                          key={o.id}
+                          className="ps-order-card"
+                          onClick={() => handleViewOrder(o)}
+                          data-order-type={isUrgent ? "911" : "normal"}
+                        >
                           <div className="ps-order-card-client">
                             <span className="acm-avatar acm-avatar-small">{getInitials(o.client_name)}</span>
-                            <span>{o.client_name || "Sin cliente"}</span>
-                          </div>
-                          <div className="ps-order-card-meta">
-                            <StatusBadge status={o.payment_status} type="payment" />
-                          </div>
-                          <div className="ps-order-card-footer">
-                            <span className="ps-order-card-date">
-                              {new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}
+                            <span className="ps-order-card-client-main">
+                              <strong title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</strong>
+                              <span className="ps-order-card-client-badges">
+                                <span className="ps-order-card-id">{o.invoice_number || "---"}</span>
+                                {isReturnedOrder(o) && <ReturnedBadge compact />}
+                                <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                              </span>
                             </span>
-                            <div className="ps-order-card-type">
-                              {o.order_type === "orden 911" ? (
-                                <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B", border: "1px solid #EF444420" }}>911</span>
-                              ) : (
-                                <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>Normal</span>
-                              )}
+                          </div>
+
+                          <div className="ps-order-card-fields">
+                            <div className="ps-order-card-field">
+                              <span className="ps-order-card-field-label">Tipo</span>
+                              {isUrgent
+                                ? <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B", border: "1px solid #EF444420" }}>911</span>
+                                : <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>Normal</span>
+                              }
+                            </div>
+                            <div className="ps-order-card-field">
+                              <span className="ps-order-card-field-label">Estado</span>
+                              <StatusBadge status={o.status} />
                             </div>
                           </div>
+
+                          <div className="ps-order-card-footer">
+                            <span className="ps-order-card-date">
+                              {new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                            </span>
+                            <StatusBadge status={o.payment_status} type="payment" />
+                          </div>
+
                           <div className="ps-order-card-actions">
                             <button className="card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
                               <Icons.Eye />
@@ -1139,7 +1158,8 @@ export default function PageSeller() {
                             ) : null}
                           </div>
                         </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 )}

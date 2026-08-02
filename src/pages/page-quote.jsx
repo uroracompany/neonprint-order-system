@@ -36,6 +36,7 @@ import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
+import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
 import "../css-components/page-seller.css";
 import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
@@ -2412,11 +2413,13 @@ export default function PageQuote() {
     });
   }, [orders, search, filterType, filterStatus, filterPayment, filterClient, filterSeller, filterArchive, filterDate, sellerDirectory]);
 
-  const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
+  const effectivePerPage = viewMode === "cards" ? 10 : PER_PAGE;
+  const totalPages = Math.ceil(filteredOrders.length / effectivePerPage) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
+  useEffect(() => { setPage(1); }, [viewMode]);
 
   const activeOrdersCount = orders.filter(o => !o.is_archived_quote).length;
   const pendingPaymentCount = orders.filter(o => o.payment_status !== "pagado" && !o.is_archived_quote).length;
@@ -2463,6 +2466,7 @@ export default function PageQuote() {
     { id: "dashboard", label: "Resumen", icon: <Icons.Dashboard /> },
     { id: "orders", label: "Mis órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loading, orders.filter(order => !order.is_archived_quote).length) },
     { id: "credits", label: "Créditos", icon: <Icons.Receipt />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
+    { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount },
   ];
 
   const dashboardRecentOrders = orders
@@ -2490,7 +2494,7 @@ export default function PageQuote() {
             <div>
               {/* Nombre del apartado de la pantalla */}
               <div className="pq-header-title">
-                {activeTab === "dashboard" ? "Panel de Caja" : activeTab === "credits" ? "Gestión de Créditos" : "Mis órdenes de caja"}
+                {activeTab === "dashboard" ? "Panel de Caja" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "notifications" ? "Notificaciones" : "Mis órdenes de caja"}
               </div>
               <div className="pq-page-date">
                 {new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
@@ -2514,6 +2518,7 @@ export default function PageQuote() {
               onArchive={notif.archive}
               onDelete={notif.deleteNotification}
               onDismissToast={notif.dismissToast}
+              onViewAll={() => setActiveTab("notifications")}
             />
           </div>
         </header>
@@ -3159,6 +3164,23 @@ export default function PageQuote() {
 
               <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
             </div>
+          </section>
+        )}
+
+        {activeTab === "notifications" && (
+          <section className="pq-section">
+            <DesignerNotificationsModule
+              notifications={notif.notifications}
+              archivedNotifications={notif.archivedNotifications}
+              unreadCount={notif.unreadCount}
+              loading={notif.loading}
+              archivedLoading={notif.archivedLoading}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDeleteAll={notif.deleteNotificationsByScope}
+            />
           </section>
         )}
       </main>
