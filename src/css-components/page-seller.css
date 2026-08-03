@@ -2099,6 +2099,7 @@ select option { background: var(--surface); color: var(--text); }
 .ps-order-card-field .ps-badge,
 .ps-order-card-field .pq-badge {
   width: fit-content;
+  border-radius: 20px;
 }
 
 /* ── Footer ─────────────────────────────────────────────────────── */
@@ -2232,6 +2233,7 @@ select option { background: var(--surface); color: var(--text); }
   padding: 3px 8px;
   font-weight: 600;
   letter-spacing: 0.03em;
+  border-radius: 20px;
 }
 
 .ps-order-card .pd-returned-badge {

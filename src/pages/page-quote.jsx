@@ -37,6 +37,8 @@ import useOrderEventReviews from "../hooks/useOrderEventReviews";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
+import QuoteProfileModule from "../components/quote/QuoteProfileModule";
+import "../components/quote/QuoteProfileModule.css";
 import "../css-components/page-seller.css";
 import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
@@ -2467,6 +2469,7 @@ export default function PageQuote() {
     { id: "orders", label: "Mis órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loading, orders.filter(order => !order.is_archived_quote).length) },
     { id: "credits", label: "Créditos", icon: <Icons.Receipt />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
     { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount },
+    { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
   ];
 
   const dashboardRecentOrders = orders
@@ -2494,7 +2497,7 @@ export default function PageQuote() {
             <div>
               {/* Nombre del apartado de la pantalla */}
               <div className="pq-header-title">
-                {activeTab === "dashboard" ? "Panel de Caja" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "notifications" ? "Notificaciones" : "Mis órdenes de caja"}
+                {activeTab === "dashboard" ? "Panel de Caja" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "notifications" ? "Notificaciones" : activeTab === "profile" ? "Mi Perfil" : "Mis órdenes de caja"}
               </div>
               <div className="pq-page-date">
                 {new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
@@ -3164,6 +3167,12 @@ export default function PageQuote() {
 
               <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
             </div>
+          </section>
+        )}
+
+        {activeTab === "profile" && (
+          <section className="pq-section">
+            <QuoteProfileModule authUser={user} fallbackProfile={profile} />
           </section>
         )}
 

@@ -2645,6 +2645,7 @@
 
 .pq-root .ps-order-card-field .acm-badge {
   width: fit-content;
+  border-radius: 20px;
 }
 
 /* Date Badge */
@@ -2723,6 +2724,7 @@
   padding: 3px 8px;
   font-weight: 600;
   letter-spacing: 0.03em;
+  border-radius: 20px;
 }
 
 .pq-root .ps-order-card .pd-returned-badge {
