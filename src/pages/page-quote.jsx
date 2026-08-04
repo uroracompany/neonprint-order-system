@@ -11,6 +11,7 @@ import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobo
 import FileUploadZone from "../components/ui/FileUploadZone";
 import CreateClientModal from "../components/ui/CreateClientModal";
 import SettleCreditModal from "../components/ui/SettleCreditModal";
+import ImagePreviewModal from "../components/ui/ImagePreviewModal";
 import {
   ORDER_STATUS,
   PAYMENT_STATUS,
@@ -18,6 +19,7 @@ import {
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   ARCHIVE_MODULES,
+  PRODUCTION_AREAS,
   getOrderStatusConfig,
   isPaymentCredit,
   isPaymentPaid,
@@ -304,6 +306,7 @@ function QuoteOrderDetailModal({
   const [localError, setLocalError] = useState("");
   const [creditClientRequired, setCreditClientRequired] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState("");
+  const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -316,6 +319,7 @@ function QuoteOrderDetailModal({
       setLocalError("");
       setCreditClientRequired(false);
       setReceiptUrl("");
+      setImagePreviewUrl(null);
     }
   }, [open, order?.id, order?.payment_status]);
 
@@ -477,25 +481,37 @@ function QuoteOrderDetailModal({
 
           <div className="pq-detail-grid">
             <div className="pq-panel">
-              <div className="pq-panel-title">Información de la orden</div>
+              <div className="pq-panel-title"><Icons.FileText /> Información de la orden</div>
               <div className="pq-info-list">
-                <div className="pq-info-row"><span>Cliente</span><strong>{order.client_name || "No definido"}</strong></div>
-                <div className="pq-info-row"><span>Vendedor</span><strong>{resolveSellerName(order, sellerDirectory)}</strong></div>
-                <div className="pq-info-row"><span>Teléfono</span><strong>{order.client_contact || order.client_phone || "No definido"}</strong></div>
-                <div className="pq-info-row"><span>Núm. Facturación</span><strong>{order.invoice_number || "No definido"}</strong></div>
-                <div className="pq-info-row"><span>Tipo</span><strong>{order.order_type || "No definido"}</strong></div>
-                <div className="pq-info-row"><span>Material</span><strong>{order.material || "No definido"}</strong></div>
+                <div className="pq-info-row"><span><Icons.User /> Cliente</span><strong>{order.client_name || "No definido"}</strong></div>
+                <div className="pq-info-row"><span><Icons.User /> Vendedor</span><strong>{resolveSellerName(order, sellerDirectory)}</strong></div>
+                <div className="pq-info-row"><span><Icons.Phone /> Teléfono</span><span className="pq-info-badge pq-info-badge--phone">{order.client_contact || order.client_phone || "No definido"}</span></div>
+                <div className="pq-info-row"><span><Icons.FileText /> Núm. Facturación</span><strong>{order.invoice_number || "No definido"}</strong></div>
+                <div className="pq-info-row"><span><Icons.Package /> Tipo</span>
+                  {order.order_type === "orden 911" ? (
+                    <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B", border: "1px solid #EF444420" }}>911</span>
+                  ) : (
+                    <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>Normal</span>
+                  )}
+                </div>
+                {/* Materiales de la orden */}
+                <div className="pq-info-row"><span><Icons.Package /> Material</span>
+                  <div className="pq-info-materials">
+                    {(order.material || "").split(",").map((m, i) => m.trim() ? (
+                      <span key={i} className="pq-material-badge">{m.trim()}</span>
+                    ) : null)}
+                    {!order.material && <span className="pq-material-badge">No definido</span>}
+                  </div>
+                </div>
               </div>
               <div className="pq-description-box">
-                <span className="pq-description-label">Descripción</span>
+                <span className="pq-description-label"><Icons.Clipboard /> Descripción</span>
                 <p>{order.description || "Sin descripción"}</p>
               </div>
             </div>
 
             <div className="pq-panel">
-              <div className="pq-panel-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                <Icons.File /> Archivos Adjuntos
-              </div>
+              <div className="pq-panel-title"><Icons.File /> Archivos Adjuntos</div>
               {orderFiles.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {orderFiles.map((fileUrl, index) => (
@@ -511,34 +527,24 @@ function QuoteOrderDetailModal({
                 <div className="pq-empty-panel">No hay archivos principales disponibles.</div>
               )}
 
-              <div className="pq-preview-block">
-                <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div className="pq-preview-block pq-preview-block--bare">
+                <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
                   <Icons.Eye /> Orden de Trabajo
                 </span>
                 {order.preview_image ? (
-                  <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                    <img
-                      src={order.preview_image}
-                      alt="preview"
-                      style={{
-                        width: "100%",
-                        borderRadius: "var(--pq-radius-md)",
-                        border: "1px solid var(--pq-border)",
-                        cursor: "pointer",
-                        transition: "transform 0.2s, box-shadow 0.2s",
-                      }}
-                      onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
-                      onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
-                    />
-                  </a>
+                  <div className="pq-work-preview" onClick={() => setImagePreviewUrl(order.preview_image)}>
+                    <span className="pq-work-preview-btn">
+                      <Icons.Eye /> Ver orden de trabajo
+                    </span>
+                  </div>
                 ) : (
                   <span className="pq-preview-empty">No hay preview cargado.</span>
                 )}
               </div>
 
               {referenceImageUrls.length > 0 && (
-                <div className="pq-preview-block" style={{ marginTop: 16 }}>
-                  <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div className="pq-preview-block pq-preview-block--dashed" style={{ marginTop: 16 }}>
+                  <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
                     <Icons.Image /> Imágenes de referencia
                   </span>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
@@ -564,14 +570,52 @@ function QuoteOrderDetailModal({
                   </div>
                 </div>
               )}
-              {productionFiles.length > 0 && (
-                <div className="pq-preview-block" style={{ marginTop: 16 }}>
-                  <span className="pq-description-label">Clasificacion de produccion</span>
-                  <span className="pq-upload-hint">
-                    {productionFiles.length - unclassifiedProductionFiles} clasificados / {productionFiles.length} archivos
-                  </span>
-                </div>
-              )}
+              {productionFiles.length > 0 && (() => {
+                const areaCounts = PRODUCTION_AREAS.reduce((acc, area) => {
+                  acc[area.code] = productionFiles.filter(f => f.production_area_code === area.code).length;
+                  return acc;
+                }, {});
+                const classified = productionFiles.length - unclassifiedProductionFiles;
+                
+                return (
+                  <div className="pq-preview-block" style={{ marginTop: 16 }}>
+                    <div className="pq-production-status">
+                      <span className="pq-production-status-header">
+                        <Icons.Package /> Clasificación de producción
+                      </span>
+                      <span className="pq-production-status-text">
+                        {classified} de {productionFiles.length} archivos clasificados
+                      </span>
+                      <div className="pq-production-area-list">
+                        {PRODUCTION_AREAS.map(area => {
+                          const count = areaCounts[area.code] || 0;
+                          const percent = productionFiles.length > 0 ? Math.round((count / productionFiles.length) * 100) : 0;
+                          return (
+                            <div className="pq-production-area-row" key={area.code}>
+                              <span className="pq-production-area-label">{area.label}</span>
+                              <div className="pq-production-area-bar">
+                                <div className="pq-production-area-bar-fill" style={{ width: `${percent}%` }} />
+                              </div>
+                              <span className="pq-production-area-count">{count} {count === 1 ? 'archivo' : 'archivos'}</span>
+                              <span className="pq-production-area-percent">{percent}%</span>
+                            </div>
+                          );
+                        })}
+                        {unclassifiedProductionFiles > 0 && (
+                          <div className="pq-production-area-row">
+                            <span className="pq-production-area-label">Pendientes</span>
+                            <div className="pq-production-area-bar">
+                              <div className="pq-production-area-bar-fill" style={{ width: `${productionFiles.length > 0 ? Math.round((unclassifiedProductionFiles / productionFiles.length) * 100) : 0}%` }} />
+                            </div>
+                            <span className="pq-production-area-count">{unclassifiedProductionFiles} {unclassifiedProductionFiles === 1 ? 'archivo' : 'archivos'}</span>
+                            <span className="pq-production-area-percent">{productionFiles.length > 0 ? Math.round((unclassifiedProductionFiles / productionFiles.length) * 100) : 0}%</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -756,6 +800,13 @@ function QuoteOrderDetailModal({
           </div>
         </div>
       </div>
+
+      <ImagePreviewModal
+        open={!!imagePreviewUrl}
+        imageUrl={imagePreviewUrl}
+        alt="Orden de trabajo"
+        onClose={() => setImagePreviewUrl(null)}
+      />
     </div>
   );
 }

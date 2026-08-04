@@ -1,0 +1,54 @@
+.ipm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.ipm-shell {
+  position: relative;
+  width: min(90vw, 900px);
+  max-height: 90vh;
+  background: var(--pq-surface, #ffffff);
+  border-radius: var(--pq-radius-xl, 20px);
+  border: 1px solid var(--pq-border, #dde3ef);
+  box-shadow: 0 32px 80px rgba(15, 23, 42, 0.3);
+  overflow: hidden;
+}
+
+.ipm-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--pq-text, #0f1e40);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: background 0.2s, transform 0.2s;
+}
+
+.ipm-close:hover {
+  background: rgba(255, 255, 255, 1);
+  transform: scale(1.08);
+}
+
+.ipm-image {
+  display: block;
+  width: 100%;
+  max-height: 85vh;
+  object-fit: contain;
+}
