@@ -42,11 +42,13 @@ import DesignerNotificationsModule from "../components/designer/DesignerNotifica
 import QuoteProfileModule from "../components/quote/QuoteProfileModule";
 import "../components/quote/QuoteProfileModule.css";
 import "../css-components/page-seller.css";
+import "../css-components/page-admin.css";
+import "../components/clients/AdminClientsModule.css";
 import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import FileCard from "../components/FileCard";
-import { loadClients, orderMatchesClientFilter, searchClients } from "../utils/clients";
+import { loadClients, orderMatchesClientFilter, searchClients, formatDominicanPhone } from "../utils/clients";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import "../css-components/page-quote.css";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
@@ -787,7 +789,7 @@ function QuoteOrderDetailModal({
                 </button>
               )}
               {canMoveToProduction && (
-                <button className="pq-btn pq-btn-return" onClick={() => onOpenProductionModal(order)}>
+                <button className="pq-btn pq-btn-primary" onClick={() => onOpenProductionModal(order)}>
                   <Icons.Package />
                   Dar paso a producción
                 </button>
@@ -890,6 +892,7 @@ function CreditClientDetailView({
   const allOpenSelected = openInvoices.length > 0 && openInvoices.every((item) => selectedIds.includes(item.order_id));
   const [detailSearch, setDetailSearch] = useState("");
   const [detailFilter, setDetailFilter] = useState("all");
+  const [detailPage, setDetailPage] = useState(1);
 
   const filteredInvoices = useMemo(() => {
     const q = normalizeText(detailSearch);
@@ -901,67 +904,99 @@ function CreditClientDetailView({
     });
   }, [detailFilter, detailSearch, group.invoices]);
 
+  const CREDIT_DETAIL_PAGE_SIZE = 7;
+  const detailTotalPages = Math.max(1, Math.ceil(filteredInvoices.length / CREDIT_DETAIL_PAGE_SIZE));
+  const safeDetailPage = Math.min(detailPage, detailTotalPages);
+  const paginatedInvoices = filteredInvoices.slice((safeDetailPage - 1) * CREDIT_DETAIL_PAGE_SIZE, safeDetailPage * CREDIT_DETAIL_PAGE_SIZE);
+
+  useEffect(() => {
+    setDetailPage(1);
+  }, [clientId, detailSearch, detailFilter]);
+
   return (
     <section className="pq-section pq-credit-layout">
-      <div className="pq-credit-detail-header">
-        <button className="pq-credit-back" onClick={onBack}>
-          <Icons.ChevronLeft />
-          Volver a lista de créditos
-        </button>
-        <button
-          className="pq-btn pq-btn-secondary"
-          onClick={() => onCreateReminder(group.client, openInvoices)}
-          disabled={openInvoices.length === 0}
-        >
-          <Icons.Clock />
-          Crear recordatorio
-        </button>
+      <div className="pa-credit-detail-banner">
+        <div className="pa-credit-detail-banner-top">
+          <div className="pa-credit-detail-client-avatar">
+            {group.client?.name?.charAt(0)?.toUpperCase() || "?"}
+          </div>
+          <div className="pa-credit-detail-banner-info">
+            <h3>{group.client?.name || "Cliente sin nombre"}</h3>
+          </div>
+          <div className="pa-credit-detail-client-stats">
+            <span className="pq-greeting-count pq-greeting-count--pending">
+              <strong>{group.pendingCount}</strong> Pendientes
+            </span>
+            <span className="pq-greeting-count">
+              <strong>{group.invoices.length}</strong> Total
+            </span>
+            <span className="pq-greeting-count pq-greeting-count--paid-today">
+              <strong>{settledInvoicesCount}</strong> Saldadas
+            </span>
+          </div>
+        </div>
+        <div className="pa-credit-detail-banner-bottom">
+          <button className="pa-credit-detail-back" onClick={onBack}>
+            <Icons.ChevronLeft />
+            Volver a créditos
+          </button>
+          <button
+            className="pa-credit-detail-primary-btn"
+            onClick={() => onCreateReminder(group.client, openInvoices)}
+            disabled={openInvoices.length === 0}
+          >
+            <Icons.Clock />
+            Crear recordatorio
+          </button>
+        </div>
       </div>
 
-      <div className="pq-credit-client-card">
-        <div className="pq-credit-client-avatar">
-          {group.client?.name?.charAt(0)?.toUpperCase() || "?"}
+      <div className="ps-filters">
+        <div className="ps-search-wrap">
+          <span className="ps-search-icon"><Icons.Search /></span>
+          <input
+            className="ps-input with-icon"
+            value={detailSearch}
+            onChange={(event) => setDetailSearch(event.target.value)}
+            placeholder="Buscar por factura u orden..."
+          />
+          {detailSearch && (
+            <button className="acm-search-clear" onClick={() => setDetailSearch("")} aria-label="Limpiar búsqueda">
+              <Icons.X />
+            </button>
+          )}
         </div>
-        <div className="pq-credit-client-info">
-          <h3>{group.client?.name || "Cliente sin nombre"}</h3>
-          <span>{group.client?.phone || "Sin telefono"}</span>
-        </div>
-        <div className="pq-credit-detail-stats">
-          <div><strong>{group.pendingCount}</strong><span>Pendientes</span></div>
-          <div><strong>{group.invoices.length}</strong><span>Total</span></div>
-          <div><strong>{settledInvoicesCount}</strong><span>Saldadas</span></div>
+        <div className="ps-select-wrap">
+          <select
+            className="ps-input"
+            value={detailFilter}
+            onChange={(event) => setDetailFilter(event.target.value)}
+            style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+          >
+            <option value="all">Todos</option>
+            <option value="open">Pendientes</option>
+            <option value="paid">Saldadas</option>
+          </select>
+          <span className="ps-select-arrow"><Icons.ChevronDown /></span>
         </div>
       </div>
 
       <div className="pq-panel pq-credit-panel">
         <div className="pq-panel-head">
           <div>
-            <span className="pq-section-kicker">Facturas</span>
+            <span className="acm-badge info">Facturas</span>
             <h2>Facturas del cliente</h2>
           </div>
+          <span className="pa-credit-selection-count">
+            {selectedIds.length} seleccionada{selectedIds.length === 1 ? "" : "s"}
+          </span>
         </div>
 
-        <div className="pq-credit-detail-toolbar">
-          <div className="pq-search-box">
-            <Icons.Search />
-            <input
-              value={detailSearch}
-              onChange={(event) => setDetailSearch(event.target.value)}
-              placeholder="Buscar por factura u orden..."
-            />
-          </div>
-          <select className="pq-input" value={detailFilter} onChange={(event) => setDetailFilter(event.target.value)}>
-            <option value="all">Todos</option>
-            <option value="open">Pendientes</option>
-            <option value="paid">Saldadas</option>
-          </select>
-        </div>
-
-        <div className="pq-credit-table-wrap">
-          <table className="pq-credit-table">
+        <div className="ps-table-wrap pa-credit-invoice-wrap">
+          <table className="ps-table acm-table">
             <thead>
               <tr>
-                <th>
+                <th className="pa-credit-check-cell">
                   <input
                     type="checkbox"
                     checked={allOpenSelected}
@@ -974,54 +1009,75 @@ function CreditClientDetailView({
                 <th>Orden</th>
                 <th>Emisión</th>
                 <th>Estado</th>
-                <th></th>
+                <th className="pa-credit-invoice-actions-col"></th>
               </tr>
             </thead>
             <tbody>
               {filteredInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="pq-credit-empty">No hay facturas que coincidan con los filtros.</td>
+                  <td colSpan={6} className="ps-table-empty">
+                    <div className="acm-empty-state">
+                      <Icons.Receipt />
+                      <strong>No hay facturas</strong>
+                      <span>{detailSearch || detailFilter !== "all" ? "Intenta con otros filtros o limpia la búsqueda." : "No hay facturas registradas para este cliente."}</span>
+                    </div>
+                  </td>
                 </tr>
               ) : (
-                filteredInvoices.map((item) => {
+                paginatedInvoices.map((item) => {
                   const itemOpen = isOpenCreditReceivable(item);
                   const selected = selectedIds.includes(item.order_id);
                   return (
-                    <tr key={item.id || item.order_id}>
-                      <td>
+                    <tr
+                      key={item.id || item.order_id}
+                      className="row-hover acm-client-row"
+                      onClick={() => { if (item.order) onViewOrder(item.order); }}
+                      onKeyDown={(event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); if (item.order) onViewOrder(item.order); } }}
+                      tabIndex={0}
+                    >
+                      <td className="td-pad pa-credit-check-cell">
                         <input
                           type="checkbox"
                           checked={selected}
                           disabled={!itemOpen || !item.order_id}
                           onChange={() => onToggleSelection(clientId, item.order_id)}
+                          onClick={(event) => event.stopPropagation()}
                           aria-label={`Seleccionar factura ${item.invoiceNumber}`}
                         />
                       </td>
-                      <td>{item.invoiceNumber}</td>
-                      <td>{item.order_id?.slice(0, 8) || "---"}</td>
-                      <td>{formatCreditDate(item.creditIssuedAt)}</td>
-                      <td><span className="pq-badge" style={getCreditReceivableStatusStyle(item.status)}>{getCreditReceivableStatusLabel(item.status)}</span></td>
-                      <td>
-                        <div className="pq-credit-actions">
+                      <td className="td-pad td-name">{item.invoiceNumber}</td>
+                      <td className="td-pad td-id">{item.order_id?.slice(0, 8) || "---"}</td>
+                      <td className="td-pad">{formatCreditDate(item.creditIssuedAt)}</td>
+                      <td className="td-pad">
+                        <span className={`acm-badge ${itemOpen ? "warning" : "success"}`}>
+                          {getCreditReceivableStatusLabel(item.status)}
+                        </span>
+                      </td>
+                      <td className="td-pad td-actions">
+                        <div className="table-actions acm-row-actions">
                           {item.order && (
-                            <button className="pq-icon-action" onClick={() => onViewOrder(item.order)} title="Ver orden">
+                            <button className="table-action-btn view" onClick={(event) => { event.stopPropagation(); onViewOrder(item.order); }} title="Ver orden">
                               <Icons.Eye />
                             </button>
                           )}
                           {itemOpen && (
-                            <button className="pq-icon-action" onClick={() => onCreateReminder(group.client, [item])} title="Crear recordatorio">
+                            <button
+                              className="table-action-btn edit"
+                              onClick={(event) => { event.stopPropagation(); onCreateReminder(group.client, [item]); }}
+                              title="Crear recordatorio"
+                            >
                               <Icons.Clock />
                             </button>
                           )}
                           {itemOpen && (
                             <button
-                              className="pq-icon-action success"
-                              onClick={() => onSettle({
+                              className="table-action-btn success"
+                              onClick={(event) => { event.stopPropagation(); onSettle({
                                 client: group.client,
                                 orderIds: [item.order_id],
                                 invoices: [item.invoiceNumber],
                                 mode: "single",
-                              })}
+                              }); }}
                               title="Marcar factura saldada"
                             >
                               <Icons.Check />
@@ -1037,14 +1093,23 @@ function CreditClientDetailView({
           </table>
         </div>
 
-        <div className="pq-credit-detail-actions-bar">
-          <span>{selectedIds.length} seleccionada{selectedIds.length === 1 ? "" : "s"}</span>
-          <div>
-            <button className="pq-btn pq-btn-secondary" onClick={() => onToggleAll(clientId, group.invoices)} disabled={openInvoices.length === 0}>
+        {filteredInvoices.length > CREDIT_DETAIL_PAGE_SIZE && (
+          <div className="acm-pagination-footer">
+            <Pagination currentPage={safeDetailPage} totalPages={detailTotalPages} onPageChange={setDetailPage} />
+          </div>
+        )}
+
+        <div className="pa-credit-detail-actions-bar">
+          <div className="pa-credit-detail-actions">
+            <button
+          className="pa-credit-detail-primary-btn"
+              onClick={() => onToggleAll(clientId, group.invoices)}
+              disabled={openInvoices.length === 0}
+            >
               {allOpenSelected ? "Limpiar selección" : "Seleccionar pendientes"}
             </button>
             <button
-              className="pq-btn pq-btn-primary"
+              className="pa-credit-detail-primary-btn"
               onClick={() => onSettle({
                 client: group.client,
                 orderIds: selectedIds,
@@ -2766,20 +2831,21 @@ export default function PageQuote() {
                   <thead>
                     <tr>
                       <th>Cliente</th>
+                      <th>Número</th>
                       <th>Facturas</th>
                       <th>Fechas</th>
                       <th>Estado</th>
-                      <th></th>
+                      <th>Acción</th>
                     </tr>
                   </thead>
                   <tbody>
                     {accountsReceivableLoading || clientsLoading ? (
                       <tr>
-                        <td colSpan={5} className="pq-credit-empty">Cargando créditos...</td>
+                        <td colSpan={6} className="pq-credit-empty">Cargando créditos...</td>
                       </tr>
                     ) : creditClientGroups.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="pq-credit-empty">No hay créditos que coincidan con los filtros.</td>
+                        <td colSpan={6} className="pq-credit-empty">No hay créditos que coincidan con los filtros.</td>
                       </tr>
                     ) : (
                       creditClientGroups.map(group => {
@@ -2806,10 +2872,15 @@ export default function PageQuote() {
                             aria-label={`Ver facturas de ${group.client?.name || "cliente sin nombre"}`}
                           >
                             <td>
-                              <div className="pq-credit-client-cell">
-                                <strong>{group.client?.name || "Cliente sin nombre"}</strong>
-                                <span>{group.client?.phone || "Sin telefono"}</span>
+                              <div className="acm-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getInitials(group.client?.name)}</span>
+                                <span>
+                                  <strong>{group.client?.name || "Cliente sin nombre"}</strong>
+                                </span>
                               </div>
+                            </td>
+                            <td>
+                              <span className="pq-credit-phone">{formatDominicanPhone(group.client?.phone) || "Sin teléfono"}</span>
                             </td>
                             <td>
                               <span className="pq-badge" style={getCreditReceivableStatusStyle(openInvoices.length > 0 ? "open" : "paid")}>
@@ -2828,9 +2899,9 @@ export default function PageQuote() {
                               </span>
                             </td>
                             <td>
-                              <div className="pq-credit-actions">
+                              <div className="table-actions">
                                 <button
-                                  className="pq-icon-action"
+                                  className="table-action-btn view"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     openClientDetail();
@@ -2841,7 +2912,7 @@ export default function PageQuote() {
                                 </button>
                                 {openInvoices.length > 0 && (
                                   <button
-                                    className="pq-icon-action"
+                                    className="table-action-btn edit"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openCreditReminderModal(group.client, openInvoices);
@@ -2853,7 +2924,7 @@ export default function PageQuote() {
                                 )}
                                 {openInvoices.length > 0 && (
                                   <button
-                                    className="pq-icon-action success"
+                                    className="table-action-btn success"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openCreditSettlementModal({

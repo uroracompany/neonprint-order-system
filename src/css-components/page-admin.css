@@ -3343,7 +3343,6 @@
 /* ── Credit: table panel container — matching acm-table-panel ── */
 
 .pa-credit-panel {
-  overflow: hidden;
   border: 1px solid #dbe3ef;
   border-radius: 14px;
   box-shadow: 0 10px 28px rgba(15, 30, 64, .055);
@@ -3590,10 +3589,50 @@
   gap: 20px;
 }
 
-.pa-credit-detail-header {
+.pa-credit-detail-banner {
+  position: relative;
+  padding: 24px 28px 20px 32px;
+  overflow: hidden;
+  border: var(--pq-banner-border);
+  border-radius: var(--pq-banner-radius);
+  background: #ffffff;
+  box-shadow: var(--pq-banner-shadow);
+}
+
+.pa-credit-detail-banner-top {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.pa-credit-detail-banner-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-credit-detail-banner-info h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.pa-credit-detail-banner-info span {
+  display: block;
+  font-size: 13px;
+  color: var(--text-sub);
+  margin-top: 2px;
+}
+
+.pa-credit-detail-banner-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
 }
 
 .pa-credit-detail-back {
@@ -3601,9 +3640,10 @@
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
+  background: #ffffff;
+  border: var(--pq-banner-border);
+  border-radius: var(--pq-banner-radius);
+  box-shadow: var(--pq-banner-shadow);
   color: var(--text);
   font-size: 12px;
   font-weight: 600;
@@ -3624,14 +3664,40 @@
   height: 15px;
 }
 
-.pa-credit-detail-client-card {
-  display: flex;
+.pa-credit-detail-primary-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 14px;
-  padding: 16px 20px;
-  background: var(--surface-alt);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-lg);
+  gap: 6px;
+  padding: 8px 14px;
+  height: 38px;
+  background: #091127;
+  border: none;
+  border-radius: var(--pq-banner-radius);
+  box-shadow: var(--pq-banner-shadow);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Poppins', sans-serif;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pa-credit-detail-primary-btn:hover {
+  background: #1e293b;
+  box-shadow: 0 6px 16px rgba(15, 30, 64, 0.12);
+}
+
+.pa-credit-detail-primary-btn:disabled {
+  background: #94a3b8;
+  color: #cbd5e1;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.pa-credit-detail-primary-btn::after {
+  display: none;
 }
 
 .pa-credit-detail-client-avatar {
@@ -3642,64 +3708,21 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #F43F5E, #BE123C);
+  background: #091127;
   color: #fff;
   font-size: 18px;
   font-weight: 700;
 }
 
-.pa-credit-detail-client-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.pa-credit-detail-client-info h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.pa-credit-detail-client-info span {
-  display: block;
-  font-size: 12px;
-  color: var(--text-sub);
-  margin-top: 2px;
-}
-
 .pa-credit-detail-client-stats {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
-.pa-credit-detail-stat {
-  text-align: center;
-}
-
-.pa-credit-detail-stat strong {
-  display: block;
-  font-size: 18px;
-  color: var(--text);
-  line-height: 1;
-}
-
-.pa-credit-detail-stat span {
-  display: block;
-  font-size: 10px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  margin-top: 2px;
-}
-
-/* ── Detail toolbar — now a proper card like .pa-toolbar ── */
-
-.pa-credit-detail-stat.settled strong {
-  color: #166534;
-}
-
-.pa-credit-alert-modal {
+.pa-credit-detail-alert-modal {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -5790,6 +5813,13 @@ button.pa-overview-activity-row:hover {
 .acm-search-clear:hover {
   color: var(--text);
   background: var(--surface-hov);
+}
+
+.ps-search-wrap .acm-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .acm-filter-row {

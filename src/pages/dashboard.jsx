@@ -4352,7 +4352,7 @@ export default function Dashboard() {
                               <div className="pa-credit-client-cell">
                                 <div className="pa-credit-client-meta">
                                   <strong>{group.client?.name || "Cliente sin nombre"}</strong>
-                                  <span>{group.client?.phone || "Sin telefono"}</span>
+            <span>{group.client?.phone || "Sin telefono"}</span>
                                 </div>
                               </div>
                             </td>
@@ -5365,42 +5365,39 @@ function CreditClientDetailView({
   return (
     <section className="pa-section pa-credit-layout">
       <div className="pa-credit-detail-view">
-        <div className="pa-credit-detail-header">
-          <button className="pa-credit-detail-back" onClick={onBack}>
-            <Icons.ChevronLeft />
-            Volver a seguimiento
-          </button>
-          <button
-            className="pa-btn secondary pa-btn-sm"
-            onClick={() => onCreateReminder(group.client, openInvoices)}
-            disabled={openInvoices.length === 0}
-          >
-            <Icons.Clock />
-            Crear recordatorio
-          </button>
-        </div>
-
-        <div className="pa-credit-detail-client-card">
-          <div className="pa-credit-detail-client-avatar">
-            {group.client?.name?.charAt(0)?.toUpperCase() || "?"}
+        <div className="pa-credit-detail-banner">
+          <div className="pa-credit-detail-banner-top">
+            <div className="pa-credit-detail-client-avatar">
+              {group.client?.name?.charAt(0)?.toUpperCase() || "?"}
+            </div>
+            <div className="pa-credit-detail-banner-info">
+              <h3>{group.client?.name || "Cliente sin nombre"}</h3>
+            </div>
+            <div className="pa-credit-detail-client-stats">
+              <span className="pq-greeting-count pq-greeting-count--pending">
+                <strong>{group.pendingCount}</strong> Pendientes
+              </span>
+              <span className="pq-greeting-count">
+                <strong>{group.invoices.length}</strong> Total
+              </span>
+              <span className="pq-greeting-count pq-greeting-count--paid-today">
+                <strong>{settledInvoicesCount}</strong> Saldadas
+              </span>
+            </div>
           </div>
-          <div className="pa-credit-detail-client-info">
-            <h3>{group.client?.name || "Cliente sin nombre"}</h3>
-            <span>{group.client?.phone || "Sin telefono"}</span>
-          </div>
-          <div className="pa-credit-detail-client-stats">
-            <div className="pa-credit-detail-stat">
-              <strong>{group.pendingCount}</strong>
-              <span>Pendientes</span>
-            </div>
-            <div className="pa-credit-detail-stat">
-              <strong>{group.invoices.length}</strong>
-              <span>Total</span>
-            </div>
-            <div className="pa-credit-detail-stat settled">
-              <strong>{settledInvoicesCount}</strong>
-              <span>Saldadas</span>
-            </div>
+          <div className="pa-credit-detail-banner-bottom">
+            <button className="pa-credit-detail-back" onClick={onBack}>
+              <Icons.ChevronLeft />
+              Volver a seguimiento
+            </button>
+            <button
+              className="pa-credit-detail-primary-btn"
+              onClick={() => onCreateReminder(group.client, openInvoices)}
+              disabled={openInvoices.length === 0}
+            >
+              <Icons.Clock />
+              Crear recordatorio
+            </button>
           </div>
         </div>
 

@@ -99,7 +99,11 @@
 .pq-credit-layout {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+}
+
+.pq-credit-layout .ps-filters {
+  margin-bottom: 0;
 }
 
 .pq-credit-metrics {
@@ -112,9 +116,9 @@
 .pq-credit-client-card,
 .pq-credit-pending-banner {
   background: var(--pq-surface);
-  border: 1px solid var(--pq-border);
-  border-radius: var(--pq-radius-md);
-  box-shadow: var(--pq-shadow-sm);
+  border: var(--pq-banner-border);
+  border-radius: var(--pq-radius-lg);
+  box-shadow: var(--pq-banner-shadow);
 }
 
 .pq-credit-summary-card {
@@ -304,118 +308,13 @@
   border-color: #A7F3D0;
 }
 
-.pq-credit-detail-header,
-.pq-credit-detail-actions-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.pq-credit-back {
-  border: none;
-  background: transparent;
-  color: var(--pq-text-sub);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.pq-credit-client-card {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-}
-
-.pq-credit-client-avatar {
-  width: 52px;
-  height: 52px;
-  border-radius: 999px;
-  background: var(--pq-cyan);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-  font-weight: 800;
-}
-
-.pq-credit-client-info h3 {
-  margin: 0;
-  color: var(--pq-text);
-  font-size: 18px;
-}
-
-.pq-credit-client-info span {
-  color: var(--pq-text-muted);
-  font-size: 13px;
-}
-
-.pq-credit-detail-stats {
-  display: flex;
-  gap: 10px;
-}
-
-.pq-credit-detail-stats > div {
-  min-width: 86px;
-  padding: 9px 12px;
-  border-radius: 10px;
-  background: var(--pq-surface-alt);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.pq-credit-detail-stats strong {
-  color: var(--pq-text);
-  font-size: 18px;
-}
-
-.pq-credit-detail-stats span {
-  color: var(--pq-text-muted);
-  font-size: 11px;
-}
-
-.pq-credit-detail-toolbar {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) 180px;
-  gap: 10px;
-  padding: 0 14px 14px;
-}
-
-.pq-credit-detail-actions-bar {
-  padding: 14px;
-  border-top: 1px solid var(--pq-border);
-}
-
-.pq-credit-detail-actions-bar > div {
-  display: flex;
-  gap: 8px;
-}
-
 @media (max-width: 820px) {
-  .pq-credit-metrics,
-  .pq-credit-detail-toolbar {
+  .pq-credit-metrics {
     grid-template-columns: 1fr;
   }
 
-  .pq-credit-client-card {
-    grid-template-columns: 1fr;
-  }
-
-  .pq-credit-detail-stats,
-  .pq-credit-detail-header,
-  .pq-credit-detail-actions-bar,
   .pq-credit-pending-banner {
     align-items: stretch;
-    flex-direction: column;
-  }
-
-  .pq-credit-detail-actions-bar > div {
     flex-direction: column;
   }
 }
@@ -498,6 +397,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  margin-bottom: 6px;
 }
 
 .pq-modal-kicker {
@@ -962,6 +862,10 @@
   margin-bottom: 16px;
 }
 
+.pq-panel-head .acm-badge {
+  margin-bottom: 6px;
+}
+
 /* Tarjetas métricas */
 .pq-metrics-grid {
   display: grid;
@@ -1282,15 +1186,69 @@
 }
 
 .table-action-btn.view {
-  color: var(--pq-text-sub, #475569);
-  border-color: var(--pq-border);
-  background: var(--pq-surface-alt, #f8fafc);
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  background: #eff6ff;
 }
 
 .table-action-btn.view:hover {
-  background: var(--pq-text-sub, #475569);
-  color: var(--pq-surface, #ffffff);
-  border-color: var(--pq-text-sub, #475569);
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #1d4ed8;
+}
+
+.table-action-btn.edit {
+  color: #d97706;
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.table-action-btn.edit:hover {
+  background: #d97706;
+  color: #fff;
+  border-color: #d97706;
+}
+
+.table-action-btn.cancel {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.table-action-btn.cancel:hover {
+  background: #dc2626;
+  color: #fff;
+  border-color: #dc2626;
+}
+
+.table-action-btn.success {
+  color: #059669;
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.table-action-btn.success:hover {
+  background: #059669;
+  color: #fff;
+  border-color: #059669;
+}
+
+.table-action-btn.success:active {
+  background: #047857;
+  border-color: #047857;
+}
+
+.pq-credit-phone {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #000000;
+  white-space: nowrap;
 }
 
 .pq-root .acm-avatar {
@@ -1311,8 +1269,15 @@
   font-size: 11px;
 }
 
+.pq-root .acm-client-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .pq-orders-count {
-  font-weight: 400;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--pq-text-muted);
 }
 
@@ -1328,9 +1293,9 @@
 .pq-input {
   height: 42px;
   border-radius: var(--pq-radius-md);
-  border: 1.5px solid var(--pq-border);
+  border: var(--pq-banner-border);
   background: var(--pq-surface);
-  box-shadow: none;
+  box-shadow: var(--pq-banner-shadow);
 }
 
 .pq-search-box {
@@ -1362,8 +1327,8 @@
 
 .pq-search-box:focus-within,
 .pq-input:focus {
-  border-color: var(--pq-cyan);
-  box-shadow: 0 0 0 3px var(--pq-cyan-light);
+  border-color: var(--pq-border);
+  box-shadow: none;
 }
 
 .pq-results-count {

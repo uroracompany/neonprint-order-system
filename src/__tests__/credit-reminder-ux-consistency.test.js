@@ -86,15 +86,16 @@ describe("consistencia UX de recordatorios de credito", () => {
 
   it("pulimenta el avatar y estados de fila en credito cotizador", () => {
     const quoteCss = readProjectFile("src/css-components/page-quote.css");
+    const adminCss = readProjectFile("src/css-components/page-admin.css");
     const modalCss = readProjectFile("src/components/ui/CreditReminderModals.css");
 
     expect(quoteCss).toContain(".pq-credit-client-row");
     expect(quoteCss).toContain("cursor: pointer;");
     expect(quoteCss).toContain(".pq-credit-client-row:focus-visible");
-    expect(quoteCss).toContain(".pq-credit-client-avatar");
-    expect(quoteCss).toContain("border-radius: 999px;");
-    expect(quoteCss).toContain("background: var(--pq-cyan);");
-    expect(quoteCss).toContain("color: #ffffff;");
+    expect(adminCss).toContain(".pa-credit-detail-client-avatar");
+    expect(adminCss).toContain("border-radius: 50%;");
+    expect(adminCss).toContain("background: linear-gradient");
+    expect(adminCss).toContain("color: #fff;");
     expect(modalCss).toContain("--credit-reminder-accent: var(--pq-cyan, #06b6d4);");
     expect(modalCss).toContain("background: var(--credit-reminder-accent);");
     expect(modalCss).not.toContain("linear-gradient");

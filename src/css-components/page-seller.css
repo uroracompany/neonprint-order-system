@@ -635,6 +635,7 @@
   white-space: nowrap;
 }
 .ps-table td { border-bottom: 1px solid var(--border); }
+.ps-table tr:last-child td { border-bottom: none; }
 .ps-table .td-pad { padding: 12px 16px; }
 .ps-table tr.row-hover { transition: background 0.1s; cursor: pointer; }
 .ps-table tr.row-hover:hover td { background: rgba(219, 227, 239, 0.12); }
