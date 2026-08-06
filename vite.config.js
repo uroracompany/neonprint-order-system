@@ -13,6 +13,7 @@ import { handleKpiData } from './server/kpi-data-handler.js'
 import { handleSellerProfile } from './server/seller-profile-handler.js'
 import { handleDesignerProfile } from './server/designer-profile-handler.js'
 import { handleQuoteProfile } from './server/quote-profile-handler.js'
+import { handleProductionProfile } from './server/production-profile-handler.js'
 import { handleSellerOrderAction } from './server/seller-order-actions-handler.js'
 import {
   handleAdminDeleteOrderWithFiles,
@@ -168,6 +169,7 @@ return {
       createApiHandler("/api/seller-profile", handleSellerProfile),
       createApiHandler("/api/designer-profile", handleDesignerProfile),
       createApiHandler("/api/quote-profile", handleQuoteProfile),
+      createApiHandler("/api/production-profile", handleProductionProfile),
       createApiHandler("/api/seller-orders", handleSellerOrderAction),
       createApiHandler("/api/files-initiate-upload", handleInitiateFileUpload),
       createApiHandler("/api/files-complete-upload", handleCompleteFileUpload),

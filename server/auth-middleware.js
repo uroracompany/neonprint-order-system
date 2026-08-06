@@ -99,9 +99,15 @@ export async function requireAuthenticated(authHeader = "", env = process.env, o
     return { authorized: false, status: 500, error: "Configuracion de Supabase incompleta." };
   }
 
-  const supabaseAdmin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  let supabaseAdmin;
+  try {
+    supabaseAdmin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  } catch (clientError) {
+    debugAuth("createClient-failed", { clientError: clientError?.message }, env);
+    return { authorized: false, status: 500, error: "Error al conectar con Supabase. Verifica la configuracion." };
+  }
 
   const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
   const user = authData?.user;
