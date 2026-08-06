@@ -2,8 +2,12 @@ import { useCallback, useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-production.css";
+import "../components/clients/AdminClientsModule.css";
+import "../components/production/ProductionProfileModule.css";
 import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
+import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
+import ProductionProfileModule from "../components/production/ProductionProfileModule";
 import FileCard from "../components/FileCard";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
@@ -15,11 +19,12 @@ import { Icons } from "../utils/icons";
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
+import { FilterSelect } from "../components/ui/FilterSelect";
+import { getClientDisplayName, NO_CLIENT_FILTER_VALUE } from "../utils/clients";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import { AssignModal } from "../components/ui/AssignModal";
 import {
   ORDER_STATUS,
-  PAYMENT_COLORS,
   PRODUCTION_TRACKING_STATUS_OPTIONS,
   PRODUCTION_FILE_STATUS,
   getProductionAreaForRole,
@@ -287,7 +292,6 @@ export function OrderDetailModal({
   return (<>
     <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="pp-modal">
-        <div className="pp-modal-stripe" />
         <div className="pp-modal-header">
           <div>
             <h3>Orden #{order.id?.slice(0, 8).toUpperCase()}</h3>
@@ -742,6 +746,8 @@ export function OrderDetailModal({
   </>);
 }
 
+const getInitials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+
 export default function PageProduction() {
   const navigate = useNavigate();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
@@ -753,7 +759,6 @@ export default function PageProduction() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [filterPayment, setFilterPayment] = useState("all");
   const [filterClient, setFilterClient] = useState("all");
   const [page, setPage] = useState(1);
   const PER_PAGE = 15;
@@ -903,7 +908,8 @@ export default function PageProduction() {
 
   const participatingOrders = filterProductionOrdersForRoleParticipation(orders, profileRole, user?.id);
   const activeOrders = filterProductionOrdersByArchiveState(participatingOrders, user?.id, "active");
-  const archiveScopedOrders = filterProductionOrdersByArchiveState(participatingOrders, user?.id, filterArchive);
+  const archivedOrders = filterProductionOrdersByArchiveState(participatingOrders, user?.id, "archived");
+  const archiveScopedOrders = filterArchive === "archived" ? archivedOrders : activeOrders;
 
   const filteredOrders = archiveScopedOrders.filter(order => {
     const q = search.toLowerCase();
@@ -913,10 +919,9 @@ export default function PageProduction() {
       order.description?.toLowerCase().includes(q);
 
     const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
-    const matchesPayment = filterPayment === "all" || order.payment_status === filterPayment;
     const matchesClient = orderMatchesClientFilter(order, filterClient);
 
-    return matchesSearch && matchesStatus && matchesPayment && matchesClient;
+    return matchesSearch && matchesStatus && matchesClient;
   });
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
@@ -968,7 +973,9 @@ export default function PageProduction() {
         onTabChange={setActiveTab}
         menuItems={[
           { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
-          { id: "orders", label: "Órdenes", icon: <Icons.Orders /> }
+          { id: "orders", label: "Órdenes", icon: <Icons.Orders /> },
+          { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount },
+          { id: "profile", label: "Mi Perfil", icon: <Icons.User /> }
         ]}
         onLogout={handleLogout}
       />
@@ -979,30 +986,48 @@ export default function PageProduction() {
             {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
           </button>
           <div className="pp-header-title">
-            <h2>{activeTab === "dashboard" ? "Dashboard" : "Órdenes de Producción"}</h2>
+            <h2>{activeTab === "dashboard" ? "Dashboard" : activeTab === "notifications" ? "Notificaciones" : activeTab === "profile" ? "Mi Perfil" : "Órdenes de Producción"}</h2>
+            <span className="pp-header-date">{dateStr}</span>
           </div>
-          <span className="pp-header-date">{dateStr}</span>
-          <NotificationCenter
-            notifications={notif.notifications}
-            unreadCount={notif.unreadCount}
-            toasts={notif.toasts}
-            onMarkAsRead={notif.markAsRead}
-            onMarkAllAsRead={notif.markAllAsRead}
-            onArchive={notif.archive}
-            onDelete={notif.deleteNotification}
-            onDismissToast={notif.dismissToast}
-          />
-          <button className="pp-refresh-btn" onClick={refreshOrders} title="Actualizar">
-            <Icons.Refresh />
-          </button>
+          <div className="pp-header-actions">
+            <NotificationCenter
+              notifications={notif.notifications}
+              unreadCount={notif.unreadCount}
+              toasts={notif.toasts}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDismissToast={notif.dismissToast}
+            />
+            <button className="pp-refresh-btn" onClick={refreshOrders} title="Actualizar">
+              <Icons.Refresh />
+            </button>
+          </div>
         </header>
 
         <div className="pp-content">
           {activeTab === "dashboard" && (
             <>
-              <div className="pp-greeting">
-                <h2>Buen día, <span>{user?.displayName || "Operador"}</span> 👋</h2>
-                <p>Aquí tienes el resumen de las órdenes en producción.</p>
+              <div className="pq-greeting">
+                <div className="pq-greeting-copy">
+                  <h2>Bienvenido, <span>{user?.displayName || "Operador"}</span></h2>
+                  <p>Aquí tienes el resumen de producción de hoy.</p>
+                  <div className="pq-greeting-badges">
+                    <div className="pq-greeting-count">
+                      <Icons.Package />
+                      <strong>{activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length}</strong> En producción
+                    </div>
+                    <div className="pq-greeting-count pq-greeting-count--pending">
+                      <Icons.Clock />
+                      <strong>{activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length}</strong> Por entregar
+                    </div>
+                    <div className="pq-greeting-count pq-greeting-count--partial">
+                      <Icons.Check />
+                      <strong>{activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length}</strong> Completadas
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="pp-metrics">
@@ -1026,10 +1051,8 @@ export default function PageProduction() {
                   <table className="pp-table">
                     <thead>
                       <tr>
-                        <th>ID</th>
                         <th>Cliente</th>
-                        <th>Descripción</th>
-                        <th>Material</th>
+                        <th>Tipo de orden</th>
                         <th>Estado</th>
                         <th></th>
                       </tr>
@@ -1037,27 +1060,31 @@ export default function PageProduction() {
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan={6} className="pp-table-empty">Cargando órdenes...</td>
+                          <td colSpan={4} className="pp-table-empty">Cargando órdenes...</td>
                         </tr>
                       ) : activeOrders.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="pp-table-empty">No hay órdenes para producción</td>
+                          <td colSpan={4} className="pp-table-empty">No hay órdenes para producción</td>
                         </tr>
                       ) : (
                         activeOrders.slice(0, 5).map(order => (
-                          <tr key={order.id} className="row-hover" onClick={() => handleViewOrder(order)}>
-                            <td className="td-pad td-id">#{order.id?.slice(0, 8).toUpperCase()}</td>
-                            <td className="td-pad td-client">
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <span>{order.client_name}</span>
-                                <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                          <tr key={order.id} className="row-hover acm-client-row" onClick={() => handleViewOrder(order)}>
+                            <td className="td-pad">
+                              <div className="acm-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                                <span>
+                                  <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                </span>
                               </div>
                             </td>
-                            <td className="td-pad td-desc">{order.description}</td>
-                            <td className="td-pad td-material">{order.material}</td>
+                            <td className="td-pad">
+                              {order.order_type === "orden 911"
+                                ? <span className="acm-badge danger">911</span>
+                                : <span className="acm-badge neutral">Normal</span>}
+                            </td>
                             <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered /></td>
-                            <td className="td-pad td-actions">
-                              <div className="table-actions">
+                            <td className="td-pad td-actions" data-row-action>
+                              <div className="table-actions acm-row-actions" data-row-action>
                                 <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                                   <Icons.Eye />
                                 </button>
@@ -1076,90 +1103,110 @@ export default function PageProduction() {
           {activeTab === "orders" && (
             <>
               <div className="pp-filters">
-                <div className="pp-search-wrap">
-                  <span className="pp-search-icon"><Icons.Search /></span>
+                <label className="pp-filter-control pp-filter-search">
+                  <Icons.Search />
                   <input
-                    className="pp-input with-icon"
+                    type="search"
                     placeholder="Buscar por cliente, descripción o ID..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                   />
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <div className="pp-select-wrap">
-                    <select className="pp-input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                      <option value="all">Todos los estados</option>
-                      <option value={ORDER_STATUS.IN_PRODUCTION}>Producción</option>
-                      <option value={ORDER_STATUS.IN_TERMINATION}>Terminación</option>
-                      <option value={ORDER_STATUS.IN_DELIVERED}>Entregadas</option>
-                      <option value={ORDER_STATUS.IN_COMPLETED}>Completadas</option>
-                    </select>
-                    <span className="pp-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="pp-select-wrap">
-                    <select className="pp-input" value={filterPayment} onChange={e => setFilterPayment(e.target.value)}>
-                      <option value="all">Pago: Todos</option>
-                      {Object.entries(PAYMENT_COLORS).map(([k, v]) => (
-                        <option key={k} value={k}>{v.label}</option>
-                      ))}
-                    </select>
-                    <span className="pp-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="pp-select-wrap">
-                    <ClientFilterSelect
-                      clients={clients}
-                      value={filterClient}
-                      onChange={setFilterClient}
-                      className="pp-input"
-                      allLabel="Todos los clientes"
-                    />
-                    <span className="pp-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="pp-select-wrap">
-                    <select className="pp-input" value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>
-                      <option value="active">Activas</option>
-                      <option value="archived">Archivadas</option>
-                    </select>
-                    <span className="pp-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <button
-                      onClick={() => setViewMode("table")}
-                      className={`pp-view-toggle ${viewMode === "table" ? "active" : ""}`}
-                      title="Vista de tabla"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  {search && (
+                    <button type="button" onClick={() => setSearch("")} aria-label="Limpiar búsqueda">
+                      <Icons.X />
                     </button>
-                    <button
-                      onClick={() => setViewMode("cards")}
-                      className={`pp-view-toggle ${viewMode === "cards" ? "active" : ""}`}
-                      title="Vista de tarjetas"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    </button>
-                  </div>
-                </div>
+                  )}
+                </label>
+
+                <FilterSelect
+                  icon={<Icons.FileText />}
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                  options={[
+                    { value: "all", label: "Todos los estados" },
+                    { value: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
+                    { value: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
+                    { value: ORDER_STATUS.IN_DELIVERED, label: "Entregadas" },
+                    { value: ORDER_STATUS.IN_COMPLETED, label: "Completadas" },
+                  ]}
+                />
+
+                <FilterSelect
+                  icon={<Icons.Users />}
+                  value={filterClient}
+                  onChange={setFilterClient}
+                  options={[
+                    { value: "all", label: "Todos los clientes" },
+                    { value: NO_CLIENT_FILTER_VALUE, label: "Sin cliente registrado" },
+                    ...clients.map(c => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+
                 <span className="pp-filters-count">{filteredOrders.length} resultado{filteredOrders.length !== 1 ? "s" : ""}</span>
               </div>
 
+              <div className="pp-workbench-panel">
+                <div className="pp-workbench-heading">
+                  <div>
+                    <span className="pp-workbench-kicker">Bandeja de trabajo</span>
+                    <h3>{filterArchive === "archived" ? "Órdenes archivadas" : "Órdenes activas"}</h3>
+                  </div>
+                  <div className="pp-workbench-tools">
+                    <div className="pp-workbench-tabs" role="tablist" aria-label="Filtro de archivo de órdenes">
+                      <button
+                        type="button"
+                        className={filterArchive === "active" ? "active" : ""}
+                        onClick={() => setFilterArchive("active")}
+                        aria-selected={filterArchive === "active"}
+                      >
+                        <Icons.Package />
+                        <span>Activas</span>
+                        <strong>{activeOrders.length}</strong>
+                      </button>
+                      <button
+                        type="button"
+                        className={filterArchive === "archived" ? "active" : ""}
+                        onClick={() => setFilterArchive("archived")}
+                        aria-selected={filterArchive === "archived"}
+                      >
+                        <Icons.Archive />
+                        <span>Archivadas</span>
+                        <strong>{archivedOrders.length}</strong>
+                      </button>
+                    </div>
+                    <div className="pp-workbench-view-toggle" aria-label="Modo de vista">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("table")}
+                        className={viewMode === "table" ? "active" : ""}
+                        title="Vista de tabla"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("cards")}
+                        className={viewMode === "cards" ? "active" : ""}
+                        title="Vista de tarjetas"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pp-workbench-body">
               {loading ? (
                 <div className="pp-loading">Cargando órdenes...</div>
               ) : filteredOrders.length === 0 ? (
                 <div className="pp-loading">No hay órdenes que coincidan</div>
               ) : viewMode === "table" ? (
-                <div className="pp-panel">
-                  <div className="pp-panel-stripe" />
-                  <div className="pp-table-wrap">
+                <div className="pp-table-wrap pp-workbench-list">
                     <table className="pp-table">
                       <thead>
                         <tr>
-                          <th>ID</th>
                           <th>Cliente</th>
-                          <th>Descripción</th>
-                          <th>Material</th>
-                          <th>Cant.</th>
                           <th>Estado</th>
-                          <th>Pago</th>
                           <th>Tipo</th>
                           <th>Fecha</th>
                           <th>Acciones</th>
@@ -1167,23 +1214,24 @@ export default function PageProduction() {
                       </thead>
                       <tbody>
                         {paginatedOrders.map(order => (
-                          <tr key={order.id} className="row-hover">
-                            <td className="td-pad td-id">#{order.id?.slice(0, 8).toUpperCase()}</td>
-                            <td className="td-pad td-client">
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <span>{order.client_name}</span>
-                                <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                          <tr key={order.id} className="row-hover" onClick={() => handleViewOrder(order)}>
+                            <td className="td-pad td-name">
+                              <div className="acm-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                                <span className="pp-client-cell-main">
+                                  <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                  <span className="pp-client-cell-badges">
+                                    <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                  </span>
+                                </span>
                               </div>
                             </td>
-                            <td className="td-pad td-desc">{order.description?.substring(0, 40)}</td>
-                            <td className="td-pad td-material">{order.material}</td>
-                            <td className="td-pad td-qty">{order.quantity || "-"}</td>
                             <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered /></td>
                             <td className="td-pad">
                               {order.order_type === "orden 911" ? (
-                                <span className="pp-badge-911">911</span>
+                                <span className="acm-badge danger">911</span>
                               ) : (
-                                <span className="pp-badge-normal">Normal</span>
+                                <span className="acm-badge neutral">Normal</span>
                               )}
                             </td>
                             <td className="td-pad td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
@@ -1227,24 +1275,31 @@ export default function PageProduction() {
                       </tbody>
                     </table>
                   </div>
-                </div>
               ) : (
-                <div className="pp-panel">
-                  <div className="pp-panel-stripe" />
+                <div className="pp-workbench-cards">
                   <div className="pp-cards-grid">
                     {paginatedOrders.map(order => (
                       <div key={order.id} className="pp-order-card" onClick={() => handleViewOrder(order)}>
                         <div className="pp-order-card-header">
-                          <span className="pp-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                          <div className="acm-client-cell">
+                            <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                            <span className="pp-client-cell-main">
+                              <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                              <span className="pp-client-cell-badges">
+                                <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                              </span>
+                            </span>
+                          </div>
                           <div className="pp-order-card-badges">
-                            <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                             <StatusBadge status={order.status} className="pp-badge" bordered />
                           </div>
                         </div>
-                        <div className="pp-order-card-client">{order.client_name}</div>
-                        <div className="pp-order-card-desc">{order.description || "Sin descripción"}</div>
                         <div className="pp-order-card-meta">
-                          <span className="pp-order-card-material">{order.material}</span>
+                          {order.order_type === "orden 911" ? (
+                            <span className="acm-badge danger">911</span>
+                          ) : (
+                            <span className="acm-badge neutral">Normal</span>
+                          )}
                         </div>
                         <div className="pp-order-card-footer">
                           <span className="pp-order-card-date">
@@ -1290,7 +1345,28 @@ export default function PageProduction() {
                 </div>
               )}
               <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+            </div>
+              </div>
             </>
+          )}
+
+          {activeTab === "notifications" && (
+            <DesignerNotificationsModule
+              notifications={notif.notifications}
+              archivedNotifications={notif.archivedNotifications}
+              unreadCount={notif.unreadCount}
+              loading={notif.loading}
+              archivedLoading={notif.archivedLoading}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDeleteAll={notif.deleteNotificationsByScope}
+            />
+          )}
+
+          {activeTab === "profile" && (
+            <ProductionProfileModule authUser={user} fallbackProfile={authProfile} />
           )}
         </div>
       </main>

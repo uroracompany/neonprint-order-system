@@ -94,10 +94,11 @@
 
 .pq-profile-name-line h2 {
   margin: 0;
-  color: var(--text);
-  font-size: clamp(22px, 3vw, 32px);
+  color: #0f1e40;
+  font-size: 22px;
   font-weight: 800;
-  line-height: 1.1;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
 .pq-profile .pq-badge.info {
