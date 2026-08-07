@@ -8,6 +8,8 @@ import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
+import { FilterSelect } from "../components/ui/FilterSelect";
+import "../components/ui/FilterSelect.css";
 import FileUploadZone from "../components/ui/FileUploadZone";
 import CreateClientModal from "../components/ui/CreateClientModal";
 import SettleCreditModal from "../components/ui/SettleCreditModal";
@@ -48,8 +50,9 @@ import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import FileCard from "../components/FileCard";
-import { loadClients, orderMatchesClientFilter, searchClients, formatDominicanPhone } from "../utils/clients";
+import { loadClients, orderMatchesClientFilter, searchClients, formatDominicanPhone, NO_CLIENT_FILTER_VALUE } from "../utils/clients";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
+import "../css-components/page-production.css";
 import "../css-components/page-quote.css";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import {
@@ -1181,7 +1184,7 @@ export default function PageQuote() {
   const [filterDate, setFilterDate] = useState("all"); // Filtro por fecha
   const [filterClient, setFilterClient] = useState("all"); // Filtro por cliente registrado
   const [filterSeller, setFilterSeller] = useState("all"); // Filtro por vendedor responsable
-  const [filterArchive, setFilterArchive] = useState("active"); // Mostrar activas o archivadas
+  const [filterArchive, setFilterArchive] = useState("all");
 
   const hasActiveFilters = (
     search.trim() !== "" ||
@@ -1191,7 +1194,7 @@ export default function PageQuote() {
     filterDate !== "all" ||
     filterClient !== "all" ||
     filterSeller !== "all" ||
-    filterArchive !== "active"
+    (filterArchive !== "active" && filterArchive !== "all")
   );
 
   const [viewMode, setViewMode] = useState("table"); // Vista predeterminada: tabla
@@ -2516,7 +2519,9 @@ export default function PageQuote() {
       const matchesArchive =
         filterArchive === "all" ||
         (filterArchive === "active" && !order.is_archived_quote) ||
-        (filterArchive === "archived" && order.is_archived_quote);
+        (filterArchive === "archived" && order.is_archived_quote) ||
+        (filterArchive === "cancelled" && isOrderStatus(order.status, ORDER_STATUS.CANCELLED)) ||
+        (filterArchive === "returned" && isReturnedOrder(order));
 
       const createdAt = new Date(order.created_at);
       const matchesDate =
@@ -2540,6 +2545,10 @@ export default function PageQuote() {
   useEffect(() => { setPage(1); }, [viewMode]);
 
   const activeOrdersCount = orders.filter(o => !o.is_archived_quote).length;
+  const activeOrders = useMemo(() => orders.filter(o => !o.is_archived_quote), [orders]);
+  const archivedOrders = useMemo(() => orders.filter(o => o.is_archived_quote), [orders]);
+  const cancelledOrders = useMemo(() => orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.CANCELLED)), [orders]);
+  const returnedOrders = useMemo(() => orders.filter(o => isReturnedOrder(o)), [orders]);
   const pendingPaymentCount = orders.filter(o => o.payment_status !== "pagado" && !o.is_archived_quote).length;
   const partialPaymentCount = orders.filter(o => isPaymentPartial(o.payment_status)).length;
   const paidTodayCount = orders.filter(o => {
@@ -2967,192 +2976,178 @@ export default function PageQuote() {
 
         {activeTab === "orders" && (
           <section className="pq-section">
-            <div className="ps-filters">
-              <div className="ps-search-wrap">
-                <span className="ps-search-icon"><Icons.Search /></span>
+            <div className="pp-filters">
+              <label className="pp-filter-control pp-filter-search">
+                <Icons.Search />
                 <input
-                  className="ps-input with-icon"
+                  type="search"
                   placeholder="Buscar por cliente, factura, vendedor o descripción..."
                   value={search}
-                  onChange={event => {
-                    setSearch(event.target.value);
-                    setPage(1);
-                  }}
+                  onChange={event => { setSearch(event.target.value); setPage(1); }}
                 />
-              </div>
-
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <div className="ps-select-wrap">
-                  <select
-                    className="ps-input"
-                    style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                    value={filterType}
-                    onChange={event => {
-                      setFilterType(event.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="all">Todos los tipos</option>
-                    <option value="normal">Normal</option>
-                    <option value="911">911 - Urgente</option>
-                  </select>
-                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                </div>
-
-                <div className="ps-select-wrap">
-                  <select
-                    className="ps-input"
-                    style={{ minWidth: 150, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                    value={filterStatus}
-                    onChange={event => {
-                      setFilterStatus(event.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="all">Todos los estados</option>
-                    {STATUS_OPTIONS.map(status => (
-                      <option key={status} value={status}>{getOrderStatusConfig(status).label}</option>
-                    ))}
-                  </select>
-                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                </div>
-
-                <div className="ps-select-wrap">
-                  <select
-                    className="ps-input"
-                    style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                    value={filterPayment}
-                    onChange={event => {
-                      setFilterPayment(event.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="all">Pago: Todos</option>
-                    {Object.entries(PAYMENT_COLORS).map(([key, value]) => (
-                      <option key={key} value={key}>{value.label}</option>
-                    ))}
-                  </select>
-                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                </div>
-
-                <div className="ps-select-wrap">
-                  <select
-                    className="ps-input"
-                    style={{ minWidth: 150, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                    value={filterDate}
-                    onChange={event => {
-                      setFilterDate(event.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="all">Todas las fechas</option>
-                    <option value="today">Hoy</option>
-                    <option value="yesterday">Ayer</option>
-                    <option value="3days">Últimos 3 días</option>
-                    <option value="7days">Últimos 7 días</option>
-                    <option value="month">Este mes</option>
-                  </select>
-                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                </div>
-
-                <div className="ps-select-wrap">
-                  <ClientFilterSelect
-                    clients={clients}
-                    value={filterClient}
-                    onChange={value => {
-                      setFilterClient(value);
-                      setPage(1);
-                    }}
-                    className="ps-input"
-                    allLabel="Todos los clientes"
-                  />
-                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                </div>
-
-                <div className="ps-select-wrap">
-                  <select
-                    className="ps-input"
-                    style={{ minWidth: 150, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                    value={filterSeller}
-                    onChange={event => {
-                      setFilterSeller(event.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="all">Todos los vendedores</option>
-                    {Object.entries(sellerDirectory).map(([sellerId, sellerName]) => (
-                      <option key={sellerId} value={sellerId}>{sellerName || "Vendedor"}</option>
-                    ))}
-                  </select>
-                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                </div>
-
-                <div className="ps-select-wrap">
-                  <select
-                    className="ps-input"
-                    style={{ minWidth: 120, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                    value={filterArchive}
-                    onChange={event => {
-                      setFilterArchive(event.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="active">Activas</option>
-                    <option value="archived">Archivadas</option>
-                    <option value="all">Todas</option>
-                  </select>
-                  <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                </div>
-
-                <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-                  <button
-                    onClick={() => setViewMode("table")}
-                    className={`ps-view-toggle ${viewMode === "table" ? "active" : ""}`}
-                    title="Vista de tabla"
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                  </button>
-                  <button
-                    onClick={() => setViewMode("cards")}
-                    className={`ps-view-toggle ${viewMode === "cards" ? "active" : ""}`}
-                    title="Vista de tarjetas"
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
-                <span className="ps-filters-count">{filteredOrders.length} orden{filteredOrders.length !== 1 ? "es" : ""}</span>
-                {hasActiveFilters && (
-                  <button
-                    className="pq-btn pq-btn-secondary"
-                    onClick={() => {
-                      setSearch("");
-                      setFilterType("all");
-                      setFilterStatus("all");
-                      setFilterPayment("all");
-                      setFilterDate("all");
-                      setFilterClient("all");
-                      setFilterSeller("all");
-                      setFilterArchive("active");
-                      setPage(1);
-                    }}
-                  >
-                    <Icons.X /> Limpiar filtros
+                {search && (
+                  <button type="button" onClick={() => { setSearch(""); setPage(1); }} aria-label="Limpiar búsqueda">
+                    <Icons.X />
                   </button>
                 )}
-              </div>
+              </label>
+
+              <FilterSelect
+                icon={<Icons.FileText />}
+                value={filterType}
+                onChange={value => { setFilterType(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todos los tipos" },
+                  { value: "normal", label: "Normal" },
+                  { value: "911", label: "911 - Urgente" },
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.FileText />}
+                value={filterStatus}
+                onChange={value => { setFilterStatus(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todos los estados" },
+                  ...STATUS_OPTIONS.map(status => ({ value: status, label: getOrderStatusConfig(status).label })),
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.Money />}
+                value={filterPayment}
+                onChange={value => { setFilterPayment(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Pago: Todos" },
+                  ...Object.entries(PAYMENT_COLORS).map(([key, val]) => ({ value: key, label: val.label })),
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.Calendar />}
+                value={filterDate}
+                onChange={value => { setFilterDate(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todas las fechas" },
+                  { value: "today", label: "Hoy" },
+                  { value: "yesterday", label: "Ayer" },
+                  { value: "3days", label: "Últimos 3 días" },
+                  { value: "7days", label: "Últimos 7 días" },
+                  { value: "month", label: "Este mes" },
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.Users />}
+                value={filterClient}
+                onChange={value => { setFilterClient(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todos los clientes" },
+                  { value: NO_CLIENT_FILTER_VALUE, label: "Sin cliente registrado" },
+                  ...clients.map(c => ({ value: c.id, label: c.name })),
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.Users />}
+                value={filterSeller}
+                onChange={value => { setFilterSeller(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todos los vendedores" },
+                  ...Object.entries(sellerDirectory).map(([sellerId, sellerName]) => ({ value: sellerId, label: sellerName || "Vendedor" })),
+                ]}
+              />
+
+              <span className="pp-filters-count">{filteredOrders.length} resultado{filteredOrders.length !== 1 ? "s" : ""}</span>
             </div>
 
-            <div className={`ps-panel${viewMode === "cards" ? " ps-panel--transparent" : ""}`}>
-              <div className="ps-panel-stripe" />
+            <div className="pq-workbench-panel">
+              <div className="pq-workbench-heading">
+                <div>
+                  <span className="pq-workbench-kicker">Bandeja de trabajo</span>
+                  <h3>{filterArchive === "all" ? "Todas las órdenes" : filterArchive === "archived" ? "Órdenes archivadas" : filterArchive === "cancelled" ? "Órdenes canceladas" : filterArchive === "returned" ? "Órdenes devueltas" : "Órdenes activas"}</h3>
+                </div>
+                <div className="pq-workbench-tools">
+                  <div className="pq-workbench-tabs" role="tablist" aria-label="Filtro de archivo de órdenes">
+                    <button
+                      type="button"
+                      className={filterArchive === "all" ? "active" : ""}
+                      onClick={() => { setFilterArchive("all"); setPage(1); }}
+                      aria-selected={filterArchive === "all"}
+                    >
+                      <Icons.Clipboard />
+                      <span>Todas</span>
+                      <strong>{orders.length}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={filterArchive === "active" ? "active" : ""}
+                      onClick={() => { setFilterArchive("active"); setPage(1); }}
+                      aria-selected={filterArchive === "active"}
+                    >
+                      <Icons.Package />
+                      <span>Activas</span>
+                      <strong>{activeOrders.length}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={filterArchive === "archived" ? "active" : ""}
+                      onClick={() => { setFilterArchive("archived"); setPage(1); }}
+                      aria-selected={filterArchive === "archived"}
+                    >
+                      <Icons.Archive />
+                      <span>Archivadas</span>
+                      <strong>{archivedOrders.length}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={filterArchive === "cancelled" ? "active" : ""}
+                      onClick={() => { setFilterArchive("cancelled"); setPage(1); }}
+                      aria-selected={filterArchive === "cancelled"}
+                    >
+                      <Icons.Trash />
+                      <span>Canceladas</span>
+                      <strong>{cancelledOrders.length}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={filterArchive === "returned" ? "active" : ""}
+                      onClick={() => { setFilterArchive("returned"); setPage(1); }}
+                      aria-selected={filterArchive === "returned"}
+                    >
+                      <Icons.ArrowLeft />
+                      <span>Devueltas</span>
+                      <strong>{returnedOrders.length}</strong>
+                    </button>
+                  </div>
+                  <div className="pq-workbench-view-toggle" aria-label="Modo de vista">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("table")}
+                      className={viewMode === "table" ? "active" : ""}
+                      title="Vista de tabla"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("cards")}
+                      className={viewMode === "cards" ? "active" : ""}
+                      title="Vista de tarjetas"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pq-workbench-body">
               {loading ? (
                 <div className="ps-cards-empty">Cargando órdenes...</div>
               ) : filteredOrders.length === 0 ? (
                 <div className="ps-cards-empty">No hay órdenes que coincidan con los filtros.</div>
               ) : viewMode === "table" ? (
-                <div className="ps-table-wrap">
+                <div className="pq-workbench-list ps-table-wrap">
                   <table className="ps-table">
                     <thead>
                       <tr>
@@ -3289,6 +3284,7 @@ export default function PageQuote() {
 
               <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
             </div>
+              </div>
           </section>
         )}
 

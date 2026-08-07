@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import "../css-components/page-seller.css";
 import "../components/clients/AdminClientsModule.css";
 import "../css-components/page-designer.css";
+import "../css-components/page-production.css";
 import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
 import { AssignModal } from "../components/ui/AssignModal";
@@ -19,6 +20,8 @@ import { ORDER_STATUS, PRODUCTION_AREAS, isOrderStatus, isOrderStatusIn, ARCHIVE
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
+import { FilterSelect } from "../components/ui/FilterSelect";
+import "../components/ui/FilterSelect.css";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
@@ -909,7 +912,7 @@ export default function PageDesigner() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
   const [filterClient, setFilterClient] = useState("all");
-  const [filterArchive, setFilterArchive] = useState("active");
+  const [filterArchive, setFilterArchive] = useState("all");
   const [clients, setClients] = useState([]);
   const [viewMode, setViewMode] = useState("table");
   const [page, setPage] = useState(1);
@@ -1132,6 +1135,10 @@ export default function PageDesigner() {
   const returnedBannerOrdersCount = activeDesignerOrders.filter(order => isReturnedOrder(order)).length;
 
   const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
+  const activeOrders = useMemo(() => orders.filter(o => !o.is_archived_designer && !isOrderStatusIn(o.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED])), [orders]);
+  const archivedOrders = useMemo(() => orders.filter(o => o.is_archived_designer), [orders]);
+  const cancelledOrders = useMemo(() => orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.CANCELLED)), [orders]);
+  const returnedOrders = useMemo(() => orders.filter(o => isReturnedOrder(o)), [orders]);
 
   const metrics = useMemo(() => [
     { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", accentIdx: 0, icon: <Icons.Package /> },
@@ -1165,7 +1172,9 @@ export default function PageDesigner() {
     const matchesArchive =
       filterArchive === "all" ||
       (filterArchive === "active" && !order.is_archived_designer) ||
-      (filterArchive === "archived" && order.is_archived_designer);
+      (filterArchive === "archived" && order.is_archived_designer) ||
+      (filterArchive === "cancelled" && isOrderStatus(order.status, ORDER_STATUS.CANCELLED)) ||
+      (filterArchive === "returned" && isReturnedOrder(order));
 
     const createdAt = new Date(order.created_at);
     const now = new Date();
@@ -1519,77 +1528,156 @@ export default function PageDesigner() {
           )}
 
           {activeTab === "orders" && (
-            <>
-              <div className="ps-filters">
-                <div className="ps-search-wrap">
-                  <span className="ps-search-icon"><Icons.Search /></span>
-                  <input 
-                    className="ps-input with-icon" 
+            <section className="pq-section">
+              <div className="pp-filters">
+                <label className="pp-filter-control pp-filter-search">
+                  <Icons.Search />
+                  <input
+                    type="search"
                     placeholder="Buscar por cliente, ID o descripción..."
                     value={search}
-                    onChange={e => setSearch(e.target.value)}
+                    onChange={e => { setSearch(e.target.value); setPage(1); }}
                   />
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <div className="ps-select-wrap">
-                    <select className="ps-input" style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }} value={filterType} onChange={e => setFilterType(e.target.value)}>
-                      <option value="all">Todos los tipos</option>
-                      <option value="normal">Normal</option>
-                      <option value="911">911 - Urgente</option>
-                    </select>
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="ps-select-wrap">
-                    <select className="ps-input" style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                      <option value="all">Todos los estados</option>
-                      <option value={ORDER_STATUS.IN_DESIGN}>En Diseño</option>
-                      <option value={ORDER_STATUS.IN_QUOTE}>Caja</option>
-                      <option value={ORDER_STATUS.IN_PRODUCTION}>Producción</option>
-                      <option value={ORDER_STATUS.IN_COMPLETED}>Completada</option>
-                    </select>
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="ps-select-wrap">
-                    <select className="ps-input" style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }} value={filterDate} onChange={e => setFilterDate(e.target.value)}>
-                      <option value="all">Todas las fechas</option>
-                      <option value="today">Hoy</option>
-                      <option value="yesterday">Ayer</option>
-                      <option value="3days">Últimos 3 días</option>
-                      <option value="7days">Últimos 7 días</option>
-                      <option value="month">Este mes</option>
-                    </select>
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="ps-select-wrap">
-                    <ClientFilterSelect
-                      clients={clients}
-                      value={filterClient}
-                      onChange={setFilterClient}
-                      className="ps-input"
-                      allLabel="Todos los clientes"
-                    />
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="ps-select-wrap">
-                    <select className="ps-input" style={{ minWidth: 110, paddingRight: 32, cursor: "pointer", appearance: "none" }} value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>
-                      <option value="active">Activas</option>
-                      <option value="archived">Archivadas</option>
-                      <option value="all">Todas</option>
-                    </select>
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-                    <button onClick={() => setViewMode("table")} className={`ps-view-toggle ${viewMode === "table" ? "active" : ""}`} title="Vista de tabla">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  {search && (
+                    <button type="button" onClick={() => { setSearch(""); setPage(1); }} aria-label="Limpiar búsqueda">
+                      <Icons.X />
                     </button>
-                    <button onClick={() => setViewMode("cards")} className={`ps-view-toggle ${viewMode === "cards" ? "active" : ""}`} title="Vista de tarjetas">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    </button>
-                  </div>
-                </div>
-                <span className="ps-filters-count">{filteredOrders.length} visible{filteredOrders.length !== 1 ? "s" : ""}</span>
+                  )}
+                </label>
+
+                <FilterSelect
+                  icon={<Icons.FileText />}
+                  value={filterType}
+                  onChange={v => { setFilterType(v); setPage(1); }}
+                  options={[
+                    { value: "all", label: "Todos los tipos" },
+                    { value: "normal", label: "Normal" },
+                    { value: "911", label: "911 - Urgente" },
+                  ]}
+                />
+
+                <FilterSelect
+                  icon={<Icons.FileText />}
+                  value={filterStatus}
+                  onChange={v => { setFilterStatus(v); setPage(1); }}
+                  options={[
+                    { value: "all", label: "Todos los estados" },
+                    { value: ORDER_STATUS.IN_DESIGN, label: "En Diseño" },
+                    { value: ORDER_STATUS.IN_QUOTE, label: "Caja" },
+                    { value: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
+                    { value: ORDER_STATUS.IN_COMPLETED, label: "Completada" },
+                  ]}
+                />
+
+                <FilterSelect
+                  icon={<Icons.Calendar />}
+                  value={filterDate}
+                  onChange={v => { setFilterDate(v); setPage(1); }}
+                  options={[
+                    { value: "all", label: "Todas las fechas" },
+                    { value: "today", label: "Hoy" },
+                    { value: "yesterday", label: "Ayer" },
+                    { value: "3days", label: "Últimos 3 días" },
+                    { value: "7days", label: "Últimos 7 días" },
+                    { value: "month", label: "Este mes" },
+                  ]}
+                />
+
+                <FilterSelect
+                  icon={<Icons.Users />}
+                  value={filterClient}
+                  onChange={v => { setFilterClient(v); setPage(1); }}
+                  options={[
+                    { value: "all", label: "Todos los clientes" },
+                    ...clients.map(c => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+
+                <span className="pp-filters-count"><Icons.Clipboard /> {filteredOrders.length} resultado{filteredOrders.length !== 1 ? "s" : ""}</span>
               </div>
-              <div className={`ps-panel${viewMode === "cards" ? " ps-panel--transparent" : ""}`}>
+
+              <div className="pp-workbench-panel">
+                <div className="pp-workbench-heading">
+                  <div>
+                    <span className="pp-workbench-kicker">Bandeja de trabajo</span>
+                    <h3>{filterArchive === "all" ? "Todas las órdenes" : filterArchive === "archived" ? "Órdenes archivadas" : filterArchive === "cancelled" ? "Órdenes canceladas" : filterArchive === "returned" ? "Órdenes devueltas" : "Órdenes activas"}</h3>
+                  </div>
+                  <div className="pp-workbench-tools">
+                    <div className="pp-workbench-tabs" role="tablist" aria-label="Filtro de archivo de órdenes">
+                      <button
+                        type="button"
+                        className={filterArchive === "all" ? "active" : ""}
+                        onClick={() => { setFilterArchive("all"); setPage(1); }}
+                        aria-selected={filterArchive === "all"}
+                      >
+                        <Icons.Clipboard />
+                        <span>Todas</span>
+                        <strong>{orders.length}</strong>
+                      </button>
+                      <button
+                        type="button"
+                        className={filterArchive === "active" ? "active" : ""}
+                        onClick={() => { setFilterArchive("active"); setPage(1); }}
+                        aria-selected={filterArchive === "active"}
+                      >
+                        <Icons.Package />
+                        <span>Activas</span>
+                        <strong>{activeOrders.length}</strong>
+                      </button>
+                      <button
+                        type="button"
+                        className={filterArchive === "archived" ? "active" : ""}
+                        onClick={() => { setFilterArchive("archived"); setPage(1); }}
+                        aria-selected={filterArchive === "archived"}
+                      >
+                        <Icons.Archive />
+                        <span>Archivadas</span>
+                        <strong>{archivedOrders.length}</strong>
+                      </button>
+                      <button
+                        type="button"
+                        className={filterArchive === "cancelled" ? "active" : ""}
+                        onClick={() => { setFilterArchive("cancelled"); setPage(1); }}
+                        aria-selected={filterArchive === "cancelled"}
+                      >
+                        <Icons.Trash />
+                        <span>Canceladas</span>
+                        <strong>{cancelledOrders.length}</strong>
+                      </button>
+                      <button
+                        type="button"
+                        className={filterArchive === "returned" ? "active" : ""}
+                        onClick={() => { setFilterArchive("returned"); setPage(1); }}
+                        aria-selected={filterArchive === "returned"}
+                      >
+                        <Icons.ArrowLeft />
+                        <span>Devueltas</span>
+                        <strong>{returnedOrders.length}</strong>
+                      </button>
+                    </div>
+                    <div className="pp-workbench-view-toggle" aria-label="Modo de vista">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("table")}
+                        className={viewMode === "table" ? "active" : ""}
+                        title="Vista de tabla"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("cards")}
+                        className={viewMode === "cards" ? "active" : ""}
+                        title="Vista de tarjetas"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              <div className="pp-workbench-body">
+                <div className={`ps-panel${viewMode === "cards" ? " ps-panel--transparent" : ""}`}>
                 <div className="ps-panel-stripe" />
                 {viewMode === "table" ? (
                   <div className="ps-table-wrap">
@@ -1742,8 +1830,10 @@ export default function PageDesigner() {
                   </div>
                 )}
                 <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+                </div>
               </div>
-            </>
+              </div>
+            </section>
           )}
 
           {activeTab === "profile" && (

@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-seller.css";
+import "../css-components/page-production.css";
+import "../css-components/page-quote.css";
 import Sidebar from "../components/Sidebar";
 import { Icons } from "../utils/icons";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
@@ -12,7 +14,8 @@ import {
 import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
-import { ClientFilterSelect } from "../components/ui/ClientCombobox";
+import { FilterSelect } from "../components/ui/FilterSelect";
+import "../components/ui/FilterSelect.css";
 import {
   ORDER_STATUS,
   isPaymentCredit,
@@ -281,7 +284,7 @@ export default function PageSeller() {
   const [filterPayment, setFilterPayment] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
   const [filterClient, setFilterClient] = useState("all");
-  const [filterArchive, setFilterArchive] = useState("active");
+  const [filterArchive, setFilterArchive] = useState("all");
   const [page, setPage] = useState(1);
   const [viewMode, setViewMode] = useState("table");
   const [showCreate, setShowCreate] = useState(false);
@@ -364,30 +367,37 @@ export default function PageSeller() {
     }
 
     try {
+      const isReturnedFilter = filterArchive === "returned";
       const result = await runSellerOrderAction("list", {
-        page: nextPage,
-        pageSize: viewMode === "cards" ? SELLER_CARD_PAGE_SIZE : SELLER_ORDER_PAGE_SIZE,
+        page: isReturnedFilter ? 1 : nextPage,
+        pageSize: isReturnedFilter ? 500 : (viewMode === "cards" ? SELLER_CARD_PAGE_SIZE : SELLER_ORDER_PAGE_SIZE),
         search: debouncedSearch,
         status: filterStatus,
         paymentStatus: filterPayment,
         clientId: filterClient,
-        archive: filterArchive,
+        archive: isReturnedFilter ? "all" : filterArchive,
         dateFilter: filterDate,
         includeDashboard,
       });
 
       if (requestId !== ordersRequestIdRef.current) return;
 
-      const resolvedTotalPages = Math.max(Number(result?.totalPages) || 1, 1);
+      const rawOrders = Array.isArray(result?.orders) ? result.orders : [];
+      const nextOrders = isReturnedFilter ? rawOrders.filter(o => isReturnedOrder(o)) : rawOrders;
+      const filteredTotal = isReturnedFilter ? nextOrders.length : (Number(result?.total) || 0);
+      const filteredPageSize = viewMode === "cards" ? SELLER_CARD_PAGE_SIZE : SELLER_ORDER_PAGE_SIZE;
+      const resolvedTotalPages = Math.max(isReturnedFilter
+        ? Math.ceil(nextOrders.length / filteredPageSize)
+        : Number(result?.totalPages) || 1, 1);
+
       if (nextPage > resolvedTotalPages) {
         setPage(resolvedTotalPages);
         return;
       }
 
-      const nextOrders = Array.isArray(result?.orders) ? result.orders : [];
       setOrders(nextOrders);
       setRecentOrders(Array.isArray(result?.recent_orders) ? result.recent_orders : []);
-      setOrdersTotal(Number(result?.total) || 0);
+      setOrdersTotal(filteredTotal);
       setTotalPages(resolvedTotalPages);
       setSellerSummary({ ...EMPTY_SELLER_SUMMARY, ...(result?.summary || {}) });
       if (Number(result?.page) && Number(result.page) !== page) setPage(Number(result.page));
@@ -690,6 +700,9 @@ export default function PageSeller() {
   const activeOrdersCount = sellerSummary.active;
   const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
   const editedOrdersCount = orders.filter(o => o?.metadata?.event_kind === "admin_edited_order").length;
+  const activeOrders = useMemo(() => orders.filter(o => !o.is_archived), [orders]);
+  const archivedOrders = useMemo(() => orders.filter(o => o.is_archived), [orders]);
+  const returnedOrders = useMemo(() => orders.filter(o => isReturnedOrder(o)), [orders]);
 
   const visibleSellerNotifications = useMemo(
     () => notif.notifications.filter(isSellerVisibleNotification),
@@ -914,85 +927,99 @@ export default function PageSeller() {
           {/* ORDERS TAB */}
           {activeTab === "orders" && (
             <>
-              <div className="ps-filters">
-                <div className="ps-search-wrap">
-                  <span className="ps-search-icon"><Icons.Search /></span>
-                  <input className="ps-input with-icon" placeholder="Buscar por cliente, descripcion o ID..."
+              <div className="pp-filters">
+                <label className="pp-filter-control pp-filter-search">
+                  <span className="pp-filter-search-icon"><Icons.Search /></span>
+                  <input placeholder="Buscar por cliente, descripcion o ID..."
                     value={search} onChange={e => setSearch(e.target.value)} />
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <div className="ps-select-wrap">
-                    <select className="ps-input" style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                      value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                      <option value="all">Todos los estados</option>
-                      {STATUS_OPTIONS.map(status => {
-                        const cfg = getOrderStatusConfig(status);
-                        return <option key={status} value={status}>{cfg.label}</option>;
-                      })}
-                    </select>
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="ps-select-wrap">
-                    <select className="ps-input" style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                      value={filterPayment} onChange={e => setFilterPayment(e.target.value)}>
-                      <option value="all">Pago: Todos</option>
-                      {Object.entries(PAYMENT_COLORS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="ps-select-wrap">
-                    <ClientFilterSelect
-                      clients={clients}
-                      value={filterClient}
-                      onChange={setFilterClient}
-                      className="ps-input"
-                      allLabel="Todos los clientes"
-                    />
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="ps-select-wrap">
-                    <select className="ps-input" style={{ minWidth: 100, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                      value={filterArchive} onChange={e => setFilterArchive(e.target.value)}>
-                      <option value="active">Activas</option>
-                      <option value="archived">Archivadas</option>
-                    </select>
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div className="ps-select-wrap">
-                    <select className="ps-input" style={{ minWidth: 140, paddingRight: 32, cursor: "pointer", appearance: "none" }}
-                      value={filterDate} onChange={e => setFilterDate(e.target.value)}>
-                      <option value="all">Fecha: Todas</option>
-                      <option value="10min">Hace 10 minutos</option>
-                      <option value="30min">Hace 30 minutos</option>
-                      <option value="1hour">Hace 1 hora</option>
-                      <option value="today">Hoy</option>
-                      <option value="yesterday">Ayer</option>
-                      <option value="3days">Hace 3 dias</option>
-                      <option value="7days">Hace 7 dias</option>
-                      <option value="thismonth">Este mes</option>
-                      <option value="thisyear">Este ano</option>
-                    </select>
-                    <span className="ps-select-arrow"><Icons.ChevronDown /></span>
-                  </div>
-                  <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-                    <button 
-                      onClick={() => setViewMode("table")}
-                      className={`ps-view-toggle ${viewMode === "table" ? "active" : ""}`}
-                      title="Vista de tabla"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                    </button>
-                    <button 
-                      onClick={() => setViewMode("cards")}
-                      className={`ps-view-toggle ${viewMode === "cards" ? "active" : ""}`}
-                      title="Vista de tarjetas"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    </button>
-                  </div>
-                </div>
-                <span className="ps-filters-count">{ordersTotal} resultado{ordersTotal !== 1 ? "s" : ""}</span>
+                </label>
+                <FilterSelect
+                  icon={<Icons.FileText />}
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                  options={[
+                    { value: "all", label: "Todos los estados" },
+                    ...STATUS_OPTIONS.map(status => {
+                      const cfg = getOrderStatusConfig(status);
+                      return { value: status, label: cfg.label };
+                    }),
+                  ]}
+                  placeholder="Todos los estados"
+                />
+                <FilterSelect
+                  icon={<Icons.Money />}
+                  value={filterPayment}
+                  onChange={setFilterPayment}
+                  options={[
+                    { value: "all", label: "Pago: Todos" },
+                    ...Object.entries(PAYMENT_COLORS).map(([k, v]) => ({ value: k, label: v.label })),
+                  ]}
+                  placeholder="Pago: Todos"
+                />
+                <FilterSelect
+                  icon={<Icons.Users />}
+                  value={filterClient}
+                  onChange={setFilterClient}
+                  options={[
+                    { value: "all", label: "Todos los clientes" },
+                    ...clients.map(c => ({ value: c.id, label: c.name })),
+                  ]}
+                  placeholder="Todos los clientes"
+                />
+                <FilterSelect
+                  icon={<Icons.Calendar />}
+                  value={filterDate}
+                  onChange={setFilterDate}
+                  options={[
+                    { value: "all", label: "Fecha: Todas" },
+                    { value: "10min", label: "Hace 10 minutos" },
+                    { value: "30min", label: "Hace 30 minutos" },
+                    { value: "1hour", label: "Hace 1 hora" },
+                    { value: "today", label: "Hoy" },
+                    { value: "yesterday", label: "Ayer" },
+                    { value: "3days", label: "Hace 3 dias" },
+                    { value: "7days", label: "Hace 7 dias" },
+                    { value: "thismonth", label: "Este mes" },
+                    { value: "thisyear", label: "Este ano" },
+                  ]}
+                  placeholder="Fecha: Todas"
+                />
+                <span className="pp-filters-count"><Icons.Clipboard /> {ordersTotal} resultado{ordersTotal !== 1 ? "s" : ""}</span>
               </div>
+
+              <div className="pp-workbench-panel">
+                <div className="pp-workbench-heading">
+                  <div>
+                    <span className="pp-workbench-kicker">Bandeja de trabajo</span>
+                    <h3>{filterArchive === "all" ? "Todas las ordernes" : filterArchive === "archived" ? "Ordernes archivadas" : filterArchive === "returned" ? "Ordernes devueltas" : "Ordernes activas"}</h3>
+                  </div>
+                  <div className="pp-workbench-tools">
+                    <div className="pp-workbench-tabs" role="tablist">
+                      <button className={filterArchive === "all" ? "active" : ""} onClick={() => { setFilterArchive("all"); setPage(1); }}>
+                        <Icons.Clipboard /> Todas <span className="pp-workbench-badge">{orders.length}</span>
+                      </button>
+                      <button className={filterArchive === "active" ? "active" : ""} onClick={() => { setFilterArchive("active"); setPage(1); }}>
+                        <Icons.Package /> Activas <span className="pp-workbench-badge">{activeOrders.length}</span>
+                      </button>
+                      <button className={filterArchive === "archived" ? "active" : ""} onClick={() => { setFilterArchive("archived"); setPage(1); }}>
+                        <Icons.Archive /> Archivadas <span className="pp-workbench-badge">{archivedOrders.length}</span>
+                      </button>
+                      <button className={filterArchive === "returned" ? "active" : ""} onClick={() => { setFilterArchive("returned"); setPage(1); }}>
+                        <Icons.ArrowLeft /> Devueltas <span className="pp-workbench-badge">{returnedOrders.length}</span>
+                      </button>
+                    </div>
+                    <div className="pp-workbench-view-toggle">
+                      <button onClick={() => setViewMode("table")} className={viewMode === "table" ? "active" : ""} title="Vista de tabla">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                      </button>
+                      <button onClick={() => setViewMode("cards")} className={viewMode === "cards" ? "active" : ""} title="Vista de tarjetas">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              <div className="pp-workbench-body">
               <div className={`ps-panel${viewMode === "cards" ? " ps-panel--transparent" : ""}`}>
                 <div className="ps-panel-stripe" />
                 {viewMode === "table" ? (
@@ -1006,7 +1033,15 @@ export default function PageSeller() {
                           </tr>
                         ) : orders.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="ps-table-empty">No hay Ordenes disponibles</td>
+                            <td colSpan={7} className="ps-table-empty">
+                              <div className="acm-empty-state">
+                                <Icons.Package />
+                                <strong>No hay órdenes disponibles</strong>
+                                <span>{search || filterStatus !== "all" || filterPayment !== "all" || filterClient !== "all" || filterDate !== "all" || filterArchive !== "all"
+                                  ? "Prueba con otros filtros o limpia la búsqueda."
+                                  : "Las órdenes que crees aparecerán aquí."}</span>
+                              </div>
+                            </td>
                           </tr>
                         ) : (
                           orders.map(o => (
@@ -1089,7 +1124,15 @@ export default function PageSeller() {
                     {loading ? (
                       <div className="ps-cards-empty">Cargando Ordenes...</div>
                     ) : orders.length === 0 ? (
-                      <div className="ps-cards-empty">No hay Ordenes disponibles</div>
+                      <div className="ps-cards-empty">
+                        <div className="acm-empty-state">
+                          <Icons.Package />
+                          <strong>No hay órdenes disponibles</strong>
+                          <span>{search || filterStatus !== "all" || filterPayment !== "all" || filterClient !== "all" || filterDate !== "all" || filterArchive !== "all"
+                            ? "Prueba con otros filtros o limpia la búsqueda."
+                            : "Las órdenes que crees aparecerán aquí."}</span>
+                        </div>
+                      </div>
                     ) : (
                       orders.map(o => {
                         const isUrgent = String(o.order_type || "").toLowerCase().includes("911");
@@ -1164,6 +1207,8 @@ export default function PageSeller() {
                   </div>
                 )}
                 <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+              </div>
+              </div>
               </div>
             </>
           )}

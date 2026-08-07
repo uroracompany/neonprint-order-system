@@ -617,6 +617,7 @@
   flex-direction: column;
   gap: 22px;
   padding: 26px;
+  container-type: inline-size;
 }
 
 /* Banner de resumen */
@@ -3161,4 +3162,298 @@
   white-space: nowrap;
   color: var(--pq-text-sub, #475569);
   font-size: 12px;
+}
+
+/* ═══════════════════════════════════════════════════
+   WORKBENCH PANEL – Órdenes de Caja
+   ═══════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════
+   FILTROS – Container Queries + CSS Grid
+   Layout adaptativo según ancho del contenedor (no viewport)
+   ═══════════════════════════════════════════════════ */
+
+/* Fallback flex para navegadores sin container query support */
+.pq-section .pp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.pq-section .pp-filters .pp-filter-search {
+  flex: 2 1 240px;
+  min-width: 200px;
+}
+
+.pq-section .pp-filters .pp-filter-select-wrap {
+  flex: 1 1 160px;
+  min-width: 150px;
+}
+
+.pq-section .pp-filters .pp-filters-count {
+  flex: 0 0 auto;
+}
+
+/* ── ≥1050px: Sidebar cerrado — 5 columnas con max-width controlado ── */
+@container (min-width: 1050px) {
+  .pq-section .pp-filters {
+    display: grid;
+    grid-template-columns: minmax(240px, 400px) repeat(4, minmax(160px, 220px));
+    gap: 10px;
+    align-items: center;
+  }
+
+  .pq-section .pp-filters .pp-filter-search {
+    grid-column: 1 / 3;
+  }
+
+  .pq-section .pp-filters .pp-filters-count {
+    justify-self: start;
+  }
+}
+
+/* ── ≥700px y <1050px: Sidebar abierto — 3 columnas ── */
+@container (min-width: 700px) and (max-width: 1049px) {
+  .pq-section .pp-filters {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    align-items: center;
+  }
+
+  .pq-section .pp-filters .pp-filter-search,
+  .pq-section .pp-filters .pp-filters-count {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ── <700px: Pantallas pequeñas — 1 columna ── */
+@container (max-width: 699px) {
+  .pq-section .pp-filters {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .pq-section .pp-filters .pp-filter-search,
+  .pq-section .pp-filters .pp-filters-count {
+    grid-column: 1;
+  }
+}
+
+.pq-workbench-panel {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 30, 64, .055);
+}
+
+.pq-workbench-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid #dbe3ef;
+  background: linear-gradient(180deg, rgba(248, 250, 252, .92) 0%, rgba(255, 255, 255, .92) 100%);
+}
+
+.pq-workbench-heading > div:first-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.pq-workbench-kicker {
+  display: block;
+  margin-bottom: 4px;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pq-workbench-heading h3 {
+  margin: 0;
+  color: #0f1e40;
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.3;
+  letter-spacing: -.02em;
+  white-space: nowrap;
+}
+
+.pq-workbench-tools {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.pq-workbench-tabs {
+  display: inline-flex;
+  align-items: stretch;
+  min-height: 38px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #f8fafc;
+  flex-wrap: wrap;
+}
+
+.pq-workbench-tabs button {
+  min-height: 100%;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #4a5e80;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 600 11px/1 'Poppins', sans-serif;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  transition: background .25s ease, color .25s ease;
+}
+
+.pq-workbench-tabs button > svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.pq-workbench-tabs button:hover:not(.active) {
+  background: rgba(15, 30, 64, .04);
+}
+
+.pq-workbench-tabs button.active {
+  border-color: transparent;
+  background: #091127;
+  color: #ffffff;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(9, 17, 39, .18);
+}
+
+.pq-workbench-tabs button:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: -2px;
+  z-index: 3;
+}
+
+.pq-workbench-tabs strong {
+  min-width: 21px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e8edf8;
+  color: #0f1e40;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.pq-workbench-tabs button.active strong {
+  background: rgba(255, 255, 255, .18);
+  color: #ffffff;
+}
+
+.pq-workbench-tabs button:first-child {
+  border-radius: 10px 0 0 10px;
+}
+
+.pq-workbench-tabs button:last-child {
+  border-radius: 0 10px 10px 0;
+}
+
+.pq-workbench-tabs button:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 1px;
+  background: #dbe3ef;
+  pointer-events: none;
+}
+
+.pq-workbench-tabs button.active::after,
+.pq-workbench-tabs button:has(+ .active)::after {
+  display: none;
+}
+
+.pq-workbench-view-toggle {
+  display: inline-flex;
+  align-items: stretch;
+  min-height: 38px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.pq-workbench-view-toggle button {
+  min-height: 100%;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #4a5e80;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .25s ease, color .25s ease;
+}
+
+.pq-workbench-view-toggle button:hover:not(.active) {
+  background: rgba(15, 30, 64, .04);
+}
+
+.pq-workbench-view-toggle button.active {
+  background: #091127;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(9, 17, 39, .18);
+}
+
+.pq-workbench-view-toggle button:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: -2px;
+}
+
+.pq-workbench-body {
+  padding: 0;
+}
+
+.pq-workbench-list {
+  overflow-x: auto;
+}
+
+@media (max-width: 768px) {
+  .pq-workbench-heading {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .pq-workbench-tools {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .pq-workbench-tabs {
+    flex: 1;
+    min-width: 0;
+  }
+  .pq-workbench-tabs button {
+    flex: 1;
+    justify-content: center;
+    padding: 0 10px;
+    font-size: 10px;
+  }
+  .pq-workbench-view-toggle {
+    flex-shrink: 0;
+  }
 }

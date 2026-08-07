@@ -899,6 +899,77 @@
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   WORKBENCH PANEL – Órdenes de Ventas (sticky heading)
+══════════════════════════════════════════════════════════════════ */
+.ps-main .pp-workbench-panel {
+  border-radius: 14px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   FILTROS – Ventas (6 columnas: search + 4 selects + count)
+   Sobreescribe el grid de page-production.css
+══════════════════════════════════════════════════════════════════ */
+.ps-main .pp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.ps-main .pp-filters .pp-filter-search {
+  flex: 3 1 280px;
+  min-width: 200px;
+}
+
+.ps-main .pp-filters .pp-filter-select-wrap {
+  flex: 1 1 160px;
+  min-width: 150px;
+  max-width: 200px;
+}
+
+.ps-main .pp-filters .pp-filters-count {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   EMPTY STATE – Órdenes de Ventas
+═════════════════════════════════════════════════════════════════ */
+.ps-table-empty .acm-empty-state,
+.ps-cards-empty .acm-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 200px;
+  text-align: center;
+}
+
+.ps-table-empty .acm-empty-state svg,
+.ps-cards-empty .acm-empty-state svg {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 4px;
+  color: #8899b5;
+}
+
+.ps-table-empty .acm-empty-state strong,
+.ps-cards-empty .acm-empty-state strong {
+  color: #0f1e40;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ps-table-empty .acm-empty-state span,
+.ps-cards-empty .acm-empty-state span {
+  max-width: 320px;
+  color: #8899b5;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ══════════════════════════════════════════════════════════════════
    MODAL
 ══════════════════════════════════════════════════════════════════ */
 .ps-modal-overlay {
