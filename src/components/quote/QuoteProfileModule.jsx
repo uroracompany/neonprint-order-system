@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -15,6 +15,8 @@ import {
 } from "recharts";
 import { Icons } from "../../utils/icons";
 import { adminApiFetch } from "../../utils/adminApi";
+import useOrdersRealtimeSync from "../../hooks/useOrdersRealtimeSync";
+import ProfilePeriodControl from "../profile/ProfilePeriodControl";
 import "./QuoteProfileModule.css";
 
 const EMPTY_METRICS = {
@@ -131,35 +133,46 @@ export default function QuoteProfileModule({ authUser, fallbackProfile }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [trendView, setTrendView] = useState("30d");
+  const [period, setPeriod] = useState("all");
+  const requestIdRef = useRef(0);
+  const blockingRequestIdRef = useRef(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchProfile() {
+  const fetchProfile = useCallback(async ({ silent = false } = {}) => {
+    if (silent && blockingRequestIdRef.current !== null) return;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    if (!silent) {
+      blockingRequestIdRef.current = requestId;
       setLoading(true);
-      setError("");
-      try {
-        const { response, result } = await adminApiFetch("/api/quote-profile", {});
-        if (cancelled) return;
-        if (!response.ok) throw new Error(result?.error || "No se pudo cargar Mi Perfil.");
-        console.group("[QuoteProfile] Datos recibidos de API");
-        console.log("Respuesta completa:", result);
-        console.log("Profile:", result.profile);
-        console.log("Metrics:", result.metrics);
-        console.log("Ranking:", result.ranking);
-        console.log("Analytics:", result.analytics);
-        console.log("Period:", result.period);
-        console.groupEnd();
-        setData(result);
-      } catch (err) {
-        console.error("[QuoteProfile] Error cargando perfil:", err);
-        if (!cancelled) setError(err?.message || "No se pudo cargar Mi Perfil.");
-      } finally {
-        if (!cancelled) setLoading(false);
+    }
+    setError("");
+    try {
+      const { response, result } = await adminApiFetch("/api/quote-profile", { period });
+      if (requestId !== requestIdRef.current) return;
+      if (!response.ok) throw new Error(result?.error || "No se pudo cargar Mi Perfil.");
+      setData(result);
+    } catch (err) {
+      if (requestId === requestIdRef.current) setError(err?.message || "No se pudo cargar Mi Perfil.");
+    } finally {
+      if (!silent) {
+        if (blockingRequestIdRef.current === requestId) {
+          blockingRequestIdRef.current = null;
+          if (requestId === requestIdRef.current) setLoading(false);
+        }
       }
     }
-    fetchProfile();
-    return () => { cancelled = true; };
-  }, []);
+  }, [period]);
+
+  useEffect(() => {
+    void fetchProfile();
+    return () => { requestIdRef.current += 1; };
+  }, [fetchProfile]);
+
+  useOrdersRealtimeSync({
+    userId: authUser?.id,
+    scope: "quote-profile",
+    refreshOrders: () => fetchProfile({ silent: true }),
+  });
 
   const profile = data?.profile || fallbackProfile || null;
   const metrics = data?.metrics || EMPTY_METRICS;
@@ -174,28 +187,6 @@ export default function QuoteProfileModule({ authUser, fallbackProfile }) {
   const trendData = analytics.trends?.[trendView] || [];
   const paymentTypeRows = analytics.payment_types?.rows?.length ? analytics.payment_types.rows : EMPTY_ANALYTICS.payment_types.rows;
   const paymentSummary = analytics.payment_summary || EMPTY_ANALYTICS.payment_summary;
-
-  if (data) {
-    console.group("[QuoteProfile] Valores renderizados");
-    console.log("displayName:", displayName);
-    console.log("metrics.total_orders:", metrics.total_orders);
-    console.log("metrics.active_orders:", metrics.active_orders);
-    console.log("metrics.completed_orders:", metrics.completed_orders);
-    console.log("metrics.cancelled_orders:", metrics.cancelled_orders);
-    console.log("metrics.paid_orders:", metrics.paid_orders);
-    console.log("metrics.partial_paid_orders:", metrics.partial_paid_orders);
-    console.log("metrics.pending_payment_orders:", metrics.pending_payment_orders);
-    console.log("metrics.payment_rate:", metrics.payment_rate);
-    console.log("metrics.cancellation_rate:", metrics.cancellation_rate);
-    console.log("metrics.clients_served:", metrics.clients_served);
-    console.log("metrics.archived_orders:", metrics.archived_orders);
-    console.log("paymentSummary:", paymentSummary);
-    console.log("top_clients:", analytics.top_clients);
-    console.log("payment_types:", analytics.payment_types);
-    console.log("trends keys:", Object.keys(analytics.trends || {}));
-    console.log("trendData[" + trendView + "]:", trendData);
-    console.groupEnd();
-  }
 
   const goalItems = useMemo(() => ([
     { label: "Actividad activa", done: (metrics.active_orders || 0) > 0 },
@@ -245,7 +236,8 @@ export default function QuoteProfileModule({ authUser, fallbackProfile }) {
               ) : (
                 <span className="acm-profile-status inactive">Usuario inactivo</span>
               )}
-              <small>Periodo: {data?.period?.label || "Mes actual"}</small>
+              <small>Periodo: {data?.period?.label || "Todo el historial"}</small>
+              <ProfilePeriodControl value={period} onChange={setPeriod} />
             </div>
           </div>
         </div>

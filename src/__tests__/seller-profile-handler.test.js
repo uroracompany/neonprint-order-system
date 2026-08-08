@@ -15,16 +15,34 @@ const env = {
 
 const applyFilters = (rows, filters) => rows.filter((row) => filters.every((filter) => {
   if (filter.type === "eq") return row[filter.field] === filter.value;
+  if (filter.type === "or") {
+    return filter.conditions.some((condition) => {
+      if (condition.type === "eq") return row[condition.field] === condition.value;
+      return false;
+    });
+  }
   if (filter.type === "gte") return new Date(row[filter.field]) >= new Date(filter.value);
   if (filter.type === "lt") return new Date(row[filter.field]) < new Date(filter.value);
   return true;
 }));
+
+const parseOrFilter = (value) => String(value || "")
+  .split(",")
+  .map((part) => {
+    const [field, operator, ...rest] = part.split(".");
+    return { type: operator, field, value: rest.join(".") };
+  })
+  .filter((condition) => condition.field && condition.type === "eq");
 
 function makeBuilder(rows) {
   const state = { filters: [] };
   const builder = {
     eq(field, value) {
       state.filters.push({ type: "eq", field, value });
+      return builder;
+    },
+    or(value) {
+      state.filters.push({ type: "or", conditions: parseOrFilter(value) });
       return builder;
     },
     gte(field, value) {
@@ -222,22 +240,23 @@ describe("handleSellerProfile", () => {
 
     expect(result.status).toBe(200);
     expect(result.body.profile.id).toBe("seller-1");
+    expect(result.body.period).toMatchObject({ key: "all", label: "Todo el historial" });
     expect(result.body.metrics).toMatchObject({
-      total_orders: 3,
+      total_orders: 4,
       completed_orders: 1,
       cancelled_orders: 1,
-      active_orders: 1,
+      active_orders: 3,
     });
     expect(result.body.ranking).toMatchObject({
       position: 2,
       total_sellers: 2,
       metric_label: "Mejor % Finalizacion",
-      score: 33.3,
+      score: 25,
     });
     expect(result.body.analytics.order_types).toMatchObject({
-      total: 3,
-      normal: { count: 2, percentage: 66.7 },
-      urgent: { count: 1, percentage: 33.3 },
+      total: 4,
+      normal: { count: 3, percentage: 75 },
+      urgent: { count: 1, percentage: 25 },
     });
     expect(Object.keys(result.body.analytics.trends)).toEqual(["dia", "30d", "3m", "mensual"]);
     expect(result.body.analytics.trends.dia.some((item) => item.count > 0)).toBe(true);
@@ -247,24 +266,24 @@ describe("handleSellerProfile", () => {
     expect(result.body.analytics.top_designer).toMatchObject({
       name: "Diana Designer",
       count: 2,
-      percentage: 66.7,
+      percentage: 50,
     });
     expect(result.body.analytics.top_materials[0]).toMatchObject({
       name: "Acrilico",
       count: 2,
-      percentage: 50,
+      percentage: 40,
     });
     expect(result.body.analytics.top_clients[0]).toMatchObject({
       name: "Cliente A",
       count: 2,
-      percentage: 66.7,
+      percentage: 50,
     });
     expect(result.body.analytics.status_summary).toMatchObject({
-      active: 1,
+      active: 3,
       completed: 1,
-      pending: 1,
+      pending: 2,
       cancelled: 1,
-      overdue: 1,
+      overdue: 2,
     });
     expect(JSON.stringify(result.body)).not.toContain("Bruno Seller");
     expect(JSON.stringify(result.body)).not.toContain("seller-2");
@@ -308,5 +327,77 @@ describe("handleSellerProfile", () => {
       },
     });
     expect(Object.keys(result.body.analytics.trends)).toEqual(["dia", "30d", "3m", "mensual"]);
+  });
+
+  it("counts authenticated seller orders that only have created_by populated", async () => {
+    currentClient = makeSellerProfileClient({
+      orders: [
+        {
+          id: "created-by-own",
+          seller_id: null,
+          created_by: "seller-1",
+          status: "in_Completed",
+          created_at: "2026-07-10T00:00:00.000Z",
+          order_type: "Normal",
+          material: "Acrilico",
+          designer_id: null,
+          client_name: "Cliente Propio",
+          delivery_date: "2026-07-15T00:00:00.000Z",
+          is_archived: false,
+        },
+        {
+          id: "created-by-other",
+          seller_id: null,
+          created_by: "seller-2",
+          status: "in_Completed",
+          created_at: "2026-07-11T00:00:00.000Z",
+          order_type: "Normal",
+          material: "Foam",
+          designer_id: null,
+          client_name: "Cliente Ajeno",
+          delivery_date: "2026-07-15T00:00:00.000Z",
+          is_archived: false,
+        },
+      ],
+    });
+
+    const result = await handleSellerProfile({ userId: "seller-2" }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.profile.id).toBe("seller-1");
+    expect(result.body.metrics).toMatchObject({
+      total_orders: 1,
+      completed_orders: 1,
+      completion_rate: 100,
+    });
+    expect(result.body.analytics.top_clients).toEqual([
+      expect.objectContaining({ name: "Cliente Propio", count: 1, percentage: 100 }),
+    ]);
+    expect(JSON.stringify(result.body.analytics)).not.toContain("Cliente Ajeno");
+  });
+
+  it("uses the selected period and treats completed orders as active until delivery", async () => {
+    currentClient = makeSellerProfileClient({
+      orders: [
+        { id: "completed", seller_id: "seller-1", status: "in_Completed", created_at: "2026-07-02T00:00:00.000Z", is_archived: false },
+        { id: "delivered", seller_id: "seller-1", status: "in_Delivered", created_at: "2026-07-03T00:00:00.000Z", is_archived: false },
+        { id: "cancelled", seller_id: "seller-1", status: "cancelled", created_at: "2026-07-04T00:00:00.000Z", is_archived: false },
+        { id: "archived", seller_id: "seller-1", status: "pending", created_at: "2026-07-05T00:00:00.000Z", is_archived: true },
+        { id: "active", seller_id: "seller-1", status: "pending", created_at: "2026-07-06T00:00:00.000Z", is_archived: false },
+        { id: "historic", seller_id: "seller-1", status: "pending", created_at: "2026-05-06T00:00:00.000Z", is_archived: false },
+      ],
+    });
+
+    const monthResult = await handleSellerProfile({ seller_id: "seller-2", period: "month" }, env);
+
+    expect(monthResult.status).toBe(200);
+    expect(monthResult.body.period).toMatchObject({ key: "month", label: "Mes actual" });
+    expect(monthResult.body.metrics).toMatchObject({
+      total_orders: 5,
+      completed_orders: 1,
+      delivered_orders: 1,
+      cancelled_orders: 1,
+      active_orders: 2,
+    });
   });
 });

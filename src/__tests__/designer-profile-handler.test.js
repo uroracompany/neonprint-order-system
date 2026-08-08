@@ -295,30 +295,31 @@ describe("handleDesignerProfile", () => {
 
     expect(result.status).toBe(200);
     expect(result.body.profile.id).toBe("designer-1");
+    expect(result.body.period).toMatchObject({ key: "all", label: "Todo el historial" });
     expect(result.body.metrics).toMatchObject({
-      total_orders: 4,
-      assigned_orders: 4,
-      ready_to_quote_orders: 2,
+      total_orders: 5,
+      assigned_orders: 5,
+      ready_to_quote_orders: 3,
       returned_orders: 1,
-      active_orders: 4,
+      active_orders: 5,
       files_created: 3,
       classified_files: 2,
-      preview_orders: 2,
-      ready_to_quote_rate: 50,
-      return_rate: 25,
+      preview_orders: 3,
+      ready_to_quote_rate: 60,
+      return_rate: 20,
       classification_rate: 66.7,
-      preview_coverage_rate: 50,
+      preview_coverage_rate: 60,
     });
     expect(result.body.ranking).toMatchObject({
       position: 2,
       total_designers: 2,
       metric_label: "Avance limpio a caja",
-      score: 25,
+      score: 40,
     });
     expect(result.body.analytics.order_types).toMatchObject({
-      total: 4,
-      normal: { count: 3, percentage: 75 },
-      urgent: { count: 1, percentage: 25 },
+      total: 5,
+      normal: { count: 4, percentage: 80 },
+      urgent: { count: 1, percentage: 20 },
     });
     expect(result.body.analytics.production_file_status).toMatchObject({
       total: 3,
@@ -335,19 +336,19 @@ describe("handleDesignerProfile", () => {
     expect(result.body.analytics.top_materials[0]).toMatchObject({
       name: "Acrilico",
       count: 2,
-      percentage: 40,
+      percentage: 33.3,
     });
     expect(result.body.analytics.top_clients[0]).toMatchObject({
       name: "Cliente A",
       count: 2,
-      percentage: 50,
+      percentage: 40,
     });
     expect(result.body.analytics.status_summary).toMatchObject({
-      active: 4,
+      active: 5,
       completed: 0,
-      pending: 3,
+      pending: 4,
       cancelled: 0,
-      overdue: 3,
+      overdue: 4,
     });
     expect(Object.keys(result.body.analytics.trends)).toEqual(["dia", "30d", "3m", "mensual"]);
     expect(JSON.stringify(result.body)).not.toContain("Beto Designer");

@@ -1,7 +1,9 @@
 import { requireAuthenticated } from "./auth-middleware.js";
+import { applyProfilePeriod, isInProfilePeriod, resolveProfilePeriod } from "./profile-period-utils.js";
 
-const COMPLETED_STATUSES = new Set(["in_completed", "in_delivered"]);
-const ACTIVE_STATUSES = new Set(["pending", "in_design", "in_quote", "in_production", "in_termination"]);
+const COMPLETED_STATUSES = new Set(["completed", "in_completed"]);
+const DELIVERED_STATUSES = new Set(["delivered", "in_delivered"]);
+const CANCELLED_STATUSES = new Set(["cancelled"]);
 const PENDING_STATUSES = new Set(["pending", "in_design", "in_quote"]);
 const SELLER_PROFILE_COLUMNS = "id,name,email,role,employment_status,created_at";
 const DESIGNER_PROFILE_COLUMNS = "id,name,email,role";
@@ -24,22 +26,12 @@ const roundPct = (value) => Math.round(value * 10) / 10;
 
 const normalizeStatus = (status) => String(status || "").trim().toLowerCase();
 const getOwnerId = (order) => order.seller_id || order.created_by;
+const isOwnedBySeller = (order, userId) => order.seller_id === userId || order.created_by === userId;
 const getPct = (count, total) => (total > 0 ? roundPct((count / total) * 100) : 0);
-
-const getCurrentMonthBounds = (nowValue) => {
-  const now = nowValue ? new Date(nowValue) : new Date();
-  const safeNow = Number.isNaN(now.getTime()) ? new Date() : now;
-  const start = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() + 1, 1));
-  return { date_from: start.toISOString(), date_to: end.toISOString() };
-};
-
-const getAnalyticsBounds = (nowValue) => {
-  const now = nowValue ? new Date(nowValue) : new Date();
-  const safeNow = Number.isNaN(now.getTime()) ? new Date() : now;
-  const start = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() - 11, 1));
-  const end = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() + 1, 1));
-  return { date_from: start.toISOString(), date_to: end.toISOString() };
+const applySellerOwnerFilter = (query, userId) => query.or(`seller_id.eq.${userId},created_by.eq.${userId}`);
+const isActiveOrder = (order) => {
+  const status = normalizeStatus(order.status);
+  return !order.is_archived && !DELIVERED_STATUSES.has(status) && !CANCELLED_STATUSES.has(status);
 };
 
 const parseDate = (value) => {
@@ -75,6 +67,15 @@ const createEmptyStats = (profile) => ({
   completion_rate: 0,
   cancellation_rate: 0,
 });
+
+const addOrderToStats = (stats, order) => {
+  const status = normalizeStatus(order.status);
+  stats.total_orders += 1;
+  if (COMPLETED_STATUSES.has(status)) stats.completed_orders += 1;
+  if (DELIVERED_STATUSES.has(status)) stats.delivered_orders += 1;
+  if (CANCELLED_STATUSES.has(status)) stats.cancelled_orders += 1;
+  if (isActiveOrder(order)) stats.active_orders += 1;
+};
 
 const finalizeStats = (stats) => {
   const total = stats.total_orders || 0;
@@ -191,13 +192,13 @@ const createStatusSummary = (orders, nowValue) => {
 
   orders.forEach((order) => {
     const status = normalizeStatus(order.status);
-    if (!order.is_archived && ACTIVE_STATUSES.has(status)) summary.active += 1;
+    if (isActiveOrder(order)) summary.active += 1;
     if (COMPLETED_STATUSES.has(status)) summary.completed += 1;
     if (PENDING_STATUSES.has(status)) summary.pending += 1;
-    if (status === "cancelled") summary.cancelled += 1;
+    if (CANCELLED_STATUSES.has(status)) summary.cancelled += 1;
 
     const deliveryDate = parseDate(order.delivery_date);
-    if (deliveryDate && deliveryDate < todayStart && !COMPLETED_STATUSES.has(status) && status !== "cancelled") {
+    if (deliveryDate && deliveryDate < todayStart && !COMPLETED_STATUSES.has(status) && !DELIVERED_STATUSES.has(status) && !CANCELLED_STATUSES.has(status)) {
       summary.overdue += 1;
     }
   });
@@ -280,21 +281,26 @@ const createAnalytics = ({ orders, currentMonthOrders, designerProfiles, now }) 
 });
 
 export async function handleSellerProfile(payload = {}, env = process.env) {
-  void payload;
   const auth = await requireAuthenticated(env.authHeader || "", env, { allowedRoles: ["seller", "admin"] });
   if (!auth.authorized) {
     return { status: auth.status || 401, body: { error: auth.error } };
   }
 
   const supabase = auth.supabaseAdmin;
-  const bounds = getCurrentMonthBounds(env.now);
-  const analyticsBounds = getAnalyticsBounds(env.now);
+  const userId = auth.profile?.id;
+  if (!userId) {
+    return { status: 403, body: { error: "Tu perfil no esta disponible." } };
+  }
+
+  const period = resolveProfilePeriod(payload?.period, env.now);
+  const rankingPeriod = period.key === "all" ? resolveProfilePeriod("month", env.now) : period;
 
   try {
     const [
       { data: sellerProfiles, error: profilesError },
       { data: designerProfiles, error: designersError },
-      { data: scopedOrders, error: ordersError },
+      { data: rankingOrders, error: rankingOrdersError },
+      { data: ownOrders, error: ownOrdersError },
     ] = await Promise.all([
       supabase
         .from("profiles")
@@ -304,40 +310,42 @@ export async function handleSellerProfile(payload = {}, env = process.env) {
         .from("profiles")
         .select(DESIGNER_PROFILE_COLUMNS)
         .eq("role", "designer"),
-      supabase
+      applyProfilePeriod(supabase
         .from("orders")
-        .select(SELLER_ORDER_COLUMNS)
-        .gte("created_at", analyticsBounds.date_from)
-        .lt("created_at", analyticsBounds.date_to),
+        .select(SELLER_ORDER_COLUMNS), rankingPeriod),
+      applyProfilePeriod(applySellerOwnerFilter(
+        supabase
+          .from("orders")
+          .select(SELLER_ORDER_COLUMNS),
+        userId
+      ), period),
     ]);
 
     if (profilesError) throw profilesError;
     if (designersError) throw designersError;
-    if (ordersError) throw ordersError;
+    if (rankingOrdersError) throw rankingOrdersError;
+    if (ownOrdersError) throw ownOrdersError;
 
     const activeSellers = (sellerProfiles || []).filter((profile) => profile.employment_status !== false);
     const statsBySeller = new Map(activeSellers.map((profile) => [profile.id, createEmptyStats(profile)]));
-    const periodStart = new Date(bounds.date_from);
-    const periodEnd = new Date(bounds.date_to);
-    const periodOrders = (scopedOrders || []).filter((order) => isDateWithin(order.created_at, periodStart, periodEnd));
+    const periodOrders = (rankingOrders || []).filter((order) => isInProfilePeriod(order.created_at, rankingPeriod));
 
     periodOrders.forEach((order) => {
       const ownerId = getOwnerId(order);
       const stats = statsBySeller.get(ownerId);
       if (!stats) return;
 
-      const status = normalizeStatus(order.status);
-      stats.total_orders += 1;
-      if (COMPLETED_STATUSES.has(status)) stats.completed_orders += 1;
-      if (status === "in_delivered") stats.delivered_orders += 1;
-      if (status === "cancelled") stats.cancelled_orders += 1;
-      if (!order.is_archived && ACTIVE_STATUSES.has(status)) stats.active_orders += 1;
+      addOrderToStats(stats, order);
     });
 
     const rankedStats = [...statsBySeller.values()].map(finalizeStats).sort(sortSellerStats);
-    const currentSellerStats = rankedStats.find((stats) => stats.id === auth.profile.id) || finalizeStats(createEmptyStats(auth.profile));
+    const ownScopedOrders = (ownOrders || []).filter((order) => isOwnedBySeller(order, userId));
+    const currentSellerStats = finalizeStats(ownScopedOrders.reduce((stats, order) => {
+      addOrderToStats(stats, order);
+      return stats;
+    }, createEmptyStats(auth.profile)));
     const position = auth.profile.role === "seller"
-      ? rankedStats.findIndex((stats) => stats.id === auth.profile.id) + 1
+      ? rankedStats.findIndex((stats) => stats.id === userId) + 1
       : null;
 
     const metrics = {
@@ -350,17 +358,13 @@ export async function handleSellerProfile(payload = {}, env = process.env) {
       cancellation_rate: currentSellerStats.cancellation_rate,
       goals_achieved: countGoals(currentSellerStats),
     };
-    const ownOrders = (scopedOrders || []).filter((order) => getOwnerId(order) === auth.profile.id);
-    const ownCurrentOrders = periodOrders.filter((order) => getOwnerId(order) === auth.profile.id);
+    const ownCurrentOrders = ownScopedOrders;
 
     return {
       status: 200,
       body: {
         profile: auth.profile,
-        period: {
-          ...bounds,
-          label: "Mes actual",
-        },
+        period,
         ranking: {
           position: position || null,
           total_sellers: rankedStats.length,
@@ -374,7 +378,7 @@ export async function handleSellerProfile(payload = {}, env = process.env) {
         },
         metrics,
         analytics: createAnalytics({
-          orders: ownOrders,
+          orders: ownScopedOrders,
           currentMonthOrders: ownCurrentOrders,
           designerProfiles,
           now: env.now,

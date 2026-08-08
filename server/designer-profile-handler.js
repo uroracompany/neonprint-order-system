@@ -1,4 +1,5 @@
 import { requireAuthenticated } from "./auth-middleware.js";
+import { applyProfilePeriod, isInProfilePeriod, resolveProfilePeriod } from "./profile-period-utils.js";
 
 const COMPLETED_STATUSES = new Set(["in_completed", "in_delivered"]);
 const ACTIVE_STATUSES = new Set(["pending", "in_design", "in_quote", "in_production", "in_termination"]);
@@ -51,22 +52,6 @@ const PRODUCTION_FILE_STATUS_LABELS = {
 const roundPct = (value) => Math.round(value * 10) / 10;
 const normalizeStatus = (status) => String(status || "").trim().toLowerCase();
 const getPct = (count, total) => (total > 0 ? roundPct((count / total) * 100) : 0);
-
-const getCurrentMonthBounds = (nowValue) => {
-  const now = nowValue ? new Date(nowValue) : new Date();
-  const safeNow = Number.isNaN(now.getTime()) ? new Date() : now;
-  const start = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() + 1, 1));
-  return { date_from: start.toISOString(), date_to: end.toISOString() };
-};
-
-const getAnalyticsBounds = (nowValue) => {
-  const now = nowValue ? new Date(nowValue) : new Date();
-  const safeNow = Number.isNaN(now.getTime()) ? new Date() : now;
-  const start = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() - 11, 1));
-  const end = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() + 1, 1));
-  return { date_from: start.toISOString(), date_to: end.toISOString() };
-};
 
 const parseDate = (value) => {
   const date = value ? new Date(value) : null;
@@ -353,16 +338,17 @@ const createAnalytics = ({ orders, currentMonthOrders, currentMonthFiles, produc
 });
 
 export async function handleDesignerProfile(payload = {}, env = process.env) {
-  void payload;
   const auth = await requireAuthenticated(env.authHeader || "", env, { allowedRoles: ["designer", "admin"] });
   if (!auth.authorized) {
     return { status: auth.status || 401, body: { error: auth.error } };
   }
 
   const supabase = auth.supabaseAdmin;
-  const bounds = getCurrentMonthBounds(env.now);
-  const analyticsBounds = getAnalyticsBounds(env.now);
-  const userId = auth.profile.id;
+  const period = resolveProfilePeriod(payload?.period, env.now);
+  const userId = auth.profile?.id;
+  if (!userId) {
+    return { status: 403, body: { error: "Tu perfil no esta disponible." } };
+  }
 
   try {
     const [
@@ -375,16 +361,12 @@ export async function handleDesignerProfile(payload = {}, env = process.env) {
         .from("profiles")
         .select(DESIGNER_PROFILE_COLUMNS)
         .eq("role", "designer"),
-      supabase
+      applyProfilePeriod(supabase
         .from("orders")
-        .select(ORDER_COLUMNS)
-        .gte("created_at", analyticsBounds.date_from)
-        .lt("created_at", analyticsBounds.date_to),
-      supabase
+        .select(ORDER_COLUMNS), period),
+      applyProfilePeriod(supabase
         .from("order_production_files")
-        .select(PRODUCTION_FILE_COLUMNS)
-        .gte("created_at", analyticsBounds.date_from)
-        .lt("created_at", analyticsBounds.date_to),
+        .select(PRODUCTION_FILE_COLUMNS), period),
       supabase
         .from("production_areas")
         .select(PRODUCTION_AREA_COLUMNS),
@@ -404,10 +386,8 @@ export async function handleDesignerProfile(payload = {}, env = process.env) {
     const allOrders = scopedOrders || [];
     const allFiles = productionFiles || [];
     const orderDesignerById = new Map(allOrders.map((order) => [order.id, order.designer_id]));
-    const periodStart = new Date(bounds.date_from);
-    const periodEnd = new Date(bounds.date_to);
-    const periodOrders = allOrders.filter((order) => isDateWithin(order.created_at, periodStart, periodEnd));
-    const periodFiles = allFiles.filter((file) => isDateWithin(file.created_at, periodStart, periodEnd));
+    const periodOrders = allOrders.filter((order) => isInProfilePeriod(order.created_at, period));
+    const periodFiles = allFiles.filter((file) => isInProfilePeriod(file.created_at, period));
 
     periodOrders.forEach((order) => {
       const designerId = order.designer_id;
@@ -474,10 +454,7 @@ export async function handleDesignerProfile(payload = {}, env = process.env) {
       status: 200,
       body: {
         profile: auth.profile,
-        period: {
-          ...bounds,
-          label: "Mes actual",
-        },
+        period,
         ranking: {
           position: position || null,
           total_designers: rankedStats.length,

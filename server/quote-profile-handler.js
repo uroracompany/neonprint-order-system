@@ -1,5 +1,6 @@
 import { requireAuthenticated } from "./auth-middleware.js";
 import { isMissingColumnOrRelationError } from "./admin-employee-utils.js";
+import { applyProfilePeriod, resolveProfilePeriod } from "./profile-period-utils.js";
 
 const COMPLETED_STATUSES = new Set(["in_completed", "in_delivered"]);
 const ACTIVE_STATUSES = new Set(["pending", "in_design", "in_quote", "in_production", "in_termination"]);
@@ -37,26 +38,12 @@ const ORDER_COLUMNS_FALLBACK = [
 ].join(",");
 
 const getQuoteOwnerId = (order) => order.quote_id || order.quotation_id || order.quote_user_id || null;
+const applyQuoteOwnerFilter = (query, userId) => query.or(`quote_id.eq.${userId},quotation_id.eq.${userId},quote_user_id.eq.${userId}`);
+const applyQuoteOwnerFallbackFilter = (query, userId) => query.eq("quote_id", userId);
 
 const roundPct = (value) => Math.round(value * 10) / 10;
 const normalizeStatus = (status) => String(status || "").trim().toLowerCase();
 const getPct = (count, total) => (total > 0 ? roundPct((count / total) * 100) : 0);
-
-const getCurrentMonthBounds = (nowValue) => {
-  const now = nowValue ? new Date(nowValue) : new Date();
-  const safeNow = Number.isNaN(now.getTime()) ? new Date() : now;
-  const start = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() + 1, 1));
-  return { date_from: start.toISOString(), date_to: end.toISOString() };
-};
-
-const getAnalyticsBounds = (nowValue) => {
-  const now = nowValue ? new Date(nowValue) : new Date();
-  const safeNow = Number.isNaN(now.getTime()) ? new Date() : now;
-  const start = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() - 11, 1));
-  const end = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() + 1, 1));
-  return { date_from: start.toISOString(), date_to: end.toISOString() };
-};
 
 const parseDate = (value) => {
   const date = value ? new Date(value) : null;
@@ -219,47 +206,68 @@ const createPaymentSummary = (orders) => {
 };
 
 export async function handleQuoteProfile(payload = {}, env = process.env) {
-  void payload;
   const auth = await requireAuthenticated(env.authHeader || "", env, { allowedRoles: ["quote", "admin"] });
   if (!auth.authorized) {
     return { status: auth.status || 401, body: { error: auth.error } };
   }
 
   const supabase = auth.supabaseAdmin;
-  const analyticsBounds = getAnalyticsBounds(env.now);
+  const userId = auth.profile?.id;
+  if (!userId) {
+    return { status: 403, body: { error: "Tu perfil no esta disponible." } };
+  }
+
+  const period = resolveProfilePeriod(payload?.period, env.now);
 
   try {
     const [
       { data: quoteProfiles, error: profilesError },
-      scopedOrdersResult,
+      rankingOrdersResult,
+      ownOrdersResult,
     ] = await Promise.all([
       supabase
         .from("profiles")
         .select(QUOTE_COLUMNS)
         .eq("role", "quote"),
-      supabase
+      applyProfilePeriod(supabase
         .from("orders")
-        .select(ORDER_COLUMNS)
-        .gte("created_at", analyticsBounds.date_from)
-        .lt("created_at", analyticsBounds.date_to),
+        .select(ORDER_COLUMNS), period),
+      applyProfilePeriod(applyQuoteOwnerFilter(
+        supabase
+          .from("orders")
+          .select(ORDER_COLUMNS),
+        userId
+      ), period),
     ]);
 
     if (profilesError) throw profilesError;
 
-    let scopedOrders = scopedOrdersResult.data;
-    let ordersError = scopedOrdersResult.error;
+    let scopedOrders = rankingOrdersResult.data;
+    let ordersError = rankingOrdersResult.error;
+    let ownOrders = ownOrdersResult.data;
+    let ownOrdersError = ownOrdersResult.error;
 
     if (ordersError && isMissingColumnOrRelationError(ordersError)) {
-      const fallback = await supabase
+      const fallback = await applyProfilePeriod(supabase
         .from("orders")
-        .select(ORDER_COLUMNS_FALLBACK)
-        .gte("created_at", analyticsBounds.date_from)
-        .lt("created_at", analyticsBounds.date_to);
+        .select(ORDER_COLUMNS_FALLBACK), period);
       scopedOrders = fallback.data;
       ordersError = fallback.error;
     }
 
+    if (ownOrdersError && isMissingColumnOrRelationError(ownOrdersError)) {
+      const fallback = await applyProfilePeriod(applyQuoteOwnerFallbackFilter(
+        supabase
+          .from("orders")
+          .select(ORDER_COLUMNS_FALLBACK),
+        userId
+      ), period);
+      ownOrders = fallback.data;
+      ownOrdersError = fallback.error;
+    }
+
     if (ordersError) throw ordersError;
+    if (ownOrdersError) throw ownOrdersError;
 
     const activeQuoters = (quoteProfiles || []).filter((p) => p.employment_status !== false);
     const statsByQuote = new Map(activeQuoters.map((p) => [p.id, createEmptyStats(p)]));
@@ -282,16 +290,16 @@ export async function handleQuoteProfile(payload = {}, env = process.env) {
     });
 
     const rankedStats = [...statsByQuote.values()].map(finalizeStats).sort(sortQuoteStats);
-    const currentStats = rankedStats.find((s) => s.id === auth.profile.id) || finalizeStats(createEmptyStats(auth.profile));
+    const currentStats = rankedStats.find((s) => s.id === userId) || finalizeStats(createEmptyStats(auth.profile));
     const position = auth.profile.role === "quote"
-      ? rankedStats.findIndex((s) => s.id === auth.profile.id) + 1
+      ? rankedStats.findIndex((s) => s.id === userId) + 1
       : null;
 
-    const ownOrders = (scopedOrders || []).filter((o) => getQuoteOwnerId(o) === auth.profile.id);
+    const ownScopedOrders = (ownOrders || []).filter((o) => getQuoteOwnerId(o) === userId);
 
-    const paymentSummary = createPaymentSummary(ownOrders);
-    const uniqueClients = new Set(ownOrders.map((o) => o.client_name || o.client_id).filter(Boolean));
-    const archivedCount = ownOrders.filter((o) => o.is_archived_quote).length;
+    const paymentSummary = createPaymentSummary(ownScopedOrders);
+    const uniqueClients = new Set(ownScopedOrders.map((o) => o.client_name || o.client_id).filter(Boolean));
+    const archivedCount = ownScopedOrders.filter((o) => o.is_archived_quote).length;
 
     const metrics = {
       total_orders: currentStats.total_orders,
@@ -308,14 +316,14 @@ export async function handleQuoteProfile(payload = {}, env = process.env) {
       archived_orders: archivedCount,
     };
 
-    const paymentAnalytics = createPaymentTypeAnalytics(ownOrders);
-    const topClients = createTopClients(ownOrders);
+    const paymentAnalytics = createPaymentTypeAnalytics(ownScopedOrders);
+    const topClients = createTopClients(ownScopedOrders);
 
     return {
       status: 200,
       body: {
         profile: auth.profile,
-        period: { ...analyticsBounds, label: "Ultimos 12 meses" },
+        period,
         ranking: {
           position: position || null,
           total_quoters: rankedStats.length,
@@ -327,7 +335,7 @@ export async function handleQuoteProfile(payload = {}, env = process.env) {
           payment_types: paymentAnalytics,
           payment_summary: paymentSummary,
           top_clients: topClients,
-          trends: createTrendAnalytics(ownOrders, env.now),
+          trends: createTrendAnalytics(ownScopedOrders, env.now),
         },
       },
     };

@@ -1,4 +1,5 @@
 import { requireAuthenticated } from "./auth-middleware.js";
+import { isInProfilePeriod, resolveProfilePeriod } from "./profile-period-utils.js";
 
 const COMPLETED_STATUSES = new Set(["in_completed", "in_delivered"]);
 const ACTIVE_STATUSES = new Set(["in_production", "in_termination", "in_completed"]);
@@ -53,14 +54,6 @@ const PRODUCTION_FILE_STATUS_LABELS = {
 const roundPct = (value) => Math.round(value * 10) / 10;
 const normalizeStatus = (status) => String(status || "").trim().toLowerCase();
 const getPct = (count, total) => (total > 0 ? roundPct((count / total) * 100) : 0);
-
-const getAnalyticsBounds = (nowValue) => {
-  const now = nowValue ? new Date(nowValue) : new Date();
-  const safeNow = Number.isNaN(now.getTime()) ? new Date() : now;
-  const start = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() - 11, 1));
-  const end = new Date(Date.UTC(safeNow.getUTCFullYear(), safeNow.getUTCMonth() + 1, 1));
-  return { date_from: start.toISOString(), date_to: end.toISOString() };
-};
 
 const parseDate = (value) => {
   const date = value ? new Date(value) : null;
@@ -274,9 +267,7 @@ const createProductionFileStatus = (files) => {
   return summary;
 };
 
-const createStatusSummary = (orders, nowValue) => {
-  const now = nowValue ? new Date(nowValue) : new Date();
-  const todayStart = startOfUtcDay(Number.isNaN(now.getTime()) ? new Date() : now);
+const createStatusSummary = (orders) => {
   const summary = { in_production: 0, in_termination: 0, delivered: 0, completed: 0, cancelled: 0 };
 
   orders.forEach((order) => {
@@ -366,7 +357,6 @@ const createAnalytics = ({ orders, files, now }) => ({
 });
 
 export async function handleProductionProfile(payload = {}, env = process.env) {
-  void payload;
   try {
     const auth = await requireAuthenticated(env.authHeader || "", env, {
       allowedRoles: ["digital_producer", "dtf_producer", "ploteo_producer", "admin"],
@@ -376,8 +366,11 @@ export async function handleProductionProfile(payload = {}, env = process.env) {
     }
 
     const supabase = auth.supabaseAdmin;
-    const analyticsBounds = getAnalyticsBounds(env.now);
-    const userId = auth.profile.id;
+    const period = resolveProfilePeriod(payload?.period, env.now);
+    const userId = auth.profile?.id;
+    if (!userId) {
+      return { status: 403, body: { error: "Tu perfil no esta disponible." } };
+    }
     const userAreaCode = getUserAreaCode(auth.profile.role);
 
     const [
@@ -411,11 +404,12 @@ export async function handleProductionProfile(payload = {}, env = process.env) {
     const allOrders = scopedOrders || [];
     const allFiles = productionFiles || [];
     const filesByOrder = buildFilesByOrder(allFiles);
+    const periodOrders = allOrders.filter((order) => isInProfilePeriod(order.created_at, period));
+    const periodFiles = allFiles.filter((file) => isInProfilePeriod(file.created_at, period));
+    const periodFilesByOrder = buildFilesByOrder(periodFiles);
     const assignmentsByOrder = buildAssignmentsByOrder(orderAssignments || []);
 
-    allOrders.forEach((order) => {
-      const orderFiles = filesByOrder.get(order.id) || [];
-
+    periodOrders.forEach((order) => {
       const status = normalizeStatus(order.status);
       const isCompleted = COMPLETED_STATUSES.has(status);
       const isActive = ACTIVE_STATUSES.has(status);
@@ -425,8 +419,13 @@ export async function handleProductionProfile(payload = {}, env = process.env) {
       activeProducers.forEach((profile) => {
         const producerId = profile.id;
         const producerAreaCode = getUserAreaCode(profile.role);
-        const relevantFiles = getFilesRelevantToUser(orderFiles, producerAreaCode, producerId, assignmentsByOrder);
-        if (relevantFiles.length === 0 && !isOrderRelevantToUser(order, producerAreaCode, producerId, filesByOrder, assignmentsByOrder)) return;
+        if (!isOrderRelevantToUser(order, producerAreaCode, producerId, filesByOrder, assignmentsByOrder)) return;
+        const relevantFiles = getFilesRelevantToUser(
+          periodFilesByOrder.get(order.id) || [],
+          producerAreaCode,
+          producerId,
+          assignmentsByOrder
+        );
 
         const stats = statsByProducer.get(producerId);
         if (!stats) return;
@@ -444,8 +443,8 @@ export async function handleProductionProfile(payload = {}, env = process.env) {
       });
     });
 
-    const ownOrders = allOrders.filter((order) => isOrderRelevantToUser(order, userAreaCode, userId, filesByOrder, assignmentsByOrder));
-    const ownFiles = getFilesRelevantToUser(allFiles, userAreaCode, userId, assignmentsByOrder);
+    const ownOrders = periodOrders.filter((order) => isOrderRelevantToUser(order, userAreaCode, userId, filesByOrder, assignmentsByOrder));
+    const ownFiles = getFilesRelevantToUser(periodFiles, userAreaCode, userId, assignmentsByOrder);
 
     const rankedStats = [...statsByProducer.values()].map(finalizeStats).sort(sortProducerStats);
     const currentStats = rankedStats.find((stats) => stats.id === userId) || finalizeStats(createEmptyStats(auth.profile));
@@ -470,10 +469,7 @@ export async function handleProductionProfile(payload = {}, env = process.env) {
       status: 200,
       body: {
         profile: auth.profile,
-        period: {
-          ...analyticsBounds,
-          label: "Ordenes asignadas",
-        },
+        period,
         ranking: {
           position: position || null,
           total_producers: rankedStats.length,

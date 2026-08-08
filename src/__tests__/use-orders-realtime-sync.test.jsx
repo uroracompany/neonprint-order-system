@@ -113,6 +113,28 @@ describe("useOrdersRealtimeSync", () => {
     expect(refreshOrders).toHaveBeenCalledTimes(2);
   });
 
+  it("subscribes to every profile table that can change a private summary", async () => {
+    const refreshOrders = vi.fn().mockResolvedValue();
+    renderHook(() => useOrdersRealtimeSync({
+      userId: "producer-1",
+      scope: "production-profile",
+      refreshOrders,
+      tables: ["orders", "order_production_files", "order_production_assignments"],
+    }));
+    await flushConnection();
+
+    expect(channels[1].on).toHaveBeenCalledWith(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "order_production_files" },
+      expect.any(Function)
+    );
+    expect(channels[1].on).toHaveBeenCalledWith(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "order_production_assignments" },
+      expect.any(Function)
+    );
+  });
+
   it("reconciles on focus, visibility and online recovery, then cleans listeners", async () => {
     const refreshOrders = vi.fn().mockResolvedValue();
     const { unmount } = renderHook(() => useOrdersRealtimeSync({

@@ -279,7 +279,8 @@ describe("Seller visual contract with Admin clients", () => {
     expect(sellerPage).toContain('activeTab === "profile"');
     expect(sellerPage).toContain('<SellerProfileModule authUser={authUser} fallbackProfile={authProfile} />');
 
-    expect(sellerProfileModule).toContain('adminApiFetch("/api/seller-profile", {})');
+    expect(sellerProfileModule).toContain('adminApiFetch("/api/seller-profile", { period })');
+    expect(sellerProfileModule).toContain("ProfilePeriodControl");
     expect(viteConfig).toContain("import { handleSellerProfile } from './server/seller-profile-handler.js'");
     expect(viteConfig).toContain('createApiHandler("/api/seller-profile", handleSellerProfile)');
     expect(sellerProfileModule).toContain("Ranking privado");

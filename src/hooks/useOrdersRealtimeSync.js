@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../../supabaseClient";
 
 const REFRESH_COALESCE_MS = 75;
 const FAILURE_STATUSES = new Set(["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"]);
+const DEFAULT_TABLES = ["orders"];
 
-export default function useOrdersRealtimeSync({ userId, scope, refreshOrders }) {
+export default function useOrdersRealtimeSync({ userId, scope, refreshOrders, tables = DEFAULT_TABLES }) {
   const refreshRef = useRef(refreshOrders);
   const refreshTimerRef = useRef(null);
   const refreshInFlightRef = useRef(false);
   const refreshPendingRef = useRef(false);
   const disposedRef = useRef(false);
+  const tablesKey = tables.join("|");
+  const realtimeTables = useMemo(() => tablesKey.split("|").filter(Boolean), [tablesKey]);
 
   useEffect(() => {
     refreshRef.current = refreshOrders;
@@ -81,14 +84,15 @@ export default function useOrdersRealtimeSync({ userId, scope, refreshOrders }) 
         .on("broadcast", { event: "order_changed" }, requestRefresh)
         .subscribe((status, error) => reportStatus("broadcast", status, error));
 
-      fallbackChannel = supabase
-        .channel(`orders-fallback:${scope}:${userId}`)
-        .on(
+      fallbackChannel = supabase.channel(`orders-fallback:${scope}:${userId}`);
+      realtimeTables.forEach((table) => {
+        fallbackChannel.on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "orders" },
+          { event: "*", schema: "public", table },
           requestRefresh
-        )
-        .subscribe((status, error) => reportStatus("postgres_changes", status, error));
+        );
+      });
+      fallbackChannel.subscribe((status, error) => reportStatus("postgres_changes", status, error));
     };
 
     const refreshWhenVisible = () => {
@@ -115,5 +119,5 @@ export default function useOrdersRealtimeSync({ userId, scope, refreshOrders }) 
       if (broadcastChannel) supabase.removeChannel(broadcastChannel);
       if (fallbackChannel) supabase.removeChannel(fallbackChannel);
     };
-  }, [requestRefresh, scope, userId]);
+  }, [realtimeTables, requestRefresh, scope, userId]);
 }

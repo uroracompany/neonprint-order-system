@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -15,6 +15,8 @@ import {
 } from "recharts";
 import { Icons } from "../../utils/icons";
 import { adminApiFetch } from "../../utils/adminApi";
+import useOrdersRealtimeSync from "../../hooks/useOrdersRealtimeSync";
+import ProfilePeriodControl from "../profile/ProfilePeriodControl";
 
 const EMPTY_METRICS = {
   total_orders: 0,
@@ -154,30 +156,46 @@ export default function SellerProfileModule({ authUser, fallbackProfile }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [trendView, setTrendView] = useState("30d");
+  const [period, setPeriod] = useState("all");
+  const requestIdRef = useRef(0);
+  const blockingRequestIdRef = useRef(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchProfile() {
+  const fetchProfile = useCallback(async ({ silent = false } = {}) => {
+    if (silent && blockingRequestIdRef.current !== null) return;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    if (!silent) {
+      blockingRequestIdRef.current = requestId;
       setLoading(true);
-      setError("");
-      try {
-        const { response, result } = await adminApiFetch("/api/seller-profile", {});
-        if (cancelled) return;
-        if (!response.ok) {
-          throw new Error(result?.error || "No se pudo cargar Mi Perfil.");
+    }
+    setError("");
+    try {
+      const { response, result } = await adminApiFetch("/api/seller-profile", { period });
+      if (requestId !== requestIdRef.current) return;
+      if (!response.ok) throw new Error(result?.error || "No se pudo cargar Mi Perfil.");
+      setData(result);
+    } catch (err) {
+      if (requestId === requestIdRef.current) setError(err?.message || "No se pudo cargar Mi Perfil.");
+    } finally {
+      if (!silent) {
+        if (blockingRequestIdRef.current === requestId) {
+          blockingRequestIdRef.current = null;
+          if (requestId === requestIdRef.current) setLoading(false);
         }
-        setData(result);
-      } catch (err) {
-        if (!cancelled) setError(err?.message || "No se pudo cargar Mi Perfil.");
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     }
+  }, [period]);
 
-    fetchProfile();
-    return () => { cancelled = true; };
-  }, []);
+  useEffect(() => {
+    void fetchProfile();
+    return () => { requestIdRef.current += 1; };
+  }, [fetchProfile]);
+
+  useOrdersRealtimeSync({
+    userId: authUser?.id,
+    scope: "seller-profile",
+    refreshOrders: () => fetchProfile({ silent: true }),
+  });
 
   const profile = data?.profile || fallbackProfile || null;
   const metrics = data?.metrics || EMPTY_METRICS;
@@ -254,7 +272,8 @@ export default function SellerProfileModule({ authUser, fallbackProfile }) {
               ) : (
                 <span className="acm-profile-status inactive">Usuario inactivo</span>
               )}
-              <small>Periodo: {data?.period?.label || "Mes actual"}</small>
+              <small>Periodo: {data?.period?.label || "Todo el historial"}</small>
+              <ProfilePeriodControl value={period} onChange={setPeriod} />
             </div>
           </div>
         </div>
@@ -338,7 +357,7 @@ export default function SellerProfileModule({ authUser, fallbackProfile }) {
           icon={<Icons.BarChart />}
           label="Total de ordenes"
           value={metrics.total_orders || 0}
-          sub="Actividad del mes actual"
+          sub={data?.period?.label || "Todo el historial"}
           tone="violet"
         />
       </div>
