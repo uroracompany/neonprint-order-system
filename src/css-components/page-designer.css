@@ -702,6 +702,40 @@
   border-bottom: 1px solid var(--pd-border);
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   FILTROS – Diseño (flex-wrap como Ventas)
+   Sobreescribe el grid base de page-production.css
+   ══════════════════════════════════════════════════════════════════ */
+.pd-main-content .pq-section {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 0;
+}
+
+.pd-main-content .pp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.pd-main-content .pp-filters .pp-filter-search {
+  flex: 3 1 280px;
+  min-width: 200px;
+}
+
+.pd-main-content .pp-filters .pp-filter-select-wrap {
+  flex: 1 1 160px;
+  min-width: 150px;
+  max-width: 200px;
+}
+
+.pd-main-content .pp-filters .pp-filters-count {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .pd-panel-header {
   justify-content: space-between;
   gap: 16px;
