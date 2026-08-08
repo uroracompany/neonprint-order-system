@@ -1025,7 +1025,7 @@ export default function PageSeller() {
                 {viewMode === "table" ? (
                   <div className="ps-table-wrap">
                     <table className="ps-table">
-                      <thead><tr>{["Cliente", "Facturacion", "Estado", "Pago", "Tipo", "Fecha", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                      <thead><tr>{["Cliente", "Facturacion", "Estado", "Pago", "Tipo", "Fecha", "Acciones"].map(h => <th key={h}>{h}</th>)}</tr></thead>
                       <tbody>
                         {loading ? (
                           <tr>
