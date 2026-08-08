@@ -7,7 +7,6 @@ import PaginatedProgressList from "../profile/PaginatedProgressList";
 import ProfilePeriodControl from "../profile/ProfilePeriodControl";
 import "./DeliveryProfileModule.css";
 
-const EMPTY_METRICS = { assigned_orders: 0, pending_delivery_orders: 0, delivered_orders: 0, overdue_orders: 0, cancelled_orders: 0, clients_served: 0, delivery_rate: 0 };
 const EMPTY_ANALYTICS = { status_summary: {}, top_clients: [], trends: [] };
 const STATUS_CARDS = [
   { key: "assigned", label: "Asignadas", color: "#2563eb", icon: <Icons.Package /> },
@@ -20,10 +19,6 @@ const STATUS_CARDS = [
 const getInitials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 const getDisplayName = (profile, authUser) => profile?.name || authUser?.user_metadata?.display_name || authUser?.email || "Entrega";
 
-function MetricCard({ icon, label, value, tone }) {
-  return <article className={`dlv-profile-metric ${tone}`}><span>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></article>;
-}
-
 function TooltipContent({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return <div className="dlv-profile-tooltip"><strong>{label}</strong><span>{payload[0].value} ordenes</span></div>;
@@ -35,11 +30,16 @@ export default function DeliveryProfileModule({ authUser, fallbackProfile }) {
   const [error, setError] = useState("");
   const [period, setPeriod] = useState("all");
   const requestIdRef = useRef(0);
+  const blockingRequestIdRef = useRef(null);
 
   const loadProfile = useCallback(async ({ silent = false } = {}) => {
+    if (silent && blockingRequestIdRef.current !== null) return;
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
-    if (!silent) setLoading(true);
+    if (!silent) {
+      blockingRequestIdRef.current = requestId;
+      setLoading(true);
+    }
     setError("");
     try {
       const { response, result } = await adminApiFetch("/api/delivery-profile", { period });
@@ -49,7 +49,10 @@ export default function DeliveryProfileModule({ authUser, fallbackProfile }) {
     } catch (requestError) {
       if (requestId === requestIdRef.current) setError(requestError?.message || "No se pudo cargar Mi Perfil.");
     } finally {
-      if (!silent && requestId === requestIdRef.current) setLoading(false);
+      if (!silent && blockingRequestIdRef.current === requestId) {
+        blockingRequestIdRef.current = null;
+        if (requestId === requestIdRef.current) setLoading(false);
+      }
     }
   }, [period]);
 
@@ -61,9 +64,10 @@ export default function DeliveryProfileModule({ authUser, fallbackProfile }) {
   useOrdersRealtimeSync({ userId: authUser?.id, scope: "delivery-profile", refreshOrders: () => loadProfile({ silent: true }) });
 
   const profile = data?.profile || fallbackProfile;
-  const metrics = data?.metrics || EMPTY_METRICS;
   const analytics = data?.analytics || EMPTY_ANALYTICS;
   const displayName = getDisplayName(profile, authUser);
+  const profileEmail = profile?.email || authUser?.email || "Usuario de entrega";
+  const isActive = profile?.employment_status !== false;
   const statusCards = STATUS_CARDS.map((card) => ({ ...card, value: analytics.status_summary?.[card.key] || 0 }));
 
   if (loading) return <section className="dlv-profile"><div className="dlv-profile-loading"><span className="kpi-spinner" />Cargando Mi Perfil...</div></section>;
@@ -72,23 +76,20 @@ export default function DeliveryProfileModule({ authUser, fallbackProfile }) {
     <section className="dlv-profile" aria-labelledby="delivery-profile-title">
       {error && <div className="dlv-profile-error" role="alert"><Icons.AlertCircle />{error}</div>}
       <header className="dlv-profile-hero">
-        <span className="acm-avatar acm-avatar-large">{getInitials(displayName)}</span>
-        <div>
-          <span className="dlv-profile-kicker">Perfil de entrega</span>
-          <h2 id="delivery-profile-title">{displayName}</h2>
-          <p>{authUser?.email || "Usuario de entrega"}</p>
+        <div className="dlv-profile-identity">
+          <span className="acm-avatar acm-avatar-large">{getInitials(displayName)}</span>
+          <div className="dlv-profile-copy">
+            <span className="dlv-profile-kicker">Perfil de entrega</span>
+            <h2 id="delivery-profile-title">{displayName}</h2>
+            <div className="dlv-profile-contact"><Icons.Mail />{profileEmail}</div>
+            <div className="dlv-profile-status-line">
+              <span className={isActive ? "active" : "inactive"}>{isActive ? "Usuario activo" : "Usuario inactivo"}</span>
+              <small>Periodo: {data?.period?.label || "Todo el historial"}</small>
+            </div>
+          </div>
         </div>
         <ProfilePeriodControl value={period} onChange={setPeriod} />
       </header>
-
-      <div className="dlv-profile-metrics">
-        <MetricCard icon={<Icons.Package />} label="Ordenes asignadas" value={metrics.assigned_orders} tone="blue" />
-        <MetricCard icon={<Icons.Clock />} label="Pendientes de entrega" value={metrics.pending_delivery_orders} tone="amber" />
-        <MetricCard icon={<Icons.CheckCircle />} label="Entregadas" value={metrics.delivered_orders} tone="green" />
-        <MetricCard icon={<Icons.AlertCircle />} label="Atrasadas" value={metrics.overdue_orders} tone="red" />
-        <MetricCard icon={<Icons.Users />} label="Clientes atendidos" value={metrics.clients_served} tone="violet" />
-        <MetricCard icon={<Icons.TrendUp />} label="Tasa de entrega" value={`${metrics.delivery_rate}%`} tone="cyan" />
-      </div>
 
       <div className="dlv-profile-grid">
         <article className="dlv-profile-card wide">

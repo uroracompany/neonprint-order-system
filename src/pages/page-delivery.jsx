@@ -2,15 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import "../css-components/page-delivery.css";
+import "../css-components/page-seller.css";
+import "../css-components/page-production.css";
+import "../components/ui/FilterSelect.css";
 import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import { Icons } from "../utils/icons";
+import { FilterSelect } from "../components/ui/FilterSelect";
 import {
   ARCHIVE_MODULES,
   DELIVERY_STATUS_OPTIONS,
+  getOrderStatusConfig,
   ORDER_STATUS,
   PRODUCTION_AREA_LABELS,
   isOrderStatus,
@@ -744,8 +749,8 @@ export default function PageDelivery() {
         onTabChange={setActiveTab}
         menuItems={[
           { id: "dashboard", label: "Delivery", icon: <Icons.Truck /> },
-          { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
           { id: "orders", label: "Órdenes", icon: <Icons.Orders /> },
+          { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
         ]}
         onLogout={handleLogout}
       />
@@ -759,11 +764,11 @@ export default function PageDelivery() {
               onClick={() => setSidebarOpen(!sidebarOpen)}
               aria-label="Abrir menú"
             >
-              <Icons.Menu />
+              {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
             <div className="pd-header-title">
-              <h1>{activeTab === "dashboard" ? "Delivery" : "Órdenes"}</h1>
-              <span>{filteredOrders.length} orden{filteredOrders.length === 1 ? "" : "es"}</span>
+              <div className="pd-page-title">{activeTab === "dashboard" ? "Delivery" : activeTab === "profile" ? "Mi Perfil" : "Órdenes"}</div>
+              <div className="pd-page-date">{new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
             </div>
           </div>
           <div className="pd-header-right">
@@ -817,11 +822,13 @@ export default function PageDelivery() {
         </nav>
 
         <div className="pd-content">
-          <div className="pd-summary-grid">
-            {metrics.map((metric) => (
-              <SummaryCard key={metric.label} {...metric} />
-            ))}
-          </div>
+          {activeTab === "dashboard" && (
+            <div className="pd-summary-grid">
+              {metrics.map((metric) => (
+                <SummaryCard key={metric.label} {...metric} />
+              ))}
+            </div>
+          )}
 
           {activeTab === "profile" && (
             <DeliveryProfileModule authUser={user} fallbackProfile={authUser} />
@@ -849,51 +856,47 @@ export default function PageDelivery() {
 
           {activeTab === "orders" && (
             <>
-              <section className="pd-filters" aria-label="Filtros de órdenes">
-                <div className="pd-search-wrap">
-                  <span className="pd-search-icon"><Icons.Search /></span>
-                  <input
-                    className="pd-input"
-                    placeholder="Buscar pedido o cliente"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </div>
-
-                <label className="pd-select-wrap">
-                  <span>Estado</span>
-                  <select className="pd-input" value={filterStatus} onChange={(event) => setFilterStatus(event.target.value)}>
-                    <option value="all">Todos</option>
-                    <option value={ORDER_STATUS.IN_COMPLETED}>Completadas</option>
-                    <option value={ORDER_STATUS.IN_DELIVERED}>Entregadas</option>
-                    <option value={ORDER_STATUS.IN_TERMINATION}>Terminación</option>
-                  </select>
-                  <span className="pd-select-arrow"><Icons.ChevronDown /></span>
+              <div className="pp-filters">
+                <label className="pp-filter-control pp-filter-search">
+                  <span className="pp-filter-search-icon"><Icons.Search /></span>
+                  <input placeholder="Buscar por cliente, descripcion o ID..."
+                    value={search} onChange={e => setSearch(e.target.value)} />
                 </label>
-
-                <label className="pd-select-wrap">
-                  <span>Cliente</span>
-                  <ClientFilterSelect
-                    clients={clients}
-                    value={filterClient}
-                    onChange={setFilterClient}
-                    className="pd-input"
-                    allLabel="Todos"
-                  />
-                  <span className="pd-select-arrow"><Icons.ChevronDown /></span>
-                </label>
-
-                <label className="pd-select-wrap">
-                  <span>Archivo</span>
-                  <select className="pd-input" value={filterArchive} onChange={(event) => setFilterArchive(event.target.value)}>
-                    <option value="active">Activas</option>
-                    <option value="archived">Archivadas</option>
-                  </select>
-                  <span className="pd-select-arrow"><Icons.ChevronDown /></span>
-                </label>
-
-                <span className="pd-filters-count">{filteredOrders.length} resultado{filteredOrders.length === 1 ? "" : "s"}</span>
-              </section>
+                <FilterSelect
+                  icon={<Icons.FileText />}
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                  options={[
+                    { value: "all", label: "Todos los estados" },
+                    ...DELIVERY_STATUS_OPTIONS.map(status => {
+                      const cfg = getOrderStatusConfig(status);
+                      return { value: status, label: cfg.label };
+                    }),
+                  ]}
+                  placeholder="Todos los estados"
+                />
+                <FilterSelect
+                  icon={<Icons.Users />}
+                  value={filterClient}
+                  onChange={setFilterClient}
+                  options={[
+                    { value: "all", label: "Todos los clientes" },
+                    ...clients.map(c => ({ value: c.id, label: c.name })),
+                  ]}
+                  placeholder="Todos los clientes"
+                />
+                <FilterSelect
+                  icon={<Icons.Archive />}
+                  value={filterArchive}
+                  onChange={setFilterArchive}
+                  options={[
+                    { value: "active", label: "Activas" },
+                    { value: "archived", label: "Archivadas" },
+                  ]}
+                  placeholder="Activas"
+                />
+                <span className="pp-filters-count"><Icons.Clipboard /> {filteredOrders.length} resultado{filteredOrders.length === 1 ? "" : "s"}</span>
+              </div>
 
               {renderOrderList(
                 paginatedOrders,
