@@ -1,0 +1,23 @@
+.dlv-profile { display: flex; flex-direction: column; gap: 16px; padding-bottom: 24px; color: #0f1e40; }
+.dlv-profile-loading, .dlv-profile-error { display: flex; min-height: 160px; align-items: center; justify-content: center; gap: 10px; color: #64748b; font-size: 13px; font-weight: 700; }
+.dlv-profile-error { min-height: auto; justify-content: flex-start; padding: 12px 14px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #991b1b; }
+.dlv-profile-hero, .dlv-profile-metric, .dlv-profile-card { border: 1px solid #dbe3ef; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgba(15, 30, 64, .05); }
+.dlv-profile-hero { display: flex; align-items: center; gap: 14px; padding: 20px; }
+.dlv-profile-hero > div { min-width: 0; }
+.dlv-profile-hero h2, .dlv-profile-hero p, .dlv-profile-card h3 { margin: 0; }
+.dlv-profile-hero h2 { font-size: 22px; }
+.dlv-profile-hero p { margin-top: 5px; color: #64748b; font-size: 12px; font-weight: 600; }
+.dlv-profile-hero .profile-period-control { margin-left: auto; }
+.dlv-profile-kicker { display: block; margin-bottom: 5px; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }
+.dlv-profile-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.dlv-profile-metric { display: flex; align-items: center; gap: 12px; padding: 16px; }
+.dlv-profile-metric > span { display: inline-grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 8px; }
+.dlv-profile-metric small { display: block; color: #64748b; font-size: 11px; font-weight: 700; }
+.dlv-profile-metric strong { display: block; margin-top: 3px; font-size: 22px; line-height: 1; }
+.dlv-profile-metric.blue > span { background: #eff6ff; color: #2563eb; }.dlv-profile-metric.amber > span { background: #fffbeb; color: #b45309; }.dlv-profile-metric.green > span { background: #f0fdf4; color: #15803d; }.dlv-profile-metric.red > span { background: #fef2f2; color: #dc2626; }.dlv-profile-metric.violet > span { background: #f5f3ff; color: #7c3aed; }.dlv-profile-metric.cyan > span { background: #ecfeff; color: #0f766e; }
+.dlv-profile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }.dlv-profile-card { display: flex; min-height: 286px; flex-direction: column; padding: 18px; }.dlv-profile-card.wide { grid-column: span 2; }.dlv-profile-card.full { grid-column: 1 / -1; min-height: 254px; }
+.dlv-profile-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }.dlv-profile-card-heading h3 { font-size: 15px; }.dlv-profile-card-heading > svg { color: #64748b; }
+.dlv-profile-statuses { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }.dlv-profile-statuses > div { display: flex; align-items: center; flex-direction: column; gap: 4px; padding: 10px 4px; border-radius: 7px; background: #f8fafc; color: var(--status-color); text-align: center; }.dlv-profile-statuses strong { color: #0f1e40; font-size: 17px; }.dlv-profile-statuses small { color: #64748b; font-size: 10px; font-weight: 700; }
+.dlv-profile-chart { min-height: 160px; flex: 1; margin-top: 12px; }.dlv-profile-chart.trend { min-height: 184px; }.dlv-profile-tooltip { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; border: 1px solid #dbe3ef; border-radius: 6px; background: #fff; box-shadow: 0 6px 16px rgba(15, 30, 64, .1); font-size: 12px; }.dlv-profile-tooltip span { color: #64748b; }.dlv-profile-empty { display: grid; height: 100%; min-height: 160px; place-items: center; color: #64748b; font-size: 12px; font-weight: 600; }
+@media (max-width: 900px) { .dlv-profile-metrics, .dlv-profile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.dlv-profile-card.wide { grid-column: span 2; }.dlv-profile-card.full { grid-column: 1 / -1; } }
+@media (max-width: 620px) { .dlv-profile-hero { align-items: flex-start; flex-wrap: wrap; }.dlv-profile-hero .profile-period-control { width: 100%; margin-left: 0; }.dlv-profile-metrics, .dlv-profile-grid { grid-template-columns: 1fr; }.dlv-profile-card.wide, .dlv-profile-card.full { grid-column: span 1; }.dlv-profile-statuses { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

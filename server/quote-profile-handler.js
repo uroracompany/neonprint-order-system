@@ -67,10 +67,9 @@ const startOfUtcMonth = (date) => new Date(Date.UTC(date.getUTCFullYear(), date.
 const formatDayLabel = (date) => date.toLocaleDateString("es-DO", { timeZone: "UTC", day: "2-digit", month: "short" });
 const formatMonthLabel = (date) => date.toLocaleDateString("es-DO", { timeZone: "UTC", month: "short", year: "numeric" });
 
-const toRankedRows = (counter, total, limit = 5) => [...counter.entries()]
+const toRankedRows = (counter, total) => [...counter.entries()]
   .map(([name, count]) => ({ name, count, percentage: getPct(count, total) }))
-  .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-  .slice(0, limit);
+  .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
 const createEmptyStats = (profile) => ({
   id: profile.id,
@@ -81,6 +80,7 @@ const createEmptyStats = (profile) => ({
   cancelled_orders: 0,
   paid_orders: 0,
   partial_paid_orders: 0,
+  credit_orders: 0,
   pending_payment_orders: 0,
 });
 
@@ -286,6 +286,7 @@ export async function handleQuoteProfile(payload = {}, env = process.env) {
       if (CANCELLED_STATUSES.has(status)) stats.cancelled_orders += 1;
       if (ps === "pagado" || ps === "paid") stats.paid_orders += 1;
       else if (ps === "parcial" || ps === "partial") stats.partial_paid_orders += 1;
+      else if (ps === "credito" || ps === "credit") stats.credit_orders += 1;
       else stats.pending_payment_orders += 1;
     });
 
@@ -308,6 +309,7 @@ export async function handleQuoteProfile(payload = {}, env = process.env) {
       cancelled_orders: currentStats.cancelled_orders,
       paid_orders: currentStats.paid_orders,
       partial_paid_orders: currentStats.partial_paid_orders,
+      credit_orders: currentStats.credit_orders,
       pending_payment_orders: currentStats.pending_payment_orders,
       completion_rate: currentStats.completion_rate,
       cancellation_rate: currentStats.cancellation_rate,

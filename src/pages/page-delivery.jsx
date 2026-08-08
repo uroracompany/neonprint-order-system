@@ -25,6 +25,7 @@ import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import DeliveryProfileModule from "../components/delivery/DeliveryProfileModule";
 import {
   archiveOrder,
   canArchiveOrder,
@@ -743,6 +744,7 @@ export default function PageDelivery() {
         onTabChange={setActiveTab}
         menuItems={[
           { id: "dashboard", label: "Delivery", icon: <Icons.Truck /> },
+          { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
           { id: "orders", label: "Órdenes", icon: <Icons.Orders /> },
         ]}
         onLogout={handleLogout}
@@ -791,6 +793,14 @@ export default function PageDelivery() {
             <span>Delivery</span>
           </button>
           <button
+            className={`pd-mobile-nav-btn ${activeTab === "profile" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActiveTab("profile")}
+          >
+            <Icons.User />
+            <span>Perfil</span>
+          </button>
+          <button
             className={`pd-mobile-nav-btn ${activeTab === "orders" ? "active" : ""}`}
             type="button"
             onClick={() => setActiveTab("orders")}
@@ -812,6 +822,10 @@ export default function PageDelivery() {
               <SummaryCard key={metric.label} {...metric} />
             ))}
           </div>
+
+          {activeTab === "profile" && (
+            <DeliveryProfileModule authUser={user} fallbackProfile={authUser} />
+          )}
 
           {activeTab === "dashboard" && (
             <section className="pd-panel">

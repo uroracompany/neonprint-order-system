@@ -400,4 +400,18 @@ describe("handleSellerProfile", () => {
       active_orders: 2,
     });
   });
+
+  it("reports returned orders separately from overdue orders", async () => {
+    currentClient = makeSellerProfileClient({
+      orders: [
+        { id: "returned", seller_id: "seller-1", status: "in_Design", return_reason: "Corregir medidas", order_design_type: "INTERNAL_DESIGN", created_at: "2026-07-02T00:00:00.000Z", delivery_date: "2026-07-10T00:00:00.000Z", is_archived: false },
+        { id: "overdue", seller_id: "seller-1", status: "pending", created_at: "2026-07-03T00:00:00.000Z", delivery_date: "2026-07-10T00:00:00.000Z", is_archived: false },
+      ],
+    });
+
+    const result = await handleSellerProfile({}, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.analytics.status_summary).toMatchObject({ returned: 1, overdue: 1 });
+  });
 });

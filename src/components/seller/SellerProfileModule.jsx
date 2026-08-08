@@ -17,6 +17,7 @@ import { Icons } from "../../utils/icons";
 import { adminApiFetch } from "../../utils/adminApi";
 import useOrdersRealtimeSync from "../../hooks/useOrdersRealtimeSync";
 import ProfilePeriodControl from "../profile/ProfilePeriodControl";
+import PaginatedProgressList from "../profile/PaginatedProgressList";
 
 const EMPTY_METRICS = {
   total_orders: 0,
@@ -51,6 +52,7 @@ const EMPTY_ANALYTICS = {
     pending: 0,
     cancelled: 0,
     overdue: 0,
+    returned: 0,
   },
 };
 
@@ -130,27 +132,6 @@ function AnalyticsTooltip({ active, payload, label }) {
   );
 }
 
-function ProgressList({ items, emptyLabel }) {
-  if (!items?.length) return <AnalyticsEmpty label={emptyLabel} />;
-
-  return (
-    <div className="ps-profile-progress-list">
-      {items.map((item) => (
-        <div className="ps-profile-progress-row" key={item.name}>
-          <div className="ps-profile-progress-top">
-            <strong>{item.name}</strong>
-            <span>{item.count} ordenes</span>
-          </div>
-          <div className="ps-profile-progress-track" aria-hidden="true">
-            <span style={{ width: `${Math.min(100, item.percentage || 0)}%` }} />
-          </div>
-          <small>{item.percentage || 0}% de participacion</small>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function SellerProfileModule({ authUser, fallbackProfile }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -221,7 +202,8 @@ export default function SellerProfileModule({ authUser, fallbackProfile }) {
     { key: "completed", label: "Completadas", value: statusSummary.completed || 0, tone: "success", icon: <Icons.CheckCircle /> },
     { key: "pending", label: "Pendientes", value: statusSummary.pending || 0, tone: "warning", icon: <Icons.Clipboard /> },
     { key: "cancelled", label: "Canceladas", value: statusSummary.cancelled || 0, tone: "danger", icon: <Icons.X /> },
-    { key: "overdue", label: "Atrasadas", value: statusSummary.overdue || 0, tone: "violet", icon: <Icons.AlertCircle /> },
+    { key: "overdue", label: "Atrasadas", value: statusSummary.overdue || 0, tone: "warning", icon: <Icons.AlertCircle /> },
+    { key: "returned", label: "Devueltas", value: statusSummary.returned || 0, tone: "violet", icon: <Icons.ArrowLeft /> },
   ];
 
   const goalItems = useMemo(() => ([
@@ -486,7 +468,7 @@ export default function SellerProfileModule({ authUser, fallbackProfile }) {
               </div>
               <Icons.Package />
             </div>
-            <ProgressList items={analytics.top_materials || []} emptyLabel="Sin materiales registrados" />
+            <PaginatedProgressList items={analytics.top_materials || []} emptyLabel="Sin materiales registrados" accent="#1d4ed8" />
           </article>
 
           <article className="ps-profile-analytics-card">
@@ -497,7 +479,7 @@ export default function SellerProfileModule({ authUser, fallbackProfile }) {
               </div>
               <Icons.Users />
             </div>
-            <ProgressList items={analytics.top_clients || []} emptyLabel="Sin clientes frecuentes" />
+            <PaginatedProgressList items={analytics.top_clients || []} emptyLabel="Sin clientes frecuentes" accent="#0f766e" />
           </article>
 
           <article className="ps-profile-analytics-card full ps-profile-status-summary-card">
@@ -526,7 +508,11 @@ export default function SellerProfileModule({ authUser, fallbackProfile }) {
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
                   <Tooltip content={<AnalyticsTooltip />} />
-                  <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#1d4ed8" />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                    {statusCards.map((item) => (
+                      <Cell key={item.key} fill={{ info: "#2563eb", success: "#16a34a", warning: "#f59e0b", danger: "#dc2626", violet: "#7c3aed" }[item.tone]} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>

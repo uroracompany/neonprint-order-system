@@ -17,6 +17,7 @@ import { Icons } from "../../utils/icons";
 import { adminApiFetch } from "../../utils/adminApi";
 import useOrdersRealtimeSync from "../../hooks/useOrdersRealtimeSync";
 import ProfilePeriodControl from "../profile/ProfilePeriodControl";
+import PaginatedProgressList from "../profile/PaginatedProgressList";
 import "./QuoteProfileModule.css";
 
 const EMPTY_METRICS = {
@@ -26,6 +27,7 @@ const EMPTY_METRICS = {
   cancelled_orders: 0,
   paid_orders: 0,
   partial_paid_orders: 0,
+  credit_orders: 0,
   pending_payment_orders: 0,
   completion_rate: 0,
   cancellation_rate: 0,
@@ -104,26 +106,6 @@ function AnalyticsTooltip({ active, payload, label }) {
     <div className="pq-profile-chart-tooltip">
       <strong>{label || item.name}</strong>
       <span>{item.value} ordenes</span>
-    </div>
-  );
-}
-
-function ProgressList({ items, emptyLabel }) {
-  if (!items?.length) return <AnalyticsEmpty label={emptyLabel} />;
-  return (
-    <div className="pq-profile-progress-list">
-      {items.map((item) => (
-        <div className="pq-profile-progress-row" key={item.name}>
-          <div className="pq-profile-progress-top">
-            <strong>{item.name}</strong>
-            <span>{item.count} ordenes</span>
-          </div>
-          <div className="pq-profile-progress-track" aria-hidden="true">
-            <span style={{ width: `${Math.min(100, item.percentage || 0)}%` }} />
-          </div>
-          <small>{item.percentage || 0}% de participacion</small>
-        </div>
-      ))}
     </div>
   );
 }
@@ -450,7 +432,7 @@ export default function QuoteProfileModule({ authUser, fallbackProfile }) {
               </div>
               <Icons.Users />
             </div>
-            <ProgressList items={analytics.top_clients || []} emptyLabel="Sin clientes frecuentes" />
+            <PaginatedProgressList items={analytics.top_clients || []} emptyLabel="Sin clientes frecuentes" accent="#0f766e" />
           </article>
 
           <article className="pq-profile-analytics-card full pq-profile-status-summary-card">
@@ -472,7 +454,15 @@ export default function QuoteProfileModule({ authUser, fallbackProfile }) {
               </div>
               <div className="pq-profile-status-card">
                 <span className="pq-profile-metric-icon warning"><Icons.Clipboard /></span>
-                <div><strong>{metrics.total_orders || 0}</strong><small>Total</small></div>
+                <div><strong>{metrics.pending_payment_orders || 0}</strong><small>Pendientes</small></div>
+              </div>
+              <div className="pq-profile-status-card">
+                <span className="pq-profile-metric-icon violet"><Icons.Receipt /></span>
+                <div><strong>{metrics.partial_paid_orders || 0}</strong><small>Parciales</small></div>
+              </div>
+              <div className="pq-profile-status-card">
+                <span className="pq-profile-metric-icon info"><Icons.Receipt /></span>
+                <div><strong>{metrics.credit_orders || 0}</strong><small>Credito</small></div>
               </div>
               <div className="pq-profile-status-card">
                 <span className="pq-profile-metric-icon danger"><Icons.X /></span>
@@ -483,10 +473,13 @@ export default function QuoteProfileModule({ authUser, fallbackProfile }) {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={[
-                    { label: "Activas", value: metrics.active_orders || 0 },
-                    { label: "Completadas", value: metrics.completed_orders || 0 },
-                    { label: "Pagadas", value: metrics.paid_orders || 0 },
-                    { label: "Canceladas", value: metrics.cancelled_orders || 0 },
+                    { label: "Activas", value: metrics.active_orders || 0, color: "#2563eb" },
+                    { label: "Completadas", value: metrics.completed_orders || 0, color: "#16a34a" },
+                    { label: "Pagadas", value: metrics.paid_orders || 0, color: "#15803d" },
+                    { label: "Pendientes", value: metrics.pending_payment_orders || 0, color: "#f59e0b" },
+                    { label: "Parciales", value: metrics.partial_paid_orders || 0, color: "#0284c7" },
+                    { label: "Credito", value: metrics.credit_orders || 0, color: "#7c3aed" },
+                    { label: "Canceladas", value: metrics.cancelled_orders || 0, color: "#dc2626" },
                   ]}
                   margin={{ top: 6, right: 6, left: -24, bottom: 0 }}
                 >
@@ -494,7 +487,9 @@ export default function QuoteProfileModule({ authUser, fallbackProfile }) {
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
                   <Tooltip content={<AnalyticsTooltip />} />
-                  <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#1d4ed8" />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                    {["#2563eb", "#16a34a", "#15803d", "#f59e0b", "#0284c7", "#7c3aed", "#dc2626"].map((color) => <Cell key={color} fill={color} />)}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>

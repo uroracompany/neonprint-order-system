@@ -20,6 +20,8 @@ const SELLER_ORDER_COLUMNS = [
   "client_id",
   "client_name",
   "delivery_date",
+  "return_reason",
+  "order_design_type",
 ].join(",");
 
 const roundPct = (value) => Math.round(value * 10) / 10;
@@ -32,6 +34,11 @@ const applySellerOwnerFilter = (query, userId) => query.or(`seller_id.eq.${userI
 const isActiveOrder = (order) => {
   const status = normalizeStatus(order.status);
   return !order.is_archived && !DELIVERED_STATUSES.has(status) && !CANCELLED_STATUSES.has(status);
+};
+const isReturnedOrder = (order) => {
+  if (!String(order.return_reason || "").trim()) return false;
+  const returnedStatus = order.order_design_type === "EXTERNAL_DESING" ? "pending" : "in_design";
+  return normalizeStatus(order.status) === returnedStatus;
 };
 
 const parseDate = (value) => {
@@ -133,10 +140,9 @@ const splitMaterials = (material) => {
   return parts.length ? parts : ["Otros"];
 };
 
-const toRankedRows = (counter, total, limit = 5) => [...counter.entries()]
+const toRankedRows = (counter, total) => [...counter.entries()]
   .map(([name, count]) => ({ name, count, percentage: getPct(count, total) }))
-  .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-  .slice(0, limit);
+  .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
 const createTopMaterials = (orders) => {
   const counter = new Map();
@@ -188,6 +194,7 @@ const createStatusSummary = (orders, nowValue) => {
     pending: 0,
     cancelled: 0,
     overdue: 0,
+    returned: 0,
   };
 
   orders.forEach((order) => {
@@ -196,9 +203,10 @@ const createStatusSummary = (orders, nowValue) => {
     if (COMPLETED_STATUSES.has(status)) summary.completed += 1;
     if (PENDING_STATUSES.has(status)) summary.pending += 1;
     if (CANCELLED_STATUSES.has(status)) summary.cancelled += 1;
+    if (isReturnedOrder(order)) summary.returned += 1;
 
     const deliveryDate = parseDate(order.delivery_date);
-    if (deliveryDate && deliveryDate < todayStart && !COMPLETED_STATUSES.has(status) && !DELIVERED_STATUSES.has(status) && !CANCELLED_STATUSES.has(status)) {
+    if (deliveryDate && deliveryDate < todayStart && !isReturnedOrder(order) && !COMPLETED_STATUSES.has(status) && !DELIVERED_STATUSES.has(status) && !CANCELLED_STATUSES.has(status)) {
       summary.overdue += 1;
     }
   });

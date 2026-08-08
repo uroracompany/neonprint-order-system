@@ -212,10 +212,9 @@ const splitMaterials = (material) => {
   return parts.length ? parts : ["Otros"];
 };
 
-const toRankedRows = (counter, total, limit = 5) => [...counter.entries()]
+const toRankedRows = (counter, total) => [...counter.entries()]
   .map(([name, count]) => ({ name, count, percentage: getPct(count, total) }))
-  .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-  .slice(0, limit);
+  .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
 const createTopMaterials = (orders) => {
   const counter = new Map();

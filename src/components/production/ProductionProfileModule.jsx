@@ -7,6 +7,7 @@ import { Icons } from "../../utils/icons";
 import { adminApiFetch } from "../../utils/adminApi";
 import useOrdersRealtimeSync from "../../hooks/useOrdersRealtimeSync";
 import ProfilePeriodControl from "../profile/ProfilePeriodControl";
+import PaginatedProgressList from "../profile/PaginatedProgressList";
 
 const EMPTY_METRICS = {
   orders_completed: 0,
@@ -38,12 +39,24 @@ const TREND_OPTIONS = [
 ];
 
 const ORDER_TYPE_COLORS = ["#1d4ed8", "#dc2626"];
-const FILE_STATUS_COLORS = ["#f59e0b", "#06b6d4", "#8b5cf6", "#10b981"];
+const FILE_STATUS_COLORS = {
+  pending: "#f59e0b",
+  in_production: "#06b6d4",
+  in_termination: "#8b5cf6",
+  completed: "#10b981",
+};
+const STATUS_TONE_COLORS = {
+  info: "#2563eb",
+  warning: "#f59e0b",
+  cyan: "#0284c7",
+  success: "#16a34a",
+  danger: "#dc2626",
+};
 
 const formatPercentage = (value) =>
   Number(value || 0).toLocaleString("es-DO", { maximumFractionDigits: 1 });
 
-const getDominantOrderType = (rows) => {
+const getDominantRow = (rows) => {
   if (!rows?.length) return null;
   return rows.reduce((best, row) =>
     (row.percentage || 0) > (best.percentage || 0) ? row : best
@@ -66,14 +79,14 @@ const formatDate = (dateStr) => {
 
 function ProfileMetricCard({ icon, label, value, sub, tone }) {
   return (
-    <div className="pp-profile-metric-card">
+    <article className="pp-profile-metric-card">
       <div className={`pp-profile-metric-icon ${tone || ""}`}>{icon}</div>
       <div className="pp-profile-metric-body">
+        <p>{label}</p>
         <strong>{value ?? "---"}</strong>
-        <span>{label}</span>
         {sub && <small>{sub}</small>}
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -95,25 +108,6 @@ function AnalyticsTooltip({ active, payload, label }) {
         <p key={i} style={{ color: entry.color }}>
           {entry.name}: {entry.value}
         </p>
-      ))}
-    </div>
-  );
-}
-
-function ProgressList({ items, tone }) {
-  if (!items?.length) return <AnalyticsEmpty label="Sin datos" />;
-  return (
-    <div className="pp-profile-progress-list">
-      {items.map((item, i) => (
-        <div key={i} className="pp-profile-progress-row">
-          <div className="pp-profile-progress-top">
-            <span>{item.name || item.label || "---"}</span>
-            <span>{formatPercentage(item.percentage ?? item.value)}%</span>
-          </div>
-          <div className={`pp-profile-progress-track ${tone || ""}`}>
-            <div style={{ width: `${Math.min(100, item.percentage ?? item.value ?? 0)}%` }} />
-          </div>
-        </div>
       ))}
     </div>
   );
@@ -179,9 +173,11 @@ export default function ProductionProfileModule({ authUser, fallbackProfile }) {
   const totalProducersLabel = ranking.total_producers ? `de ${ranking.total_producers}` : "sin equipo activo";
   const trendData = analytics.trends?.[trendView] || [];
   const orderTypeRows = analytics.order_types?.rows || EMPTY_ANALYTICS.order_types.rows;
-  const dominantOrderType = getDominantOrderType(orderTypeRows);
+  const dominantOrderType = getDominantRow(orderTypeRows);
   const statusSummary = analytics.status_summary || EMPTY_ANALYTICS.status_summary;
-  const fileStatusRows = (analytics.production_file_status?.rows || []).map((item) => ({ ...item, unit: "archivos" }));
+  const fileStatusSummary = analytics.production_file_status || EMPTY_ANALYTICS.production_file_status;
+  const fileStatusRows = (fileStatusSummary.rows || []).map((item) => ({ ...item, unit: "archivos" }));
+  const dominantFileStatus = getDominantRow(fileStatusRows);
 
   const statusCards = useMemo(() => [
     { key: "in_production", label: "En produccion", icon: <Icons.Package />, tone: "info" },
@@ -190,6 +186,12 @@ export default function ProductionProfileModule({ authUser, fallbackProfile }) {
     { key: "completed", label: "Completadas", icon: <Icons.Check />, tone: "success" },
     { key: "cancelled", label: "Canceladas", icon: <Icons.AlertCircle />, tone: "danger" },
   ], []);
+
+  const statusChartRows = statusCards.map((item) => ({
+    ...item,
+    value: statusSummary[item.key] ?? 0,
+    unit: "ordenes",
+  }));
 
   const goalItems = useMemo(() => [
     {
@@ -322,7 +324,7 @@ export default function ProductionProfileModule({ authUser, fallbackProfile }) {
             </div>
             {orderTypeRows.length > 0 ? (
               <div className="pp-profile-chart-shell">
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={orderTypeRows}
@@ -330,8 +332,8 @@ export default function ProductionProfileModule({ authUser, fallbackProfile }) {
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      innerRadius={55}
-                      outerRadius={85}
+                      innerRadius={52}
+                      outerRadius={76}
                       paddingAngle={3}
                     >
                       {orderTypeRows.map((_, i) => (
@@ -370,13 +372,13 @@ export default function ProductionProfileModule({ authUser, fallbackProfile }) {
             </div>
             {trendData.length > 0 ? (
               <div className="pp-profile-chart-shell">
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={trendData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 6, right: 6, left: -24, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="4 4" stroke="#e8edf8" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 10 }} tickLine={false} axisLine={false} minTickGap={18} />
+                    <YAxis allowDecimals={false} tick={{ fill: "#64748b", fontSize: 10 }} tickLine={false} axisLine={false} />
                     <Tooltip content={<AnalyticsTooltip />} />
-                    <Line type="monotone" dataKey="count" stroke="#091127" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="count" stroke="#1d4ed8" strokeWidth={3} dot={{ r: 3, fill: "#ffffff", stroke: "#1d4ed8", strokeWidth: 2 }} activeDot={{ r: 5 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -387,60 +389,106 @@ export default function ProductionProfileModule({ authUser, fallbackProfile }) {
 
           <article className="pp-profile-analytics-card">
             <div className="pp-profile-card-heading">
-              <h4>Materiales mas trabajados</h4>
-              <Icons.Package />
+              <h4>Clientes con mas ordenes</h4>
+              <Icons.Users />
             </div>
-            <ProgressList items={analytics.top_materials} />
+            <PaginatedProgressList items={analytics.top_clients} emptyLabel="Sin clientes con ordenes" accent="#0f766e" />
           </article>
 
           <article className="pp-profile-analytics-card">
             <div className="pp-profile-card-heading">
-              <h4>Clientes con mas ordenes</h4>
-              <Icons.Users />
+              <h4>Materiales mas trabajados</h4>
+              <Icons.Package />
             </div>
-            <ProgressList items={analytics.top_clients} />
+            <PaginatedProgressList items={analytics.top_materials} emptyLabel="Sin materiales trabajados" accent="#1d4ed8" />
           </article>
 
-          <article className="pp-profile-analytics-card pp-profile-status-summary-card">
+          <article className="pp-profile-analytics-card pp-profile-file-status-card">
             <div className="pp-profile-card-heading">
-              <h4>Estado de produccion</h4>
+              <div>
+                <span className="pp-profile-kicker">Archivos</span>
+                <h4>Estado de archivos</h4>
+              </div>
+              <Icons.File />
+            </div>
+            {fileStatusSummary.total > 0 ? (
+              <>
+                <div className="pp-profile-file-status-chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={fileStatusRows}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={52}
+                        outerRadius={76}
+                        paddingAngle={3}
+                      >
+                        {fileStatusRows.map((item) => (
+                          <Cell key={item.key} fill={FILE_STATUS_COLORS[item.key] || "#94a3b8"} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<AnalyticsTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  {dominantFileStatus && (
+                    <div className="pp-profile-donut-center">
+                      <strong>{formatPercentage(dominantFileStatus.percentage)}%</strong>
+                      <span>{dominantFileStatus.name}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="pp-profile-file-status-legend">
+                  {fileStatusRows.map((item) => (
+                    <div key={item.key} className="pp-profile-file-status-legend-item">
+                      <span style={{ backgroundColor: FILE_STATUS_COLORS[item.key] || "#94a3b8" }} aria-hidden="true" />
+                      <strong>{item.name}</strong>
+                      <small>{item.value} ({formatPercentage(item.percentage)}%)</small>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <AnalyticsEmpty label="Sin datos de archivos" />
+            )}
+          </article>
+
+          <article className="pp-profile-analytics-card full pp-profile-status-summary-card">
+            <div className="pp-profile-card-heading">
+              <div>
+                <span className="pp-profile-kicker">Estados</span>
+                <h4>Estado de produccion</h4>
+              </div>
               <Icons.BarChart />
             </div>
             <div className="pp-profile-status-grid">
               {statusCards.map((sc) => (
-                <div key={sc.key} className={`pp-profile-status-card ${sc.tone}`}>
-                  {sc.icon}
-                  <strong>{statusSummary[sc.key] ?? 0}</strong>
-                  <small>{sc.label}</small>
+                <div key={sc.key} className="pp-profile-status-card">
+                  <span className={`pp-profile-metric-icon ${sc.tone}`}>{sc.icon}</span>
+                  <div>
+                    <strong>{statusSummary[sc.key] ?? 0}</strong>
+                    <small>{sc.label}</small>
+                  </div>
                 </div>
               ))}
             </div>
-          </article>
-
-          <article className="pp-profile-analytics-card pp-profile-status-chart-card">
-            <div className="pp-profile-card-heading">
-              <h4>Estado de archivos</h4>
-              <Icons.BarChart />
+            <div className="pp-profile-chart-shell compact pp-profile-production-status-chart">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={statusChartRows} margin={{ top: 6, right: 6, left: -24, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="4 4" stroke="#e8edf8" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 10 }} tickLine={false} axisLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: "#64748b", fontSize: 10 }} tickLine={false} axisLine={false} />
+                  <Tooltip content={<AnalyticsTooltip />} />
+                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                    {statusChartRows.map((item) => (
+                      <Cell key={item.key} fill={STATUS_TONE_COLORS[item.tone]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-            {fileStatusRows.length > 0 ? (
-              <div className="pp-profile-chart-shell compact">
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={fileStatusRows}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip content={<AnalyticsTooltip />} />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                      {fileStatusRows.map((_, i) => (
-                        <Cell key={i} fill={FILE_STATUS_COLORS[i % FILE_STATUS_COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <AnalyticsEmpty label="Sin datos de archivos" />
-            )}
           </article>
 
         </div>
