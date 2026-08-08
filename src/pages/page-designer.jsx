@@ -1402,7 +1402,7 @@ export default function PageDesigner() {
           </div>
         </header>
         {/* Contenedor con Contenido principal */}
-        <main className="pd-main-content" ref={mainScrollRef}>
+        <main className={`pd-main-content${activeTab === "orders" ? " pd-main-content--orders" : ""}`} ref={mainScrollRef}>
           {activeTab === "dashboard" && (
             <>
               <div className="pd-greeting">

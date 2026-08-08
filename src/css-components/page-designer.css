@@ -281,6 +281,19 @@
   animation: fadeIn 0.3s ease;
   position: relative;
   isolation: isolate;
+  width: 100%;
+  max-width: 1264px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
+.pd-main-content--orders {
+  max-width: none;
+}
+
+.pd-main-content--orders > .pq-section {
+  gap: 0;
+  padding: 0;
 }
 
 .pd-main-content::before,
