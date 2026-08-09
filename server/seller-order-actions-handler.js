@@ -548,7 +548,7 @@ const ACTION_HANDLERS = {
 export async function handleSellerOrderAction(payload = {}, env = process.env) {
   const auth = await requireAuthenticated(env.authHeader || "", env, { allowedRoles: ["seller", "admin"] });
   if (!auth.authorized) {
-    return jsonResponse(auth.status || 403, { error: auth.error });
+    return jsonResponse(auth.status || 403, { error: auth.error, code: auth.code });
   }
 
   const action = normalizeKey(payload.action);

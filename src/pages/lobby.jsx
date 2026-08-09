@@ -4,12 +4,12 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient"
 import { setAuthSessionPersistence, signOutAuth } from "../utils/authManager";
 import { normalizeEmailForAuth } from "../utils/fileValidation";
+import { AUTH_NOTICE, createAuthError, getAuthFeedbackMessage, getLoginErrorCode } from "../utils/authFeedback";
 
 // Styles & Assets
 import "../css-components/lobby.css"
 import Logo from "../assets/images/logo-neonprint.jpg"
 
-const GENERIC_LOGIN_ERROR = "Credenciales invalidas o acceso no disponible.";
 const MFA_GENERIC_ERROR = "No se pudo validar el segundo factor.";
 
 const ROLE_ROUTES = {
@@ -143,11 +143,11 @@ export default function Lobby() {
   const location = useLocation();
 
   useEffect(() => {
-    const loginMessage = location.state?.loginMessage;
-    if (loginMessage) {
-      setMessage({ type: "error", text: loginMessage });
-    }
-  }, [location.state]);
+    const loginNotice = location.state?.loginNotice;
+    if (!loginNotice) return;
+    setMessage({ type: "error", text: getAuthFeedbackMessage(loginNotice) });
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state?.loginNotice, navigate]);
 
   const getCaptchaToken = async () => {
     if (!captchaConfig || !captchaNodeRef.current) return "";
@@ -185,7 +185,7 @@ export default function Lobby() {
       .eq("id", userId)
       .single();
 
-    if (error || !data?.role) throw new Error("profile_not_available");
+    if (error || !data?.role) throw createAuthError(AUTH_NOTICE.PROFILE_UNAVAILABLE);
     return data;
   };
 
@@ -205,13 +205,13 @@ export default function Lobby() {
     }
 
     const code = window.prompt("Codigo de verificacion 2FA")?.replace(/\s+/g, "");
-    if (!code || code.length < 6) throw new Error("mfa_cancelled");
+    if (!code || code.length < 6) throw createAuthError(AUTH_NOTICE.MFA_REQUIRED);
 
     const { error } = await supabase.auth.mfa.challengeAndVerify({
       factorId: verifiedTotp.id,
       code,
     });
-    if (error) throw new Error(MFA_GENERIC_ERROR);
+    if (error) throw createAuthError(AUTH_NOTICE.MFA_REQUIRED, MFA_GENERIC_ERROR);
   };
 
   const handleLogin = async (e) => {
@@ -246,7 +246,7 @@ export default function Lobby() {
         await signOutAuth();
         setMessage({
           type: "error",
-          text: GENERIC_LOGIN_ERROR,
+          text: getAuthFeedbackMessage(AUTH_NOTICE.ACCOUNT_INACTIVE),
         });
         setLoading(false);
         return;
@@ -262,14 +262,15 @@ export default function Lobby() {
       setTimeout(() =>{
         navigate(ROLE_ROUTES[profiles.role] || "/");
       });
-    } catch {
+    } catch (error) {
       await signOutAuth();
+      const errorCode = getLoginErrorCode(error);
       setMessage({
         type:"error",
-        text: GENERIC_LOGIN_ERROR,
+        text: getAuthFeedbackMessage(errorCode),
       });
 
-      setFieldErr(true);
+      setFieldErr(errorCode === AUTH_NOTICE.INVALID_CREDENTIALS);
 
     }finally {
       setLoading(false);

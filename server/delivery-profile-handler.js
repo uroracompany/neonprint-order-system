@@ -86,7 +86,7 @@ export async function handleDeliveryProfile(payload = {}, env = process.env) {
   const auth = await requireAuthenticated(env.authHeader || "", env, {
     allowedRoles: ["delivery", "digital_producer", "dtf_producer", "ploteo_producer", "admin"],
   });
-  if (!auth.authorized) return { status: auth.status || 401, body: { error: auth.error } };
+  if (!auth.authorized) return { status: auth.status || 401, body: { error: auth.error, code: auth.code } };
 
   const userId = auth.profile?.id;
   if (!userId) return { status: 403, body: { error: "Tu perfil no esta disponible." } };

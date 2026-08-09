@@ -3,11 +3,13 @@ import { supabase } from "../../supabaseClient";
 import { AuthContext } from "./authStateContext";
 import {
   clearCachedAuthSession,
+  consumeAuthNotice,
   getAuthSession,
   refreshAuthSession,
   setCachedAuthSession,
   signOutAuth,
 } from "../utils/authManager";
+import { AUTH_NOTICE, getLoginErrorCode } from "../utils/authFeedback";
 
 const PROFILE_COLUMNS = "id, name, email, role, employment_status";
 
@@ -22,6 +24,7 @@ export function AuthProvider({ children }) {
   const [hasVerifiedMfaFactor, setHasVerifiedMfaFactor] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
+  const [authNotice, setAuthNotice] = useState(null);
 
   const updateProfile = useCallback((nextProfile) => {
     profileRef.current = nextProfile;
@@ -40,7 +43,7 @@ export function AuthProvider({ children }) {
       .eq("id", userId)
       .single();
 
-    if (error) throw error;
+    if (error) throw Object.assign(error, { code: AUTH_NOTICE.PROFILE_UNAVAILABLE });
     updateProfile(data || null);
     return data || null;
   }, [updateProfile]);
@@ -99,13 +102,16 @@ export function AuthProvider({ children }) {
       setSession(nextSession || null);
       setUser(nextUser);
       userIdRef.current = nextUserId;
+      if (nextUser) setAuthError(null);
 
       if (!nextUser) {
         updateProfile(null);
         setMfaLevel(null);
         setHasVerifiedMfaFactor(false);
+        setAuthNotice(consumeAuthNotice());
       } else if (shouldShowProfileLoading) {
         updateProfile(undefined);
+        setAuthNotice(null);
       }
     }
 
@@ -136,6 +142,7 @@ export function AuthProvider({ children }) {
         setMfaLevel(null);
         setHasVerifiedMfaFactor(false);
         setAuthError(error);
+        setAuthNotice(getLoginErrorCode(error));
       }
       return null;
     } finally {
@@ -152,6 +159,7 @@ export function AuthProvider({ children }) {
         updateProfile(null);
         setMfaLevel(null);
         setHasVerifiedMfaFactor(false);
+        setAuthNotice(null);
       }
   }, [updateProfile]);
 
@@ -175,6 +183,7 @@ export function AuthProvider({ children }) {
           setMfaLevel(null);
           setHasVerifiedMfaFactor(false);
           setAuthError(error);
+          setAuthNotice(getLoginErrorCode(error));
         }
       } finally {
         if (activeRef.current) setLoading(false);
@@ -186,10 +195,10 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       void applySession(nextSession, event).catch((error) => {
         if (activeRef.current) {
-          updateProfile(null);
+          updateProfile(undefined);
           setMfaLevel(null);
           setHasVerifiedMfaFactor(false);
-          setAuthError(error);
+          setAuthError({ code: AUTH_NOTICE.PROFILE_UNAVAILABLE, cause: error });
         }
       });
     });
@@ -225,11 +234,12 @@ export function AuthProvider({ children }) {
     profile,
     loading,
     authError,
+    authNotice,
     mfaLevel,
     hasVerifiedMfaFactor,
     refresh,
     signOut,
-  }), [authError, hasVerifiedMfaFactor, loading, mfaLevel, profile, refresh, session, signOut, user]);
+  }), [authError, authNotice, hasVerifiedMfaFactor, loading, mfaLevel, profile, refresh, session, signOut, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

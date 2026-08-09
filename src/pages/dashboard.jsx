@@ -2825,17 +2825,11 @@ export default function Dashboard() {
 
     setEmployeeDeleteLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/admin", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? ""}`,
-        },
-        body: JSON.stringify({ action: "delete-user", userId: employeeToDelete.id }),
+      const { response, result } = await adminApiFetch("/api/admin", {
+        action: "delete-user",
+        userId: employeeToDelete.id,
       });
-      const payload = await res.json();
-      if (!res.ok || payload.error) throw new Error(payload.error || "No se pudo eliminar el empleado.");
+      if (!response.ok || result.error) throw new Error(result.error || "No se pudo eliminar el empleado.");
       setEmployeeToDelete(null);
       closeEmployeeDetail();
       loadProfiles();

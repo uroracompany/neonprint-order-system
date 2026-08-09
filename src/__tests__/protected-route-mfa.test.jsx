@@ -10,7 +10,7 @@ vi.mock("../hooks/useAuth", () => ({
 
 const LoginState = () => {
   const location = useLocation();
-  return <div>{location.state?.loginMessage || "login"}</div>;
+  return <div>{location.state?.loginNotice || "login"}</div>;
 };
 
 let ProtectedRoute;
@@ -42,7 +42,53 @@ describe("ProtectedRoute MFA enforcement", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/verifica el segundo factor/i)).toBeInTheDocument();
+    expect(screen.getByText("MFA_REQUIRED")).toBeInTheDocument();
+  });
+
+  it("does not label an unauthenticated session as a permission failure", () => {
+    useAuthMock.mockReturnValue({
+      loading: false,
+      user: null,
+      profile: null,
+      authNotice: "SESSION_EXPIRED",
+      mfaLevel: null,
+      hasVerifiedMfaFactor: false,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/delivery"]}>
+        <Routes>
+          <Route path="/" element={<LoginState />} />
+          <Route path="/delivery" element={<ProtectedRoute allowed={["delivery"]}><div>Delivery OK</div></ProtectedRoute>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("SESSION_EXPIRED")).toBeInTheDocument();
+    expect(screen.queryByText("FORBIDDEN")).not.toBeInTheDocument();
+  });
+
+  it("reports a missing profile as a profile issue, not a permission failure", () => {
+    useAuthMock.mockReturnValue({
+      loading: false,
+      user: { id: "delivery-1" },
+      profile: null,
+      authError: { code: "PROFILE_UNAVAILABLE" },
+      mfaLevel: null,
+      hasVerifiedMfaFactor: false,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/delivery"]}>
+        <Routes>
+          <Route path="/" element={<LoginState />} />
+          <Route path="/delivery" element={<ProtectedRoute allowed={["delivery"]}><div>Delivery OK</div></ProtectedRoute>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("PROFILE_UNAVAILABLE")).toBeInTheDocument();
+    expect(screen.queryByText("FORBIDDEN")).not.toBeInTheDocument();
   });
 
   it("allows admin sessions with aal2", () => {

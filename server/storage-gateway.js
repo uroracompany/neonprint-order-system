@@ -859,7 +859,7 @@ export async function handleAdminDeleteOrderWithFiles(payload = {}, env = proces
   const { supabaseUrl, serviceRoleKey } = envResult;
 
   const auth = await requireAdmin(env.authHeader, env);
-  if (!auth.authorized) return jsonResponse(auth.status || 403, { error: auth.error });
+  if (!auth.authorized) return jsonResponse(auth.status || 403, { error: auth.error, code: auth.code });
 
   const orderId = String(payload?.orderId || "").trim();
   if (!orderId) return jsonResponse(400, { error: "Falta orderId." });

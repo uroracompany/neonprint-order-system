@@ -361,7 +361,7 @@ export async function handleProductionProfile(payload = {}, env = process.env) {
       allowedRoles: ["digital_producer", "dtf_producer", "ploteo_producer", "admin"],
     });
     if (!auth.authorized) {
-      return { status: auth.status || 401, body: { error: auth.error } };
+      return { status: auth.status || 401, body: { error: auth.error, code: auth.code } };
     }
 
     const supabase = auth.supabaseAdmin;

@@ -4,6 +4,7 @@
 import { Navigate } from "react-router-dom";
 import { useMemo } from "react";
 import { useAuth } from "./hooks/useAuth";
+import { AUTH_NOTICE } from "./utils/authFeedback";
 
 import "./css-components/ProtectedRoute.css";
 
@@ -66,29 +67,35 @@ const LoadingSession = () => (
 );
 
 export default function ProtectedRoute({ children, allowed = [] }) {
-  const { user, profile, loading, mfaLevel, hasVerifiedMfaFactor } = useAuth();
+  const { user, profile, loading, authError, authNotice, mfaLevel, hasVerifiedMfaFactor } = useAuth();
   const allowedRoles = useMemo(() => allowed.filter(Boolean), [allowed]);
 
   if (
     loading
-    || (user && profile === undefined)
+    || (user && profile === undefined && !authError)
     || (profile?.role === "admin" && (mfaLevel === undefined || hasVerifiedMfaFactor === undefined))
   ) {
     return <LoadingSession />;
   }
 
-  if (!user) return <Navigate to="/" replace />;
-
-  if (profile?.employment_status === false) {
-    return <Navigate to="/" state={{ loginMessage: "Tu cuenta está desactivada. Contacta al administrador." }} replace />;
+  if (!user) {
+    return <Navigate to="/" state={authNotice ? { loginNotice: authNotice } : undefined} replace />;
   }
 
-  if (!profile || (allowedRoles.length && !allowedRoles.includes(profile.role))) {
-    return <Navigate to="/" state={{ loginMessage: "Tu usuario no tiene permisos para entrar a esa sección." }} replace />;
+  if (authError?.code === AUTH_NOTICE.PROFILE_UNAVAILABLE || !profile) {
+    return <Navigate to="/" state={{ loginNotice: AUTH_NOTICE.PROFILE_UNAVAILABLE }} replace />;
+  }
+
+  if (profile?.employment_status === false) {
+    return <Navigate to="/" state={{ loginNotice: AUTH_NOTICE.ACCOUNT_INACTIVE }} replace />;
+  }
+
+  if (allowedRoles.length && !allowedRoles.includes(profile.role)) {
+    return <Navigate to="/" state={{ loginNotice: AUTH_NOTICE.FORBIDDEN }} replace />;
   }
 
   if (profile.role === "admin" && hasVerifiedMfaFactor && mfaLevel !== "aal2") {
-    return <Navigate to="/" state={{ loginMessage: "Verifica el segundo factor para continuar." }} replace />;
+    return <Navigate to="/" state={{ loginNotice: AUTH_NOTICE.MFA_REQUIRED }} replace />;
   }
 
   return children;

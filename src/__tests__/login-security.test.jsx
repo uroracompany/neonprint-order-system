@@ -108,9 +108,23 @@ describe("secure login", () => {
     await user.type(screen.getByLabelText("Contraseña"), "WrongPassword123");
     await user.click(screen.getByRole("button", { name: /acceder al sistema/i }));
 
-    expect(await screen.findByText(/credenciales invalidas o acceso no disponible/i)).toBeInTheDocument();
+    expect(await screen.findByText(/correo o contraseña incorrectos/i)).toBeInTheDocument();
     expect(screen.queryByText(/cuenta no encontrada|user not found/i)).not.toBeInTheDocument();
     expect(signOutAuthMock).toHaveBeenCalled();
+  });
+
+  it("shows a clear connection message instead of calling a technical failure invalid credentials", async () => {
+    authMock.signInWithPassword.mockRejectedValue(new Error("fetch failed"));
+
+    const user = userEvent.setup();
+    renderLobby();
+
+    await user.type(screen.getByLabelText("Correo electrónico"), "delivery@example.com");
+    await user.type(screen.getByLabelText("Contraseña"), "password");
+    await user.click(screen.getByRole("button", { name: /acceder al sistema/i }));
+
+    expect(await screen.findByText(/no pudimos conectarnos/i)).toBeInTheDocument();
+    expect(screen.queryByText(/correo o contraseña incorrectos/i)).not.toBeInTheDocument();
   });
 
   it("requires MFA verification for admin profiles", async () => {

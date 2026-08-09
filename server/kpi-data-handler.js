@@ -1299,7 +1299,7 @@ async function buildProductionDepartmentInsights(supabase, { date_from, date_to,
 export async function handleKpiData(body, env) {
   const authResult = await requireAdmin(env.authHeader, env)
   if (!authResult.authorized) {
-    return { status: 401, body: { error: authResult.error } }
+    return { status: authResult.status || 401, body: { error: authResult.error, code: authResult.code } }
   }
 
   const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL

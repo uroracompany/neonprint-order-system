@@ -58,7 +58,10 @@ function createApiHandler(path, handler) {
           } catch (error) {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: error?.message || "Error interno del servidor." }));
+            res.end(JSON.stringify({
+              code: "INTERNAL",
+              error: "Ocurrió un problema interno. Inténtalo nuevamente en unos minutos.",
+            }));
           }
         });
       });
@@ -135,7 +138,10 @@ function createConsolidatedHandler(path, actionsMap) {
           } catch (error) {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: error?.message || "Error interno del servidor." }));
+            res.end(JSON.stringify({
+              code: "INTERNAL",
+              error: "Ocurrió un problema interno. Inténtalo nuevamente en unos minutos.",
+            }));
           }
         });
       });

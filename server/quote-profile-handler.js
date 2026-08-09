@@ -208,7 +208,7 @@ const createPaymentSummary = (orders) => {
 export async function handleQuoteProfile(payload = {}, env = process.env) {
   const auth = await requireAuthenticated(env.authHeader || "", env, { allowedRoles: ["quote", "admin"] });
   if (!auth.authorized) {
-    return { status: auth.status || 401, body: { error: auth.error } };
+      return { status: auth.status || 401, body: { error: auth.error, code: auth.code } };
   }
 
   const supabase = auth.supabaseAdmin;

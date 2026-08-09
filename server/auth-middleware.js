@@ -26,12 +26,12 @@ export async function verifyAdmin(token, supabaseUrl, _anonKey, serviceRoleKey =
 
   if (!accessToken) {
     debugAuth("missing-token", {}, env);
-    return { authorized: false, status: 401, error: "Token de autenticacion requerido." };
+    return { authorized: false, status: 401, code: "AUTH_REQUIRED", error: "Token de autenticacion requerido." };
   }
 
   if (!supabaseUrl || !serviceRoleKey) {
     debugAuth("missing-config", { hasUrl: Boolean(supabaseUrl), hasServiceRole: Boolean(serviceRoleKey) }, env);
-    return { authorized: false, status: 500, error: "Configuracion de Supabase incompleta." };
+    return { authorized: false, status: 500, code: "INTERNAL", error: "Configuracion de Supabase incompleta." };
   }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
@@ -46,13 +46,14 @@ export async function verifyAdmin(token, supabaseUrl, _anonKey, serviceRoleKey =
     return {
       authorized: false,
       status: 503,
+      code: "NETWORK",
       error: "No se pudo validar la sesion con Supabase Auth. Revisa la conexion TLS/certificados del servidor local.",
     };
   }
 
   if (authError || !user?.id) {
     debugAuth("invalid-token", { authError: authError?.message }, env);
-    return { authorized: false, status: 401, error: "Tu sesion expiro o no es valida. Inicia sesion nuevamente." };
+    return { authorized: false, status: 401, code: "SESSION_EXPIRED", error: "Tu sesion expiro o no es valida. Inicia sesion nuevamente." };
   }
 
   const { data: profile, error: profileError } = await supabaseAdmin
@@ -63,12 +64,12 @@ export async function verifyAdmin(token, supabaseUrl, _anonKey, serviceRoleKey =
 
   if (profileError || !profile) {
     debugAuth("profile-not-found", { userId: user.id, profileError: profileError?.message }, env);
-    return { authorized: false, status: 403, error: "Se requieren permisos de administrador." };
+    return { authorized: false, status: 403, code: "PROFILE_UNAVAILABLE", error: "Tu perfil no esta disponible." };
   }
 
   if (profile.role !== "admin") {
     debugAuth("not-admin", { userId: user.id, role: profile.role }, env);
-    return { authorized: false, status: 403, error: "Se requieren permisos de administrador." };
+    return { authorized: false, status: 403, code: "FORBIDDEN", error: "Se requieren permisos de administrador." };
   }
 
   debugAuth("authorized-admin", { userId: user.id }, env);
@@ -91,12 +92,12 @@ export async function requireAuthenticated(authHeader = "", env = process.env, o
 
   if (!accessToken) {
     debugAuth("missing-token", {}, env);
-    return { authorized: false, status: 401, error: "Token de autenticacion requerido." };
+    return { authorized: false, status: 401, code: "AUTH_REQUIRED", error: "Token de autenticacion requerido." };
   }
 
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
     debugAuth("missing-config", { hasUrl: Boolean(env.SUPABASE_URL), hasServiceRole: Boolean(env.SUPABASE_SERVICE_ROLE_KEY) }, env);
-    return { authorized: false, status: 500, error: "Configuracion de Supabase incompleta." };
+    return { authorized: false, status: 500, code: "INTERNAL", error: "Configuracion de Supabase incompleta." };
   }
 
   let supabaseAdmin;
@@ -106,7 +107,7 @@ export async function requireAuthenticated(authHeader = "", env = process.env, o
     });
   } catch (clientError) {
     debugAuth("createClient-failed", { clientError: clientError?.message }, env);
-    return { authorized: false, status: 500, error: "Error al conectar con Supabase. Verifica la configuracion." };
+    return { authorized: false, status: 500, code: "INTERNAL", error: "Error al conectar con Supabase. Verifica la configuracion." };
   }
 
   const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
@@ -117,13 +118,14 @@ export async function requireAuthenticated(authHeader = "", env = process.env, o
     return {
       authorized: false,
       status: 503,
+      code: "NETWORK",
       error: "No se pudo validar la sesion con Supabase Auth. Revisa la conexion TLS/certificados del servidor local.",
     };
   }
 
   if (authError || !user?.id) {
     debugAuth("invalid-token", { authError: authError?.message }, env);
-    return { authorized: false, status: 401, error: "Tu sesion expiro o no es valida. Inicia sesion nuevamente." };
+    return { authorized: false, status: 401, code: "SESSION_EXPIRED", error: "Tu sesion expiro o no es valida. Inicia sesion nuevamente." };
   }
 
   const { data: profile, error: profileError } = await supabaseAdmin
@@ -134,17 +136,17 @@ export async function requireAuthenticated(authHeader = "", env = process.env, o
 
   if (profileError || !profile) {
     debugAuth("profile-not-found", { userId: user.id, profileError: profileError?.message }, env);
-    return { authorized: false, status: 403, error: "Tu perfil no esta disponible." };
+    return { authorized: false, status: 403, code: "PROFILE_UNAVAILABLE", error: "Tu perfil no esta disponible." };
   }
 
   if (profile.employment_status === false) {
     debugAuth("inactive-profile", { userId: user.id, role: profile.role }, env);
-    return { authorized: false, status: 403, error: "Tu usuario esta inactivo." };
+    return { authorized: false, status: 403, code: "ACCOUNT_INACTIVE", error: "Tu usuario esta inactivo." };
   }
 
   if (allowedRoles.length && !allowedRoles.includes(profile.role)) {
     debugAuth("role-not-allowed", { userId: user.id, role: profile.role }, env);
-    return { authorized: false, status: 403, error: "No tienes permisos para esta accion." };
+    return { authorized: false, status: 403, code: "FORBIDDEN", error: "No tienes permisos para esta accion." };
   }
 
   return { authorized: true, user, profile, supabaseAdmin, accessToken };

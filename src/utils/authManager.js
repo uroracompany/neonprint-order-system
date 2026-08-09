@@ -15,6 +15,7 @@ let userPromise = null;
 let cachedSession = null;
 let cachedUser = null;
 let lastUserCheckedAt = 0;
+let pendingAuthNotice = null;
 
 const isAuthDebugEnabled = () => import.meta.env?.VITE_AUTH_DEBUG === "1";
 
@@ -67,6 +68,16 @@ export function clearCachedAuthSession() {
   cachedSession = null;
   cachedUser = null;
   lastUserCheckedAt = 0;
+}
+
+export function markAuthNotice(code) {
+  pendingAuthNotice = code || null;
+}
+
+export function consumeAuthNotice() {
+  const notice = pendingAuthNotice;
+  pendingAuthNotice = null;
+  return notice;
 }
 
 export { isAuthSessionPersistenceEnabled, setAuthSessionPersistence };
@@ -157,10 +168,16 @@ export async function signOutAuth() {
   });
 }
 
+export async function expireAuthSession() {
+  markAuthNotice("SESSION_EXPIRED");
+  return signOutAuth();
+}
+
 export function __resetAuthManagerForTests() {
   authQueue = Promise.resolve();
   sessionPromise = null;
   refreshPromise = null;
   userPromise = null;
+  pendingAuthNotice = null;
   clearCachedAuthSession();
 }

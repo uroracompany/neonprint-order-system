@@ -46,7 +46,7 @@ export async function handleAdminDeleteUser(payload, env = process.env) {
 
   const auth = await requireAdmin(env.authHeader, env);
   if (!auth.authorized) {
-    return jsonResponse(auth.status || 403, { error: auth.error });
+    return jsonResponse(auth.status || 403, { error: auth.error, code: auth.code });
   }
 
   const userId = String(payload?.userId || "").trim();

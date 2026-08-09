@@ -1,12 +1,13 @@
-import { getFreshAccessToken, signOutAuth } from "./authManager";
+import { expireAuthSession, getFreshAccessToken } from "./authManager";
 import { isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "./errorUtils";
+import { getApiErrorCode, getApiErrorMessage } from "./authFeedback";
 
 const isTokenError = (result) =>
   /token|jwt|expir|invalid/i.test(String(result?.error || result?.message || ""));
 
 async function clearInvalidAdminSession() {
   try {
-    await signOutAuth();
+    await expireAuthSession();
   } catch {
     // If signOut cannot reach Supabase, the caller still receives the 401 response.
   }
@@ -42,7 +43,19 @@ async function postJson(path, payload, accessToken) {
 }
 
 export async function adminApiFetch(path, payload = {}) {
-  let accessToken = await getFreshAccessToken();
+  let accessToken;
+  try {
+    accessToken = await getFreshAccessToken();
+  } catch (error) {
+    const isExpiredSession = /sesion expiro|sesión expiró|token|jwt|invalid/i.test(String(error?.message || ""));
+    if (isExpiredSession) await clearInvalidAdminSession();
+    const status = isExpiredSession ? 401 : 0;
+    const result = {
+      code: getApiErrorCode({ status, error }),
+      error: getApiErrorMessage({ status, error }),
+    };
+    return { response: { ok: false, status, statusText: "Authentication Error" }, result };
+  }
   let output = await postJson(path, payload, accessToken);
 
   if (output.response.status === 401 && isTokenError(output.result)) {
@@ -60,6 +73,14 @@ export async function adminApiFetch(path, payload = {}) {
 
   if (!output.response.ok && isTimeoutError(output.result)) {
     output.result = { ...output.result, error: FRIENDLY_TIMEOUT_MESSAGE };
+  }
+
+  if (!output.response.ok) {
+    output.result = {
+      ...output.result,
+      code: getApiErrorCode({ status: output.response.status, result: output.result }),
+      error: getApiErrorMessage({ status: output.response.status, result: output.result }),
+    };
   }
 
   return output;

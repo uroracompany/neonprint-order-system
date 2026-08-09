@@ -70,7 +70,7 @@ export async function handleAdminListOrders(payload = {}, env = process.env) {
   const auth = await requireAdmin(env.authHeader, env);
   if (!auth.authorized) {
     debugOrders("unauthorized", { status: auth.status }, env);
-    return jsonResponse(auth.status || 403, { error: auth.error });
+    return jsonResponse(auth.status || 403, { error: auth.error, code: auth.code });
   }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
