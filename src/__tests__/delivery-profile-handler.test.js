@@ -47,6 +47,7 @@ describe("handleDeliveryProfile", () => {
       { id: "delivered", delivery_id: "delivery-1", status: "in_Delivered", created_at: "2026-07-03T00:00:00.000Z", delivery_date: "2026-07-25T00:00:00.000Z", client_name: "Cliente B" },
       { id: "cancelled", delivery_id: "delivery-1", status: "cancelled", created_at: "2026-07-04T00:00:00.000Z", client_name: "Cliente A" },
       { id: "foreign", delivery_id: "delivery-2", status: "in_Completed", created_at: "2026-07-05T00:00:00.000Z", client_name: "Cliente Ajeno" },
+      { id: "unassigned", delivery_id: null, status: "in_Completed", created_at: "2026-07-05T00:00:00.000Z", client_name: "Cliente Sin Asignar" },
     ]);
 
     const result = await handleDeliveryProfile({}, env);
@@ -62,5 +63,29 @@ describe("handleDeliveryProfile", () => {
       delivery_rate: 50,
     });
     expect(JSON.stringify(result.body)).not.toContain("Cliente Ajeno");
+    expect(JSON.stringify(result.body)).not.toContain("Cliente Sin Asignar");
+  });
+
+  it("returns zero metrics when the delivery user has no assigned orders", async () => {
+    currentClient = makeClient([
+      { id: "unassigned", delivery_id: null, status: "in_Completed", created_at: "2026-07-05T00:00:00.000Z", client_name: "Cliente Sin Asignar" },
+      { id: "foreign", delivery_id: "delivery-2", status: "in_Completed", created_at: "2026-07-05T00:00:00.000Z", client_name: "Cliente Ajeno" },
+    ]);
+
+    const result = await handleDeliveryProfile({}, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.metrics).toMatchObject({
+      assigned_orders: 0,
+      pending_delivery_orders: 0,
+      delivered_orders: 0,
+      overdue_orders: 0,
+      cancelled_orders: 0,
+      clients_served: 0,
+      delivery_rate: 0,
+    });
+    expect(result.body.analytics.top_clients).toEqual([]);
+    expect(result.body.analytics.trends).toHaveLength(14);
+    expect(result.body.analytics.trends.every((row) => row.count === 0)).toBe(true);
   });
 });

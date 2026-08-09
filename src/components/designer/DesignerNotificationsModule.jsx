@@ -35,6 +35,9 @@ const DATE_FILTERS = [
 ];
 
 const NOTIFICATIONS_PER_PAGE = 15;
+const DEFAULT_MODULE_LABEL = "Diseño";
+const DEFAULT_MODULE_ICON = Icons.Brush;
+const DEFAULT_MODULE_TONE = "design";
 
 const DELETE_CONFIRMATION_COPY = {
   notification: {
@@ -82,13 +85,13 @@ const getStatusBadge = (notification, archived) => {
   return { label: "Pendiente", tone: "pending", icon: Icons.Clock };
 };
 
-const getTypeBadge = (notification) => {
+const getTypeBadge = (notification, moduleLabel, ModuleIcon, moduleTone) => {
   const rawCategory = notification?.metadata?.category || notification?.metadata?.module || notification?.type || "";
   const category = normalizeSearch(rawCategory);
   const type = notification?.type || "";
 
   if (ORDER_NOTIFICATION_TYPES.has(type) || category.includes("design") || category.includes("diseno") || category.includes("diseño")) {
-    return { label: "Diseño", tone: "design", icon: Icons.Brush };
+    return { label: moduleLabel, tone: moduleTone, icon: ModuleIcon };
   }
 
   if (category.includes("campana") || category.includes("campaña") || type.includes("campaign")) {
@@ -229,11 +232,20 @@ function EmptyState({ archived = false, filtered = false }) {
   );
 }
 
-function NotificationRow({ notification, archived, onMarkAsRead, onArchive, onRequestDelete }) {
+function NotificationRow({
+  notification,
+  archived,
+  moduleLabel,
+  moduleIcon,
+  moduleTone,
+  onMarkAsRead,
+  onArchive,
+  onRequestDelete,
+}) {
   const tone = getTypeTone(notification);
   const typeLabel = TYPE_LABELS[notification.type] || "Notificación";
   const statusBadge = getStatusBadge(notification, archived);
-  const typeBadge = getTypeBadge(notification);
+  const typeBadge = getTypeBadge(notification, moduleLabel, moduleIcon, moduleTone);
 
   return (
     <article className={`dnm-item ${notification.is_read ? "is-read" : "is-unread"} ${archived ? "is-archived" : ""}`}>
@@ -285,6 +297,9 @@ export default function DesignerNotificationsModule({
   onArchive,
   onDelete,
   onDeleteAll,
+  moduleLabel = DEFAULT_MODULE_LABEL,
+  moduleIcon: ModuleIcon = DEFAULT_MODULE_ICON,
+  moduleTone = DEFAULT_MODULE_TONE,
 }) {
   const [tab, setTab] = useState("active");
   const [search, setSearch] = useState("");
@@ -381,7 +396,7 @@ export default function DesignerNotificationsModule({
               <h2 id="designer-notifications-title">Notificaciones</h2>
             </div>
             <div className="dnm-hero-meta">
-              <span><Icons.Brush /> Módulo de diseño</span>
+              <span><ModuleIcon /> Módulo de {moduleLabel.toLowerCase()}</span>
               <span><Icons.Archive /> Historial archivado</span>
             </div>
             <div className="dnm-hero-status-line">
@@ -407,7 +422,7 @@ export default function DesignerNotificationsModule({
           <div>
             <span className="dnm-badge dnm-badge-status active">Activas</span>
             <strong>{activeItems.length.toLocaleString("es-DO")}</strong>
-            <small>En bandeja de diseño</small>
+            <small>En bandeja de {moduleLabel.toLowerCase()}</small>
           </div>
         </div>
         <div className="dnm-summary-card unread">
@@ -545,6 +560,9 @@ export default function DesignerNotificationsModule({
                 key={notification.id}
                 notification={notification}
                 archived={tab === "archived"}
+                moduleLabel={moduleLabel}
+                moduleIcon={ModuleIcon}
+                moduleTone={moduleTone}
                 onMarkAsRead={onMarkAsRead}
                 onArchive={onArchive}
                 onRequestDelete={requestDeleteNotification}

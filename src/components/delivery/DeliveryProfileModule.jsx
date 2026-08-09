@@ -18,6 +18,12 @@ const STATUS_CARDS = [
 
 const getInitials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 const getDisplayName = (profile, authUser) => profile?.name || authUser?.user_metadata?.display_name || authUser?.email || "Entrega";
+const getAvatarUrl = (authUser) => authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture || "";
+const hasStatusSummary = (result) => (
+  result?.analytics?.status_summary
+  && typeof result.analytics.status_summary === "object"
+  && !Array.isArray(result.analytics.status_summary)
+);
 
 function TooltipContent({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -45,6 +51,7 @@ export default function DeliveryProfileModule({ authUser, fallbackProfile }) {
       const { response, result } = await adminApiFetch("/api/delivery-profile", { period });
       if (requestId !== requestIdRef.current) return;
       if (!response.ok) throw new Error(result?.error || "No se pudo cargar Mi Perfil.");
+      if (!hasStatusSummary(result)) throw new Error("El servidor devolvio un perfil de Delivery incompleto. Intenta actualizar nuevamente.");
       setData(result);
     } catch (requestError) {
       if (requestId === requestIdRef.current) setError(requestError?.message || "No se pudo cargar Mi Perfil.");
@@ -66,18 +73,24 @@ export default function DeliveryProfileModule({ authUser, fallbackProfile }) {
   const profile = data?.profile || fallbackProfile;
   const analytics = data?.analytics || EMPTY_ANALYTICS;
   const displayName = getDisplayName(profile, authUser);
+  const avatarUrl = getAvatarUrl(authUser);
   const profileEmail = profile?.email || authUser?.email || "Usuario de entrega";
   const isActive = profile?.employment_status !== false;
   const statusCards = STATUS_CARDS.map((card) => ({ ...card, value: analytics.status_summary?.[card.key] || 0 }));
 
   if (loading) return <section className="dlv-profile"><div className="dlv-profile-loading"><span className="kpi-spinner" />Cargando Mi Perfil...</div></section>;
+  if (!data && error) return <section className="dlv-profile"><div className="dlv-profile-error" role="alert"><Icons.AlertCircle />{error}</div></section>;
 
   return (
     <section className="dlv-profile" aria-labelledby="delivery-profile-title">
       {error && <div className="dlv-profile-error" role="alert"><Icons.AlertCircle />{error}</div>}
       <header className="dlv-profile-hero">
         <div className="dlv-profile-identity">
-          <span className="acm-avatar acm-avatar-large">{getInitials(displayName)}</span>
+          {avatarUrl ? (
+            <img className="acm-avatar acm-avatar-large dlv-profile-photo" src={avatarUrl} alt={`Foto de ${displayName}`} />
+          ) : (
+            <span className="acm-avatar acm-avatar-large">{getInitials(displayName)}</span>
+          )}
           <div className="dlv-profile-copy">
             <span className="dlv-profile-kicker">Perfil de entrega</span>
             <h2 id="delivery-profile-title">{displayName}</h2>

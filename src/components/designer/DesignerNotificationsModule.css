@@ -802,6 +802,7 @@
 
 .dnm-badge-status.active,
 .dnm-badge-type.design,
+.dnm-badge-type.delivery,
 .dnm-event-badge.info {
   border-color: #bfdbfe;
   color: #1e40af;

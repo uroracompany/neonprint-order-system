@@ -80,5 +80,19 @@ describe("DeliveryProfileModule", () => {
 
     expect(pageSource).toContain('{activeTab === "dashboard" && (\n            <div className="pd-summary-grid">');
     expect(pageSource).toContain('activeTab === "profile" ? "Mi Perfil"');
+    expect(pageSource).toContain('.in("status", DELIVERY_STATUS_OPTIONS)\n      .eq("delivery_id", user.id)');
+    expect(pageSource).toContain('.eq("delivery_id", user.id)\n        .select("id")');
+  });
+
+  it("shows an error instead of treating an incomplete successful response as zero metrics", async () => {
+    adminApiFetch.mockResolvedValue({
+      response: { ok: true },
+      result: { profile: { id: "delivery-1", name: "Repartidor Uno" }, analytics: {} },
+    });
+
+    render(<DeliveryProfileModule authUser={{ id: "delivery-1", email: "delivery@example.com" }} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("perfil de Delivery incompleto");
+    expect(screen.queryByRole("heading", { name: "Repartidor Uno" })).not.toBeInTheDocument();
   });
 });

@@ -111,12 +111,16 @@ export function OrderDetailModal({
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState("");
 
-  const executeFileUpdate = async (fileId, nextStatus) => {
+  const executeFileUpdate = async (fileId, nextStatus, deliveryId = null) => {
     setUpdating(true);
     setUpdateError("");
     try {
       const { error } = await supabase
-        .rpc("update_production_file_status", { p_file_id: fileId, p_next_status: nextStatus });
+        .rpc("update_production_file_status", {
+          p_file_id: fileId,
+          p_next_status: nextStatus,
+          p_delivery_id: deliveryId,
+        });
 
       if (error) throw error;
 
@@ -172,14 +176,9 @@ export function OrderDetailModal({
     if (!pendingLastFile || !order) return;
     setAssignDeliveryLoading(true);
     try {
-      const { error: assignError } = await supabase
-        .from("orders")
-        .update({ delivery_id: userId })
-        .eq("id", order.id);
-      if (assignError) throw assignError;
       setAssignDeliveryOpen(false);
       setAssignDeliveryLoading(false);
-      executeFileUpdate(pendingLastFile.fileId, pendingLastFile.nextStatus);
+      executeFileUpdate(pendingLastFile.fileId, pendingLastFile.nextStatus, userId);
     } catch (err) {
       console.error("Error assigning delivery:", err);
       setAssignDeliveryOpen(false);

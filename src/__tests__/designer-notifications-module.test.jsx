@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
+import { Icons } from "../utils/icons";
 
 const makeNotification = (overrides = {}) => ({
   id: "notification-1",
@@ -50,6 +51,31 @@ describe("DesignerNotificationsModule", () => {
 
     fireEvent.click(screen.getByTitle("Marcar como leída"));
     expect(onMarkAsRead).toHaveBeenCalledWith("notification-1");
+
+    fireEvent.click(screen.getByTitle("Archivar"));
+    expect(onArchive).toHaveBeenCalledWith("notification-1");
+  });
+
+  it("adapts its contextual copy and order badge for Delivery without changing notification actions", () => {
+    const onArchive = vi.fn();
+
+    render(
+      <DesignerNotificationsModule
+        notifications={[makeNotification({ type: "order_assigned" })]}
+        archivedNotifications={[]}
+        unreadCount={1}
+        onMarkAsRead={vi.fn()}
+        onMarkAllAsRead={vi.fn()}
+        onArchive={onArchive}
+        moduleLabel="Entrega"
+        moduleIcon={Icons.Truck}
+        moduleTone="delivery"
+      />
+    );
+
+    expect(screen.getByText("Módulo de entrega")).toBeInTheDocument();
+    expect(screen.getByText("En bandeja de entrega")).toBeInTheDocument();
+    expect(screen.getByText("Entrega")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle("Archivar"));
     expect(onArchive).toHaveBeenCalledWith("notification-1");

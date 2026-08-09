@@ -31,6 +31,7 @@ import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import DeliveryProfileModule from "../components/delivery/DeliveryProfileModule";
+import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
 import {
   archiveOrder,
   canArchiveOrder,
@@ -40,6 +41,12 @@ import {
 
 const PAYMENT_DELIVERY_BLOCKED_MESSAGE = "No se puede entregar la orden hasta que esté totalmente pagada o aprobada a crédito.";
 const PER_PAGE = 15;
+const DELIVERY_PAGE_TITLES = {
+  dashboard: "Panel de Entrega",
+  orders: "Órdenes",
+  notifications: "Notificaciones",
+  profile: "Mi Perfil",
+};
 
 const formatOrderDate = (value, fallback = "Por definir") => {
   if (!value) return fallback;
@@ -76,7 +83,7 @@ function SummaryCard({ icon, label, value, tone = "blue" }) {
   );
 }
 
-function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction }) {
+function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, deliveryUserId }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [sellerName, setSellerName] = useState("");
@@ -178,12 +185,16 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction }) {
 
     setUpdating(true);
     try {
-      const { error } = await supabase
+      const { data: updatedOrder, error } = await supabase
         .from("orders")
         .update({ status: newStatus })
-        .eq("id", order.id);
+        .eq("id", order.id)
+        .eq("delivery_id", deliveryUserId)
+        .select("id")
+        .maybeSingle();
 
       if (error) throw error;
+      if (!updatedOrder) throw new Error("La orden ya no esta asignada a tu perfil de Delivery.");
 
       setUpdateSuccess(true);
       setTimeout(() => {
@@ -404,6 +415,7 @@ export default function PageDelivery() {
       .from("orders")
       .select("*")
       .in("status", DELIVERY_STATUS_OPTIONS)
+      .eq("delivery_id", user.id)
       .order("created_at", { ascending: false });
 
     if (!error && data) {
@@ -505,6 +517,18 @@ export default function PageDelivery() {
         && !isPaymentDeliveryEligible(order.payment_status)
       )).length,
     },
+    {
+      icon: <Icons.Clock />,
+      label: "Pago parcial",
+      tone: "blue-light",
+      value: activeOrders.filter((order) => isPaymentPartial(order.payment_status)).length,
+    },
+    {
+      icon: <Icons.Money />,
+      label: "Pago a crédito",
+      tone: "purple",
+      value: activeOrders.filter((order) => isPaymentCredit(order.payment_status)).length,
+    },
   ];
 
   const notifyPartialPaymentBlocked = (order, message = PAYMENT_DELIVERY_BLOCKED_MESSAGE) => {
@@ -528,17 +552,22 @@ export default function PageDelivery() {
 
     setUpdatingOrderId(orderId);
     try {
-      const { error } = await supabase
+      const { data: updatedOrder, error } = await supabase
         .from("orders")
         .update({ status: ORDER_STATUS.IN_DELIVERED })
-        .eq("id", orderId);
+        .eq("id", orderId)
+        .eq("delivery_id", user.id)
+        .select("id")
+        .maybeSingle();
 
       if (error) throw error;
+      if (!updatedOrder) throw new Error("La orden ya no esta asignada a tu perfil de Delivery.");
 
       const { data, error: fetchError } = await supabase
         .from("orders")
         .select("*")
         .in("status", DELIVERY_STATUS_OPTIONS)
+        .eq("delivery_id", user.id)
         .order("created_at", { ascending: false });
 
       if (!fetchError && data) {
@@ -748,8 +777,9 @@ export default function PageDelivery() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         menuItems={[
-          { id: "dashboard", label: "Delivery", icon: <Icons.Truck /> },
+          { id: "dashboard", label: "Panel de Entrega", icon: <Icons.Truck /> },
           { id: "orders", label: "Órdenes", icon: <Icons.Orders /> },
+          { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount || undefined },
           { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
         ]}
         onLogout={handleLogout}
@@ -767,7 +797,7 @@ export default function PageDelivery() {
               {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
             <div className="pd-header-title">
-              <div className="pd-page-title">{activeTab === "dashboard" ? "Delivery" : activeTab === "profile" ? "Mi Perfil" : "Órdenes"}</div>
+              <div className="pd-page-title">{DELIVERY_PAGE_TITLES[activeTab] || DELIVERY_PAGE_TITLES.orders}</div>
               <div className="pd-page-date">{new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
             </div>
           </div>
@@ -781,6 +811,7 @@ export default function PageDelivery() {
               onArchive={notif.archive}
               onDelete={notif.deleteNotification}
               onDismissToast={notif.dismissToast}
+              onViewAll={() => setActiveTab("notifications")}
             />
             <button className="pd-icon-btn" type="button" onClick={() => refreshOrders()} aria-label="Actualizar">
               <Icons.Refresh />
@@ -795,7 +826,19 @@ export default function PageDelivery() {
             onClick={() => setActiveTab("dashboard")}
           >
             <Icons.Truck />
-            <span>Delivery</span>
+            <span>Panel de Entrega</span>
+          </button>
+          <button
+            className={`pd-mobile-nav-btn ${activeTab === "notifications" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActiveTab("notifications")}
+            aria-label={notif.unreadCount > 0 ? `Notificaciones, ${notif.unreadCount} sin leer` : "Notificaciones"}
+          >
+            <span className="pd-mobile-nav-icon-wrap">
+              <Icons.Bell />
+              {notif.unreadCount > 0 && <span className="pd-mobile-notification-badge" aria-hidden="true">{notif.unreadCount > 99 ? "99+" : notif.unreadCount}</span>}
+            </span>
+            <span>Notificaciones</span>
           </button>
           <button
             className={`pd-mobile-nav-btn ${activeTab === "profile" ? "active" : ""}`}
@@ -823,6 +866,37 @@ export default function PageDelivery() {
 
         <div className="pd-content">
           {activeTab === "dashboard" && (
+            <div className="dlv-greeting">
+              <div className="dlv-greeting-copy">
+                <h2>Bienvenido, <span>{user?.user_metadata?.display_name || "Delivery"}</span></h2>
+                <p>Aqui tienes el resumen de tu actividad de hoy.</p>
+                <div className="dlv-greeting-badges" aria-label="Resumen de entregas">
+                  <div className="dlv-greeting-count" aria-label={`${metrics[0].value} órdenes listas`}>
+                    <Icons.Package />
+                    <strong>{metrics[0].value}</strong> Listas
+                  </div>
+                  <div className="dlv-greeting-count dlv-greeting-count--delivered" aria-label={`${metrics[1].value} órdenes entregadas`}>
+                    <Icons.CheckCircle />
+                    <strong>{metrics[1].value}</strong> Entregadas
+                  </div>
+                  <div className="dlv-greeting-count dlv-greeting-count--blocked" aria-label={`${metrics[2].value} órdenes bloqueadas`}>
+                    <Icons.AlertCircle />
+                    <strong>{metrics[2].value}</strong> Bloqueadas
+                  </div>
+                  <div className="dlv-greeting-count dlv-greeting-count--partial" aria-label={`${activeOrders.filter(o => isPaymentPartial(o.payment_status)).length} órdenes con pago parcial`}>
+                    <Icons.Clock />
+                    <strong>{activeOrders.filter(o => isPaymentPartial(o.payment_status)).length}</strong> Pago parcial
+                  </div>
+                  <div className="dlv-greeting-count dlv-greeting-count--credit" aria-label={`${activeOrders.filter(o => isPaymentCredit(o.payment_status)).length} órdenes con pago a crédito`}>
+                    <Icons.Money />
+                    <strong>{activeOrders.filter(o => isPaymentCredit(o.payment_status)).length}</strong> Pago a crédito
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "dashboard" && (
             <div className="pd-summary-grid">
               {metrics.map((metric) => (
                 <SummaryCard key={metric.label} {...metric} />
@@ -832,6 +906,24 @@ export default function PageDelivery() {
 
           {activeTab === "profile" && (
             <DeliveryProfileModule authUser={user} fallbackProfile={authUser} />
+          )}
+
+          {activeTab === "notifications" && (
+            <DesignerNotificationsModule
+              notifications={notif.notifications}
+              archivedNotifications={notif.archivedNotifications}
+              unreadCount={notif.unreadCount}
+              loading={notif.loading}
+              archivedLoading={notif.archivedLoading}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDeleteAll={notif.deleteNotificationsByScope}
+              moduleLabel="Entrega"
+              moduleIcon={Icons.Truck}
+              moduleTone="delivery"
+            />
           )}
 
           {activeTab === "dashboard" && (
@@ -923,6 +1015,7 @@ export default function PageDelivery() {
         order={selectedOrder}
         onUpdateStatus={refreshOrders}
         onBlockedAction={notifyPartialPaymentBlocked}
+        deliveryUserId={user?.id}
       />
     </div>
   );
