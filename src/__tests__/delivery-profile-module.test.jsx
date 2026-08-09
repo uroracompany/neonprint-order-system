@@ -79,7 +79,7 @@ describe("DeliveryProfileModule", () => {
     const pageSource = readFileSync(resolve("src/pages/page-delivery.jsx"), "utf8");
 
     expect(pageSource).toContain('{activeTab === "dashboard" && (\n            <div className="pd-summary-grid">');
-    expect(pageSource).toContain('activeTab === "profile" ? "Mi Perfil"');
+    expect(pageSource).toContain('profile: "Mi Perfil"');
     expect(pageSource).toContain('.in("status", DELIVERY_STATUS_OPTIONS)\n      .eq("delivery_id", user.id)');
     expect(pageSource).toContain('.eq("delivery_id", user.id)\n        .select("id")');
   });
