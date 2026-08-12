@@ -39,6 +39,18 @@ export async function handleAdminSetUserStatus(payload, env = process.env) {
     },
   });
 
+  const { data: currentProfile, error: currentProfileError } = await supabaseAdmin
+    .from("profiles")
+    .select("id,deleted_at")
+    .eq("id", userId)
+    .single();
+  if (currentProfileError || !currentProfile) {
+    return jsonResponse(404, { error: currentProfileError?.message || "No se encontro el perfil del usuario." });
+  }
+  if (nextStatus && currentProfile.deleted_at) {
+    return jsonResponse(409, { error: "Este empleado fue dado de baja. Usa Restaurar empleado para devolverle acceso." });
+  }
+
   let { data, error } = await supabaseAdmin
     .from("profiles")
     .update({ employment_status: nextStatus })

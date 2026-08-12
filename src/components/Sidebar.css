@@ -91,6 +91,49 @@
   gap: 4px;
 }
 
+/* Opt-in scrolling for longer navigation sets, such as Administración.
+   The fixed header/user/footer keep their current layout while the nav owns
+   the available vertical space. */
+.sb-sidebar-scroll-navigation {
+  overflow: hidden;
+}
+
+.sb-sidebar-scroll-navigation .sb-sidebar-logo,
+.sb-sidebar-scroll-navigation .sb-sidebar-user,
+.sb-sidebar-scroll-navigation .sb-sidebar-footer {
+  flex: 0 0 auto;
+}
+
+.sb-sidebar-scroll-navigation .sb-sidebar-nav {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: #2f3545 rgba(40, 82, 128, 0.22);
+  scrollbar-width: thin;
+}
+
+.sb-sidebar-scroll-navigation .sb-sidebar-nav::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sb-sidebar-scroll-navigation .sb-sidebar-nav::-webkit-scrollbar-track {
+  background: rgba(40, 82, 128, 0.22);
+  border-radius: 999px;
+}
+
+.sb-sidebar-scroll-navigation .sb-sidebar-nav::-webkit-scrollbar-thumb {
+  background: #2f3545;
+  border: 2px solid rgba(9, 17, 39, 0.7);
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.sb-sidebar-scroll-navigation .sb-sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background-color: #313a52;
+}
+
 .sb-nav-btn {
   display: flex;
   align-items: center;

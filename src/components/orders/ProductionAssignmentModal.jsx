@@ -28,7 +28,7 @@ export default function ProductionAssignmentModal({ open, onClose, onConfirm, or
       const source = Array.isArray(areaData) && areaData.length ? areaData.map((item) => ({ code: item.code, label: item.label, role: item.producer_role })) : PRODUCTION_AREAS;
       const nextAreas = source.filter((item) => participating.includes(item.code));
       const roles = [...new Set(nextAreas.map((item) => item.role).filter(Boolean))];
-      const userResult = roles.length ? await supabase.from("profiles").select("id,name,email,role,employment_status").in("role", roles).eq("employment_status", true) : { data: [] };
+      const userResult = roles.length ? await supabase.from("profiles").select("id,name,email,role,employment_status,deleted_at").in("role", roles).eq("employment_status", true).is("deleted_at", null) : { data: [] };
       if (!active) return;
       setAreas(nextAreas); setUsers(userResult.data || []); setLoadingOptions(false);
       if (unclassified) setError("Clasifica todos los archivos antes de continuar.");

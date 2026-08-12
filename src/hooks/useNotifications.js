@@ -33,13 +33,8 @@ const sameNotificationFingerprint = (notification, target) =>
   notification?.message === target?.message &&
   getNotificationEventKind(notification) === getNotificationEventKind(target);
 
-const removeNotificationFamily = (items, id) => {
-  const target = items.find((notification) => notification.id === id);
-  if (!target) {
-    return items.filter((notification) => notification.id !== id);
-  }
-  return items.filter((notification) => !sameNotificationFingerprint(notification, target));
-};
+const removeNotificationById = (items, id) =>
+  items.filter((notification) => notification.id !== id);
 
 export default function useNotifications(userId) {
   // ============= ESTADOS =============
@@ -232,8 +227,8 @@ export default function useNotifications(userId) {
           // Cuando se actualiza una notificación (leída, archivada, etc.)
           const updatedNotif = payload.new;
           if (isArchivedNotification(updatedNotif)) {
-            setNotifications((prev) => removeNotificationFamily(prev, updatedNotif.id));
-            setToasts((prev) => removeNotificationFamily(prev, updatedNotif.id));
+            setNotifications((prev) => removeNotificationById(prev, updatedNotif.id));
+            setToasts((prev) => removeNotificationById(prev, updatedNotif.id));
             setArchivedNotifications((prev) => {
               const next = prev.filter((n) => n.id !== updatedNotif.id);
               return [updatedNotif, ...next].slice(0, MAX_NOTIFICATION_ROWS);
@@ -242,8 +237,8 @@ export default function useNotifications(userId) {
           }
 
           if (!isActiveNotification(updatedNotif)) {
-            setNotifications((prev) => removeNotificationFamily(prev, updatedNotif.id));
-            setToasts((prev) => removeNotificationFamily(prev, updatedNotif.id));
+            setNotifications((prev) => removeNotificationById(prev, updatedNotif.id));
+            setToasts((prev) => removeNotificationById(prev, updatedNotif.id));
             setArchivedNotifications((prev) => prev.filter((n) => n.id !== updatedNotif.id));
             return;
           }
@@ -324,67 +319,115 @@ export default function useNotifications(userId) {
     [userId]
   );
 
+  const refreshAfterFailedMutation = useCallback(async () => {
+    await Promise.all([fetchNotifications(), fetchArchivedNotifications()]);
+  }, [fetchArchivedNotifications, fetchNotifications]);
+
   const markAsRead = useCallback(async (id) => {
-    if (!userId) return;
-    const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("id", id)
-      .eq("user_id", userId);
-    if (!error) {
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
-      );
+    if (!userId) {
+      return { ok: false, message: "Tu sesión no está disponible. Inicia sesión nuevamente." };
     }
-  }, [userId]);
+
+    const { data, error } = await supabase.rpc("mark_notification_read", {
+      p_notification_id: id,
+    });
+
+    if (error || data !== 1) {
+      await refreshAfterFailedMutation();
+      return { ok: false, message: "No se pudo marcar la notificación como leída. Inténtalo nuevamente." };
+    }
+
+    setNotifications((prev) => prev.map((notification) => (
+      notification.id === id
+        ? { ...notification, is_read: true, read_at: new Date().toISOString() }
+        : notification
+    )));
+    return { ok: true };
+  }, [refreshAfterFailedMutation, userId]);
 
   const markAllAsRead = useCallback(async () => {
-    if (!userId) return;
+    if (!userId) {
+      return { ok: false, message: "Tu sesión no está disponible. Inicia sesión nuevamente." };
+    }
     const unreadIds = notifications
       .filter((n) => !n.is_read && isActiveNotification(n))
       .map((n) => n.id);
-    if (unreadIds.length === 0) return;
+    if (unreadIds.length === 0) return { ok: true };
 
-    const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .in("id", unreadIds)
-      .eq("user_id", userId);
-    if (!error) {
-      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    const results = await Promise.all(unreadIds.map((id) => supabase.rpc("mark_notification_read", {
+      p_notification_id: id,
+    })));
+    const persistedIds = new Set(results.reduce((ids, { data, error }, index) => {
+      if (!error && data === 1) ids.push(unreadIds[index]);
+      return ids;
+    }, []));
+
+    if (persistedIds.size !== unreadIds.length || unreadIds.some((id) => !persistedIds.has(id))) {
+      await refreshAfterFailedMutation();
+      return { ok: false, message: "No se pudieron marcar todas las notificaciones como leídas. La bandeja se actualizó." };
     }
-  }, [notifications, userId]);
+
+    setNotifications((prev) => prev.map((notification) => {
+      return persistedIds.has(notification.id)
+        ? { ...notification, is_read: true, read_at: new Date().toISOString() }
+        : notification;
+    }));
+    return { ok: true };
+  }, [notifications, refreshAfterFailedMutation, userId]);
 
   const archive = useCallback(async (id) => {
     const target = notificationsRef.current.find((notification) => notification.id === id);
-    const { error } = await supabase.rpc("archive_notification", {
+    const { data, error } = await supabase.rpc("archive_notification", {
       p_notification_id: id,
     });
-    if (!error) {
-      setNotifications((prev) => removeNotificationFamily(prev, id));
-      setToasts((prev) => removeNotificationFamily(prev, id));
-      if (target) {
-        setArchivedNotifications((prev) => {
-          const next = removeNotificationFamily(prev, id);
-          return [{ ...target, is_archived: true }, ...next].slice(0, MAX_NOTIFICATION_ROWS);
-        });
-      }
+
+    if (error || data !== 1) {
+      await refreshAfterFailedMutation();
+      return { ok: false, message: "No se pudo archivar la notificación. La bandeja se actualizó." };
     }
-  }, []);
+
+    setNotifications((prev) => removeNotificationById(prev, id));
+    setToasts((prev) => removeNotificationById(prev, id));
+    if (target) {
+      const archivedNotification = {
+        ...target,
+        is_archived: true,
+        archived_at: new Date().toISOString(),
+      };
+      setArchivedNotifications((prev) => {
+        const next = removeNotificationById(prev, id);
+        return [archivedNotification, ...next].slice(0, MAX_NOTIFICATION_ROWS);
+      });
+    }
+    return { ok: true };
+  }, [refreshAfterFailedMutation]);
 
   const deleteNotification = useCallback(async (id) => {
-    const { error } = await supabase.rpc("dismiss_notification", {
+    const { data, error } = await supabase.rpc("dismiss_notification", {
       p_notification_id: id,
     });
-    if (!error) {
-      setNotifications((prev) => removeNotificationFamily(prev, id));
-      setArchivedNotifications((prev) => removeNotificationFamily(prev, id));
-      setToasts((prev) => removeNotificationFamily(prev, id));
+
+    if (error || data !== 1) {
+      await refreshAfterFailedMutation();
+      return { ok: false, message: "No se pudo eliminar la notificación. La bandeja se actualizó." };
     }
-  }, []);
+
+    setNotifications((prev) => removeNotificationById(prev, id));
+    setArchivedNotifications((prev) => removeNotificationById(prev, id));
+    setToasts((prev) => removeNotificationById(prev, id));
+    return { ok: true };
+  }, [refreshAfterFailedMutation]);
 
   const deleteNotificationsByScope = useCallback(async (scope = "all") => {
-    if (!userId) return;
+    if (!userId) {
+      return { ok: false, message: "Tu sesión no está disponible. Inicia sesión nuevamente." };
+    }
+    const localIds = new Set(
+      (scope === "archived" ? archivedNotificationsRef.current : scope === "active" ? notificationsRef.current : [
+        ...notificationsRef.current,
+        ...archivedNotificationsRef.current,
+      ]).map((notification) => notification.id)
+    );
 
     let query = supabase
       .from("notifications")
@@ -398,8 +441,13 @@ export default function useNotifications(userId) {
       query = query.eq("is_archived", true);
     }
 
-    const { error } = await query;
-    if (error) return;
+    const { data, error } = await query.select("id");
+    const persistedIds = new Set((data || []).map((notification) => notification.id));
+    const missedLocalRows = [...localIds].some((id) => !persistedIds.has(id));
+    if (error || !Array.isArray(data) || missedLocalRows) {
+      await refreshAfterFailedMutation();
+      return { ok: false, message: "No se pudieron eliminar las notificaciones. La bandeja se actualizó." };
+    }
 
     if (scope === "active") {
       setNotifications([]);
@@ -415,7 +463,8 @@ export default function useNotifications(userId) {
       archivedNotificationsRef.current = [];
       setToasts([]);
     }
-  }, [userId]);
+    return { ok: true };
+  }, [refreshAfterFailedMutation, userId]);
 
   const showActionNotification = useCallback(
     async ({ type = "info", title, label, message, orderId = null, orderTitle = null, metadata = {} }) => {

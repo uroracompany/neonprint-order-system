@@ -71,6 +71,11 @@ export function normalizeUserProfile(profile, fallback = {}) {
     email: src.email || "",
     role: src.role || "",
     employment_status: src.employment_status ?? true,
+    ...(src.deleted_at ? {
+      deleted_at: src.deleted_at,
+      deleted_by: src.deleted_by || null,
+      deletion_reason: src.deletion_reason || null,
+    } : {}),
     created_at: src.created_at || null,
   };
 }

@@ -387,6 +387,7 @@ function ClientDetail({
   onCreateOrder,
   onViewOrders,
   onManageCredit,
+  onRestoreClient,
 }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -523,9 +524,7 @@ function ClientDetail({
   const stats = Object.fromEntries(Object.entries(detail.stats || {}).map(([key, value]) => (
     [key, typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value]
   )));
-  const confirmDelete = () => {
-    onRequestDelete(client);
-  };
+  const confirmDelete = () => onRequestDelete(client);
 
   return (
     <section className="pa-section acm-detail-view" aria-labelledby="client-detail-title">
@@ -564,9 +563,15 @@ function ClientDetail({
               <button onClick={() => onEditClient(client)}><Icons.Edit /> Editar cliente</button>
               <button onClick={() => onViewOrders(client.id)}><Icons.Orders /> Ver todas las órdenes</button>
               <button onClick={() => onManageCredit(client.id)}><Icons.Receipt /> Gestionar crédito</button>
-              <button className="danger" onClick={confirmDelete}>
-                <Icons.Trash /> Eliminar cliente
-              </button>
+              {client.deleted_at ? (
+                <button onClick={() => onRestoreClient?.(client)}>
+                  <Icons.UserCheck /> Restaurar cliente
+                </button>
+              ) : (
+                <button className="danger" onClick={confirmDelete}>
+                  <Icons.Trash /> Dar de baja
+                </button>
+              )}
             </div>
           </details>
         </div>

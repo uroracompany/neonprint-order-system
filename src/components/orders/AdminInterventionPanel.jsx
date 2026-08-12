@@ -31,6 +31,7 @@ const ACTION_COPY = {
 
 const getActionCopy = (action) => ACTION_COPY[action?.key] || [action?.label || "Aplicar ajuste", ""];
 const getErrorMessage = (error) => error?.message || "No se pudo completar la intervención.";
+const isActiveAssignableProfile = (profile) => profile?.employment_status !== false && !profile?.deleted_at;
 const isActionRelevantForOrder = (action, order) => {
   const isExternalOrderInSales = order?.status === "Pending"
     && order?.order_design_type === "EXTERNAL_DESING";
@@ -140,7 +141,7 @@ export default function AdminInterventionPanel({ order, onChanged }) {
     return areas.filter((area) => codes.has(area.code));
   }, [areas, files]);
   const targetProfiles = action?.target_role
-    ? profiles.filter((profile) => profile.role === action.target_role)
+    ? profiles.filter((profile) => profile.role === action.target_role && isActiveAssignableProfile(profile))
     : [];
   const isOptionalQuoteAssignment = action?.key === "route_quote";
 
@@ -313,7 +314,7 @@ export default function AdminInterventionPanel({ order, onChanged }) {
                       onChange={(event) => setAreaAssignments((current) => ({ ...current, [area.code]: event.target.value }))}
                     >
                       <option value="">Selecciona un responsable</option>
-                      {profiles.filter((profile) => profile.role === area.producer_role).map((profile) => (
+                      {profiles.filter((profile) => profile.role === area.producer_role && isActiveAssignableProfile(profile)).map((profile) => (
                         <option value={profile.id} key={profile.id}>{profile.name || profile.email || area.label}</option>
                       ))}
                     </select>
@@ -351,7 +352,7 @@ export default function AdminInterventionPanel({ order, onChanged }) {
               Delivery para completar el último archivo
               <select id="admin-delivery-user" value={deliveryId} onChange={(event) => setDeliveryId(event.target.value)}>
                 <option value="">Selecciona Delivery</option>
-                {profiles.filter((profile) => profile.role === "delivery").map((profile) => (
+                {profiles.filter((profile) => profile.role === "delivery" && isActiveAssignableProfile(profile)).map((profile) => (
                   <option value={profile.id} key={profile.id}>{profile.name || profile.email || "Delivery"}</option>
                 ))}
               </select>

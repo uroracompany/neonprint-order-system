@@ -85,6 +85,7 @@ export default function NotificationCenter({
   viewAllLabel = "Ver todas",
 }) {
   const [open, setOpen] = useState(false);
+  const [actionError, setActionError] = useState("");
   const panelRef = useRef(null);
 
   useEffect(() => {
@@ -101,6 +102,18 @@ export default function NotificationCenter({
   const handleViewAll = () => {
     setOpen(false);
     onViewAll?.();
+  };
+  const runAction = async (action, id, fallbackMessage) => {
+    try {
+      const result = await action?.(id);
+      if (result?.ok === false) {
+        setActionError(result.message || fallbackMessage);
+        return;
+      }
+      if (actionError) setActionError("");
+    } catch {
+      setActionError(fallbackMessage);
+    }
   };
   const toastRoot = typeof document !== "undefined" ? document.body : null;
   const toastStack = toasts.length > 0 && (
@@ -134,7 +147,7 @@ export default function NotificationCenter({
                 </span>
               </div>
               {activeNotifications.length > 0 && (
-                <button className="nc-link-btn" onClick={onMarkAllAsRead}>
+                <button className="nc-link-btn" onClick={() => runAction(onMarkAllAsRead, undefined, "No se pudieron marcar las notificaciones como leídas.")}>
                   <Icons.CheckCircle />
                   Marcar todas como leídas
                 </button>
@@ -142,6 +155,7 @@ export default function NotificationCenter({
             </div>
 
             <div className="nc-panel-body">
+              {actionError && <p className="nc-action-error" role="alert">{actionError}</p>}
               {activeNotifications.length === 0 ? (
                 <div className="nc-empty">
                   <Icons.Bell />
@@ -161,14 +175,14 @@ export default function NotificationCenter({
                     </div>
                     <div className="nc-item-actions">
                       {!n.is_read && (
-                        <button className="nc-action-btn mark-read" onClick={() => onMarkAsRead(n.id)} title="Marcar como leída">
+                        <button className="nc-action-btn mark-read" onClick={() => runAction(onMarkAsRead, n.id, "No se pudo marcar la notificación como leída.")} title="Marcar como leída">
                           <Icons.Check />
                         </button>
                       )}
-                      <button className="nc-action-btn archive" onClick={() => onArchive(n.id)} title="Archivar">
+                      <button className="nc-action-btn archive" onClick={() => runAction(onArchive, n.id, "No se pudo archivar la notificación.")} title="Archivar">
                         <Icons.Archive />
                       </button>
-                      <button className="nc-action-btn delete" onClick={() => onDelete(n.id)} title="Eliminar">
+                      <button className="nc-action-btn delete" onClick={() => runAction(onDelete, n.id, "No se pudo eliminar la notificación.")} title="Eliminar">
                         <Icons.Trash />
                       </button>
                     </div>

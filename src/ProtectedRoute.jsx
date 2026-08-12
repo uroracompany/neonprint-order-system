@@ -86,7 +86,7 @@ export default function ProtectedRoute({ children, allowed = [] }) {
     return <Navigate to="/" state={{ loginNotice: AUTH_NOTICE.PROFILE_UNAVAILABLE }} replace />;
   }
 
-  if (profile?.employment_status === false) {
+  if (profile?.employment_status === false || profile?.deleted_at) {
     return <Navigate to="/" state={{ loginNotice: AUTH_NOTICE.ACCOUNT_INACTIVE }} replace />;
   }
 

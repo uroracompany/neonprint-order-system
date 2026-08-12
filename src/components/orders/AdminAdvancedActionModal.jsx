@@ -73,9 +73,9 @@ export default function AdminAdvancedActionModal({
   const [requirementChanges, setRequirementChanges] = useState({ description: "", material: "", termination_type: "", delivery_date: "" });
 
   const profilesById = useMemo(() => new Map(profiles.map((p) => [p.id, p])), [profiles]);
-  const quoteUsers = useMemo(() => profiles.filter((p) => p.role === "quote" && p.employment_status !== false), [profiles]);
-  const sellerUsers = useMemo(() => profiles.filter((p) => p.role === "seller" && p.employment_status !== false), [profiles]);
-  const designUsers = useMemo(() => profiles.filter((p) => p.role === "designer" && p.employment_status !== false), [profiles]);
+  const quoteUsers = useMemo(() => profiles.filter((p) => p.role === "quote" && p.employment_status !== false && !p.deleted_at), [profiles]);
+  const sellerUsers = useMemo(() => profiles.filter((p) => p.role === "seller" && p.employment_status !== false && !p.deleted_at), [profiles]);
+  const designUsers = useMemo(() => profiles.filter((p) => p.role === "designer" && p.employment_status !== false && !p.deleted_at), [profiles]);
   const currentUserProfile = useMemo(() => currentUserId ? profilesById.get(currentUserId) : null, [currentUserId, profilesById]);
 
   const extendedSellerUsers = useMemo(() => {
@@ -122,7 +122,7 @@ export default function AdminAdvancedActionModal({
   const selectorConfig = USER_SELECTOR_CONFIG[actionKey];
   const showReason = !NO_REASON_ACTIONS.has(actionKey);
   const needsReason = true;
-  const activeProfiles = profiles.filter((profile) => profile.employment_status !== false);
+  const activeProfiles = profiles.filter((profile) => profile.employment_status !== false && !profile.deleted_at);
 
   const handleSubmit = async () => {
     setError("");

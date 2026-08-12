@@ -214,6 +214,17 @@
   gap: 14px;
 }
 
+.dnm-action-error {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  background: #fff1f2;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .dnm-summary-card {
   min-height: 118px;
   display: flex;
@@ -809,6 +820,12 @@
   background: #eff6ff;
 }
 
+.dnm-badge-type.credit {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #a16207;
+}
+
 .dnm-badge-type.system {
   border-color: #dbe3ef;
   color: #4a5e80;
@@ -1125,6 +1142,25 @@
 
 .dnm-confirm-delete:hover {
   background: #991b1b;
+}
+
+.dnm-credit-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dnm-credit-link:hover {
+  color: #1e40af;
+  text-decoration: underline;
 }
 
 @media (max-width: 920px) {

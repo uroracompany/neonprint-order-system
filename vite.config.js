@@ -6,7 +6,7 @@ import { handleAdminUpdateUser } from './server/admin-update-user-handler.js'
 import { handleAdminListOrders } from './server/admin-list-orders-handler.js'
 import { handleAdminListUsers } from './server/admin-list-users-handler.js'
 import { handleAdminSetUserStatus } from './server/admin-set-user-status-handler.js'
-import { handleAdminDeleteUser } from './server/admin-delete-user-handler.js'
+import { handleAdminRetireClient, handleAdminRetireUser, handleAdminRestoreClient, handleAdminRestoreUser, handleAdminUserRetirementPreflight } from './server/admin-retirement-handler.js'
 import { handleGetUserEmail } from './server/get-user-email-handler.js'
 import { handleChangeUserPassword } from './server/change-user-password-handler.js'
 import { handleKpiData } from './server/kpi-data-handler.js'
@@ -75,7 +75,11 @@ const ADMIN_ACTIONS = {
   "create-user": handleAdminCreateUser,
   "update-user": handleAdminUpdateUser,
   "set-user-status": handleAdminSetUserStatus,
-  "delete-user": handleAdminDeleteUser,
+  "retirement-preflight": handleAdminUserRetirementPreflight,
+  "retire-user": handleAdminRetireUser,
+  "restore-user": handleAdminRestoreUser,
+  "retire-client": handleAdminRetireClient,
+  "restore-client": handleAdminRestoreClient,
   "delete-order": handleAdminDeleteOrderWithFiles,
 };
 
@@ -169,7 +173,6 @@ return {
       createApiHandler("/api/admin-create-user", handleAdminCreateUser),
       createApiHandler("/api/admin-update-user", handleAdminUpdateUser),
       createApiHandler("/api/admin-set-user-status", handleAdminSetUserStatus),
-      createApiHandler("/api/admin-delete-user", handleAdminDeleteUser),
       createApiHandler("/api/get-user-email", handleGetUserEmail),
       createApiHandler("/api/change-user-password", handleChangeUserPassword),
       createApiHandler("/api/kpi-data", handleKpiData),

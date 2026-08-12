@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import NotificationCenter from "../components/NotificationCenter";
 
@@ -168,6 +168,32 @@ describe("NotificationCenter", () => {
     expect(screen.getByTitle("Marcar como leída")).toHaveClass("mark-read");
     expect(screen.getByTitle("Archivar")).toHaveClass("archive");
     expect(screen.getByTitle("Eliminar")).toHaveClass("delete");
+  });
+
+  it("keeps the notification visible and explains when an action was not persisted", async () => {
+    const onArchive = vi.fn().mockResolvedValue({
+      ok: false,
+      message: "No se pudo archivar la notificación. La bandeja se actualizó.",
+    });
+    render(
+      <NotificationCenter
+        {...baseProps}
+        notifications={notifications}
+        unreadCount={1}
+        toasts={[]}
+        onDismissToast={vi.fn()}
+        onArchive={onArchive}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Notificaciones, 1 sin leer" }));
+    fireEvent.click(screen.getByTitle("Archivar"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("No se pudo archivar la notificación");
+    });
+    expect(screen.getByText("Notificacion persistente.")).toBeInTheDocument();
+    expect(onArchive).toHaveBeenCalledWith("notification-1");
   });
 
   it("keeps the full notifications shortcut hidden unless a destination is provided", () => {

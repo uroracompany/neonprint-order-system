@@ -1,0 +1,20 @@
+.apm-shell { display: grid; gap: 20px; max-width: 1080px; }
+.apm-hero { display: flex; align-items: center; gap: 18px; padding: 26px; border: 1px solid #dbe5f6; border-radius: 22px; background: linear-gradient(135deg, #f8fbff, #eef5ff); box-shadow: 0 14px 30px rgba(15, 30, 64, .06); }
+.apm-avatar { display: grid; flex: 0 0 auto; width: 64px; height: 64px; place-items: center; overflow: hidden; border-radius: 50%; background: #0f1e40; color: #fff; font-size: 22px; font-weight: 800; }
+.apm-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.apm-kicker { color: #2563eb; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.apm-hero h2 { margin: 4px 0; color: #0f1e40; font-size: 26px; }
+.apm-hero p { margin: 0; color: #64748b; }
+.apm-status { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; padding: 8px 11px; border-radius: 999px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.apm-status span { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.apm-status.active { background: #dcfce7; color: #15803d; }
+.apm-status.inactive { background: #fee2e2; color: #b91c1c; }
+.apm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.apm-card { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 19px; border: 1px solid #e2e8f0; border-radius: 16px; background: #fff; }
+.apm-card-icon { display: grid; flex: 0 0 auto; width: 38px; height: 38px; place-items: center; border-radius: 11px; background: #eaf2ff; color: #2563eb; }
+.apm-card small, .apm-card strong { display: block; }
+.apm-card small { margin-bottom: 3px; color: #64748b; font-size: 12px; }
+.apm-card strong { overflow: hidden; color: #0f1e40; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.apm-note { display: inline-flex; align-items: flex-start; gap: 8px; margin: 0; color: #64748b; font-size: 13px; }
+.apm-note svg { flex: 0 0 auto; margin-top: 1px; color: #2563eb; }
+@media (max-width: 700px) { .apm-hero { align-items: flex-start; flex-wrap: wrap; } .apm-status { margin-left: 0; } .apm-grid { grid-template-columns: 1fr; } }

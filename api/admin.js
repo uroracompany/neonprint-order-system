@@ -2,10 +2,16 @@ import { handleAdminListUsers } from "../server/admin-list-users-handler.js";
 import { handleAdminListOrders } from "../server/admin-list-orders-handler.js";
 import { handleAdminCreateUser } from "../server/admin-create-user-handler.js";
 import { handleAdminUpdateUser } from "../server/admin-update-user-handler.js";
-import { handleAdminDeleteUser } from "../server/admin-delete-user-handler.js";
 import { handleAdminDeleteOrderWithFiles } from "../server/storage-gateway.js";
 import { handleAdminSetUserStatus } from "../server/admin-set-user-status-handler.js";
 import { handleAdminEmployeeDetail } from "../server/admin-employee-detail-handler.js";
+import {
+  handleAdminRetireClient,
+  handleAdminRetireUser,
+  handleAdminRestoreClient,
+  handleAdminRestoreUser,
+  handleAdminUserRetirementPreflight,
+} from "../server/admin-retirement-handler.js";
 import { rateLimit } from "../server/rateLimit.js";
 
 const ACTIONS = {
@@ -13,10 +19,15 @@ const ACTIONS = {
   "list-orders": handleAdminListOrders,
   "create-user": handleAdminCreateUser,
   "update-user": handleAdminUpdateUser,
-  "delete-user": handleAdminDeleteUser,
+  // Kept out of the public action map: identities with order history are retired, never deleted.
   "delete-order": handleAdminDeleteOrderWithFiles,
   "set-user-status": handleAdminSetUserStatus,
   "employee-detail": handleAdminEmployeeDetail,
+  "retirement-preflight": handleAdminUserRetirementPreflight,
+  "retire-user": handleAdminRetireUser,
+  "restore-user": handleAdminRestoreUser,
+  "retire-client": handleAdminRetireClient,
+  "restore-client": handleAdminRestoreClient,
 };
 
 export default async function handler(req, res) {

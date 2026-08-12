@@ -257,4 +257,29 @@ describe("DesignerNotificationsModule", () => {
     fireEvent.click(screen.getByRole("button", { name: /Eliminar archivadas/ }));
     expect(onDeleteAll).toHaveBeenCalledWith("archived");
   });
+
+  it("identifies credit messages and opens their tracking destination when requested", () => {
+    const onOpenCreditTracking = vi.fn();
+    const notification = makeNotification({
+      id: "credit-summary",
+      title: "Resumen diario de créditos",
+      metadata: { event_kind: "admin_credit_daily_summary" },
+    });
+
+    render(
+      <DesignerNotificationsModule
+        notifications={[notification]}
+        archivedNotifications={[]}
+        unreadCount={1}
+        onMarkAsRead={vi.fn()}
+        onMarkAllAsRead={vi.fn()}
+        onArchive={vi.fn()}
+        onOpenCreditTracking={onOpenCreditTracking}
+      />
+    );
+
+    expect(screen.getByText("Crédito")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ver seguimiento" }));
+    expect(onOpenCreditTracking).toHaveBeenCalledWith(notification);
+  });
 });

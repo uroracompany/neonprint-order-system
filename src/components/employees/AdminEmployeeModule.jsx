@@ -14,7 +14,11 @@ const getInitials = (name) => String(name || "?")
   .map((part) => part[0]?.toUpperCase())
   .join("") || "?";
 
-const getUserDisplayName = (profile) => profile?.name || profile?.email || "Usuario";
+const getUserDisplayName = (profile) => {
+  if (!profile) return "Usuario eliminado";
+  const label = profile.name || profile.email || "Usuario eliminado";
+  return profile.deleted_at || profile.employment_status === false ? `${label} — dado de baja` : label;
+};
 
 const getRoleLabel = (role) => {
   const map = {
@@ -101,7 +105,7 @@ function EmployeeMetricsCards({ profile }) {
           <div><dt>Rol del sistema</dt><dd><span className="acm-badge info">{getRoleLabel(role)}</span></dd></div>
           <div className="acm-info-divider"><dt>ID de empleado</dt><dd>#{profile?.id?.slice(0, 8).toUpperCase()}</dd></div>
           <div><dt>Fecha de registro</dt><dd>{formatDate(profile?.created_at)}</dd></div>
-          <div><dt>Estado laboral</dt><dd><span className={`acm-badge ${profile?.employment_status !== false ? "success" : "neutral"}`}>{profile?.employment_status !== false ? "Activo" : "Inactivo"}</span></dd></div>
+          <div><dt>Estado laboral</dt><dd><span className={`acm-badge ${profile?.employment_status !== false && !profile?.deleted_at ? "success" : "neutral"}`}>{profile?.employment_status !== false && !profile?.deleted_at ? "Activo" : "Dado de baja"}</span></dd></div>
         </dl>
       </article>
 
@@ -408,7 +412,7 @@ function EmployeeOrdersPanel({ profile, onViewOrder }) {
   );
 }
 
-export default function AdminEmployeeModule({ profile, onBack, onEditUser, onViewOrder, onDeleteUser, currentUserId }) {
+export default function AdminEmployeeModule({ profile, onBack, onEditUser, onViewOrder, onDeleteUser, onRestoreUser, currentUserId }) {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, []);
@@ -427,7 +431,7 @@ export default function AdminEmployeeModule({ profile, onBack, onEditUser, onVie
     );
   }
 
-  const isActive = profile?.employment_status !== false;
+  const isActive = profile?.employment_status !== false && !profile?.deleted_at;
 
   return (
     <section className="pa-section acm-detail-view" aria-labelledby="employee-detail-title">
@@ -454,12 +458,17 @@ export default function AdminEmployeeModule({ profile, onBack, onEditUser, onVie
           </div>
         </div>
         <div className="acm-detail-actions">
-          <button className="pa-btn secondary" onClick={() => onEditUser?.(profile)}>
+          {!profile.deleted_at && <button className="pa-btn secondary" onClick={() => onEditUser?.(profile)}>
             <Icons.Edit /> Editar empleado
-          </button>
-          {profile.id !== currentUserId && (
+          </button>}
+          {profile.deleted_at && (
+            <button className="pa-btn primary" onClick={() => onRestoreUser?.(profile)}>
+              <Icons.UserCheck /> Restaurar empleado
+            </button>
+          )}
+          {profile.id !== currentUserId && !profile.deleted_at && (
             <button className="pa-btn danger" onClick={() => onDeleteUser?.(profile)}>
-              <Icons.Trash /> Eliminar empleado
+              <Icons.UserMinus /> Dar de baja
             </button>
           )}
         </div>

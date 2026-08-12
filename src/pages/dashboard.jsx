@@ -13,7 +13,6 @@ import ProductionAssignmentModal from "../components/orders/ProductionAssignment
 import PaymentFormModal from "../components/ui/PaymentFormModal";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
 import CreateClientModal from "../components/ui/CreateClientModal";
-import AdminOverviewCarousel from "../components/ui/AdminOverviewCarousel";
 import { validateReceiptFile } from "../utils/receiptValidation";
 import { executeAdminOrderCommand } from "../utils/adminOrderCommands";
 import {
@@ -78,6 +77,8 @@ import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
 import useNotifications from "../hooks/useNotifications";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import NotificationCenter from "../components/NotificationCenter";
+import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
+import AdminProfileModule from "../components/admin/AdminProfileModule";
 import FileCard from "../components/FileCard";
 import "../css-components/page-seller.css";
 import "../css-components/page-admin.css";
@@ -130,6 +131,19 @@ const getOpenCreditReceivables = (items = []) => items.filter((item) => (
 
 const isOpenCreditReceivable = (item) => ["open", "partial"].includes(item?.status);
 const formatCreditDate = (value) => (value ? formatDate(value) : "---");
+const formatOverviewDeliveryDate = (value) => {
+  const datePart = String(value || "").split("T")[0];
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+  if (!match) return null;
+
+  const [, year, month, day] = match;
+  const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  const isValid = parsed.getUTCFullYear() === Number(year)
+    && parsed.getUTCMonth() === Number(month) - 1
+    && parsed.getUTCDate() === Number(day);
+
+  return isValid ? `${day}/${month}/${year}` : null;
+};
 const getCreditIssuedAt = (item) => item?.issued_at || item?.created_at || item?.order?.created_at || null;
 const getCreditAlertPeriodKey = (date = new Date()) => {
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -294,9 +308,14 @@ const getOrderSearchUserIds = (order) => [
 
 // Funciones para obtener información de los perfiles de usuario con lógica de respaldo
 // Funcion para obtener el nombre del usuario
-const getUserDisplayName = (profile) => profile?.name || profile?.email || "Usuario";
+const getUserDisplayName = (profile) => {
+  if (!profile) return "Usuario eliminado";
+  const label = profile.name || profile.email || "Usuario eliminado";
+  return profile.deleted_at || profile.employment_status === false ? `${label} — dado de baja` : label;
+};
 // Normaliza el estado laboral a un booleano real para que la UI y la base hablen el mismo idioma.
 const isEmploymentActive = (profile) => {
+  if (profile?.deleted_at) return false;
   const value = profile?.employment_status ?? profile?.employee_status ?? profile?.status;
 
   if (typeof value === "boolean") return value;
@@ -1475,19 +1494,6 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
   );
 }
 
-const CARD_ACCENTS = [
-  { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
-  { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
-  { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
-  { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
-  { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
-  { color: "#06B6D4", bg: "#CFFAFE", glow: "#CFFAFE" },
-  { color: "#EF4444", bg: "#FEE2E2", glow: "#FEE2E2" },
-  { color: "#EC4899", bg: "#FCE7F3", glow: "#FCE7F3" },
-  { color: "#6366F1", bg: "#E0E7FF", glow: "#E0E7FF" },
-  { color: "#14B8A6", bg: "#CCFBF1", glow: "#CCFBF1" },
-];
-
 const ADMIN_SIDEBAR_STORAGE_KEY = "neonprint_admin_sidebar_open";
 
 const getInitialAdminSidebarOpen = () => {
@@ -1639,7 +1645,6 @@ export default function Dashboard() {
   const [clientFormError, setClientFormError] = useState("");
   const [clientFormErrors, setClientFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
-  const [deletingClientId, setDeletingClientId] = useState(null);
   const [clientToDelete, setClientToDelete] = useState(null);
   const [clientDeleteLoading, setClientDeleteLoading] = useState(false);
 
@@ -2814,6 +2819,21 @@ export default function Dashboard() {
     setEmployeeDetailView(false);
   };
 
+  const requestEmployeeRetirement = async (profile) => {
+    if (!profile?.id) return;
+    try {
+      const { response, result } = await adminApiFetch("/api/admin", { action: "retirement-preflight", userId: profile.id });
+      if (!response.ok) throw new Error(result?.error || "No se pudo revisar el trabajo activo.");
+      if (!result.canRetire) {
+        showFeedback("error", `Reasigna primero ${result.responsibilities?.length || 0} responsabilidad(es) activa(s) de este empleado.`);
+        return;
+      }
+      setEmployeeToDelete(profile);
+    } catch (err) {
+      showFeedback("error", err?.message || "No se pudo revisar la baja del empleado.");
+    }
+  };
+
   const handleConfirmDeleteEmployee = async () => {
     if (!employeeToDelete) return;
 
@@ -2826,18 +2846,30 @@ export default function Dashboard() {
     setEmployeeDeleteLoading(true);
     try {
       const { response, result } = await adminApiFetch("/api/admin", {
-        action: "delete-user",
+        action: "retire-user",
         userId: employeeToDelete.id,
       });
-      if (!response.ok || result.error) throw new Error(result.error || "No se pudo eliminar el empleado.");
+      if (!response.ok || result.error) throw new Error(result.error || "No se pudo dar de baja al empleado.");
       setEmployeeToDelete(null);
       closeEmployeeDetail();
       loadProfiles();
-      showFeedback("success", "Empleado eliminado correctamente.");
+      showFeedback("success", result?.message || "Empleado dado de baja correctamente.");
     } catch (err) {
-      showFeedback("error", err?.message || "No se pudo eliminar el empleado.");
+      showFeedback("error", err?.message || "No se pudo dar de baja al empleado.");
     } finally {
       setEmployeeDeleteLoading(false);
+    }
+  };
+
+  const handleRestoreEmployee = async (profile) => {
+    if (!profile?.id) return;
+    try {
+      const { response, result } = await adminApiFetch("/api/admin", { action: "restore-user", userId: profile.id });
+      if (!response.ok) throw new Error(result?.error || "No se pudo restaurar al empleado.");
+      await loadProfiles();
+      showFeedback("success", result?.message || "Empleado restaurado correctamente.");
+    } catch (err) {
+      showFeedback("error", err?.message || "No se pudo restaurar al empleado.");
     }
   };
 
@@ -3008,40 +3040,37 @@ export default function Dashboard() {
   };
 
   const _handleDeleteClient = async (id) => {
-    if (deletingClientId === id) {
-      try {
-        const { error } = await supabase.from("clients").delete().eq("id", id);
-        if (error) throw error;
-        setDeletingClientId(null);
-        await fetchClients();
-        await loadOrders();
-        showFeedback("success", "Cliente eliminado correctamente.");
-        return true;
-      } catch (err) {
-        setClientFormError(err.message || "No se pudo eliminar el cliente.");
-        showFeedback("error", "No se pudo eliminar el cliente.");
-        return false;
-      }
-    } else {
-      setDeletingClientId(id);
-      return false;
-    }
+    const target = clients.find((client) => client.id === id);
+    if (target) setClientToDelete(target);
+    return false;
   };
 
   const handleConfirmDeleteClient = async () => {
     if (!clientToDelete) return;
     setClientDeleteLoading(true);
     try {
-      const { error } = await supabase.from("clients").delete().eq("id", clientToDelete.id);
-      if (error) throw error;
+      const { response, result } = await adminApiFetch("/api/admin", { action: "retire-client", clientId: clientToDelete.id });
+      if (!response.ok) throw new Error(result?.error || "No se pudo dar de baja al cliente.");
       setClientToDelete(null);
       await fetchClients();
       await loadOrders();
-      showFeedback("success", "Cliente eliminado correctamente.");
+      showFeedback("success", result?.message || "Cliente dado de baja correctamente.");
     } catch (err) {
-      showFeedback("error", err?.message || "No se pudo eliminar el cliente.");
+      showFeedback("error", err?.message || "No se pudo dar de baja al cliente.");
     } finally {
       setClientDeleteLoading(false);
+    }
+  };
+
+  const handleRestoreClient = async (client) => {
+    if (!client?.id) return;
+    try {
+      const { response, result } = await adminApiFetch("/api/admin", { action: "restore-client", clientId: client.id });
+      if (!response.ok) throw new Error(result?.error || "No se pudo restaurar al cliente.");
+      await Promise.all([fetchClients(), loadOrders(true)]);
+      showFeedback("success", result?.message || "Cliente restaurado correctamente.");
+    } catch (err) {
+      showFeedback("error", err?.message || "No se pudo restaurar al cliente.");
     }
   };
 
@@ -3050,6 +3079,20 @@ export default function Dashboard() {
     setCreditStatusFilter("all");
     setCreditDetailClientId(clientId);
     setCreditView("detail");
+  };
+
+  const handleOpenCreditNotification = useCallback((notification) => {
+    const clientId = notification?.metadata?.client_id || null;
+    setActiveTab("credits");
+    setCreditStatusFilter("open");
+    setCreditDetailClientId(clientId);
+    setCreditView(clientId ? "detail" : "list");
+  }, []);
+
+  const openOverviewCreditTracking = () => {
+    setActiveTab("credits");
+    setCreditStatusFilter("open");
+    setCreditView("list");
   };
 
   const handleOpenCreditSettleAll = (client, openInvoices) => {
@@ -3377,10 +3420,6 @@ export default function Dashboard() {
     }, {});
   }, [accountsReceivable]);
 
-  const receivablesTotal = useMemo(() => (
-    Object.values(receivablesByClient).reduce((sum, item) => sum + item.count, 0)
-  ), [receivablesByClient]);
-
   const ordersById = useMemo(() => Object.fromEntries(orders.map(order => [order.id, order])), [orders]);
   const clientsById = useMemo(() => Object.fromEntries(clients.map(client => [client.id, client])), [clients]);
   const accountsReceivableById = useMemo(() => Object.fromEntries(accountsReceivable.map(item => [item.id, item])), [accountsReceivable]);
@@ -3670,70 +3709,52 @@ export default function Dashboard() {
 
   useEffect(() => { setMaterialsPage(1); }, [filteredMaterials.length]);
 
-  const metrics = [
-    { label: "Órdenes totales", value: orders.length, icon: <Icons.Orders />, accentIdx: 0 },
-    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Receipt />, accentIdx: 5 },
-    { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, accentIdx: 2 },
-    { label: "Empleados", value: profiles.length, icon: <Icons.Users />, accentIdx: 3 },
-    { label: "Pendientes", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, accentIdx: 1 },
-    { label: "En producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length, icon: <Icons.Brush />, accentIdx: 6 },
-    { label: "En terminación", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)).length, icon: <Icons.Paintbrush />, accentIdx: 7 },
-    { label: "En entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length, icon: <Icons.Truck />, accentIdx: 8 },
-    { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length, icon: <Icons.Check />, accentIdx: 4 },
-    { label: "Clientes Registrados", value: clients.length, icon: <Icons.User />, accentIdx: 9 },
-    { label: "Seguimiento pendiente", value: receivablesTotal, icon: <Icons.Receipt />, accentIdx: 5 },
-    { label: "Bloqueadas", value: orders.filter(order => order.operational_status === "blocked").length, icon: <Icons.AlertCircle />, accentIdx: 1 },
-    { label: "Revisión comercial", value: orders.filter(order => order.commercial_review_required).length, icon: <Icons.Receipt />, accentIdx: 2 },
-  ];
-
-  const typeMetrics = [
-    { label: "Normales totales", value: orders.filter(order => order.order_type !== "orden 911").length },
-    { label: "911 totales", value: orders.filter(order => order.order_type === "orden 911").length },
-    { label: "Pendientes (Ventas)", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length },
-    { label: "En diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length },
-    { label: "En caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length },
-    { label: "En producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length },
-    { label: "En terminación", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)).length },
-    { label: "En entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length },
-    { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length },
-    { label: "Canceladas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.CANCELLED)).length },
-    { label: "Archivadas", value: orders.filter(order => order.is_archived_admin).length },
-  ];
-
   const overviewFlowMetrics = [
     { label: "Pendientes", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, color: "#F59E0B" },
     { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Receipt />, color: "#06B6D4" },
     { label: "Diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, color: "#8B5CF6" },
     { label: "Producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length, icon: <Icons.Brush />, color: "#EF4444" },
-    { label: "Terminación", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)).length, icon: <Icons.Paintbrush />, color: "#EC4899" },
     { label: "Entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length, icon: <Icons.Truck />, color: "#6366F1" },
-    { label: "Completadas", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length, icon: <Icons.Check />, color: "#10B981" },
   ];
 
-  const overviewSystemMetrics = metrics.filter(metric => [
-    "Órdenes totales",
-    "Caja",
-    "En diseño",
-    "En producción",
-    "Seguimiento pendiente",
-  ].includes(metric.label));
-
-  const overviewOrderTypeMetrics = typeMetrics.filter(metric => [
-    "Normales totales",
-    "911 totales",
-  ].includes(metric.label));
-
-  const overviewRecentOrders = orders.slice(0, 5);
   const overviewActiveOrders = orders.filter(order => (
     !order.is_archived_admin &&
     !isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED])
   ));
-  const overviewActiveOrderMetrics = [
-    { label: "911 activas", detail: "Prioridad", value: loadingOrders ? "..." : overviewActiveOrders.filter(order => order.order_type === "orden 911").length.toLocaleString("es-PE"), icon: <Icons.AlertCircle />, color: "#EF4444" },
-    { label: "Normales activas", detail: "Flujo estándar", value: loadingOrders ? "..." : overviewActiveOrders.filter(order => order.order_type !== "orden 911").length.toLocaleString("es-PE"), icon: <Icons.Orders />, color: "#091127" },
-    { label: "Diseño interno", detail: "Activas", value: loadingOrders ? "..." : overviewActiveOrders.filter(order => order.order_design_type === "INTERNAL_DESING").length.toLocaleString("es-PE"), icon: <Icons.Brush />, color: "#8B5CF6" },
-    { label: "Diseño externo", detail: "Activas", value: loadingOrders ? "..." : overviewActiveOrders.filter(order => order.order_design_type === "EXTERNAL_DESING").length.toLocaleString("es-PE"), icon: <Icons.File />, color: "#06B6D4" },
+  const overviewRecentOrders = orders.slice(0, 3);
+  const overviewQuickActions = [
+    { label: "Órdenes", tab: "orders", icon: <Icons.Orders /> },
+    { label: "Seguimiento", tab: "credits", icon: <Icons.AlertCircle /> },
+    { label: "Clientes", tab: "clients", icon: <Icons.User /> },
+    { label: "Materiales", tab: "materials", icon: <Icons.Package /> },
+    { label: "Empleados", tab: "users", icon: <Icons.Users /> },
   ];
+  const overviewAttentionItems = [
+    {
+      id: "credit",
+      label: "Seguimiento de crédito",
+      detail: `${creditPendingClientCount} cliente${creditPendingClientCount === 1 ? "" : "s"} requiere${creditPendingClientCount === 1 ? "" : "n"} seguimiento.`,
+      value: creditPendingInvoicesCount,
+      icon: <Icons.Receipt />,
+      tone: "credit",
+    },
+    {
+      id: "priority",
+      label: "Órdenes 911 activas",
+      detail: "Prioridades que requieren seguimiento operativo.",
+      value: overviewActiveOrders.filter(order => order.order_type === "orden 911").length,
+      icon: <Icons.AlertCircle />,
+      tone: "priority",
+    },
+    {
+      id: "orders",
+      label: "Órdenes bloqueadas o en revisión",
+      detail: "Revisa los casos que necesitan intervención administrativa.",
+      value: orders.filter(order => order.operational_status === "blocked" || order.commercial_review_required).length,
+      icon: <Icons.AlertCircle />,
+      tone: "review",
+    },
+  ].filter(item => item.value > 0);
 
   const getSidebarBadge = (loading, value) => (loading ? "..." : value);
 
@@ -3742,9 +3763,11 @@ export default function Dashboard() {
     { id: "kpi", label: "KPI", icon: <Icons.BarChart /> },
     { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loadingOrders, orders.length) },
     { id: "credits", label: "Seguimiento", icon: <Icons.AlertCircle />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
+    { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: getSidebarBadge(notif.loading, adminUnreadCount) },
     { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clientsTotal) },
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
     { id: "users", label: "Empleados", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
+    { id: "profile", label: "Mi perfil", icon: <Icons.User /> },
   ];
 
   const handleAdminTabChange = (nextTab) => {
@@ -3763,7 +3786,7 @@ export default function Dashboard() {
   return (
     // Apartado principal totalmente flexible
     <div className="pa-root">
-      <Sidebar isOpen={sidebarOpen} activeTab={activeTab} onTabChange={handleAdminTabChange} role="Admin" userName={getUserDisplayName(profile)} menuItems={menuItems} onLogout={handleLogout} />
+      <Sidebar isOpen={sidebarOpen} activeTab={activeTab} onTabChange={handleAdminTabChange} role="Admin" userName={getUserDisplayName(profile)} menuItems={menuItems} onLogout={handleLogout} scrollNavigation />
       <div className="pa-main-wrap">
         <header className="pa-header">
           <div className="pa-header-left">
@@ -3775,7 +3798,7 @@ export default function Dashboard() {
             >
               {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
-            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "kpi" ? "KPI" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de seguimiento" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : "Gestión de Empleados"}</h1></div>
+            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "kpi" ? "KPI" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de seguimiento" : activeTab === "notifications" ? "Notificaciones" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : activeTab === "profile" ? "Mi perfil" : "Gestión de Empleados"}</h1></div>
           </div>
           <div className="pa-header-right">
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
@@ -3799,38 +3822,49 @@ export default function Dashboard() {
           </Suspense>
         )}
 
+        {activeTab === "notifications" && (
+          <DesignerNotificationsModule
+            notifications={adminVisibleNotifications}
+            archivedNotifications={notif.archivedNotifications}
+            unreadCount={adminUnreadCount}
+            loading={notif.loading}
+            archivedLoading={notif.archivedLoading}
+            onMarkAsRead={notif.markAsRead}
+            onMarkAllAsRead={notif.markAllAsRead}
+            onArchive={notif.archive}
+            onDelete={notif.deleteNotification}
+            onDeleteAll={notif.deleteNotificationsByScope}
+            moduleLabel="Administración"
+            moduleIcon={Icons.Bell}
+            moduleTone="admin"
+            onOpenCreditTracking={handleOpenCreditNotification}
+          />
+        )}
+
+        {activeTab === "profile" && (
+          <AdminProfileModule authUser={authUser} profile={profile || authProfile} />
+        )}
+
         {activeTab === "overview" &&
           <section className="pa-section pa-overview-section">
             <div className="pa-section-heading acm-heading">
               <div>
                 <h2>Panel General</h2>
                 <p>Resumen del estado actual de tu negocio.</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                  <div className="acm-total-badge">
+                <div className="pa-overview-banner-badges">
+                  <div className="acm-total-badge pa-overview-banner-badge" data-tone="orders">
                     <Icons.Orders />
                     <strong>{loadingOrders ? "..." : orders.length.toLocaleString("es-PE")}</strong> órdenes
                   </div>
-                  <div className="acm-total-badge">
-                    <Icons.Clock />
-                    <strong>{loadingOrders ? "..." : orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length}</strong> pendientes
-                  </div>
-                  <div className="acm-total-badge">
-                    <Icons.Brush />
-                    <strong>{loadingOrders ? "..." : orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length}</strong> en producción
-                  </div>
-                  <div className="acm-total-badge">
+                  <div className="acm-total-badge pa-overview-banner-badge" data-tone="completed">
                     <Icons.Check />
                     <strong>{loadingOrders ? "..." : orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length}</strong> completadas
                   </div>
-                  <div className="acm-total-badge">
+                  <div className="acm-total-badge pa-overview-banner-badge" data-tone="clients">
                     <Icons.User />
                     <strong>{clientsLoading ? "..." : clients.length.toLocaleString("es-PE")}</strong> clientes
                   </div>
-                  <div className="acm-total-badge">
-                    <Icons.Receipt />
-                    <strong>{accountsReceivableLoading ? "..." : creditPendingInvoicesCount}</strong> seguimiento pendiente
-                  </div>
-                  <div className="acm-total-badge">
+                  <div className="acm-total-badge pa-overview-banner-badge" data-tone="employees">
                     <Icons.Users />
                     <strong>{loadingUsers ? "..." : profiles.length}</strong> empleados
                   </div>
@@ -3838,17 +3872,14 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <AdminOverviewCarousel
-              onNavigate={handleAdminTabChange}
-              orders={orders}
-              creditPendingInvoicesCount={creditPendingInvoicesCount}
-              creditPendingClientCount={creditPendingClientCount}
-              loading={loadingOrders}
-              isOrderStatus={isOrderStatus}
-              ORDER_STATUS={ORDER_STATUS}
-              profiles={profiles}
-              clients={clients}
-            />
+            <nav className="pa-overview-quick-actions" aria-label="Accesos rápidos">
+              {overviewQuickActions.map(action => (
+                <button key={action.tab} type="button" onClick={() => handleAdminTabChange(action.tab)}>
+                  {action.icon}
+                  <span>{action.label}</span>
+                </button>
+              ))}
+            </nav>
 
             <div className="pa-overview-executive-grid">
               <section className="pa-panel pa-overview-flow-panel">
@@ -3861,7 +3892,9 @@ export default function Dashboard() {
                 <div className="pa-overview-flow-track">
                   {overviewFlowMetrics.map(item => (
                     <article key={item.label} className="pa-overview-flow-step" style={{ "--flow-color": item.color }}>
-                      <span className="pa-overview-flow-step-label">{item.label}</span>
+                      <div className="pa-overview-flow-step-header">
+                        <span className="pa-overview-flow-step-label">{item.label}</span>
+                      </div>
                       <div className="pa-overview-flow-step-value">
                         <span className="pa-overview-flow-step-icon">{item.icon}</span>
                         <strong>{loadingOrders ? "..." : item.value}</strong>
@@ -3882,131 +3915,79 @@ export default function Dashboard() {
               </section>
 
               <div className="pa-overview-secondary-grid">
-                <div className="pa-overview-main-column">
-                  <section className="pa-panel pa-overview-activity-panel">
-                    <div className="pa-overview-card-head pa-overview-card-head-row">
-                      <div>
-                        <h2>Actividad reciente</h2>
-                        <p>Últimas órdenes registradas en el sistema.</p>
-                      </div>
-                      <button className="pa-btn ghost pa-btn-sm" onClick={() => handleAdminTabChange("orders")}>
-                        Ver todas
-                      </button>
+                <section className="pa-panel pa-overview-activity-panel">
+                  <div className="pa-overview-card-head pa-overview-card-head-row">
+                    <div>
+                      <h2>Actividad reciente</h2>
+                      <p>Últimas órdenes registradas en el sistema.</p>
                     </div>
-                    <div className="pa-overview-activity-table" role="table" aria-label="Órdenes recientes">
-                      <div className="pa-overview-activity-row pa-overview-activity-row-head" role="row">
-                        <span>Orden</span>
-                        <span>Cliente</span>
-                        <span>Estado</span>
-                        <span>Responsable</span>
-                        <span>Actualizado</span>
-                      </div>
-                      {overviewRecentOrders.length === 0 ? (
-                        <div className="pa-overview-activity-empty">No hay órdenes recientes para mostrar.</div>
-                      ) : overviewRecentOrders.map(order => (
-                        <button key={order.id} type="button" className="pa-overview-activity-row" onClick={() => setSelectedOrder(order)} role="row">
-                          <span>#{order.id?.slice(0, 8) || "---"}</span>
-                          <strong>{order.client_name || "Cliente sin nombre"}</strong>
-                          <span><StatusBadge status={order.status} className="ps-badge" showDot bordered /></span>
-                          <span>{getUserDisplayName(usersById[order.seller_id || order.created_by])}</span>
-                          <span>{formatDate(order.created_at)}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="pa-overview-activity-footer">
-                      Mostrando {overviewRecentOrders.length} de {orders.length} órdenes
-                    </div>
-                  </section>
-
-                  <section className="pa-panel pa-overview-active-orders-panel">
-                    <div className="pa-overview-card-head">
-                      <div>
-                        <h2>Carga activa</h2>
-                        <p>Prioridad y diseño en operación.</p>
-                      </div>
-                    </div>
-                    <div className="pa-overview-active-orders-grid">
-                      {overviewActiveOrderMetrics.map(item => (
-                        <article key={item.label} className="pa-overview-active-order-card" style={{ "--active-order-color": item.color }}>
-                          <span className="pa-overview-active-order-icon">{item.icon}</span>
-                          <div>
-                            <span>{item.label}</span>
-                            <strong>{item.value}</strong>
-                            <em>{item.detail}</em>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  </section>
-                </div>
-
-                <aside className="pa-overview-side-column">
-                  <section className="pa-panel pa-overview-commercial-panel">
-                    <div className="pa-overview-card-head">
-                      <div>
-                        <h2>Seguimiento comercial</h2>
-                        <p>Clientes y seguimiento operativo.</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="pa-overview-credit-summary"
-                      onClick={() => { setActiveTab("credits"); setCreditStatusFilter("open"); setCreditView("list"); }}
-                    >
-                      <span className="pa-overview-credit-summary-icon"><Icons.Receipt /></span>
-                      <span>
-                        <small>Seguimiento pendiente</small>
-                        <strong>{accountsReceivableLoading ? "..." : creditPendingInvoicesCount}</strong>
-                        <em>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento.</em>
-                      </span>
-                      <Icons.ChevronRight />
+                    <button className="pa-btn ghost pa-btn-sm" onClick={() => handleAdminTabChange("orders")}>
+                      Ver todas
                     </button>
-                    <div className="pa-overview-commercial-mini-grid">
-                      <article>
-                        <span>Clientes</span>
-                        <strong>{clientsLoading ? "..." : clients.length.toLocaleString("es-PE")}</strong>
-                        <Icons.User />
-                      </article>
-                      <article>
-                        <span>Empleados</span>
-                        <strong>{loadingUsers ? "..." : profiles.length}</strong>
-                        <Icons.Users />
-                      </article>
+                  </div>
+                  <div className="pa-overview-activity-table" role="table" aria-label="Órdenes recientes">
+                    <div className="pa-overview-activity-row pa-overview-activity-row-head" role="row">
+                      <span className="pa-overview-activity-cell client">Cliente</span>
+                      <span className="pa-overview-activity-cell status">Estado</span>
+                      <span className="pa-overview-activity-cell seller">Vendedor</span>
+                      <span className="pa-overview-activity-cell delivery">Fecha de entrega</span>
+                      <span className="pa-overview-activity-cell payment">Estado de pago</span>
                     </div>
-                  </section>
+                    {overviewRecentOrders.length === 0 ? (
+                      <div className="pa-overview-activity-empty">No hay órdenes recientes para mostrar.</div>
+                    ) : overviewRecentOrders.map(order => (
+                      <button key={order.id} type="button" className="pa-overview-activity-row" onClick={() => setSelectedOrder(order)} role="row">
+                        <strong className="pa-overview-activity-cell client" data-label="Cliente">
+                          <span className="pa-overview-client-avatar" aria-hidden="true">{String(order.client_name || "Cliente").trim().charAt(0).toUpperCase()}</span>
+                          <span className="pa-overview-client-name">{order.client_name || "Cliente sin nombre"}</span>
+                        </strong>
+                        <span className="pa-overview-activity-cell status" data-label="Estado"><StatusBadge status={order.status} className="ps-badge" showDot bordered /></span>
+                        <span className="pa-overview-activity-cell seller" data-label="Vendedor">{getUserDisplayName(usersById[order.seller_id || order.created_by])}</span>
+                        <span className="pa-overview-activity-cell delivery" data-label="Fecha de entrega">
+                          <span className={`pa-overview-delivery-badge${formatOverviewDeliveryDate(order.delivery_date) ? "" : " is-indefinite"}`}>
+                            {formatOverviewDeliveryDate(order.delivery_date) || "Indefinida"}
+                          </span>
+                        </span>
+                        <span className="pa-overview-activity-cell payment" data-label="Estado de pago"><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="pa-overview-activity-footer">
+                    Mostrando {overviewRecentOrders.length} de {orders.length} órdenes
+                  </div>
+                </section>
 
-                  <section className="pa-panel pa-overview-system-panel">
-                    <div className="pa-overview-card-head">
-                      <div>
-                        <h2>Estado del sistema</h2>
-                        <p>Indicadores clave de operación.</p>
-                      </div>
+                <aside className="pa-panel pa-overview-commercial-panel pa-overview-attention-panel">
+                  <div className="pa-overview-card-head">
+                  <div>
+                    <h2>Atención requerida</h2>
+                    <p>Casos que requieren seguimiento administrativo.</p>
+                  </div>
+                  </div>
+                  {overviewAttentionItems.length > 0 ? (
+                    overviewAttentionItems.map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="pa-overview-credit-summary pa-overview-attention-summary"
+                        data-tone={item.tone}
+                        onClick={() => item.id === "credit" ? openOverviewCreditTracking() : handleAdminTabChange("orders")}
+                      >
+                        <span className="pa-overview-credit-summary-icon">{item.icon}</span>
+                        <span>
+                          <small>{item.label}</small>
+                          <strong>{loadingOrders && item.id !== "credit" ? "..." : item.value}</strong>
+                          <em>{item.detail}</em>
+                        </span>
+                        <Icons.ChevronRight />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="pa-overview-attention-empty">
+                      <Icons.Check />
+                      <span>No hay alertas prioritarias por revisar.</span>
                     </div>
-                    <div className="pa-overview-system-list">
-                      {overviewSystemMetrics.map(metric => {
-                        const acc = CARD_ACCENTS[metric.accentIdx];
-                        return (
-                          <div key={metric.label} className="pa-overview-system-row" style={{ "--system-color": acc.color }}>
-                            <span className="pa-overview-system-icon">{metric.icon}</span>
-                            <span>{metric.label}</span>
-                            <strong>{loadingOrders && metric.label !== "Seguimiento pendiente" ? "..." : metric.value}</strong>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="pa-overview-system-types">
-                      {overviewOrderTypeMetrics.map(metric => (
-                        <div key={metric.label}>
-                          <span>{metric.label}</span>
-                          <strong>{loadingOrders ? "..." : metric.value}</strong>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="pa-overview-system-footer">
-                      <span />
-                      <strong>Sistema operativo</strong>
-                    </div>
-                  </section>
+                  )}
                 </aside>
               </div>
             </div>
@@ -4437,6 +4418,7 @@ export default function Dashboard() {
             onAddClient={handleAddClient}
             onEditClient={handleEditClient}
             onRequestDelete={(client) => setClientToDelete(client)}
+            onRestoreClient={handleRestoreClient}
             onCreateOrder={openCreateOrderFromClient}
             onViewOrders={(clientId) => handleClientClick({ id: clientId })}
             onManageCredit={handleManageClientCredit}
@@ -4785,12 +4767,12 @@ export default function Dashboard() {
           onConfirm={handleConfirmDeleteEmployee}
           order={employeeToDelete}
           loading={employeeDeleteLoading}
-          title="Eliminar empleado"
-          confirmText="Eliminar empleado"
+          title="Dar de baja empleado"
+          confirmText="Dar de baja"
           cancelText="Cancelar"
           className="emp-delete-modal"
           variant="danger"
-          loadingText="Eliminando..."
+          loadingText="Dando de baja..."
           confirmIcon={<Icons.Trash />}
         >
           <p>
@@ -4806,12 +4788,12 @@ export default function Dashboard() {
           onConfirm={handleConfirmDeleteClient}
           order={clientToDelete}
           loading={clientDeleteLoading}
-          title="Eliminar cliente"
-          confirmText="Eliminar cliente"
+          title="Dar de baja cliente"
+          confirmText="Dar de baja"
           cancelText="Cancelar"
           className="client-delete-modal"
           variant="danger"
-          loadingText="Eliminando..."
+          loadingText="Dando de baja..."
           confirmIcon={<Icons.Trash />}
         >
           <p>
@@ -4827,7 +4809,8 @@ export default function Dashboard() {
             onBack={closeEmployeeDetail}
             onEditUser={(profile) => openEditUserModal(profile)}
             onViewOrder={(order) => setSelectedOrder(order)}
-            onDeleteUser={(profile) => setEmployeeToDelete(profile)}
+            onDeleteUser={requestEmployeeRetirement}
+            onRestoreUser={handleRestoreEmployee}
             currentUserId={user?.id}
           />
         ) : activeTab === "users" &&

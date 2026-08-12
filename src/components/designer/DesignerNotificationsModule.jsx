@@ -26,6 +26,13 @@ const ORDER_NOTIFICATION_TYPES = new Set([
   "order_assigned",
 ]);
 
+const CREDIT_EVENT_KINDS = new Set([
+  "credit_granted",
+  "credit_settled",
+  "credit_custom_reminder_due",
+  "admin_credit_daily_summary",
+]);
+
 const DATE_FILTERS = [
   { value: "all", label: "Todas las fechas" },
   { value: "today", label: "Hoy" },
@@ -73,6 +80,8 @@ const getTypeTone = (notification) => {
   return "info";
 };
 
+const isCreditNotification = (notification) => CREDIT_EVENT_KINDS.has(notification?.metadata?.event_kind);
+
 const getStatusBadge = (notification, archived) => {
   if (archived || notification?.is_archived) {
     return { label: "Archivada", tone: "archived", icon: Icons.Archive };
@@ -89,6 +98,10 @@ const getTypeBadge = (notification, moduleLabel, ModuleIcon, moduleTone) => {
   const rawCategory = notification?.metadata?.category || notification?.metadata?.module || notification?.type || "";
   const category = normalizeSearch(rawCategory);
   const type = notification?.type || "";
+
+  if (isCreditNotification(notification)) {
+    return { label: "Crédito", tone: "credit", icon: Icons.Receipt };
+  }
 
   if (ORDER_NOTIFICATION_TYPES.has(type) || category.includes("design") || category.includes("diseno") || category.includes("diseño")) {
     return { label: moduleLabel, tone: moduleTone, icon: ModuleIcon };
@@ -241,11 +254,13 @@ function NotificationRow({
   onMarkAsRead,
   onArchive,
   onRequestDelete,
+  onOpenCreditTracking,
 }) {
   const tone = getTypeTone(notification);
   const typeLabel = TYPE_LABELS[notification.type] || "Notificación";
   const statusBadge = getStatusBadge(notification, archived);
   const typeBadge = getTypeBadge(notification, moduleLabel, moduleIcon, moduleTone);
+  const canOpenCreditTracking = isCreditNotification(notification) && typeof onOpenCreditTracking === "function";
 
   return (
     <article className={`dnm-item ${notification.is_read ? "is-read" : "is-unread"} ${archived ? "is-archived" : ""}`}>
@@ -264,6 +279,16 @@ function NotificationRow({
           {notification.order_id && <span className="dnm-order-id">Orden #{notification.order_id.slice(0, 8).toUpperCase()}</span>}
           <span className="dnm-item-date">{formatNotificationDateTime(notification.created_at)}</span>
         </div>
+        {canOpenCreditTracking && (
+          <button
+            type="button"
+            className="dnm-credit-link"
+            onClick={() => onOpenCreditTracking(notification)}
+          >
+            <Icons.Receipt />
+            Ver seguimiento
+          </button>
+        )}
       </div>
       <div className="dnm-item-actions" aria-label="Acciones de notificación">
         {!archived && !notification.is_read && (
@@ -300,6 +325,7 @@ export default function DesignerNotificationsModule({
   moduleLabel = DEFAULT_MODULE_LABEL,
   moduleIcon: ModuleIcon = DEFAULT_MODULE_ICON,
   moduleTone = DEFAULT_MODULE_TONE,
+  onOpenCreditTracking,
 }) {
   const [tab, setTab] = useState("active");
   const [search, setSearch] = useState("");
@@ -310,6 +336,7 @@ export default function DesignerNotificationsModule({
   const [page, setPage] = useState(1);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [confirmation, setConfirmation] = useState(null);
+  const [actionError, setActionError] = useState("");
   const activeItems = useMemo(() => filterActiveNotifications(notifications), [notifications]);
   const archivedItems = useMemo(() => filterArchivedNotifications(archivedNotifications), [archivedNotifications]);
   const visibleItems = tab === "archived" ? archivedItems : activeItems;
@@ -368,12 +395,33 @@ export default function DesignerNotificationsModule({
     });
   };
   const closeConfirmation = () => setConfirmation(null);
+  const runAction = async (action, id, fallbackMessage) => {
+    try {
+      const result = await action?.(id);
+      if (result?.ok === false) {
+        setActionError(result.message || fallbackMessage);
+        return false;
+      }
+      if (actionError) setActionError("");
+      return true;
+    } catch {
+      setActionError(fallbackMessage);
+      return false;
+    }
+  };
+  const markAllAsRead = () => runAction(
+    onMarkAllAsRead,
+    undefined,
+    "No se pudieron marcar las notificaciones como leídas."
+  );
+  const markAsRead = (id) => runAction(onMarkAsRead, id, "No se pudo marcar la notificación como leída.");
+  const archive = (id) => runAction(onArchive, id, "No se pudo archivar la notificación.");
   const confirmDelete = async () => {
     if (!confirmation) return;
     if (confirmation.scope === "notification") {
-      await onDelete?.(confirmation.notificationId);
+      await runAction(onDelete, confirmation.notificationId, "No se pudo eliminar la notificación.");
     } else {
-      await onDeleteAll?.(confirmation.scope);
+      await runAction(onDeleteAll, confirmation.scope, "No se pudieron eliminar las notificaciones.");
     }
     setConfirmation(null);
   };
@@ -408,13 +456,15 @@ export default function DesignerNotificationsModule({
         <button
           type="button"
           className="dnm-mark-all"
-          onClick={onMarkAllAsRead}
+          onClick={markAllAsRead}
           disabled={unreadCount === 0 || activeItems.length === 0}
         >
           <Icons.Check />
           Marcar leídas
         </button>
       </div>
+
+      {actionError && <p className="dnm-action-error" role="alert">{actionError}</p>}
 
       <div className="dnm-summary-grid">
         <div className="dnm-summary-card">
@@ -563,9 +613,10 @@ export default function DesignerNotificationsModule({
                 moduleLabel={moduleLabel}
                 moduleIcon={ModuleIcon}
                 moduleTone={moduleTone}
-                onMarkAsRead={onMarkAsRead}
-                onArchive={onArchive}
+                onMarkAsRead={markAsRead}
+                onArchive={archive}
                 onRequestDelete={requestDeleteNotification}
+                onOpenCreditTracking={onOpenCreditTracking}
               />
             ))
           )}

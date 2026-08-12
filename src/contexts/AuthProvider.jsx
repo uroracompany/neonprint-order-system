@@ -5,13 +5,15 @@ import {
   clearCachedAuthSession,
   consumeAuthNotice,
   getAuthSession,
-  refreshAuthSession,
+  maintainAuthSession,
   setCachedAuthSession,
   signOutAuth,
+  startAuthSessionMonitor,
+  subscribeToAuthInvalidation,
 } from "../utils/authManager";
 import { AUTH_NOTICE, getLoginErrorCode } from "../utils/authFeedback";
 
-const PROFILE_COLUMNS = "id, name, email, role, employment_status";
+const PROFILE_COLUMNS = "id, name, email, role, employment_status, deleted_at";
 
 export function AuthProvider({ children }) {
   const activeRef = useRef(true);
@@ -30,6 +32,27 @@ export function AuthProvider({ children }) {
     profileRef.current = nextProfile;
     if (activeRef.current) setProfile(nextProfile);
   }, []);
+
+  const clearAuthState = useCallback(({ notice = null, error = null, clearNotice = false } = {}) => {
+    clearCachedAuthSession();
+    if (!activeRef.current) return;
+
+    setSession(null);
+    setUser(null);
+    userIdRef.current = null;
+    updateProfile(null);
+    setMfaLevel(null);
+    setHasVerifiedMfaFactor(false);
+    setAuthError(error);
+
+    if (clearNotice) {
+      setAuthNotice(null);
+      return;
+    }
+
+    const pendingNotice = notice || consumeAuthNotice();
+    if (pendingNotice) setAuthNotice(pendingNotice);
+  }, [updateProfile]);
 
   const loadProfile = useCallback(async (userId) => {
     if (!userId) {
@@ -108,7 +131,8 @@ export function AuthProvider({ children }) {
         updateProfile(null);
         setMfaLevel(null);
         setHasVerifiedMfaFactor(false);
-        setAuthNotice(consumeAuthNotice());
+        const pendingNotice = consumeAuthNotice();
+        if (pendingNotice) setAuthNotice(pendingNotice);
       } else if (shouldShowProfileLoading) {
         updateProfile(undefined);
         setAuthNotice(null);
@@ -129,39 +153,22 @@ export function AuthProvider({ children }) {
     setAuthError(null);
 
     try {
-      const nextSession = await refreshAuthSession();
+      const nextSession = await maintainAuthSession({ forceRefresh: true, invalidateAtExpiry: true });
+      if (!nextSession) return null;
       await applySession(nextSession);
       return nextSession;
     } catch (error) {
-      clearCachedAuthSession();
-      if (activeRef.current) {
-        setSession(null);
-        setUser(null);
-        userIdRef.current = null;
-        updateProfile(null);
-        setMfaLevel(null);
-        setHasVerifiedMfaFactor(false);
-        setAuthError(error);
-        setAuthNotice(getLoginErrorCode(error));
-      }
+      clearAuthState({ notice: getLoginErrorCode(error), error });
       return null;
     } finally {
       if (activeRef.current) setLoading(false);
     }
-  }, [applySession, updateProfile]);
+  }, [applySession, clearAuthState]);
 
   const signOut = useCallback(async () => {
     await signOutAuth();
-    if (activeRef.current) {
-        setSession(null);
-        setUser(null);
-        userIdRef.current = null;
-        updateProfile(null);
-        setMfaLevel(null);
-        setHasVerifiedMfaFactor(false);
-        setAuthNotice(null);
-      }
-  }, [updateProfile]);
+    clearAuthState({ clearNotice: true });
+  }, [clearAuthState]);
 
   useEffect(() => {
     activeRef.current = true;
@@ -174,21 +181,16 @@ export function AuthProvider({ children }) {
         const initialSession = await getAuthSession();
         await applySession(initialSession);
       } catch (error) {
-        clearCachedAuthSession();
-        if (activeRef.current) {
-          setSession(null);
-          setUser(null);
-          userIdRef.current = null;
-          updateProfile(null);
-          setMfaLevel(null);
-          setHasVerifiedMfaFactor(false);
-          setAuthError(error);
-          setAuthNotice(getLoginErrorCode(error));
-        }
+        clearAuthState({ notice: getLoginErrorCode(error), error });
       } finally {
         if (activeRef.current) setLoading(false);
       }
     };
+
+    const stopSessionMonitor = startAuthSessionMonitor();
+    const unsubscribeInvalidation = subscribeToAuthInvalidation(({ notice }) => {
+      clearAuthState({ notice });
+    });
 
     initialize();
 
@@ -206,8 +208,10 @@ export function AuthProvider({ children }) {
     return () => {
       activeRef.current = false;
       subscription.unsubscribe();
+      unsubscribeInvalidation();
+      stopSessionMonitor();
     };
-  }, [applySession, updateProfile]);
+  }, [applySession, clearAuthState, updateProfile]);
 
   useEffect(() => {
     if (!user?.id) return undefined;

@@ -116,6 +116,18 @@
   max-height: 400px;
 }
 
+.nc-action-error {
+  margin: 10px 12px 0;
+  padding: 9px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .nc-panel-footer {
   display: flex;
   justify-content: flex-end;

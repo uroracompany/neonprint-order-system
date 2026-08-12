@@ -36,10 +36,11 @@ export default function Sidebar({
   menuItems = [], 
   onLogout,
   onCreateNew,
-  showCreateButton = false
+  showCreateButton = false,
+  scrollNavigation = false,
 }) {
   return (
-    <aside className={`sb-sidebar ${isOpen ? "open" : "closed"}`}>
+    <aside className={`sb-sidebar ${isOpen ? "open" : "closed"} ${scrollNavigation ? "sb-sidebar-scroll-navigation" : ""}`}>
       <div className="sb-sidebar-logo">
         <NeonLogo size={52} />
         {isOpen && (

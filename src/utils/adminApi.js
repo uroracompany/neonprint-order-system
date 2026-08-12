@@ -2,10 +2,17 @@ import { expireAuthSession, getFreshAccessToken } from "./authManager";
 import { isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "./errorUtils";
 import { getApiErrorCode, getApiErrorMessage } from "./authFeedback";
 
+const SESSION_FAILURE_CODES = new Set(["SESSION_EXPIRED", "AUTH_REQUIRED"]);
+
 const isTokenError = (result) =>
   /token|jwt|expir|invalid/i.test(String(result?.error || result?.message || ""));
 
-async function clearInvalidAdminSession() {
+const isSessionFailure = (response, result) => (
+  response?.status === 401
+  && (SESSION_FAILURE_CODES.has(String(result?.code || "").toUpperCase()) || isTokenError(result))
+);
+
+async function clearInvalidSession() {
   try {
     await expireAuthSession();
   } catch {
@@ -48,7 +55,7 @@ export async function adminApiFetch(path, payload = {}) {
     accessToken = await getFreshAccessToken();
   } catch (error) {
     const isExpiredSession = /sesion expiro|sesión expiró|token|jwt|invalid/i.test(String(error?.message || ""));
-    if (isExpiredSession) await clearInvalidAdminSession();
+    if (isExpiredSession) await clearInvalidSession();
     const status = isExpiredSession ? 401 : 0;
     const result = {
       code: getApiErrorCode({ status, error }),
@@ -58,15 +65,26 @@ export async function adminApiFetch(path, payload = {}) {
   }
   let output = await postJson(path, payload, accessToken);
 
-  if (output.response.status === 401 && isTokenError(output.result)) {
-    accessToken = await getFreshAccessToken({ forceRefresh: true });
-    output = await postJson(path, payload, accessToken);
+  if (isSessionFailure(output.response, output.result)) {
+    let sessionInvalidated = false;
+    try {
+      accessToken = await getFreshAccessToken({ forceRefresh: true });
+      output = await postJson(path, payload, accessToken);
+    } catch {
+      await clearInvalidSession();
+      sessionInvalidated = true;
+      output = {
+        response: { ok: false, status: 401, statusText: "Authentication Error" },
+        result: { code: "SESSION_EXPIRED", error: "Tu sesion expiro. Inicia sesion nuevamente." },
+      };
+    }
 
-    if (output.response.status === 401 && isTokenError(output.result)) {
-      await clearInvalidAdminSession();
+    if (!sessionInvalidated && isSessionFailure(output.response, output.result)) {
+      await clearInvalidSession();
       output.result = {
         ...output.result,
-        error: "Tu sesion ya no es valida. Cierra sesion e inicia sesion nuevamente.",
+        code: "SESSION_EXPIRED",
+        error: "Tu sesion expiro. Inicia sesion nuevamente.",
       };
     }
   }

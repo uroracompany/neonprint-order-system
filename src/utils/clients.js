@@ -1,4 +1,4 @@
-export const CLIENT_SELECT_COLUMNS = "id,name,phone,email,address,notes,created_at,updated_at";
+export const CLIENT_SELECT_COLUMNS = "id,name,phone,email,address,notes,deleted_at,deleted_by,deletion_reason,created_at,updated_at";
 export const NO_CLIENT_FILTER_VALUE = "__no_client__";
 
 export const normalizeClientText = (value) =>
@@ -118,6 +118,7 @@ export const loadClients = async (supabase) => {
   const { data, error } = await supabase
     .from("clients")
     .select(CLIENT_SELECT_COLUMNS)
+    .is("deleted_at", null)
     .order("name", { ascending: true });
 
   if (error) {
@@ -142,6 +143,7 @@ export const searchClients = async (supabase, query = "", limit = 20) => {
     let request = supabase
       .from("clients")
       .select(CLIENT_SELECT_COLUMNS)
+      .is("deleted_at", null)
       .order("name", { ascending: true })
       .limit(limit);
 

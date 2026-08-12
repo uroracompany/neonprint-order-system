@@ -58,7 +58,7 @@ export async function verifyAdmin(token, supabaseUrl, _anonKey, serviceRoleKey =
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
-    .select("id,name,email,role,employment_status")
+    .select("id,name,email,role,employment_status,deleted_at")
     .eq("id", user.id)
     .single();
 
@@ -70,6 +70,11 @@ export async function verifyAdmin(token, supabaseUrl, _anonKey, serviceRoleKey =
   if (profile.role !== "admin") {
     debugAuth("not-admin", { userId: user.id, role: profile.role }, env);
     return { authorized: false, status: 403, code: "FORBIDDEN", error: "Se requieren permisos de administrador." };
+  }
+
+  if (profile.employment_status === false || profile.deleted_at) {
+    debugAuth("inactive-admin", { userId: user.id }, env);
+    return { authorized: false, status: 403, code: "ACCOUNT_INACTIVE", error: "Tu usuario esta inactivo." };
   }
 
   debugAuth("authorized-admin", { userId: user.id }, env);

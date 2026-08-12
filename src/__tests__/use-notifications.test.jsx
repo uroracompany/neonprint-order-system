@@ -40,9 +40,15 @@ const makeNotification = (overrides = {}) => ({
   ...overrides,
 });
 
-const setupSupabase = ({ persistedNotification = makeNotification(), notificationRows = [], notificationResults = null } = {}) => {
+const setupSupabase = ({
+  persistedNotification = makeNotification(),
+  notificationRows = [],
+  notificationResults = null,
+  mutationResults = null,
+} = {}) => {
   const subscriptions = {};
   const queuedNotificationResults = Array.isArray(notificationResults) ? [...notificationResults] : null;
+  const queuedMutationResults = Array.isArray(mutationResults) ? [...mutationResults] : null;
   const channel = {
     on: vi.fn((event, filter, callback) => {
       subscriptions[filter.event] = callback;
@@ -53,12 +59,19 @@ const setupSupabase = ({ persistedNotification = makeNotification(), notificatio
 
   supabase.channel.mockReturnValue(channel);
   supabase.removeChannel.mockResolvedValue({});
+  supabase.rpc.mockResolvedValue({ data: 1, error: null });
   supabase.from.mockImplementation(() => {
     const resolveLimit = () => {
       if (queuedNotificationResults?.length) {
         return queuedNotificationResults.shift();
       }
       return Promise.resolve({ data: notificationRows, error: null });
+    };
+    const resolveMutation = () => {
+      if (queuedMutationResults?.length) {
+        return Promise.resolve(queuedMutationResults.shift());
+      }
+      return Promise.resolve({ data: [persistedNotification], error: null });
     };
 
     const builder = {
@@ -71,6 +84,7 @@ const setupSupabase = ({ persistedNotification = makeNotification(), notificatio
       order: vi.fn(() => builder),
       limit: vi.fn(resolveLimit),
       single: vi.fn(async () => ({ data: persistedNotification, error: null })),
+      then: (resolve, reject) => resolveMutation().then(resolve, reject),
     };
     return builder;
   });
@@ -219,11 +233,116 @@ describe("useNotifications", () => {
     expect(second.result.current.notifications).toHaveLength(0);
   });
 
+  it("persists the read timestamp before updating the active notification", async () => {
+    setupSupabase({
+      notificationRows: [makeNotification()],
+    });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+
+    let actionResult;
+    await act(async () => {
+      actionResult = await result.current.markAsRead("notification-1");
+    });
+
+    expect(actionResult).toEqual({ ok: true });
+    expect(result.current.notifications[0]).toMatchObject({
+      id: "notification-1",
+      is_read: true,
+    });
+    expect(result.current.notifications[0].read_at).toEqual(expect.any(String));
+    expect(supabase.rpc).toHaveBeenCalledWith("mark_notification_read", { p_notification_id: "notification-1" });
+  });
+
+  it("does not mark a notification as read locally when no database row was updated", async () => {
+    setupSupabase({
+      notificationRows: [makeNotification()],
+    });
+    supabase.rpc.mockResolvedValue({ data: 0, error: null });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+
+    let actionResult;
+    await act(async () => {
+      actionResult = await result.current.markAsRead("notification-1");
+    });
+
+    expect(actionResult.ok).toBe(false);
+    expect(result.current.notifications[0].is_read).toBe(false);
+  });
+
+  it("archives only the selected notification when similar notifications exist", async () => {
+    supabase.rpc.mockResolvedValue({ data: 1, error: null });
+    const secondNotification = makeNotification({ id: "notification-2" });
+    setupSupabase({ notificationRows: [makeNotification(), secondNotification] });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(2);
+    });
+
+    await act(async () => {
+      await result.current.archive("notification-1");
+    });
+
+    expect(result.current.notifications.map((notification) => notification.id)).toEqual(["notification-2"]);
+    expect(result.current.archivedNotifications.map((notification) => notification.id)).toEqual(["notification-1"]);
+    expect(supabase.rpc).toHaveBeenCalledWith("archive_notification", { p_notification_id: "notification-1" });
+  });
+
+  it("removes an archived notification only after the database confirms deletion", async () => {
+    supabase.rpc.mockResolvedValue({ data: 1, error: null });
+    setupSupabase({ notificationRows: [makeNotification({ is_archived: true })] });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.archivedNotifications).toHaveLength(1);
+    });
+
+    let actionResult;
+    await act(async () => {
+      actionResult = await result.current.deleteNotification("notification-1");
+    });
+
+    expect(actionResult).toEqual({ ok: true });
+    expect(result.current.archivedNotifications).toHaveLength(0);
+    expect(supabase.rpc).toHaveBeenCalledWith("dismiss_notification", { p_notification_id: "notification-1" });
+  });
+
+  it("keeps the notification visible when archive confirmation affects zero rows", async () => {
+    setupSupabase({ notificationRows: [makeNotification()] });
+    supabase.rpc.mockResolvedValue({ data: 0, error: null });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+
+    let actionResult;
+    await act(async () => {
+      actionResult = await result.current.archive("notification-1");
+    });
+
+    expect(actionResult.ok).toBe(false);
+    expect(result.current.notifications).toHaveLength(1);
+    expect(result.current.archivedNotifications).toHaveLength(0);
+  });
+
   it("bulk deletes notifications by scope and clears the matching local list", async () => {
     setupSupabase({
       notificationRows: [
         makeNotification({ id: "active-notification" }),
         makeNotification({ id: "archived-notification", is_archived: true }),
+      ],
+      mutationResults: [
+        { data: [{ id: "archived-notification" }], error: null },
+        { data: [{ id: "active-notification" }], error: null },
       ],
     });
     const { result } = renderHook(() => useNotifications(userId));

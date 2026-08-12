@@ -6,6 +6,8 @@ import {
 } from "../../supabaseClient";
 
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
+const TOKEN_REFRESH_RETRY_MS = 15_000;
+const MIN_REFRESH_SCHEDULE_DELAY_MS = 1_000;
 const USER_CACHE_TTL_MS = 30_000;
 
 let authQueue = Promise.resolve();
@@ -16,6 +18,12 @@ let cachedSession = null;
 let cachedUser = null;
 let lastUserCheckedAt = 0;
 let pendingAuthNotice = null;
+let refreshTimer = null;
+let expiryTimer = null;
+let sessionEndPromise = null;
+let monitorReferences = 0;
+let monitorListenersAttached = false;
+const invalidationListeners = new Set();
 
 const isAuthDebugEnabled = () => import.meta.env?.VITE_AUTH_DEBUG === "1";
 
@@ -58,16 +66,82 @@ const isSessionFreshEnough = (session) => {
   return session.expires_at * 1000 - Date.now() > TOKEN_REFRESH_BUFFER_MS;
 };
 
+const getSessionExpiryMs = (session) => {
+  const expiresAt = Number(session?.expires_at);
+  return Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt * 1000 : null;
+};
+
+const isSessionExpired = (session) => {
+  const expiresAt = getSessionExpiryMs(session);
+  return expiresAt !== null && expiresAt <= Date.now();
+};
+
+const canUseBrowserEvents = () => typeof window !== "undefined" && typeof document !== "undefined";
+
+const clearSessionTimers = () => {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  if (expiryTimer) clearTimeout(expiryTimer);
+  refreshTimer = null;
+  expiryTimer = null;
+};
+
+const notifyInvalidation = (notice) => {
+  invalidationListeners.forEach((listener) => {
+    try {
+      listener({ notice });
+    } catch {
+      // A stale React subscription must not prevent local credential cleanup.
+    }
+  });
+};
+
+const scheduleRetryBeforeExpiry = (session) => {
+  if (cachedSession !== session) return;
+  const expiresAt = getSessionExpiryMs(session);
+  if (!expiresAt || expiresAt <= Date.now()) return;
+
+  const retryDelay = Math.min(TOKEN_REFRESH_RETRY_MS, Math.max(1_000, expiresAt - Date.now()));
+  refreshTimer = setTimeout(() => {
+    void maintainAuthSession({ invalidateAtExpiry: true }).catch(() => undefined);
+  }, retryDelay);
+};
+
+const scheduleSessionMaintenance = (session) => {
+  clearSessionTimers();
+
+  const expiresAt = getSessionExpiryMs(session);
+  if (!expiresAt) return;
+
+  const refreshDelay = Math.max(MIN_REFRESH_SCHEDULE_DELAY_MS, expiresAt - Date.now() - TOKEN_REFRESH_BUFFER_MS);
+  refreshTimer = setTimeout(() => {
+    if (cachedSession !== session) return;
+    void maintainAuthSession({ invalidateAtExpiry: false }).catch(() => {
+      scheduleRetryBeforeExpiry(session);
+    });
+  }, refreshDelay);
+
+  expiryTimer = setTimeout(() => {
+    if (cachedSession !== session) return;
+    void maintainAuthSession({ forceRefresh: true, invalidateAtExpiry: true }).catch(() => undefined);
+  }, Math.max(0, expiresAt - Date.now()));
+};
+
 export function setCachedAuthSession(session) {
   cachedSession = session || null;
   cachedUser = session?.user || null;
-  if (!session) lastUserCheckedAt = 0;
+  if (!session) {
+    lastUserCheckedAt = 0;
+    clearSessionTimers();
+    return;
+  }
+  scheduleSessionMaintenance(session);
 }
 
 export function clearCachedAuthSession() {
   cachedSession = null;
   cachedUser = null;
   lastUserCheckedAt = 0;
+  clearSessionTimers();
 }
 
 export function markAuthNotice(code) {
@@ -118,6 +192,35 @@ export async function refreshAuthSession() {
   return refreshPromise;
 }
 
+export async function maintainAuthSession({ forceRefresh = false, invalidateAtExpiry = false } = {}) {
+  let session;
+  try {
+    session = await getAuthSession();
+  } catch (error) {
+    if (invalidateAtExpiry || isSessionExpired(cachedSession)) await expireAuthSession();
+    throw error;
+  }
+
+  if (!session?.access_token) {
+    if (invalidateAtExpiry || isSessionExpired(cachedSession)) await expireAuthSession();
+    return null;
+  }
+
+  const requiresRefresh = forceRefresh || !isSessionFreshEnough(session);
+  if (!requiresRefresh) return session;
+
+  try {
+    const refreshedSession = await refreshAuthSession();
+    if (!refreshedSession?.access_token) {
+      throw new Error("Tu sesion expiro. Inicia sesion nuevamente.");
+    }
+    return refreshedSession;
+  } catch (error) {
+    if (invalidateAtExpiry || isSessionExpired(session)) await expireAuthSession();
+    throw error;
+  }
+}
+
 export async function getFreshAccessToken({ forceRefresh = false } = {}) {
   let session = await getAuthSession();
 
@@ -157,20 +260,67 @@ export async function getVerifiedUser({ force = false } = {}) {
   return userPromise;
 }
 
-export async function signOutAuth() {
-  return enqueueAuthOperation("signOut", async () => {
+async function endAuthSession({ scope = "global", notice = null, suppressRemoteError = false } = {}) {
+  if (notice) markAuthNotice(notice);
+  if (sessionEndPromise) return sessionEndPromise;
+
+  sessionEndPromise = enqueueAuthOperation("signOut", async () => {
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut({ scope });
+      if (error && !suppressRemoteError) throw error;
     } finally {
       clearCachedAuthSession();
       clearAuthSessionStorage();
+      if (notice) notifyInvalidation(notice);
     }
+  }).finally(() => {
+    sessionEndPromise = null;
   });
+
+  return sessionEndPromise;
+}
+
+export async function signOutAuth() {
+  return endAuthSession();
 }
 
 export async function expireAuthSession() {
-  markAuthNotice("SESSION_EXPIRED");
-  return signOutAuth();
+  return endAuthSession({
+    scope: "local",
+    notice: "SESSION_EXPIRED",
+    suppressRemoteError: true,
+  });
+}
+
+export function subscribeToAuthInvalidation(listener) {
+  invalidationListeners.add(listener);
+  return () => invalidationListeners.delete(listener);
+}
+
+const revalidateWhenActive = () => {
+  if (document.visibilityState && document.visibilityState !== "visible") return;
+  void maintainAuthSession({ invalidateAtExpiry: true }).catch(() => undefined);
+};
+
+export function startAuthSessionMonitor() {
+  if (!canUseBrowserEvents()) return () => undefined;
+
+  monitorReferences += 1;
+  if (!monitorListenersAttached) {
+    window.addEventListener("focus", revalidateWhenActive);
+    window.addEventListener("online", revalidateWhenActive);
+    document.addEventListener("visibilitychange", revalidateWhenActive);
+    monitorListenersAttached = true;
+  }
+
+  return () => {
+    monitorReferences = Math.max(0, monitorReferences - 1);
+    if (monitorReferences || !monitorListenersAttached) return;
+    window.removeEventListener("focus", revalidateWhenActive);
+    window.removeEventListener("online", revalidateWhenActive);
+    document.removeEventListener("visibilitychange", revalidateWhenActive);
+    monitorListenersAttached = false;
+  };
 }
 
 export function __resetAuthManagerForTests() {
@@ -179,5 +329,14 @@ export function __resetAuthManagerForTests() {
   refreshPromise = null;
   userPromise = null;
   pendingAuthNotice = null;
+  sessionEndPromise = null;
+  monitorReferences = 0;
+  if (monitorListenersAttached && canUseBrowserEvents()) {
+    window.removeEventListener("focus", revalidateWhenActive);
+    window.removeEventListener("online", revalidateWhenActive);
+    document.removeEventListener("visibilitychange", revalidateWhenActive);
+  }
+  monitorListenersAttached = false;
+  invalidationListeners.clear();
   clearCachedAuthSession();
 }

@@ -8,7 +8,11 @@ import { getReferenceImages } from "../../utils/orderAssets";
 import FileUploadZone from "../ui/FileUploadZone";
 import "./AdminManageFilesModal.css";
 
-const getUserDisplayName = (profile) => profile?.name || profile?.email || "Usuario";
+const getUserDisplayName = (profile) => {
+  if (!profile) return "Usuario eliminado";
+  const label = profile.name || profile.email || "Usuario eliminado";
+  return profile.deleted_at || profile.employment_status === false ? `${label} — dado de baja` : label;
+};
 
 const getAllFileStatuses = () => [
   { value: PRODUCTION_FILE_STATUS.PENDING, label: PRODUCTION_FILE_STATUS_LABELS[PRODUCTION_FILE_STATUS.PENDING] },
@@ -76,9 +80,10 @@ export default function AdminManageFilesModal({
       if (roles.length === 0) { setProductionUsers([]); return; }
       const { data: userData } = await supabase
         .from("profiles")
-        .select("id,name,email,role,employment_status")
+        .select("id,name,email,role,employment_status,deleted_at")
         .in("role", roles)
-        .eq("employment_status", true);
+        .eq("employment_status", true)
+        .is("deleted_at", null);
       if (!active) return;
       setProductionUsers(userData || []);
     })();
@@ -93,9 +98,9 @@ export default function AdminManageFilesModal({
     return order?.preview_image || null;
   }, [previewFile, order?.preview_image]);
   const hasPreviewChanges = previewFile !== null;
-  const deliveryUsers = useMemo(() => profiles.filter((p) => p.role === "delivery" && p.employment_status !== false), [profiles]);
+  const deliveryUsers = useMemo(() => profiles.filter((p) => p.role === "delivery" && p.employment_status !== false && !p.deleted_at), [profiles]);
   const productionUsersByRole = useMemo(
-    () => productionUsers.reduce((acc, u) => { (acc[u.role] = acc[u.role] || []).push(u); return acc; }, {}),
+    () => productionUsers.filter((u) => u.employment_status !== false && !u.deleted_at).reduce((acc, u) => { (acc[u.role] = acc[u.role] || []).push(u); return acc; }, {}),
     [productionUsers],
   );
 
