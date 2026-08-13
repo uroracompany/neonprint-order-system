@@ -58,7 +58,7 @@ export async function verifyAdmin(token, supabaseUrl, _anonKey, serviceRoleKey =
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
-    .select("id,name,email,role,employment_status,deleted_at")
+    .select("id,name,email,role,employment_status,deleted_at,created_at")
     .eq("id", user.id)
     .single();
 

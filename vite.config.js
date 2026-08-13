@@ -15,6 +15,7 @@ import { handleDesignerProfile } from './server/designer-profile-handler.js'
 import { handleQuoteProfile } from './server/quote-profile-handler.js'
 import { handleProductionProfile } from './server/production-profile-handler.js'
 import { handleDeliveryProfile } from './server/delivery-profile-handler.js'
+import { handleAdminProfile } from './server/admin-profile-handler.js'
 import { handleSellerOrderAction } from './server/seller-order-actions-handler.js'
 import {
   handleAdminDeleteOrderWithFiles,
@@ -181,6 +182,7 @@ return {
       createApiHandler("/api/quote-profile", handleQuoteProfile),
       createApiHandler("/api/production-profile", handleProductionProfile),
       createApiHandler("/api/delivery-profile", handleDeliveryProfile),
+      createApiHandler("/api/admin-profile", handleAdminProfile),
       createApiHandler("/api/seller-orders", handleSellerOrderAction),
       createApiHandler("/api/files-initiate-upload", handleInitiateFileUpload),
       createApiHandler("/api/files-complete-upload", handleCompleteFileUpload),

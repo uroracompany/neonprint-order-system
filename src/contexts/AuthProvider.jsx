@@ -13,7 +13,7 @@ import {
 } from "../utils/authManager";
 import { AUTH_NOTICE, getLoginErrorCode } from "../utils/authFeedback";
 
-const PROFILE_COLUMNS = "id, name, email, role, employment_status, deleted_at";
+const PROFILE_COLUMNS = "id, name, email, role, employment_status, deleted_at, created_at";
 
 export function AuthProvider({ children }) {
   const activeRef = useRef(true);
@@ -71,7 +71,7 @@ export function AuthProvider({ children }) {
     return data || null;
   }, [updateProfile]);
 
-  const loadMfaLevel = useCallback(async (nextSession) => {
+  const loadMfaLevel = useCallback(async (nextSession, { preserveCurrent = false } = {}) => {
     if (!nextSession?.access_token) {
       if (activeRef.current) {
         setMfaLevel(null);
@@ -80,7 +80,7 @@ export function AuthProvider({ children }) {
       return null;
     }
 
-    if (activeRef.current) {
+    if (activeRef.current && !preserveCurrent) {
       setMfaLevel(undefined);
       setHasVerifiedMfaFactor(undefined);
     }
@@ -141,7 +141,7 @@ export function AuthProvider({ children }) {
 
     const tasks = [];
     if (shouldLoadProfile) tasks.push(loadProfile(nextUser.id));
-    if (nextUser) tasks.push(loadMfaLevel(nextSession));
+    if (nextUser) tasks.push(loadMfaLevel(nextSession, { preserveCurrent: isTokenRefreshForSameUser }));
 
     if (tasks.length) {
       await Promise.all(tasks);

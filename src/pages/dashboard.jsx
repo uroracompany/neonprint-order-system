@@ -3763,10 +3763,10 @@ export default function Dashboard() {
     { id: "kpi", label: "KPI", icon: <Icons.BarChart /> },
     { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loadingOrders, orders.length) },
     { id: "credits", label: "Seguimiento", icon: <Icons.AlertCircle />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
-    { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: getSidebarBadge(notif.loading, adminUnreadCount) },
     { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clientsTotal) },
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
     { id: "users", label: "Empleados", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
+    { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: getSidebarBadge(notif.loading, adminUnreadCount) },
     { id: "profile", label: "Mi perfil", icon: <Icons.User /> },
   ];
 
