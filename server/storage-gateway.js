@@ -3,7 +3,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "./auth-middleware.js";
-import { getEnvValue, getSupabaseAdminEnv, jsonResponse } from "./admin-user-utils.js";
+import { getEnvValue, getSupabaseAdminEnv, internalError, jsonResponse } from "./admin-user-utils.js";
 import { isAllowedImageFile, validateUploadPolicy } from "../src/utils/fileValidation.js";
 
 const MB = 1024 * 1024;
@@ -193,7 +193,7 @@ export const parseR2Url = (url = "") => {
 
 export const buildR2Url = ({ bucket, key }) => `${R2_SCHEME}${bucket}/${encodeURI(key)}`;
 
-const presignR2Url = ({ method, key, bucket, expiresIn = DEFAULT_SIGNED_URL_TTL, env = process.env }) => {
+const presignR2Url = ({ method, key, bucket, expiresIn = DEFAULT_SIGNED_URL_TTL, downloadName = "archivo", env = process.env }) => {
   const r2 = getR2Config(env);
   if (!r2.configured) {
     throw new Error("Cloudflare R2 no esta configurado en el servidor.");
@@ -212,6 +212,11 @@ const presignR2Url = ({ method, key, bucket, expiresIn = DEFAULT_SIGNED_URL_TTL,
     "X-Amz-Expires": String(Math.max(1, Math.min(Number(expiresIn) || DEFAULT_SIGNED_URL_TTL, 604800))),
     "X-Amz-SignedHeaders": "host",
   };
+
+  if (method.toUpperCase() === "GET") {
+    params["response-content-disposition"] = `attachment; filename="${safeFileName(downloadName)}"`;
+    params["response-content-type"] = "application/octet-stream";
+  }
 
   const canonicalQueryString = Object.entries(params)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -725,7 +730,7 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
     .single();
 
   if (insertError) {
-    return jsonResponse(500, { error: `No se pudo registrar el archivo: ${insertError.message}` });
+    return internalError("No se pudo registrar el archivo.", "FILE_RECORD_CREATE_FAILED");
   }
 
   return jsonResponse(200, buildR2UploadResponse({
@@ -764,7 +769,7 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
       .select("*")
       .single();
 
-    if (error) return jsonResponse(500, { error: `No se pudo actualizar el archivo: ${error.message}` });
+    if (error) return internalError("No se pudo actualizar el archivo.", "FILE_RECORD_UPDATE_FAILED");
     return jsonResponse(200, { file: data, storedUrl: buildR2Url({ bucket: data.bucket, key: data.object_key }) });
   }
 
@@ -795,7 +800,7 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
     .select("*")
     .single();
 
-  if (error) return jsonResponse(500, { error: `No se pudo registrar el archivo: ${error.message}` });
+  if (error) return internalError("No se pudo registrar el archivo.", "FILE_RECORD_CREATE_FAILED");
   return jsonResponse(200, { file: data });
 }
 
@@ -813,7 +818,8 @@ export async function handleImportRemoteFile(payload = {}, env = process.env) {
     return jsonResponse(200, imported);
   } catch (error) {
     return jsonResponse(400, {
-      error: error?.message || "No se pudo importar el archivo remoto.",
+      error: "No se pudo importar el archivo remoto.",
+      code: "REMOTE_FILE_IMPORT_FAILED",
     });
   }
 }
@@ -834,7 +840,7 @@ export async function handleFileDownloadUrl(payload = {}, env = process.env) {
     .eq("object_key", r2Ref.key)
     .maybeSingle();
 
-  if (error) return jsonResponse(500, { error: `No se pudo consultar el archivo: ${error.message}` });
+  if (error) return internalError("No se pudo consultar el archivo.", "FILE_LOOKUP_FAILED");
   const orderId = fileRecord?.order_id || getOrderIdFromPath(r2Ref.key);
   if (!orderId) return jsonResponse(404, { error: "No se encontro el archivo." });
 
@@ -847,6 +853,7 @@ export async function handleFileDownloadUrl(payload = {}, env = process.env) {
       bucket: fileRecord?.bucket || r2Ref.bucket,
       key: fileRecord?.object_key || r2Ref.key,
       expiresIn: Number(payload?.expiresIn) || DEFAULT_SIGNED_URL_TTL,
+      downloadName: fileRecord?.original_filename || r2Ref.key.split("/").pop() || "archivo",
       env,
     }),
     expiresIn: Number(payload?.expiresIn) || DEFAULT_SIGNED_URL_TTL,
@@ -883,7 +890,7 @@ export async function handleAdminDeleteOrderWithFiles(payload = {}, env = proces
     .is("deleted_at", null);
 
   if (filesError) {
-    return jsonResponse(500, { error: `No se pudieron consultar archivos: ${filesError.message}` });
+    return internalError("No se pudieron consultar los archivos de la orden.", "ORDER_FILES_LOOKUP_FAILED");
   }
 
   const supabaseTargets = [
@@ -915,7 +922,7 @@ export async function handleAdminDeleteOrderWithFiles(payload = {}, env = proces
     });
     return jsonResponse(409, {
       error: "No se elimino la orden porque hubo errores borrando archivos.",
-      storage_errors: errors,
+      code: "ORDER_FILE_DELETE_FAILED",
     });
   }
 
@@ -941,7 +948,7 @@ export async function handleAdminDeleteOrderWithFiles(payload = {}, env = proces
       storage_errors: [{ provider: "database", message: deleteError.message }],
       delete_status: "failed",
     });
-    return jsonResponse(500, { error: `Los archivos se borraron, pero no se pudo eliminar la orden: ${deleteError.message}` });
+    return internalError("Los archivos se borraron, pero no se pudo eliminar la orden.", "ORDER_DELETE_FAILED");
   }
 
   await supabaseAdmin.from("order_delete_audit").insert({

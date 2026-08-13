@@ -345,7 +345,7 @@ export async function handleQuoteProfile(payload = {}, env = process.env) {
     console.error("[QuoteProfile] Error:", error?.message, error);
     return {
       status: 500,
-      body: { error: error?.message || "No se pudo cargar el perfil del cotizador." },
+      body: { error: "No se pudo cargar el perfil del cotizador.", code: "QUOTE_PROFILE_LOOKUP_FAILED" },
     };
   }
 }

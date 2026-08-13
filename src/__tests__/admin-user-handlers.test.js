@@ -475,6 +475,11 @@ const makeAdminUtilityClient = ({
   getUserByIdError = null,
   updateUserError = null,
 } = {}) => {
+  const getUser = vi.fn(async () => ({ data: { user: { id: "admin-1" } }, error: null }));
+  const profileSingle = vi.fn(async () => ({
+    data: { id: "admin-1", name: "Admin", email: "admin@example.com", role: "admin", employment_status: true },
+    error: null,
+  }));
   const getUserById = vi.fn(async (id) => ({
     data: getUserByIdError ? null : { user: { id, email } },
     error: getUserByIdError,
@@ -483,11 +488,14 @@ const makeAdminUtilityClient = ({
 
   return {
     auth: {
+      getUser,
       admin: {
         getUserById,
         updateUserById,
       },
     },
+    from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ single: profileSingle })) })) })),
+    getUser,
     getUserById,
     updateUserById,
   };
@@ -716,7 +724,7 @@ describe("handleAdminUpdateUser", () => {
     const result = await handleAdminUpdateUser(validPayload, env);
 
     expect(result.status).toBe(400);
-    expect(result.body.error).toMatch(/perfil fue restaurado/i);
+    expect(result.body.error).toMatch(/cambios se revirtieron/i);
     expect(currentClient.authUpdate).toHaveBeenCalled();
     expect(currentClient.profileUpdate).toHaveBeenCalledTimes(2);
     expect(currentClient.profileUpdate).toHaveBeenNthCalledWith(2, {
@@ -732,7 +740,7 @@ describe("handleAdminUpdateUser", () => {
     const result = await handleAdminUpdateUser(validPayload, env);
 
     expect(result.status).toBe(404);
-    expect(result.body.error).toBe("User not found");
+    expect(result.body.error).toMatch(/cuenta de autenticacion/i);
   });
 
   it("requires server Supabase environment variables", async () => {
@@ -741,7 +749,7 @@ describe("handleAdminUpdateUser", () => {
     const result = await handleAdminUpdateUser(validPayload, {});
 
     expect(result.status).toBe(500);
-    expect(result.body.error).toMatch(/SUPABASE_URL/);
+    expect(result.body.error).toMatch(/configuracion segura/i);
   });
 
   it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
@@ -754,7 +762,7 @@ describe("handleAdminUpdateUser", () => {
     });
 
     expect(result.status).toBe(500);
-    expect(result.body.error).toMatch(/SUPABASE_URL/);
+    expect(result.body.error).toMatch(/configuracion segura/i);
     expect(currentClient.getUser).not.toHaveBeenCalled();
   });
 });
@@ -1014,7 +1022,7 @@ describe("handleAdminListOrders", () => {
     expect(currentClient.orderRange).not.toHaveBeenCalled();
   });
 
-  it("returns database errors instead of an empty list", async () => {
+  it("returns a sanitized database error instead of an empty list", async () => {
     currentClient = makeAdminOrdersClient({
       ordersError: { message: "permission denied for table orders", code: "42501" },
     });
@@ -1022,7 +1030,7 @@ describe("handleAdminListOrders", () => {
     const result = await handleAdminListOrders({}, env);
 
     expect(result.status).toBe(400);
-    expect(result.body.error).toMatch(/permission denied/);
+    expect(result.body.error).toMatch(/no se pudieron cargar las ordenes/i);
   });
 
   it("applies pagination and supported filters", async () => {
@@ -1121,6 +1129,15 @@ describe("handleGetUserEmail", () => {
     expect(currentClient.getUserById).toHaveBeenCalledWith("user-1");
   });
 
+  it("requires an authenticated administrator before reading an email", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleGetUserEmail({ userId: "user-1" }, { ...env, authHeader: "" });
+
+    expect(result.status).toBe(401);
+    expect(currentClient.getUserById).not.toHaveBeenCalled();
+  });
+
   it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
     currentClient = makeAdminUtilityClient();
 
@@ -1130,7 +1147,7 @@ describe("handleGetUserEmail", () => {
     });
 
     expect(result.status).toBe(500);
-    expect(result.body.error).toMatch(/SUPABASE_URL/);
+    expect(result.body.error).toMatch(/configuracion segura/i);
     expect(currentClient.getUserById).not.toHaveBeenCalled();
   });
 });
@@ -1155,6 +1172,18 @@ describe("handleChangeUserPassword", () => {
     expect(currentClient.updateUserById).toHaveBeenCalledWith("user-1", { password: "SecurePass123" });
   });
 
+  it("requires an authenticated administrator before changing a password", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleChangeUserPassword({
+      userId: "user-1",
+      newPassword: "SecurePass123",
+    }, { ...env, authHeader: "" });
+
+    expect(result.status).toBe(401);
+    expect(currentClient.updateUserById).not.toHaveBeenCalled();
+  });
+
   it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
     currentClient = makeAdminUtilityClient();
 
@@ -1167,7 +1196,7 @@ describe("handleChangeUserPassword", () => {
     });
 
     expect(result.status).toBe(500);
-    expect(result.body.error).toMatch(/SUPABASE_URL/);
+    expect(result.body.error).toMatch(/configuracion segura/i);
     expect(currentClient.updateUserById).not.toHaveBeenCalled();
   });
 });

@@ -45,7 +45,7 @@ export async function handleAdminSetUserStatus(payload, env = process.env) {
     .eq("id", userId)
     .single();
   if (currentProfileError || !currentProfile) {
-    return jsonResponse(404, { error: currentProfileError?.message || "No se encontro el perfil del usuario." });
+    return jsonResponse(404, { error: "No se encontro el perfil del usuario." });
   }
   if (nextStatus && currentProfile.deleted_at) {
     return jsonResponse(409, { error: "Este empleado fue dado de baja. Usa Restaurar empleado para devolverle acceso." });
@@ -71,7 +71,8 @@ export async function handleAdminSetUserStatus(payload, env = process.env) {
 
   if (error) {
     return jsonResponse(400, {
-      error: `No se pudo actualizar el estado del usuario: ${error.message}`,
+      error: "No se pudo actualizar el estado del usuario.",
+      code: "USER_STATUS_UPDATE_FAILED",
     });
   }
 

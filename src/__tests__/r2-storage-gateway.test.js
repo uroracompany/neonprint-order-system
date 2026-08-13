@@ -67,6 +67,13 @@ describe("Cloudflare R2 hybrid storage", () => {
     });
   });
 
+  it("forces signed R2 downloads to be attachments instead of browser-rendered content", () => {
+    const gateway = readProjectFile("server/storage-gateway.js");
+
+    expect(gateway).toContain('params["response-content-disposition"] = `attachment; filename="${safeFileName(downloadName)}"`');
+    expect(gateway).toContain('params["response-content-type"] = "application/octet-stream"');
+  });
+
   it("keeps frontend upload completion and failure paths compatible with pre-order R2 uploads", () => {
     const uploadUtil = readProjectFile("src/utils/uploadOrderAsset.js");
 

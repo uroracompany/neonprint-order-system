@@ -79,7 +79,8 @@ export async function handleAdminListUsers(payload = {}, env = process.env) {
 
   if (error) {
     return jsonResponse(400, {
-      error: `No se pudieron cargar usuarios: ${error.message}`,
+      error: "No se pudieron cargar los usuarios.",
+      code: "USERS_LOOKUP_FAILED",
     });
   }
 

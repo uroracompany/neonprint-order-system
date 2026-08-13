@@ -396,7 +396,7 @@ export async function handleSellerProfile(payload = {}, env = process.env) {
   } catch (error) {
     return {
       status: 500,
-      body: { error: error?.message || "No se pudo cargar el perfil del vendedor." },
+      body: { error: "No se pudo cargar el perfil del vendedor.", code: "SELLER_PROFILE_LOOKUP_FAILED" },
     };
   }
 }

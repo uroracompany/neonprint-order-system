@@ -73,7 +73,8 @@ export async function handleAdminDeleteUser(payload, env = process.env) {
     references = await findEmployeeReferences(supabaseAdmin, userId);
   } catch (referenceError) {
     return jsonResponse(400, {
-      error: `No se pudieron validar las referencias del empleado: ${referenceError.message}`,
+      error: "No se pudieron validar las referencias del empleado.",
+      code: "USER_REFERENCE_LOOKUP_FAILED",
     });
   }
 
@@ -89,7 +90,8 @@ export async function handleAdminDeleteUser(payload, env = process.env) {
 
   if (error) {
     return jsonResponse(400, {
-      error: `No se pudo eliminar el usuario: ${error.message}`,
+      error: "No se pudo eliminar el usuario.",
+      code: "USER_DELETE_FAILED",
     });
   }
 
@@ -100,7 +102,8 @@ export async function handleAdminDeleteUser(payload, env = process.env) {
 
   if (profileError) {
     return jsonResponse(400, {
-      error: `El usuario fue eliminado de autenticacion, pero no se pudo limpiar el perfil: ${profileError.message}`,
+      error: "El usuario fue eliminado de autenticacion, pero no se pudo limpiar su perfil.",
+      code: "PROFILE_DELETE_FAILED",
     });
   }
 

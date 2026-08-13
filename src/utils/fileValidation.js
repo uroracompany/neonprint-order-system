@@ -7,6 +7,7 @@ const IMAGE_MIME_TYPES = new Set([
   "image/gif",
   "image/heic",
   "image/heif",
+  "image/tiff",
 ]);
 
 const ATTACHMENT_EXTENSIONS = new Set([
@@ -23,14 +24,8 @@ const ATTACHMENT_EXTENSIONS = new Set([
   "ai",
   "eps",
   "psd",
-  "cdr",
-  "svg",
   "tif",
   "tiff",
-  "indd",
-  "idml",
-  "dwg",
-  "dxf",
 ]);
 
 const ATTACHMENT_MIME_TYPES = new Set([
@@ -46,9 +41,9 @@ const ATTACHMENT_MIME_TYPES = new Set([
   "application/x-rar-compressed",
   "text/plain",
   "text/csv",
-  "image/svg+xml",
   "application/postscript",
   "application/illustrator",
+  "application/vnd.adobe.illustrator",
   "image/vnd.adobe.photoshop",
 ]);
 
@@ -77,14 +72,8 @@ export const FILE_UPLOAD_ACCEPT = {
     ".ai",
     ".eps",
     ".psd",
-    ".cdr",
-    ".svg",
     ".tif",
     ".tiff",
-    ".indd",
-    ".idml",
-    ".dwg",
-    ".dxf",
   ].join(","),
 };
 
@@ -97,13 +86,13 @@ export const getFileExtension = (name = "") => {
 export const isAllowedImageFile = (file) => {
   const extension = getFileExtension(file?.name);
   const type = String(file?.type || "").toLowerCase();
-  return IMAGE_EXTENSIONS.has(extension) || IMAGE_MIME_TYPES.has(type);
+  return IMAGE_EXTENSIONS.has(extension) && (!type || type === "application/octet-stream" || IMAGE_MIME_TYPES.has(type));
 };
 
 export const isAllowedAttachmentFile = (file) => {
   const extension = getFileExtension(file?.name);
   const type = String(file?.type || "").toLowerCase();
-  return ATTACHMENT_EXTENSIONS.has(extension) || ATTACHMENT_MIME_TYPES.has(type);
+  return ATTACHMENT_EXTENSIONS.has(extension) && (!type || type === "application/octet-stream" || ATTACHMENT_MIME_TYPES.has(type));
 };
 
 export const getAcceptForMode = (mode = "attachment") => (
@@ -165,7 +154,17 @@ export const validateUploadPolicy = ({ bucket, category, fileName, contentType }
   const mode = getUploadPolicyForBucket({ bucket, category });
   if (!mode) return { valid: false, error: `Bucket o categoria no permitida: ${bucket || "sin bucket"}.` };
 
-  const file = { name: fileName || "", type: contentType || "" };
-  const error = getFileModeError(file, mode);
-  return error ? { valid: false, error } : { valid: true, mode };
+  const extension = getFileExtension(fileName);
+  const type = String(contentType || "").toLowerCase();
+  const validExtension = mode === "image" ? IMAGE_EXTENSIONS.has(extension) : ATTACHMENT_EXTENSIONS.has(extension);
+  const validMime = mode === "image" ? IMAGE_MIME_TYPES.has(type) : ATTACHMENT_MIME_TYPES.has(type);
+
+  // The gateway only accepts a declared MIME type from its allow-list. This
+  // prevents an executable/HTML payload from being uploaded under a familiar
+  // filename and avoids accepting active SVG content.
+  if (!validExtension || !validMime || type === "image/svg+xml") {
+    return { valid: false, error: "El nombre o tipo declarado del archivo no esta permitido para este destino." };
+  }
+
+  return { valid: true, mode };
 };

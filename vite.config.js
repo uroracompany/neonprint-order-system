@@ -36,12 +36,21 @@ function createApiHandler(path, handler) {
         }
 
         let rawBody = "";
+        let bodyTooLarge = false;
         req.on("data", (chunk) => {
+          if (bodyTooLarge) return;
           rawBody += chunk;
+          bodyTooLarge = rawBody.length > 1_000_000;
         });
 
         req.on("end", async () => {
           try {
+            if (bodyTooLarge) {
+              res.statusCode = 413;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ code: "PAYLOAD_TOO_LARGE", error: "La solicitud supera el limite permitido." }));
+              return;
+            }
             const body = rawBody ? JSON.parse(rawBody) : {};
             const authHeader = req.headers["authorization"] || "";
             const HANDLER_TIMEOUT_MS = 20000;
@@ -111,12 +120,21 @@ function createConsolidatedHandler(path, actionsMap) {
         }
 
         let rawBody = "";
+        let bodyTooLarge = false;
         req.on("data", (chunk) => {
+          if (bodyTooLarge) return;
           rawBody += chunk;
+          bodyTooLarge = rawBody.length > 1_000_000;
         });
 
         req.on("end", async () => {
           try {
+            if (bodyTooLarge) {
+              res.statusCode = 413;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ code: "PAYLOAD_TOO_LARGE", error: "La solicitud supera el limite permitido." }));
+              return;
+            }
             const body = rawBody ? JSON.parse(rawBody) : {};
             const authHeader = req.headers["authorization"] || "";
             const { action, ...payload } = body;
@@ -155,14 +173,7 @@ function createConsolidatedHandler(path, actionsMap) {
 }
 
 // https://vite.dev/config/
-export default defineConfig(() => {
-  if (process.env.NODE_ENV !== "production" && !process.env.NODE_TLS_REJECT_UNAUTHORIZED) {
-    // Local Windows dev can fail Supabase Auth validation when Node cannot validate
-    // the corporate/local TLS chain. Browser Auth still works, but server-side
-    // Admin APIs need this local-only relaxation to reach Supabase.
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-  }
-
+export default defineConfig(({ mode }) => {
 return {
     plugins: [
       react(),
@@ -193,5 +204,7 @@ return {
     optimizeDeps: {
       include: ['recharts', 'es-toolkit', 'lodash'],
     },
+    // Production clients must not receive raw errors through browser console output.
+    esbuild: mode === "production" ? { drop: ["console", "debugger"] } : undefined,
   };
 })

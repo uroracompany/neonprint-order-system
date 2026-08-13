@@ -73,7 +73,8 @@ export async function handleAdminCreateUser(payload, env = process.env) {
 
   if (duplicateError) {
     return jsonResponse(400, {
-      error: `No se pudo validar el correo: ${duplicateError.message}`,
+      error: "No se pudo validar el correo.",
+      code: "EMAIL_VALIDATION_FAILED",
     });
   }
 
@@ -96,7 +97,8 @@ export async function handleAdminCreateUser(payload, env = process.env) {
 
   if (authError) {
     return jsonResponse(400, {
-      error: authError.message,
+      error: "No se pudo crear la cuenta de autenticacion.",
+      code: "AUTH_USER_CREATE_FAILED",
     });
   }
 
@@ -120,7 +122,8 @@ export async function handleAdminCreateUser(payload, env = process.env) {
   if (profileError) {
     await supabaseAdmin.auth.admin.deleteUser(authUserId);
     return jsonResponse(400, {
-      error: `No se pudo crear el perfil: ${profileError.message}`,
+      error: "No se pudo crear el perfil del usuario.",
+      code: "PROFILE_CREATE_FAILED",
     });
   }
 

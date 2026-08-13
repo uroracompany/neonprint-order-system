@@ -285,7 +285,7 @@ async function updateOwnedOrder(supabaseAdmin, order, values, env) {
 
   if (error || !data) {
     debugSellerOrderAction("update-error", { orderId: order.id, error: error?.message }, env);
-    return { response: jsonResponse(400, { error: error?.message || "No se pudo actualizar la orden." }) };
+    return { response: jsonResponse(500, { error: "No se pudo actualizar la orden.", code: "ORDER_UPDATE_FAILED" }) };
   }
 
   return { order: data };
@@ -510,17 +510,17 @@ async function handleList(payload, auth, env) {
 
   if (listResult.error) {
     debugSellerOrderAction("list-error", { error: listResult.error?.message }, env);
-    return jsonResponse(400, { error: `No se pudieron cargar ordenes: ${listResult.error.message}` });
+    return jsonResponse(500, { error: "No se pudieron cargar las ordenes.", code: "ORDERS_LOOKUP_FAILED" });
   }
 
   if (summaryResult.error) {
     debugSellerOrderAction("summary-error", { error: summaryResult.error?.message }, env);
-    return jsonResponse(400, { error: `No se pudo cargar el resumen de ordenes: ${summaryResult.error.message}` });
+    return jsonResponse(500, { error: "No se pudo cargar el resumen de ordenes.", code: "ORDER_SUMMARY_LOOKUP_FAILED" });
   }
 
   if (recentResult.error) {
     debugSellerOrderAction("recent-error", { error: recentResult.error?.message }, env);
-    return jsonResponse(400, { error: `No se pudieron cargar ordenes recientes: ${recentResult.error.message}` });
+    return jsonResponse(500, { error: "No se pudieron cargar las ordenes recientes.", code: "RECENT_ORDERS_LOOKUP_FAILED" });
   }
 
   const total = listResult.count || 0;

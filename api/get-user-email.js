@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Método no permitido." });
   }
 
-  const { allowed, retryAfter } = rateLimit(req);
+  const { allowed, retryAfter } = rateLimit(req, { maxRequests: 10, scope: "admin-user-email" });
   if (!allowed) {
     return res.status(429).json({ error: `Demasiadas solicitudes. Intente de nuevo en ${retryAfter} segundos.` });
   }

@@ -100,7 +100,7 @@ export async function handleAdminUserRetirementPreflight(payload = {}, env = pro
   if (invalid) return invalid;
 
   const { data: profile, error } = await loadProfile(context.supabaseAdmin, userId);
-  if (error || !profile) return jsonResponse(404, { error: error?.message || "No se encontro el empleado." });
+  if (error || !profile) return jsonResponse(404, { error: "No se encontro el empleado." });
 
   try {
     const responsibilities = await findOpenResponsibilities(context.supabaseAdmin, userId);
@@ -110,7 +110,7 @@ export async function handleAdminUserRetirementPreflight(payload = {}, env = pro
       canRetire: responsibilities.length === 0,
     });
   } catch (queryError) {
-    return jsonResponse(400, { error: `No se pudieron revisar las responsabilidades activas: ${queryError.message}` });
+    return jsonResponse(500, { error: "No se pudieron revisar las responsabilidades activas.", code: "ACTIVE_RESPONSIBILITIES_LOOKUP_FAILED" });
   }
 }
 
@@ -123,14 +123,14 @@ export async function handleAdminRetireUser(payload = {}, env = process.env) {
   if (context.auth.user.id === userId) return jsonResponse(403, { error: "No puedes darte de baja mientras tienes una sesion iniciada." });
 
   const { data: profile, error: profileError } = await loadProfile(context.supabaseAdmin, userId);
-  if (profileError || !profile) return jsonResponse(404, { error: profileError?.message || "No se encontro el empleado." });
+  if (profileError || !profile) return jsonResponse(404, { error: "No se encontro el empleado." });
   if (profile.deleted_at) return jsonResponse(409, { error: "El empleado ya esta dado de baja." });
 
   let responsibilities;
   try {
     responsibilities = await findOpenResponsibilities(context.supabaseAdmin, userId);
   } catch (queryError) {
-    return jsonResponse(400, { error: `No se pudieron revisar las responsabilidades activas: ${queryError.message}` });
+    return jsonResponse(500, { error: "No se pudieron revisar las responsabilidades activas.", code: "ACTIVE_RESPONSIBILITIES_LOOKUP_FAILED" });
   }
   if (responsibilities.length) {
     return jsonResponse(409, {
@@ -141,7 +141,7 @@ export async function handleAdminRetireUser(payload = {}, env = process.env) {
 
   const reason = String(payload?.reason || "").trim() || null;
   const { error: banError } = await context.supabaseAdmin.auth.admin.updateUserById(userId, { ban_duration: "876000h" });
-  if (banError) return jsonResponse(400, { error: `No se pudo revocar el acceso del empleado: ${banError.message}` });
+  if (banError) return jsonResponse(500, { error: "No se pudo revocar el acceso del empleado.", code: "USER_BAN_FAILED" });
 
   const { data: retired, error: retireError } = await context.supabaseAdmin
     .from("profiles")
@@ -149,7 +149,7 @@ export async function handleAdminRetireUser(payload = {}, env = process.env) {
     .eq("id", userId)
     .select("id,name,email,role,employment_status,deleted_at,deleted_by,deletion_reason,created_at")
     .single();
-  if (retireError) return jsonResponse(400, { error: `No se pudo dar de baja al empleado: ${retireError.message}` });
+  if (retireError) return jsonResponse(500, { error: "No se pudo dar de baja al empleado.", code: "USER_RETIRE_FAILED" });
 
   await context.supabaseAdmin.from("user_lifecycle_audit").insert({
     action: "retired", actor_id: context.auth.user.id, target_profile_id: userId,
@@ -167,10 +167,10 @@ export async function handleAdminRestoreUser(payload = {}, env = process.env) {
   if (invalid) return invalid;
 
   const { data: profile, error: profileError } = await loadProfile(context.supabaseAdmin, userId);
-  if (profileError || !profile) return jsonResponse(404, { error: profileError?.message || "No se encontro el empleado." });
+  if (profileError || !profile) return jsonResponse(404, { error: "No se encontro el empleado." });
 
   const { error: unbanError } = await context.supabaseAdmin.auth.admin.updateUserById(userId, { ban_duration: "none" });
-  if (unbanError) return jsonResponse(400, { error: `No se pudo restaurar el acceso del empleado: ${unbanError.message}` });
+  if (unbanError) return jsonResponse(500, { error: "No se pudo restaurar el acceso del empleado.", code: "USER_UNBAN_FAILED" });
 
   const { data: restored, error: restoreError } = await context.supabaseAdmin
     .from("profiles")
@@ -178,7 +178,7 @@ export async function handleAdminRestoreUser(payload = {}, env = process.env) {
     .eq("id", userId)
     .select("id,name,email,role,employment_status,deleted_at,deleted_by,deletion_reason,created_at")
     .single();
-  if (restoreError) return jsonResponse(400, { error: `No se pudo restaurar al empleado: ${restoreError.message}` });
+  if (restoreError) return jsonResponse(500, { error: "No se pudo restaurar al empleado.", code: "USER_RESTORE_FAILED" });
 
   await context.supabaseAdmin.from("user_lifecycle_audit").insert({
     action: "restored", actor_id: context.auth.user.id, target_profile_id: userId,
@@ -196,7 +196,7 @@ async function updateClientLifecycle(payload, env, action) {
 
   const { data: client, error: clientError } = await context.supabaseAdmin
     .from("clients").select("id,name,phone,email,deleted_at").eq("id", clientId).single();
-  if (clientError || !client) return jsonResponse(404, { error: clientError?.message || "No se encontro el cliente." });
+  if (clientError || !client) return jsonResponse(404, { error: "No se encontro el cliente." });
 
   const isRetiring = action === "retired";
   if (isRetiring === Boolean(client.deleted_at)) {
@@ -212,7 +212,7 @@ async function updateClientLifecycle(payload, env, action) {
     .eq("id", clientId)
     .select("id,name,phone,email,deleted_at,deleted_by,deletion_reason")
     .single();
-  if (error) return jsonResponse(400, { error: `No se pudo actualizar el cliente: ${error.message}` });
+  if (error) return jsonResponse(500, { error: "No se pudo actualizar el cliente.", code: "CLIENT_RETIRE_UPDATE_FAILED" });
 
   await context.supabaseAdmin.from("user_lifecycle_audit").insert({
     action, actor_id: context.auth.user.id, target_client_id: clientId,

@@ -79,7 +79,8 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
 
   if (duplicateError) {
     return jsonResponse(400, {
-      error: `No se pudo validar el correo: ${duplicateError.message}`,
+      error: "No se pudo validar el correo.",
+      code: "EMAIL_VALIDATION_FAILED",
     });
   }
 
@@ -101,14 +102,14 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
 
   if (previousProfileError || !previousProfile) {
     return jsonResponse(404, {
-      error: previousProfileError?.message || "No se encontro el perfil del usuario.",
+      error: "No se encontro el perfil del usuario.",
     });
   }
 
   const { error: getUserError } = await supabaseAdmin.auth.admin.getUserById(userId);
   if (getUserError) {
     return jsonResponse(404, {
-      error: getUserError.message,
+      error: "No se encontro la cuenta de autenticacion del usuario.",
     });
   }
 
@@ -140,7 +141,8 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
 
   if (profileError) {
     return jsonResponse(400, {
-      error: `No se pudo actualizar el perfil: ${profileError.message}`,
+      error: "No se pudo actualizar el perfil del usuario.",
+      code: "PROFILE_UPDATE_FAILED",
     });
   }
 
@@ -163,9 +165,8 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
       .eq("id", userId);
 
     return jsonResponse(400, {
-      error: rollbackError
-        ? `No se pudo actualizar el usuario en autenticacion: ${authError.message}. Ademas no se pudo restaurar el perfil: ${rollbackError.message}`
-        : `No se pudo actualizar el usuario en autenticacion: ${authError.message}. El perfil fue restaurado a sus valores anteriores.`,
+      error: "No se pudo actualizar la cuenta del usuario. Los cambios se revirtieron cuando fue posible.",
+      code: "AUTH_USER_UPDATE_FAILED",
     });
   }
 

@@ -33,6 +33,12 @@ export function jsonResponse(status, body) {
   return { status, body };
 }
 
+// Do not expose provider, database, or environment details through API responses.
+// Operational details belong in restricted server logs/observability only.
+export function internalError(message = "No se pudo completar la operacion. Intentalo nuevamente.", code = "INTERNAL") {
+  return jsonResponse(500, { error: message, code });
+}
+
 export function getEnvValue(env, key, fallback) {
   return env[key] || (fallback ? env[fallback] : undefined);
 }
@@ -42,15 +48,8 @@ export function getSupabaseAdminEnv(env) {
   const serviceRoleKey = getEnvValue(env, "SUPABASE_SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !serviceRoleKey) {
-    const missing = [
-      !supabaseUrl ? "SUPABASE_URL" : null,
-      !serviceRoleKey ? "SUPABASE_SERVICE_ROLE_KEY" : null,
-    ].filter(Boolean);
-
     return {
-      error: jsonResponse(500, {
-        error: `Falta configurar ${missing.join(" y ")} en el entorno del servidor.`,
-      }),
+      error: internalError("La configuracion segura del servidor no esta disponible."),
     };
   }
 

@@ -4057,6 +4057,6 @@ export async function handleKpiData(body, env) {
     return { status: 200, body: result }
   } catch (error) {
     console.error('KPI Data Error:', error)
-    return { status: 500, body: { error: error?.message || 'Error al obtener datos KPI' } }
+    return { status: 500, body: { error: 'No se pudieron obtener los indicadores.', code: 'KPI_LOOKUP_FAILED' } }
   }
 }

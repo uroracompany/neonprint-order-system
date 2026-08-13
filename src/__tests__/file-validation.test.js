@@ -80,7 +80,19 @@ describe("file validation policies", () => {
       bucket: "order-docs",
       category: "design",
       fileName: "design.ai",
-      contentType: "application/octet-stream",
+      contentType: "application/postscript",
     }).valid).toBe(true);
+    expect(validateUploadPolicy({
+      bucket: "order-docs",
+      category: "design",
+      fileName: "design.ai",
+      contentType: "application/octet-stream",
+    }).valid).toBe(false);
+    expect(validateUploadPolicy({
+      bucket: "order-docs",
+      category: "design",
+      fileName: "untrusted.svg",
+      contentType: "image/svg+xml",
+    }).valid).toBe(false);
   });
 });

@@ -53,7 +53,7 @@ const inferCategoryFromPath = ({ bucket, path }) => {
 const buildStorageUploadError = ({ bucket, file, error }) => {
   const message = error?.message || "No se pudo subir el archivo.";
   const isSizeError = /maximum allowed size|exceeded.*size|max.*size|file size|tamano|tama\u00f1o/i.test(message);
-  if (!isSizeError) return error instanceof Error ? error : new Error(message);
+  if (!isSizeError) return new Error("No se pudo subir el archivo. Intentalo nuevamente.");
 
   const appLimit = getOrderAssetLimit(bucket);
   const sizeLabel = file?.size ? ` Tamano del archivo: ${formatFileSize(file.size)}.` : "";

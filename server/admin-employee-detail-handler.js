@@ -296,7 +296,7 @@ export async function handleAdminEmployeeDetail(payload = {}, env = process.env)
   const { data: profileData, error: profileError } = await loadEmployeeProfile(supabaseAdmin, userId);
   if (profileError || !profileData) {
     return jsonResponse(404, {
-      error: profileError?.message || "No se encontro el perfil del empleado.",
+      error: "No se encontro el perfil del empleado.",
     });
   }
 
@@ -325,7 +325,8 @@ export async function handleAdminEmployeeDetail(payload = {}, env = process.env)
 
     if (ordersResult.error) {
       return jsonResponse(400, {
-        error: `No se pudieron cargar las ordenes del empleado: ${ordersResult.error.message}`,
+        error: "No se pudieron cargar las ordenes del empleado.",
+        code: "EMPLOYEE_ORDERS_LOOKUP_FAILED",
       });
     }
 
@@ -340,7 +341,8 @@ export async function handleAdminEmployeeDetail(payload = {}, env = process.env)
     });
   } catch (error) {
     return jsonResponse(400, {
-      error: `No se pudo calcular el detalle del empleado: ${error.message}`,
+      error: "No se pudo calcular el detalle del empleado.",
+      code: "EMPLOYEE_DETAIL_FAILED",
     });
   }
 }

@@ -1,9 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
-import { getSupabaseAdminEnv, jsonResponse } from "./admin-user-utils.js";
+import { getSupabaseAdminEnv, internalError, jsonResponse } from "./admin-user-utils.js";
+import { requireAdmin } from "./auth-middleware.js";
 
 export async function handleGetUserEmail(payload, env = {}) {
   const envResult = getSupabaseAdminEnv(env);
   if (envResult.error) return envResult.error;
+
+  const auth = await requireAdmin(env.authHeader || "", env);
+  if (!auth.authorized) {
+    return jsonResponse(auth.status || 403, { error: auth.error, code: auth.code });
+  }
+
   const { supabaseUrl, serviceRoleKey } = envResult;
 
   const userId = payload?.userId;
@@ -23,9 +30,7 @@ export async function handleGetUserEmail(payload, env = {}) {
   const { data: authData, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
 
   if (authError) {
-    return jsonResponse(400, {
-      error: authError.message,
-    });
+    return internalError("No se pudo consultar el correo del usuario.", "USER_EMAIL_LOOKUP_FAILED");
   }
 
   return jsonResponse(200, {

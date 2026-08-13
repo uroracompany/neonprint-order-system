@@ -129,7 +129,8 @@ export async function handleAdminListOrders(payload = {}, env = process.env) {
   if (error) {
     debugOrders("query-error", { message: error.message, code: error.code }, env);
     return jsonResponse(400, {
-      error: `No se pudieron cargar ordenes: ${error.message}`,
+      error: "No se pudieron cargar las ordenes.",
+      code: "ORDERS_LOOKUP_FAILED",
     });
   }
 
