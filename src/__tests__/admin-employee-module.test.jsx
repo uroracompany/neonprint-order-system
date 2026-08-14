@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminEmployeeModule from "../components/employees/AdminEmployeeModule";
@@ -54,6 +54,24 @@ describe("AdminEmployeeModule", () => {
       action: "employee-detail",
       userId: "employee-1",
     }));
+  });
+
+  it("aplica el selector compartido al filtrar las órdenes del empleado", async () => {
+    const user = userEvent.setup();
+    render(<AdminEmployeeModule profile={profile} onBack={vi.fn()} currentUserId="admin-1" />);
+
+    await screen.findByText("Cliente Uno");
+    await user.click(screen.getByRole("button", { name: "Estado operativo" }));
+    await user.click(screen.getByRole("option", { name: "Producción" }));
+
+    await waitFor(() => {
+      expect(adminApiFetch).toHaveBeenLastCalledWith("/api/admin", expect.objectContaining({
+        action: "employee-detail",
+        userId: "employee-1",
+        status: "in_Production",
+        paymentStatus: "all",
+      }));
+    });
   });
 
   it("keeps edit and delete callbacks wired from the detail view", async () => {

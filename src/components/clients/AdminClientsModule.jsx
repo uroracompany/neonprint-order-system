@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pagination } from "../ui/Pagination";
+import { SalesFilterToolbar } from "../ui/SalesFilterToolbar";
 import { Icons } from "../../utils/icons";
 import {
   getOrderStatusLabel,
@@ -152,8 +153,10 @@ function ClientList({
   }, [loadPage, refreshKey]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const hasFilters = Boolean(query)
+  const hasFilters = Boolean(search)
     || Object.entries(filters).some(([key, value]) => value !== DEFAULT_FILTERS[key]);
+  const activeFilterCount = Number(Boolean(search))
+    + Object.entries(filters).filter(([key, value]) => value !== DEFAULT_FILTERS[key]).length;
 
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const resetFilters = () => {
@@ -181,74 +184,27 @@ function ClientList({
         </button>
       </div>
 
-      <div className="acm-filter-panel" aria-label="Filtros de clientes">
-        <div className="pa-search-box acm-search">
-          <Icons.Search />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por nombre, teléfono, correo o ID…"
-            aria-label="Buscar clientes"
-          />
-          {search && (
-            <button className="acm-search-clear" onClick={() => setSearch("")} aria-label="Limpiar búsqueda">
-              <Icons.X />
-            </button>
-          )}
-        </div>
-
-        <div className="acm-filter-grid">
-          <label>
-            <span>Crédito</span>
-            <select value={filters.credit} onChange={(event) => updateFilter("credit", event.target.value)}>
-              <option value="all">Todos</option>
-              <option value="with_credit">Con crédito</option>
-              <option value="without_credit">Sin crédito</option>
-            </select>
-          </label>
-          <label>
-            <span>Actividad</span>
-            <select value={filters.activity} onChange={(event) => updateFilter("activity", event.target.value)}>
-              <option value="all">Todos</option>
-              <option value="with_active">Con órdenes activas</option>
-              <option value="without_active">Sin órdenes activas</option>
-              <option value="inactive">Inactivos (180 días)</option>
-            </select>
-          </label>
-          <label>
-            <span>Frecuencia</span>
-            <select value={filters.frequency} onChange={(event) => updateFilter("frequency", event.target.value)}>
-              <option value="all">Todos</option>
-              <option value="frequent">Frecuentes</option>
-              <option value="not_frequent">No frecuentes</option>
-            </select>
-          </label>
-          <label>
-            <span>Desde</span>
-            <input type="date" value={filters.registeredFrom} onChange={(event) => updateFilter("registeredFrom", event.target.value)} />
-          </label>
-          <label>
-            <span>Hasta</span>
-            <input type="date" value={filters.registeredTo} onChange={(event) => updateFilter("registeredTo", event.target.value)} />
-          </label>
-          <label className="acm-sort-field">
-            <span>Ordenar por</span>
-            <select value={filters.sort} onChange={(event) => updateFilter("sort", event.target.value)}>
-              <option value="recent_activity_desc">Actividad reciente</option>
-              <option value="registered_desc">Registro: más reciente</option>
-              <option value="registered_asc">Registro: más antiguo</option>
-              <option value="name_asc">Nombre: A–Z</option>
-              <option value="name_desc">Nombre: Z–A</option>
-            </select>
-          </label>
-        </div>
-
-        {hasFilters && (
-          <button className="acm-reset" onClick={resetFilters}>
-            <Icons.X /> Limpiar filtros
-          </button>
-        )}
-      </div>
+      <SalesFilterToolbar
+        ariaLabel="Filtros de clientes"
+        search={{
+          label: "Buscar clientes",
+          value: search,
+          onChange: setSearch,
+          placeholder: "Buscar por nombre, teléfono, correo o ID…",
+        }}
+        controls={[
+          { id: "credit", label: "Crédito", icon: <Icons.Receipt />, value: filters.credit, onChange: (value) => updateFilter("credit", value), isActive: filters.credit !== DEFAULT_FILTERS.credit, options: [{ value: "all", label: "Todos" }, { value: "with_credit", label: "Con crédito" }, { value: "without_credit", label: "Sin crédito" }] },
+          { id: "activity", label: "Actividad", icon: <Icons.Orders />, value: filters.activity, onChange: (value) => updateFilter("activity", value), isActive: filters.activity !== DEFAULT_FILTERS.activity, options: [{ value: "all", label: "Todos" }, { value: "with_active", label: "Con órdenes activas" }, { value: "without_active", label: "Sin órdenes activas" }, { value: "inactive", label: "Inactivos (180 días)" }] },
+          { id: "frequency", label: "Frecuencia", icon: <Icons.TrendUp />, value: filters.frequency, onChange: (value) => updateFilter("frequency", value), isActive: filters.frequency !== DEFAULT_FILTERS.frequency, options: [{ value: "all", label: "Todos" }, { value: "frequent", label: "Frecuentes" }, { value: "not_frequent", label: "No frecuentes" }] },
+          { id: "registered-from", label: "Desde", dateLabel: "Registro desde", className: "pp-filter-date--range", type: "date", value: filters.registeredFrom, onChange: (value) => updateFilter("registeredFrom", value), isActive: Boolean(filters.registeredFrom) },
+          { id: "registered-to", label: "Hasta", dateLabel: "Registro hasta", className: "pp-filter-date--range", type: "date", value: filters.registeredTo, onChange: (value) => updateFilter("registeredTo", value), isActive: Boolean(filters.registeredTo) },
+          { id: "sort", label: "Ordenar por", icon: <Icons.Clock />, value: filters.sort, onChange: (value) => updateFilter("sort", value), isActive: filters.sort !== DEFAULT_FILTERS.sort, options: [{ value: "recent_activity_desc", label: "Actividad reciente" }, { value: "registered_desc", label: "Registro: más reciente" }, { value: "registered_asc", label: "Registro: más antiguo" }, { value: "name_asc", label: "Nombre: A–Z" }, { value: "name_desc", label: "Nombre: Z–A" }] },
+        ]}
+        resultCount={total}
+        resultLabel={`resultado${total === 1 ? "" : "s"}`}
+        activeFilters={activeFilterCount}
+        onReset={resetFilters}
+      />
 
       <div className="pa-panel acm-table-panel">
         <div className="pa-panel-stripe" />
@@ -257,7 +213,6 @@ function ClientList({
             <h2>Clientes registrados</h2>
             <p className="acm-panel-description">Frecuente: 5 o más órdenes completadas en su historial.</p>
           </div>
-          <span className="pa-results-count">{total} resultado{total === 1 ? "" : "s"}</span>
         </div>
 
         <div className="ps-table-wrap">
@@ -471,6 +426,22 @@ function ClientDetail({
     loadOrders();
   }, [loadOrders]);
 
+  const hasOrderFilters = Boolean(orderSearch)
+    || orderStatusFilter !== "all"
+    || orderPaymentFilter !== "all"
+    || Boolean(orderDateFrom)
+    || Boolean(orderDateTo);
+  const orderActiveFilterCount = [orderSearch, orderStatusFilter !== "all", orderPaymentFilter !== "all", orderDateFrom, orderDateTo].filter(Boolean).length;
+  const resetOrderFilters = () => {
+    setOrderSearch("");
+    setOrderQuery("");
+    setOrderStatusFilter("all");
+    setOrderPaymentFilter("all");
+    setOrderDateFrom("");
+    setOrderDateTo("");
+    setOrderPage(1);
+  };
+
   const handleOrderClick = useCallback(async (orderId) => {
     const { data } = await supabase
       .from("orders")
@@ -626,54 +597,25 @@ function ClientDetail({
         </article>
       </div>
 
-      <div className="acm-filter-panel acm-activity-filter-panel" aria-label="Filtros de actividad">
-        <div className="acm-activity-search-row">
-          <div className="pa-search-box acm-search">
-            <Icons.Search />
-            <input
-              value={orderSearch}
-              onChange={(event) => setOrderSearch(event.target.value)}
-              placeholder="Buscar por orden, factura, estado…"
-              aria-label="Buscar en actividad reciente"
-            />
-            {orderSearch && (
-              <button className="acm-search-clear" onClick={() => setOrderSearch("")} aria-label="Limpiar búsqueda">
-                <Icons.X />
-              </button>
-            )}
-          </div>
-          <span className="pa-results-count">{orderTotal} resultado{orderTotal === 1 ? "" : "s"}</span>
-        </div>
-
-        <div className="acm-filter-grid">
-          <label>
-            <span>Estado operativo</span>
-            <select value={orderStatusFilter} onChange={(event) => setOrderStatusFilter(event.target.value)}>
-              <option value="all">Todos</option>
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>{getOrderStatusLabel(status)}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Estado de pago</span>
-            <select value={orderPaymentFilter} onChange={(event) => setOrderPaymentFilter(event.target.value)}>
-              <option value="all">Todos</option>
-              {PAYMENT_OPTIONS.map((payment) => (
-                <option key={payment} value={payment}>{getPaymentStatusLabel(payment)}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Desde</span>
-            <input type="date" value={orderDateFrom} onChange={(event) => setOrderDateFrom(event.target.value)} />
-          </label>
-          <label>
-            <span>Hasta</span>
-            <input type="date" value={orderDateTo} onChange={(event) => setOrderDateTo(event.target.value)} />
-          </label>
-        </div>
-      </div>
+      <SalesFilterToolbar
+        ariaLabel="Filtros de actividad"
+        search={{
+          label: "Buscar en actividad reciente",
+          value: orderSearch,
+          onChange: setOrderSearch,
+          placeholder: "Buscar por orden, factura, estado…",
+        }}
+        controls={[
+          { id: "order-status", label: "Estado operativo", icon: <Icons.FileText />, value: orderStatusFilter, onChange: setOrderStatusFilter, isActive: orderStatusFilter !== "all", options: [{ value: "all", label: "Todos" }, ...STATUS_OPTIONS.map((status) => ({ value: status, label: getOrderStatusLabel(status) }))] },
+          { id: "order-payment", label: "Estado de pago", icon: <Icons.Money />, value: orderPaymentFilter, onChange: setOrderPaymentFilter, isActive: orderPaymentFilter !== "all", options: [{ value: "all", label: "Todos" }, ...PAYMENT_OPTIONS.map((payment) => ({ value: payment, label: getPaymentStatusLabel(payment) }))] },
+          { id: "order-from", label: "Desde", type: "date", value: orderDateFrom, onChange: setOrderDateFrom, isActive: Boolean(orderDateFrom) },
+          { id: "order-to", label: "Hasta", type: "date", value: orderDateTo, onChange: setOrderDateTo, isActive: Boolean(orderDateTo) },
+        ]}
+        resultCount={orderTotal}
+        resultLabel={`resultado${orderTotal === 1 ? "" : "s"}`}
+        activeFilters={orderActiveFilterCount}
+        onReset={resetOrderFilters}
+      />
 
       <div className="acm-activity-panel">
         <div className="acm-activity-heading">
@@ -713,7 +655,7 @@ function ClientDetail({
                     <div className="acm-empty-state">
                       <Icons.Orders />
                       <strong>No encontramos órdenes</strong>
-                      <span>{(orderQuery || orderStatusFilter !== "all" || orderPaymentFilter !== "all" || orderDateFrom || orderDateTo)
+                      <span>{hasOrderFilters
                         ? "Prueba con otros filtros o limpia la búsqueda."
                         : "Este cliente todavía no tiene órdenes."}</span>
                     </div>

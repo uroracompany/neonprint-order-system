@@ -14,8 +14,7 @@ import {
 import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { AssignModal } from "../components/ui/AssignModal";
 import { Pagination } from "../components/ui/Pagination";
-import { FilterSelect } from "../components/ui/FilterSelect";
-import "../components/ui/FilterSelect.css";
+import { SalesFilterToolbar } from "../components/ui/SalesFilterToolbar";
 import {
   ORDER_STATUS,
   isPaymentCredit,
@@ -927,65 +926,45 @@ export default function PageSeller() {
           {/* ORDERS TAB */}
           {activeTab === "orders" && (
             <>
-              <div className="pp-filters">
-                <label className="pp-filter-control pp-filter-search">
-                  <span className="pp-filter-search-icon"><Icons.Search /></span>
-                  <input placeholder="Buscar por cliente, descripcion o ID..."
-                    value={search} onChange={e => setSearch(e.target.value)} />
-                </label>
-                <FilterSelect
-                  icon={<Icons.FileText />}
-                  value={filterStatus}
-                  onChange={setFilterStatus}
-                  options={[
-                    { value: "all", label: "Todos los estados" },
-                    ...STATUS_OPTIONS.map(status => {
-                      const cfg = getOrderStatusConfig(status);
-                      return { value: status, label: cfg.label };
-                    }),
-                  ]}
-                  placeholder="Todos los estados"
-                />
-                <FilterSelect
-                  icon={<Icons.Money />}
-                  value={filterPayment}
-                  onChange={setFilterPayment}
-                  options={[
-                    { value: "all", label: "Pago: Todos" },
-                    ...Object.entries(PAYMENT_COLORS).map(([k, v]) => ({ value: k, label: v.label })),
-                  ]}
-                  placeholder="Pago: Todos"
-                />
-                <FilterSelect
-                  icon={<Icons.Users />}
-                  value={filterClient}
-                  onChange={setFilterClient}
-                  options={[
-                    { value: "all", label: "Todos los clientes" },
-                    ...clients.map(c => ({ value: c.id, label: c.name })),
-                  ]}
-                  placeholder="Todos los clientes"
-                />
-                <FilterSelect
-                  icon={<Icons.Calendar />}
-                  value={filterDate}
-                  onChange={setFilterDate}
-                  options={[
-                    { value: "all", label: "Fecha: Todas" },
-                    { value: "10min", label: "Hace 10 minutos" },
-                    { value: "30min", label: "Hace 30 minutos" },
-                    { value: "1hour", label: "Hace 1 hora" },
-                    { value: "today", label: "Hoy" },
-                    { value: "yesterday", label: "Ayer" },
-                    { value: "3days", label: "Hace 3 dias" },
-                    { value: "7days", label: "Hace 7 dias" },
-                    { value: "thismonth", label: "Este mes" },
-                    { value: "thisyear", label: "Este ano" },
-                  ]}
-                  placeholder="Fecha: Todas"
-                />
-                <span className="pp-filters-count"><Icons.Clipboard /> {ordersTotal} resultado{ordersTotal !== 1 ? "s" : ""}</span>
-              </div>
+              <SalesFilterToolbar
+                ariaLabel="Filtros de órdenes de venta"
+                search={{
+                  label: "Buscar órdenes de venta",
+                  value: search,
+                  onChange: setSearch,
+                  placeholder: "Buscar por cliente, descripción o ID...",
+                }}
+                controls={[
+                  {
+                    id: "status", label: "Estado", icon: <Icons.FileText />, value: filterStatus, onChange: setFilterStatus,
+                    isActive: filterStatus !== "all", placeholder: "Todos los estados",
+                    options: [{ value: "all", label: "Todos los estados" }, ...STATUS_OPTIONS.map((status) => ({ value: status, label: getOrderStatusConfig(status).label }))],
+                  },
+                  {
+                    id: "payment", label: "Pago", icon: <Icons.Money />, value: filterPayment, onChange: setFilterPayment,
+                    isActive: filterPayment !== "all", placeholder: "Pago: Todos",
+                    options: [{ value: "all", label: "Pago: Todos" }, ...Object.entries(PAYMENT_COLORS).map(([value, option]) => ({ value, label: option.label }))],
+                  },
+                  {
+                    id: "client", label: "Cliente", icon: <Icons.Users />, value: filterClient, onChange: setFilterClient,
+                    isActive: filterClient !== "all", placeholder: "Todos los clientes",
+                    options: [{ value: "all", label: "Todos los clientes" }, ...clients.map((client) => ({ value: client.id, label: client.name }))],
+                  },
+                  {
+                    id: "date", label: "Fecha", icon: <Icons.Calendar />, value: filterDate, onChange: setFilterDate,
+                    isActive: filterDate !== "all", placeholder: "Fecha: Todas",
+                    options: [
+                      { value: "all", label: "Fecha: Todas" }, { value: "10min", label: "Hace 10 minutos" }, { value: "30min", label: "Hace 30 minutos" },
+                      { value: "1hour", label: "Hace 1 hora" }, { value: "today", label: "Hoy" }, { value: "yesterday", label: "Ayer" },
+                      { value: "3days", label: "Hace 3 días" }, { value: "7days", label: "Hace 7 días" }, { value: "thismonth", label: "Este mes" }, { value: "thisyear", label: "Este año" },
+                    ],
+                  },
+                ]}
+                resultCount={ordersTotal}
+                resultLabel={`resultado${ordersTotal !== 1 ? "s" : ""}`}
+                activeFilters={[search, filterStatus !== "all", filterPayment !== "all", filterClient !== "all", filterDate !== "all", filterArchive !== "all"].filter(Boolean).length}
+                onReset={() => { setSearch(""); setFilterStatus("all"); setFilterPayment("all"); setFilterClient("all"); setFilterDate("all"); setFilterArchive("all"); }}
+              />
 
               <div className="pp-workbench-panel">
                 <div className="pp-workbench-heading">

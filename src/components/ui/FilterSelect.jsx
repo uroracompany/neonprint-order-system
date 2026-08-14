@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState, useCallback, useId } from "react";
+import { useEffect, useRef, useState, useCallback, useId, useMemo } from "react";
 import { Icons } from "../../utils/icons";
 import "./FilterSelect.css";
+
+const normalizeSearchText = (value) => String(value || "")
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLocaleLowerCase();
+
+const MULTILINE_LABEL_THRESHOLD = 22;
 
 export function FilterSelect({
   icon,
@@ -9,21 +16,43 @@ export function FilterSelect({
   options = [],
   placeholder = "Seleccionar",
   className = "",
+  label = "Opciones de filtro",
+  searchable = false,
+  searchPlaceholder = "Buscar opciones...",
+  emptyText = "No se encontraron opciones.",
+  isActive = false,
+  allowMultiline = false,
 }) {
   const listboxId = useId();
   const ref = useRef(null);
+  const searchRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [query, setQuery] = useState("");
 
   const selectedOption = options.find((o) => o.value === value) || null;
   const selectedLabel = selectedOption ? selectedOption.label : placeholder;
+  const shouldUseMultiline = allowMultiline && selectedLabel.length > MULTILINE_LABEL_THRESHOLD;
+  const visibleOptions = useMemo(() => {
+    const normalizedQuery = normalizeSearchText(query.trim());
+    if (!searchable || !normalizedQuery) return options;
+    return options.filter((option) => normalizeSearchText(option.label).includes(normalizedQuery));
+  }, [options, query, searchable]);
 
   useEffect(() => {
     if (open) {
-      const idx = options.findIndex((o) => o.value === value);
-      setActiveIndex(idx >= 0 ? idx : 0);
+      const idx = visibleOptions.findIndex((o) => o.value === value);
+      setActiveIndex(idx >= 0 ? idx : (visibleOptions.length > 0 ? 0 : -1));
     }
-  }, [open, value, options]);
+  }, [open, value, visibleOptions]);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      return;
+    }
+    if (searchable) searchRef.current?.focus();
+  }, [open, searchable]);
 
   useEffect(() => {
     if (!open) return;
@@ -54,33 +83,43 @@ export function FilterSelect({
         return;
       }
 
+      if (visibleOptions.length === 0) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setOpen(false);
+        }
+        return;
+      }
+
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setActiveIndex((current) => (current + 1) % options.length);
+        setActiveIndex((current) => (current + 1) % visibleOptions.length);
       } else if (event.key === "ArrowUp") {
         event.preventDefault();
-        setActiveIndex((current) => (current <= 0 ? options.length - 1 : current - 1));
-      } else if (event.key === "Enter" || event.key === " ") {
+        setActiveIndex((current) => (current <= 0 ? visibleOptions.length - 1 : current - 1));
+      } else if (event.key === "Enter" || (event.key === " " && event.currentTarget !== searchRef.current)) {
         event.preventDefault();
-        if (options[activeIndex]) selectOption(options[activeIndex]);
+        if (visibleOptions[activeIndex]) selectOption(visibleOptions[activeIndex]);
       } else if (event.key === "Escape") {
         event.preventDefault();
         setOpen(false);
       }
     },
-    [open, options, activeIndex, selectOption]
+    [open, visibleOptions, activeIndex, selectOption]
   );
 
   return (
     <div className={`pp-filter-select-wrap ${className}`} ref={ref}>
       <button
         type="button"
-        className={`pp-filter-control pp-filter-select-trigger ${open ? "is-open" : ""}`}
+        className={`pp-filter-control pp-filter-select-trigger ${shouldUseMultiline ? "pp-filter-select-trigger--multiline" : ""} ${open ? "is-open" : ""} ${isActive ? "is-active" : ""}`}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={handleKeyDown}
         aria-expanded={open}
         aria-controls={listboxId}
         aria-haspopup="listbox"
+        aria-label={label}
+        title={selectedLabel}
       >
         {icon && <span className="pp-filter-select-icon">{icon}</span>}
         <span className="pp-filter-select-label">{selectedLabel}</span>
@@ -88,8 +127,22 @@ export function FilterSelect({
       </button>
 
       {open && (
-        <div className="pp-filter-dropdown" id={listboxId} role="listbox" aria-label="Opciones de filtro">
-          {options.map((option, index) => (
+        <div className="pp-filter-dropdown" id={listboxId} role="listbox" aria-label={label}>
+          {searchable && (
+            <div className="pp-filter-dropdown-search">
+              <Icons.Search />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={searchPlaceholder}
+                aria-label={`Buscar en ${label}`}
+                autoComplete="off"
+              />
+            </div>
+          )}
+          {visibleOptions.map((option, index) => (
             <button
               key={option.value}
               type="button"
@@ -102,6 +155,7 @@ export function FilterSelect({
               {option.label}
             </button>
           ))}
+          {visibleOptions.length === 0 && <p className="pp-filter-dropdown-empty">{emptyText}</p>}
         </div>
       )}
     </div>

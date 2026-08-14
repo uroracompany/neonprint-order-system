@@ -32,7 +32,8 @@ import {
   CreditReminderCreateModal,
 } from "../components/ui/CreditReminderModals";
 import { Pagination } from "../components/ui/Pagination";
-import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
+import { ClientSelect } from "../components/ui/ClientCombobox";
+import { SalesFilterToolbar } from "../components/ui/SalesFilterToolbar";
 import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   ORDER_STATUS,
@@ -63,7 +64,9 @@ import {
 import { getReferenceImages } from "../utils/orderAssets";
 import {
   formatDominicanPhone,
+  getClientDisplayName,
   getSelectedClientOrderFields,
+  NO_CLIENT_FILTER_VALUE,
   normalizeClientPhone,
   orderMatchesClientFilter,
   searchClients,
@@ -4012,94 +4015,33 @@ export default function Dashboard() {
                 Nueva orden
               </button>
             </div>
-            <div className="acm-filter-panel" aria-label="Filtros de órdenes">
-              <h3 className="acm-filter-header-title">Filtrar Búsqueda</h3>
-              <div className="pa-search-box acm-search">
-                <Icons.Search />
-                <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Buscar por cliente, facturación, descripción, material o usuario..." aria-label="Buscar órdenes" />
-                {search && (
-                  <button className="acm-search-clear" onClick={() => { setSearch(""); setPage(1); }} aria-label="Limpiar búsqueda">
-                    <Icons.X />
-                  </button>
-                )}
-              </div>
-              <div className="acm-filter-row">
-                <label>
-                  <span>Estado operativo</span>
-                  <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
-                    <option value="all">Todos los estados</option>
-                    {STATUS_OPTIONS.map(status => <option key={status} value={status}>{STATUS_LABELS[status] || status}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>Fecha</span>
-                  <select value={dateFilter} onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}>
-                    <option value="all">Todas las fechas</option>
-                    <option value="today">Hoy</option>
-                    <option value="week">Últimos 7 días</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Empleado</span>
-                  <select value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}>
-                    <option value="all">Todos los empleados</option>
-                    {profiles.map(item =>
-                      <option key={item.id} value={item.id}>
-                        {getUserDisplayName(item)}
-                      </option>
-                    )}
-                  </select>
-                </label>
-                <label>
-                  <span>Cliente</span>
-                  <ClientFilterSelect
-                    clients={clients}
-                    value={clientFilter}
-                    onChange={(value) => { setClientFilter(value); setPage(1); }}
-                    allLabel="Todos los clientes"
-                  />
-                </label>
-                <label>
-                  <span>Archivo</span>
-                  <select value={archiveFilter} onChange={(e) => { setArchiveFilter(e.target.value); setPage(1); }}>
-                    <option value="active">Activas</option>
-                    <option value="all">Todas</option>
-                    <option value="archived">Archivadas</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Intervención</span>
-                  <select value={interventionFilter} onChange={(e) => { setInterventionFilter(e.target.value); setPage(1); }}>
-                    <option value="all">Todas las intervenciones</option>
-                    <option value="intervened">Intervenidas por Admin</option>
-                    <option value="not_intervened">Sin intervención avanzada</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Situación operativa</span>
-                  <select value={operationalFilter} onChange={(event) => { setOperationalFilter(event.target.value); setPage(1); }}>
-                    <option value="all">Toda la situación operativa</option>
-                    <option value="blocked">Bloqueadas</option>
-                    <option value="priority">Prioridad 911</option>
-                    <option value="commercial_review">Revisión comercial pendiente</option>
-                  </select>
-                </label>
-                <button
-                  className="acm-reset"
-                  onClick={() => { setSearch(""); setStatusFilter("all"); setDateFilter("all"); setOwnerFilter("all"); setClientFilter("all"); setArchiveFilter("active"); setInterventionFilter("all"); setOperationalFilter("all"); setPage(1); }}
-                >
-                  Limpiar filtros
-                </button>
-              </div>
-            </div>
+            <SalesFilterToolbar
+              ariaLabel="Filtros de órdenes"
+              search={{
+                label: "Buscar órdenes",
+                value: search,
+                onChange: (value) => { setSearch(value); setPage(1); },
+                placeholder: "Buscar por cliente, facturación, descripción, material o usuario...",
+              }}
+              controls={[
+                { id: "status", label: "Estado operativo", icon: <Icons.FileText />, value: statusFilter, onChange: (value) => { setStatusFilter(value); setPage(1); }, isActive: statusFilter !== "all", options: [{ value: "all", label: "Todos los estados" }, ...STATUS_OPTIONS.map((status) => ({ value: status, label: STATUS_LABELS[status] || status }))] },
+                { id: "date", label: "Fecha", icon: <Icons.Calendar />, value: dateFilter, onChange: (value) => { setDateFilter(value); setPage(1); }, isActive: dateFilter !== "all", options: [{ value: "all", label: "Todas las fechas" }, { value: "today", label: "Hoy" }, { value: "week", label: "Últimos 7 días" }] },
+                { id: "owner", label: "Empleado", icon: <Icons.Users />, allowMultiline: true, value: ownerFilter, onChange: (value) => { setOwnerFilter(value); setPage(1); }, isActive: ownerFilter !== "all", options: [{ value: "all", label: "Todos los empleados" }, ...profiles.map((item) => ({ value: item.id, label: getUserDisplayName(item) }))] },
+                { id: "client", label: "Cliente", icon: <Icons.User />, allowMultiline: true, value: clientFilter, onChange: (value) => { setClientFilter(value); setPage(1); }, isActive: clientFilter !== "all", options: [{ value: "all", label: "Todos los clientes" }, { value: NO_CLIENT_FILTER_VALUE, label: "Sin cliente registrado" }, ...clients.map((client) => ({ value: client.id, label: getClientDisplayName(client) }))] },
+                { id: "archive", label: "Archivo", icon: <Icons.Archive />, value: archiveFilter, onChange: (value) => { setArchiveFilter(value); setPage(1); }, isActive: archiveFilter !== "active", options: [{ value: "active", label: "Activas" }, { value: "all", label: "Todas" }, { value: "archived", label: "Archivadas" }] },
+                { id: "intervention", label: "Intervención", icon: <Icons.AlertCircle />, className: "pp-filter-select-wrap--wide", value: interventionFilter, onChange: (value) => { setInterventionFilter(value); setPage(1); }, isActive: interventionFilter !== "all", options: [{ value: "all", label: "Todas las intervenciones" }, { value: "intervened", label: "Intervenidas por Admin" }, { value: "not_intervened", label: "Sin intervención avanzada" }] },
+                { id: "operational", label: "Situación operativa", icon: <Icons.Orders />, className: "pp-filter-select-wrap--wide", value: operationalFilter, onChange: (value) => { setOperationalFilter(value); setPage(1); }, isActive: operationalFilter !== "all", options: [{ value: "all", label: "Toda la situación operativa" }, { value: "blocked", label: "Bloqueadas" }, { value: "priority", label: "Prioridad 911" }, { value: "commercial_review", label: "Revisión comercial pendiente" }] },
+              ]}
+              resultCount={filteredOrders.length}
+              resultLabel={`resultado${filteredOrders.length === 1 ? "" : "s"}`}
+              activeFilters={[search, statusFilter !== "all", dateFilter !== "all", ownerFilter !== "all", clientFilter !== "all", archiveFilter !== "active", interventionFilter !== "all", operationalFilter !== "all"].filter(Boolean).length}
+              onReset={() => { setSearch(""); setStatusFilter("all"); setDateFilter("all"); setOwnerFilter("all"); setClientFilter("all"); setArchiveFilter("active"); setInterventionFilter("all"); setOperationalFilter("all"); setPage(1); }}
+            />
             <div className="pa-panel acm-table-panel pa-orders-panel">
               <div className="pa-panel-head pa-panel-head-results">
                 <div>
                   <h2>Órdenes del sistema</h2>
                 </div>
-                <span className="pa-results-count">
-                  {filteredOrders.length} resultado{filteredOrders.length === 1 ? "" : "s"}
-                </span>
               </div>
               <div className="ps-table-wrap">
                 <table className="ps-table acm-table pa-orders-table">
@@ -4217,37 +4159,32 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="acm-filter-panel pa-credit-filter-panel" aria-label="Filtros de seguimiento">
-              <div className="acm-filter-row">
-                <div className="pa-search-box acm-search">
-                  <Icons.Search />
-                  <input
-                    value={creditSearch}
-                    onChange={(event) => setCreditSearch(event.target.value)}
-                    placeholder="Buscar por cliente, telefono, factura u orden..."
-                    aria-label="Buscar seguimientos"
-                  />
-                  {creditSearch && (
-                    <button className="acm-search-clear" onClick={() => setCreditSearch("")} aria-label="Limpiar búsqueda">
-                      <Icons.X />
-                    </button>
-                  )}
-                </div>
-                <label className="acm-filter-row-field">
-                  <span>Estado</span>
-                  <select value={creditStatusFilter} onChange={(event) => setCreditStatusFilter(event.target.value)}>
-                    <option value="all">Todos</option>
-                    <option value="open">Pendientes</option>
-                    <option value="paid">Saldadas</option>
-                  </select>
-                </label>
-                {hasCreditFilters && (
-                  <button className="acm-reset" onClick={() => { setCreditSearch(""); setCreditStatusFilter("open"); }}>
-                    <Icons.X /> Limpiar filtros
-                  </button>
-                )}
-              </div>
-            </div>
+            <SalesFilterToolbar
+              ariaLabel="Filtros de seguimiento"
+              search={{
+                label: "Buscar seguimientos",
+                value: creditSearch,
+                onChange: setCreditSearch,
+                placeholder: "Buscar por cliente, teléfono, factura u orden...",
+              }}
+              controls={[{
+                id: "credit-status",
+                label: "Estado",
+                icon: <Icons.AlertCircle />,
+                value: creditStatusFilter,
+                onChange: setCreditStatusFilter,
+                isActive: creditStatusFilter !== "open",
+                options: [
+                  { value: "open", label: "Pendientes" },
+                  { value: "all", label: "Todos" },
+                  { value: "paid", label: "Saldadas" },
+                ],
+              }]}
+              resultCount={creditClientGroups.length}
+              resultLabel={`cliente${creditClientGroups.length === 1 ? "" : "s"}`}
+              activeFilters={[Boolean(creditSearch), creditStatusFilter !== "open"].filter(Boolean).length}
+              onReset={() => { setCreditSearch(""); setCreditStatusFilter("open"); }}
+            />
 
             <div className="pa-credit-metrics" aria-label="Resumen de seguimiento">
               <div className="pa-credit-summary-item">
@@ -4622,33 +4559,24 @@ export default function Dashboard() {
                 Agregar material
               </button>
             </div>
-            <div className="acm-filter-panel" aria-label="Filtros de materiales">
-              <div className="acm-filter-header">
-                <h3>Buscar Material</h3>
-              </div>
-              <div className="pa-search-box acm-search">
-                <Icons.Search />
-                <input
-                  value={materialSearch}
-                  onChange={(event) => setMaterialSearch(event.target.value)}
-                  placeholder="Buscar por nombre..."
-                  aria-label="Buscar materiales"
-                />
-                {materialSearch && (
-                  <button className="acm-search-clear" onClick={() => setMaterialSearch("")} aria-label="Limpiar búsqueda">
-                    <Icons.X />
-                  </button>
-                )}
-              </div>
-            </div>
+            <SalesFilterToolbar
+              ariaLabel="Filtros de materiales"
+              search={{
+                label: "Buscar materiales",
+                value: materialSearch,
+                onChange: setMaterialSearch,
+                placeholder: "Buscar por nombre...",
+              }}
+              resultCount={filteredMaterials.length}
+              resultLabel="resultados"
+              activeFilters={materialSearch ? 1 : 0}
+              onReset={() => setMaterialSearch("")}
+            />
             <div className="pa-panel mat-table-panel">
               <div className="pa-panel-head">
                 <div>
                   <h2>Materiales registrados</h2>
                 </div>
-                <span className="pa-results-count">
-                  {filteredMaterials.length} resultados
-                </span>
               </div>
               <div className="ps-table-wrap" style={{ maxHeight: 520 }}>
                 <table className="ps-table">
@@ -4831,61 +4759,29 @@ export default function Dashboard() {
               </button>
             </div>
 
-            <div className="acm-filter-panel" aria-label="Filtros de empleados">
-              <div className="pa-search-box acm-search">
-                <Icons.Search />
-                <input
-                  value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
-                  placeholder="Buscar por nombre, correo o rol..."
-                  aria-label="Buscar empleados"
-                />
-                {userSearch && (
-                  <button className="acm-search-clear" onClick={() => setUserSearch("")} aria-label="Limpiar búsqueda">
-                    <Icons.X />
-                  </button>
-                )}
-              </div>
-
-              <div className="acm-filter-grid">
-                <label>
-                  <span>Rol</span>
-                  <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-                    <option value="all">Todos los roles</option>
-                    <option value="admin">Administrador</option>
-                    <option value="seller">Vendedor</option>
-                    <option value="designer">Diseñador</option>
-                    <option value="quote">Caja</option>
-                    <option value="printer">Producción legacy</option>
-                    <option value="digital_producer">Producción Digital</option>
-                    <option value="dtf_producer">Producción DTF</option>
-                    <option value="ploteo_producer">Producción Ploteo</option>
-                    <option value="delivery">Entrega</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Estado laboral</span>
-                  <select value={employmentFilter} onChange={(e) => setEmploymentFilter(e.target.value)}>
-                    <option value="all">Todos</option>
-                    <option value="active">Activos</option>
-                    <option value="inactive">Inactivos</option>
-                  </select>
-                </label>
-              </div>
-
-              {hasUserFilters && (
-                <button className="acm-reset" onClick={() => { setUserSearch(""); setRoleFilter("all"); setEmploymentFilter("all"); }}>
-                  <Icons.X /> Limpiar filtros
-                </button>
-              )}
-            </div>
+            <SalesFilterToolbar
+              ariaLabel="Filtros de empleados"
+              search={{
+                label: "Buscar empleados",
+                value: userSearch,
+                onChange: setUserSearch,
+                placeholder: "Buscar por nombre, correo o rol...",
+              }}
+              controls={[
+                { id: "role", label: "Rol", icon: <Icons.Users />, value: roleFilter, onChange: setRoleFilter, isActive: roleFilter !== "all", options: [{ value: "all", label: "Todos los roles" }, { value: "admin", label: "Administrador" }, { value: "seller", label: "Vendedor" }, { value: "designer", label: "Diseñador" }, { value: "quote", label: "Caja" }, { value: "printer", label: "Producción legacy" }, { value: "digital_producer", label: "Producción Digital" }, { value: "dtf_producer", label: "Producción DTF" }, { value: "ploteo_producer", label: "Producción Ploteo" }, { value: "delivery", label: "Entrega" }] },
+                { id: "employment", label: "Estado laboral", icon: <Icons.UserCheck />, value: employmentFilter, onChange: setEmploymentFilter, isActive: employmentFilter !== "all", options: [{ value: "all", label: "Todos" }, { value: "active", label: "Activos" }, { value: "inactive", label: "Inactivos" }] },
+              ]}
+              resultCount={filteredProfiles.length}
+              resultLabel={`resultado${filteredProfiles.length === 1 ? "" : "s"}`}
+              activeFilters={[userSearch, roleFilter !== "all", employmentFilter !== "all"].filter(Boolean).length}
+              onReset={() => { setUserSearch(""); setRoleFilter("all"); setEmploymentFilter("all"); }}
+            />
 
             <div className="pa-panel acm-table-panel">
               <div className="pa-panel-head pa-panel-head-results">
                 <div>
                   <h2>Empleados del sistema</h2>
                 </div>
-                <span className="pa-results-count">{filteredProfiles.length} resultado{filteredProfiles.length === 1 ? "" : "s"}</span>
               </div>
 
               <div className="ps-table-wrap">

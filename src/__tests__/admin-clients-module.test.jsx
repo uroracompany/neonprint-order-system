@@ -100,6 +100,11 @@ describe("AdminClientsModule", () => {
     expect(screen.getByText("9 resultados")).toBeInTheDocument();
     expect(screen.queryByText(/Mostrando/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/por página/i)).not.toBeInTheDocument();
+    const sortSelect = screen.getByRole("button", { name: "Ordenar por" });
+    expect(sortSelect.querySelector(".pp-filter-select-icon")).toBeInTheDocument();
+    expect(sortSelect.lastElementChild?.tagName).toBe("svg");
+    expect(screen.getByText("Registro desde")).toBeInTheDocument();
+    expect(screen.getByText("Registro hasta")).toBeInTheDocument();
     expect(supabase.rpc).toHaveBeenCalledWith("admin_list_clients", expect.objectContaining({
       p_page: 1,
       p_page_size: 7,
@@ -112,7 +117,8 @@ describe("AdminClientsModule", () => {
     await screen.findByText("Cliente 1");
 
     await user.type(screen.getByLabelText("Buscar clientes"), "María");
-    await user.selectOptions(screen.getByLabelText("Crédito"), "with_credit");
+    await user.click(screen.getByRole("button", { name: "Crédito" }));
+    await user.click(screen.getByRole("option", { name: "Con crédito" }));
 
     await waitFor(() => {
       expect(supabase.rpc).toHaveBeenLastCalledWith("admin_list_clients", expect.objectContaining({

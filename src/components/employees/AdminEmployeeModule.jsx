@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Pagination } from "../ui/Pagination";
+import { SalesFilterToolbar } from "../ui/SalesFilterToolbar";
 import { Icons } from "../../utils/icons";
 import { getOrderStatusLabel, getPaymentStatusLabel, STATUS_OPTIONS, PAYMENT_OPTIONS, formatDate, isProductionRole } from "../../utils/constants";
 import { adminApiFetch } from "../../utils/adminApi";
@@ -288,56 +289,35 @@ function EmployeeOrdersPanel({ profile, onViewOrder }) {
   const safePage = Math.min(page, totalPages);
   const paginatedItems = employeeOrders;
 
-  const hasFilters = Boolean(query) || statusFilter !== "all" || paymentFilter !== "all";
+  const hasFilters = Boolean(search) || statusFilter !== "all" || paymentFilter !== "all";
+  const activeFilterCount = [search, statusFilter !== "all", paymentFilter !== "all"].filter(Boolean).length;
+  const resetFilters = () => {
+    setSearch("");
+    setQuery("");
+    setStatusFilter("all");
+    setPaymentFilter("all");
+    setPage(1);
+  };
 
   return (
     <>
-      <div className="acm-filter-panel acm-activity-filter-panel" aria-label="Filtros de órdenes del empleado">
-        <div className="acm-activity-search-row">
-          <div className="pa-search-box acm-search">
-            <Icons.Search />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por cliente, factura, estado…"
-              aria-label="Buscar en órdenes del empleado"
-            />
-            {search && (
-              <button className="acm-search-clear" onClick={() => setSearch("")} aria-label="Limpiar búsqueda">
-                <Icons.X />
-              </button>
-            )}
-          </div>
-          <span className="pa-results-count">{totalOrders} resultado{totalOrders === 1 ? "" : "s"}</span>
-        </div>
-
-        <div className="acm-filter-grid">
-          <label>
-            <span>Estado operativo</span>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="all">Todos</option>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>{getOrderStatusLabel(s)}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Estado de pago</span>
-            <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>
-              <option value="all">Todos</option>
-              {PAYMENT_OPTIONS.map((p) => (
-                <option key={p} value={p}>{getPaymentStatusLabel(p)}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        {hasFilters && (
-          <button className="acm-reset" onClick={() => { setSearch(""); setQuery(""); setStatusFilter("all"); setPaymentFilter("all"); }}>
-            <Icons.X /> Limpiar filtros
-          </button>
-        )}
-      </div>
+      <SalesFilterToolbar
+        ariaLabel="Filtros de órdenes del empleado"
+        search={{
+          label: "Buscar en órdenes del empleado",
+          value: search,
+          onChange: setSearch,
+          placeholder: "Buscar por cliente, factura, estado…",
+        }}
+        controls={[
+          { id: "status", label: "Estado operativo", icon: <Icons.FileText />, value: statusFilter, onChange: setStatusFilter, isActive: statusFilter !== "all", options: [{ value: "all", label: "Todos" }, ...STATUS_OPTIONS.map((status) => ({ value: status, label: getOrderStatusLabel(status) }))] },
+          { id: "payment", label: "Estado de pago", icon: <Icons.Money />, value: paymentFilter, onChange: setPaymentFilter, isActive: paymentFilter !== "all", options: [{ value: "all", label: "Todos" }, ...PAYMENT_OPTIONS.map((payment) => ({ value: payment, label: getPaymentStatusLabel(payment) }))] },
+        ]}
+        resultCount={totalOrders}
+        resultLabel={`resultado${totalOrders === 1 ? "" : "s"}`}
+        activeFilters={activeFilterCount}
+        onReset={resetFilters}
+      />
 
       <div className="acm-activity-panel">
         <div className="acm-activity-heading">
@@ -367,7 +347,7 @@ function EmployeeOrdersPanel({ profile, onViewOrder }) {
                       <Icons.Orders />
                       <strong>No encontramos órdenes</strong>
                       <span>{hasFilters ? "Prueba con otros filtros o limpia la búsqueda." : "Este empleado todavía no tiene órdenes asignadas."}</span>
-                      {hasFilters && <button className="pa-btn secondary pa-btn-sm" onClick={() => { setSearch(""); setQuery(""); setStatusFilter("all"); setPaymentFilter("all"); }}>Limpiar filtros</button>}
+                      {hasFilters && <button className="pa-btn secondary pa-btn-sm" onClick={resetFilters}>Limpiar filtros</button>}
                     </div>
                   </td>
                 </tr>
