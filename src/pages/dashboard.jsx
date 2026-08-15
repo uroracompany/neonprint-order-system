@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
 import CreateOrderModal from "../components/orders/CreateOrderModal";
@@ -74,6 +74,13 @@ import {
 } from "../utils/clients";
 import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
 import { filterActiveNotifications, getActiveUnreadCount, showCreditActionFeedback } from "../utils/notifications";
+import { getAdminTabFromSearch, getAdminTabSearch } from "../utils/adminTabRoute";
+import {
+  buildAdminWorkspaceRecovery,
+  clearAdminWorkspaceRecovery,
+  readAdminWorkspaceRecovery,
+  writeAdminWorkspaceRecovery,
+} from "../utils/adminWorkspaceRecovery";
 import { useAuth } from "../hooks/useAuth";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import { FlowTracker, FlowTrackerExternal } from "../components/FlowTracker";
@@ -1521,9 +1528,12 @@ const getLatestCollectionTimestamp = (items = []) => items.reduce((latest, item)
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(getInitialAdminSidebarOpen);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => (
+    typeof window === "undefined" ? "overview" : getAdminTabFromSearch(window.location.search)
+  ));
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -1650,6 +1660,48 @@ export default function Dashboard() {
   const [saving, setSaving] = useState(false);
   const [clientToDelete, setClientToDelete] = useState(null);
   const [clientDeleteLoading, setClientDeleteLoading] = useState(false);
+  const restoredWorkspaceUserRef = useRef(null);
+
+  const selectAdminTab = useCallback((nextTab, { replace = false } = {}) => {
+    const nextSearch = getAdminTabSearch(location.search, nextTab);
+    setActiveTab(getAdminTabFromSearch(nextSearch));
+    if (nextSearch !== location.search) {
+      navigate({ pathname: location.pathname, search: nextSearch }, { replace });
+    }
+  }, [location.pathname, location.search, navigate]);
+
+  useEffect(() => {
+    setActiveTab((currentTab) => {
+      const routeTab = getAdminTabFromSearch(location.search);
+      return currentTab === routeTab ? currentTab : routeTab;
+    });
+  }, [location.search]);
+
+  const recoveryModal = orderModalOpen && orderModalMode === "create"
+    ? "create-order"
+    : showClientModal && !editingClient
+      ? "create-client"
+      : showMaterialModal && !editingMaterial
+        ? "create-material"
+        : null;
+
+  useEffect(() => {
+    if (!authUser?.id) return;
+
+    const recovery = buildAdminWorkspaceRecovery({
+      userId: authUser.id,
+      activeTab,
+      modal: recoveryModal,
+      clientForm,
+      materialFormName,
+    });
+
+    if (recovery) {
+      writeAdminWorkspaceRecovery(recovery);
+    } else {
+      clearAdminWorkspaceRecovery(authUser.id);
+    }
+  }, [activeTab, authUser?.id, clientForm, materialFormName, recoveryModal]);
 
   const usersById = useMemo(() => Object.fromEntries(profiles.map(item => [item.id, item])), [profiles]);
   const adminVisibleNotifications = useMemo(() => filterActiveNotifications(notif.notifications), [notif.notifications]);
@@ -1783,6 +1835,7 @@ export default function Dashboard() {
         setSelectedOrder,
         openOrderSetters: [setSettingsOrder, setPaymentModalOrder],
         openOrderContainers: [{ setter: setAdvancedProduction }],
+        preserveMissingOpenOrders: silent,
       });
       if (!silent) setLoadingOrders(false);
       return;
@@ -2006,6 +2059,40 @@ export default function Dashboard() {
   }, [authUser?.id, dispatchDueCreditReminderNotifications, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, loadOrders, loadProfiles]);
 
   useEffect(() => {
+    if (!authUser?.id || restoredWorkspaceUserRef.current === authUser.id) return;
+
+    restoredWorkspaceUserRef.current = authUser.id;
+    const recovery = readAdminWorkspaceRecovery(authUser.id);
+    if (!recovery) return;
+
+    if (!new URLSearchParams(location.search).has("tab") && recovery.activeTab !== "overview") {
+      selectAdminTab(recovery.activeTab, { replace: true });
+    }
+
+    if (recovery.modal === "create-order") {
+      setOrderModalMode("create");
+      setEditingOrder(null);
+      setClientFieldLocked(false);
+      setOrderModalOpen(true);
+      return;
+    }
+
+    if (recovery.modal === "create-client") {
+      setEditingClient(null);
+      setClientForm(recovery.clientForm);
+      setClientFormError("");
+      setClientFormErrors({});
+      setShowClientModal(true);
+      return;
+    }
+
+    setEditingMaterial(null);
+    setMaterialFormName(recovery.materialFormName);
+    setMaterialFormError("");
+    setShowMaterialModal(true);
+  }, [authUser?.id, location.search, selectAdminTab]);
+
+  useEffect(() => {
     if (!user?.id) {
       setCreditAlertAcknowledged(true);
       return;
@@ -2054,7 +2141,7 @@ export default function Dashboard() {
       if (error && error.code !== "23505") throw error;
       setCreditAlertAcknowledged(true);
       if (review) {
-        setActiveTab("credits");
+        selectAdminTab("credits");
         setCreditView("list");
         setCreditStatusFilter("open");
       }
@@ -2952,7 +3039,7 @@ export default function Dashboard() {
 
   const handleClientClick = (client) => {
     setClientFilter(client.id);
-    setActiveTab("orders");
+    selectAdminTab("orders");
   };
 
   const handleEditClient = (client) => {
@@ -3078,7 +3165,7 @@ export default function Dashboard() {
   };
 
   const handleManageClientCredit = (clientId) => {
-    setActiveTab("credits");
+    selectAdminTab("credits");
     setCreditStatusFilter("all");
     setCreditDetailClientId(clientId);
     setCreditView("detail");
@@ -3086,14 +3173,14 @@ export default function Dashboard() {
 
   const handleOpenCreditNotification = useCallback((notification) => {
     const clientId = notification?.metadata?.client_id || null;
-    setActiveTab("credits");
+    selectAdminTab("credits");
     setCreditStatusFilter("open");
     setCreditDetailClientId(clientId);
     setCreditView(clientId ? "detail" : "list");
-  }, []);
+  }, [selectAdminTab]);
 
   const openOverviewCreditTracking = () => {
-    setActiveTab("credits");
+    selectAdminTab("credits");
     setCreditStatusFilter("open");
     setCreditView("list");
   };
@@ -3363,7 +3450,7 @@ export default function Dashboard() {
   const handleReviewCreditReminder = async (reminder) => {
     if (!reminder) return;
     await dismissDueCreditReminders([reminder]);
-    setActiveTab("credits");
+    selectAdminTab("credits");
     setCreditStatusFilter("open");
     if (reminder.client_id) {
       setCreditDetailClientId(reminder.client_id);
@@ -3774,7 +3861,7 @@ export default function Dashboard() {
   ];
 
   const handleAdminTabChange = (nextTab) => {
-    setActiveTab(nextTab);
+    selectAdminTab(nextTab);
     setSettingsOrder(null);
     setSettingsView("list");
     if (window.matchMedia("(max-width: 768px)").matches) {

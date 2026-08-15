@@ -33,6 +33,53 @@ const EMPTY_FORM = {
   reference_images: [],
 };
 
+const ORDER_DRAFT_STORAGE_PREFIX = "neonprint:create-order-draft:v1";
+
+const getOrderDraftStorageKey = (userId) => (
+  userId ? `${ORDER_DRAFT_STORAGE_PREFIX}:${userId}` : null
+);
+
+const getSerializableOrderDraft = (form) => {
+  const nonSerializableFields = new Set(["design_files", "design_preview", "reference_images"]);
+  return Object.fromEntries(
+    Object.entries(form).filter(([field]) => !nonSerializableFields.has(field))
+  );
+};
+
+const readOrderDraft = (userId) => {
+  const key = getOrderDraftStorageKey(userId);
+  if (!key) return null;
+
+  try {
+    const draft = JSON.parse(window.sessionStorage.getItem(key) || "null");
+    return draft && typeof draft === "object" ? draft : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeOrderDraft = (userId, form) => {
+  const key = getOrderDraftStorageKey(userId);
+  if (!key) return;
+
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(getSerializableOrderDraft(form)));
+  } catch {
+    // A draft is an enhancement; never block order creation if browser storage fails.
+  }
+};
+
+const clearOrderDraft = (userId) => {
+  const key = getOrderDraftStorageKey(userId);
+  if (!key) return;
+
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Nothing else is required when session storage is unavailable.
+  }
+};
+
 export function Modal({
   open,
   onClose,
@@ -337,6 +384,33 @@ export default function CreateOrderModal({
   const [fieldErrors, setFieldErrors] = useState({});
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
+  const restoredDraftForOpenRef = useRef(false);
+  const draftReadyForOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (!open) {
+      restoredDraftForOpenRef.current = false;
+      draftReadyForOpenRef.current = false;
+      return;
+    }
+    if (restoredDraftForOpenRef.current) {
+      draftReadyForOpenRef.current = true;
+      return;
+    }
+
+    restoredDraftForOpenRef.current = true;
+    const draft = readOrderDraft(userId);
+    if (draft) {
+      setForm({ ...EMPTY_FORM, ...draft });
+      return;
+    }
+    draftReadyForOpenRef.current = true;
+  }, [open, userId]);
+
+  useEffect(() => {
+    if (!open || loading || !draftReadyForOpenRef.current) return;
+    writeOrderDraft(userId, form);
+  }, [form, loading, open, userId]);
 
   const set = (key, value) => {
     setForm(previous => ({ ...previous, [key]: value }));
@@ -611,6 +685,7 @@ export default function CreateOrderModal({
   };
 
   const handleClose = () => {
+    clearOrderDraft(userId);
     setForm(EMPTY_FORM);
     setError("");
     setFieldErrors({});

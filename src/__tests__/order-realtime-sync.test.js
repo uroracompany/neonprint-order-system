@@ -77,6 +77,21 @@ describe("order realtime synchronization", () => {
     expect(setSelectedOrder.mock.calls[0][0]({ id: "order-2" })).toBeNull();
   });
 
+  it("keeps an open modal during a silent snapshot that transiently omits its order", () => {
+    const setOrders = vi.fn();
+    const setSelectedOrder = vi.fn();
+    const openOrder = { id: "order-1", payment_status: "Pending_Payment" };
+
+    applyOrdersSnapshot({
+      orders: [],
+      setOrders,
+      setSelectedOrder,
+      preserveMissingOpenOrders: true,
+    });
+
+    expect(setSelectedOrder.mock.calls[0][0](openOrder)).toEqual(openOrder);
+  });
+
   it("reconciles secondary open order modals without dropping hydrated production relations", () => {
     const setOrders = vi.fn();
     const setSelectedOrder = vi.fn();

@@ -5,13 +5,18 @@ export const applyOrdersSnapshot = ({
   additionalOrders = [],
   openOrderSetters = [],
   openOrderContainers = [],
+  preserveMissingOpenOrders = false,
 }) => {
   const nextOrders = Array.isArray(orders) ? orders : [];
   const selectableOrders = [...nextOrders, ...(Array.isArray(additionalOrders) ? additionalOrders : [])];
   const resolveFreshOrder = (currentOrder) => {
     if (!currentOrder?.id) return currentOrder;
     const freshOrder = selectableOrders.find((order) => order.id === currentOrder.id);
-    if (!freshOrder) return null;
+    // A silent background reconciliation can briefly omit a record (for example,
+    // while permissions or pagination are settling). It must not dismiss a modal
+    // the user is actively reading or completing solely because of that transient
+    // snapshot. Explicit actions still use the default, authoritative behaviour.
+    if (!freshOrder) return preserveMissingOpenOrders ? currentOrder : null;
     const mergedOrder = { ...currentOrder, ...freshOrder };
     [
       "order_production_files",
