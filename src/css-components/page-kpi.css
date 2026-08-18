@@ -11104,7 +11104,7 @@
 .kpi-materials-comparison-chart-header { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 13px; }
 .kpi-materials-comparison-chart-header > div { display: grid; gap: 3px; }
 .kpi-materials-comparison-chart-header span { color: #2454d9; font-size: 10px; font-weight: 800; letter-spacing: .06em; }
-.kpi-materials-comparison-chart-header h3 { margin: 0; color: #0f1e40; font-size: 15px; line-height: 1.2; }
+.kpi-materials-comparison-chart-header h3 { margin: 0; color: #0f1e40; font-size: 15px; line-height: 1.2; font-weight: 700; }
 .kpi-materials-comparison-chart-header h3.is-emphasized { font-weight: 800; }
 .kpi-materials-comparison-chart-summary { display: grid; justify-items: end; gap: 5px; }
 .kpi-materials-comparison-chart-header small { padding: 5px 8px; border: 1px solid #d6e2f5; border-radius: 999px; background: #f5f8ff; color: #536989; font-size: 10px; font-weight: 700; }
