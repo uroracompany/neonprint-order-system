@@ -56,6 +56,10 @@ export function getPeriodBounds(period, offsetMonths = 0) {
       start = new Date(now.getFullYear(), now.getMonth(), 1)
       end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
       break
+    case '3months':
+      start = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      break
     case 'year':
       start = new Date(now.getFullYear(), 0, 1)
       end = new Date(now.getFullYear() + 1, 0, 1)
@@ -69,7 +73,11 @@ export function getPeriodBounds(period, offsetMonths = 0) {
 }
 
 export function getComparePeriodBounds(period) {
-  return getPeriodBounds(period, 1)
+  const current = getPeriodBounds(period)
+  const duration = new Date(current.dateTo) - new Date(current.dateFrom)
+  const compareTo = new Date(current.dateFrom)
+  const compareFrom = new Date(compareTo.getTime() - duration)
+  return { dateFrom: compareFrom.toISOString(), dateTo: compareTo.toISOString() }
 }
 
 export function getSeverityConfig(severity) {

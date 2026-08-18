@@ -1,15 +1,18 @@
-import { useState, useDeferredValue, useMemo } from 'react'
+import { useState, useDeferredValue, useMemo, useRef } from 'react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, LineChart, Line, Legend, AreaChart, Area,
+  LineChart, Line, AreaChart, Area,
 } from 'recharts'
-import { formatNumber, getTrendConfig, KPI_CHART_COLORS, getPeriodBounds, getComparePeriodBounds } from '../../utils/kpiHelpers'
+import { formatNumber, getTrendConfig, KPI_CHART_COLORS } from '../../utils/kpiHelpers'
 import { Icons } from '../../utils/icons'
 import KPISearchBox from './KPISearchBox'
 import { matchesKpiSearch } from '../../utils/kpiSearch'
+import { FilterSelect } from '../ui/FilterSelect'
+import MaterialDetailModal from './MaterialDetailModal'
+import MaterialsComparisonPanel from './MaterialsComparisonPanel'
 
 const PALETTE = {
-  cyan: '#06B6D4', green: '#10B981', rose: '#F43F5E', amber: '#F59E0B',
+  cyan: '#2454D9', green: '#10B981', rose: '#F43F5E', amber: '#F59E0B',
   violet: '#8B5CF6', orange: '#F97316', pink: '#EC4899', teal: '#14B8A6',
   indigo: '#6366F1', red: '#EF4444',
   pie: KPI_CHART_COLORS,
@@ -20,6 +23,25 @@ const EMPTY_ARRAY = Object.freeze([])
 const EMPTY_OBJECT = Object.freeze({})
 const ALL_KEY = '__all__'
 const DISTINCT_KEY = '__distinct__'
+
+const getPeriodFallbackStart = () => {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+}
+
+const formatRangeDay = (value, timeZone, inclusiveEnd = false) => {
+  const date = new Date(value)
+  if (inclusiveEnd) date.setUTCDate(date.getUTCDate() - 1)
+  return new Intl.DateTimeFormat('es-DO', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: timeZone || 'America/Asuncion',
+  }).format(date)
+}
+
+const formatMaterialCount = (count) => `${formatNumber(count)} ${Number(count) === 1 ? 'material' : 'materiales'}`
+const formatMetricValue = (value) => value === null || value === undefined ? 'N/D' : formatNumber(value)
 
 const getMaterialKey = (item) => String(item?.material_id || item?.name || '').trim()
 
@@ -54,26 +76,27 @@ const SEMANTIC = {
   positive: { iconBg: '#DCFCE7', iconColor: '#16A34A', trendBg: '#DCFCE7', trendColor: '#16A34A' },
   negative: { iconBg: '#FEE2E2', iconColor: '#DC2626', trendBg: '#FEE2E2', trendColor: '#DC2626' },
   neutral:  { iconBg: '#E0F2FE', iconColor: '#0284C7', trendBg: '#E0F2FE', trendColor: '#0284C7' },
+  warning:  { iconBg: '#FEF3C7', iconColor: '#D97706', trendBg: '#FEF3C7', trendColor: '#D97706' },
 }
 
-function MiniCard({ label, value, sub, icon, sem, trend }) {
+function MiniCard({ label, value, sub, icon, sem, trend, emphasis = 'period', iconColor }) {
   return (
-    <div className="kpi-hero-card">
-      <div className="kpi-hero-header">
+    <article className={`kpi-hero-card kpi-materials-metric-card is-${emphasis}`}>
+      <div className="kpi-hero-icon" style={{ background: sem?.iconBg, color: iconColor || sem?.iconColor }}>{icon}</div>
+      <div className="kpi-hero-content">
         <div className="kpi-hero-label">{label}</div>
-        <div className="kpi-hero-icon" style={{ background: sem?.iconBg, color: sem?.iconColor }}>{icon}</div>
+        <div className="kpi-hero-value">{value}</div>
+        <div className="kpi-hero-footer">
+          <div className="kpi-hero-subtitle">{sub}</div>
+          {trend && (
+            <div className="kpi-hero-trend" style={{ background: trend.bg, color: trend.color }}>
+              <span>{trend.arrow}</span>
+              {trend.change !== '0.0' && <span>{Math.abs(Number(trend.change))}%</span>}
+            </div>
+          )}
+        </div>
       </div>
-      <div className="kpi-hero-value">{value}</div>
-      <div className="kpi-hero-footer">
-        <div className="kpi-hero-subtitle">{sub}</div>
-        {trend && (
-          <div className="kpi-hero-trend" style={{ background: trend.bg, color: trend.color }}>
-            <span>{trend.arrow}</span>
-            {trend.change !== '0.0' && <span>{Math.abs(Number(trend.change))}%</span>}
-          </div>
-        )}
-      </div>
-    </div>
+    </article>
   )
 }
 
@@ -95,65 +118,69 @@ function Pagination({ page, total, pageSize, onPage }) {
   )
 }
 
-export default function KPIMaterialsAnalytics({ data }) {
+export default function KPIMaterialsAnalytics({ data, userId }) {
   const [selectedMaterialKey, setSelectedMaterialKey] = useState(ALL_KEY)
   const [materialSearch, setMaterialSearch] = useState('')
   const deferredMaterialSearch = useDeferredValue(materialSearch)
   const [page, setPage] = useState(0)
   const [detailTab, setDetailTab] = useState('ranking')
   const [compPage, setCompPage] = useState(0)
-  const [evoMatSearch, setEvoMatSearch] = useState('')
-  const deferredEvoMatSearch = useDeferredValue(evoMatSearch)
   const [evoMatKey, setEvoMatKey] = useState(ALL_KEY)
-  const [evoMonths, setEvoMonths] = useState(1)
-  const [evoCustom, setEvoCustom] = useState(false)
-  const [evoDateFrom, setEvoDateFrom] = useState('')
-  const [evoDateTo, setEvoDateTo] = useState('')
+  const evoMonths = 1
+  const evoCustom = false
   const [evoChartType, setEvoChartType] = useState('area')
-  const [orderTypeMatKey, setOrderTypeMatKey] = useState(ALL_KEY)
   const [topClientsPage, setTopClientsPage] = useState(0)
+  const [detailMaterialKey, setDetailMaterialKey] = useState(null)
+  const materialTriggerRefs = useRef(new Map())
 
-  const kpis = data?.client_kpis || EMPTY_OBJECT
-  const materialAnalytics = kpis.material_analytics || EMPTY_OBJECT
-  const materialComparison = kpis.material_comparison || null
-  const summary = materialAnalytics.summary || EMPTY_ARRAY
-  const orderTypeByMaterial = materialAnalytics.order_type_by_material || EMPTY_ARRAY
+  const legacyKpis = data?.client_kpis || EMPTY_OBJECT
+  const verifiedAnalytics = data?.materials_analytics || null
+  const hasVerifiedContract = Boolean(verifiedAnalytics?.period)
+  const materialAnalytics = hasVerifiedContract ? verifiedAnalytics : (legacyKpis.material_analytics || EMPTY_OBJECT)
+  const periodMetrics = hasVerifiedContract ? (materialAnalytics.period || EMPTY_OBJECT) : materialAnalytics
+  const materialComparison = hasVerifiedContract ? (materialAnalytics.comparison || null) : (legacyKpis.material_comparison || null)
+  const materialSnapshot = hasVerifiedContract ? (materialAnalytics.snapshot || EMPTY_OBJECT) : EMPTY_OBJECT
+  const materialCoverage = hasVerifiedContract ? (materialAnalytics.coverage || EMPTY_OBJECT) : EMPTY_OBJECT
+  const materialMeta = hasVerifiedContract ? (materialAnalytics.meta || EMPTY_OBJECT) : EMPTY_OBJECT
+  const summary = periodMetrics.summary || EMPTY_ARRAY
+  const comparisonBounds = useMemo(() => ({
+    date_from: materialMeta.date_from || getPeriodFallbackStart(),
+    date_to: materialMeta.date_to || new Date().toISOString(),
+    compare_from: materialMeta.compare_from || materialMeta.date_from || getPeriodFallbackStart(),
+    compare_to: materialMeta.compare_to || materialMeta.date_from || getPeriodFallbackStart(),
+  }), [materialMeta.compare_from, materialMeta.compare_to, materialMeta.date_from, materialMeta.date_to])
 
   const filteredSummary = useMemo(() =>
     filterKpiMaterials(summary, deferredMaterialSearch),
     [summary, deferredMaterialSearch]
   )
 
-  const totalCurrent = useMemo(() => summary.reduce((s, m) => s + m.total_orders, 0), [summary])
-  const totalComparison = materialComparison?.period_total || 0
+  const totalCurrent = hasVerifiedContract
+    ? Number(periodMetrics.material_references || 0)
+    : summary.reduce((s, m) => s + m.total_orders, 0)
+  const totalOrdersWithMaterial = hasVerifiedContract
+    ? Number(periodMetrics.orders_with_material || 0)
+    : totalCurrent
+  const totalComparison = hasVerifiedContract
+    ? Number(materialComparison?.material_references || 0)
+    : (materialComparison?.period_total || 0)
   const topMaterial = summary[0] || null
-  const avgCancelRate = summary.length > 0 ? Math.round(summary.reduce((s, m) => s + (m.cancel_rate || 0), 0) / summary.length * 10) / 10 : 0
-
-  const avgCancelRatePrev = useMemo(() => {
-    const prev = materialComparison?.summary || []
-    return prev.length > 0 ? Math.round(prev.reduce((s, m) => s + (m.cancel_rate || 0), 0) / prev.length * 10) / 10 : 0
-  }, [materialComparison])
-
-  const materialsCountPrev = materialComparison?.summary?.length || 0
+  const cancelledAuditable = hasVerifiedContract ? Number(periodMetrics.cancelled_orders || 0) : null
+  const cancelledAuditablePrevious = hasVerifiedContract ? Number(materialComparison?.cancelled_orders || 0) : null
 
   const trendCurrent = getTrendConfig(totalCurrent, totalComparison)
-  const trendCancelRate = getTrendConfig(avgCancelRate, avgCancelRatePrev)
-  const trendMaterials = getTrendConfig(summary.length, materialsCountPrev)
-
-  const filteredEvoMats = useMemo(() =>
-    filterKpiMaterials(summary, deferredEvoMatSearch),
-    [summary, deferredEvoMatSearch]
-  )
+  const trendCancellations = cancelledAuditable === null ? null : getTrendConfig(cancelledAuditable, cancelledAuditablePrevious)
 
   const evoData = useMemo(() => {
     const nowDate = new Date()
-    const useCustom = evoCustom && evoDateFrom && evoDateTo
-    let dateFrom, dateTo, totalDays
-    if (useCustom) {
-      dateFrom = new Date(evoDateFrom + 'T00:00:00')
-      dateTo = new Date(evoDateTo + 'T23:59:59')
-      totalDays = Math.round((dateTo - dateFrom) / (1000 * 60 * 60 * 24)) + 1
-    }
+    // La serie solo representa el rango realmente consultado por el KPI global.
+    // No se permiten fechas locales que no hayan sido solicitadas al servidor.
+    const rangeFrom = materialMeta.date_from || getPeriodFallbackStart()
+    const rangeTo = materialMeta.date_to || new Date().toISOString()
+    const dateFrom = new Date(rangeFrom)
+    const dateTo = new Date(new Date(rangeTo).getTime() - 1)
+    const totalDays = Math.max(1, Math.round((dateTo - dateFrom) / (1000 * 60 * 60 * 24)) + 1)
+    const useCustom = true
 
     const isDaily = useCustom ? totalDays <= 31 : evoMonths === 1
     const isWeekly = useCustom ? totalDays > 31 && totalDays <= 120 : evoMonths === 3
@@ -161,7 +188,7 @@ export default function KPIMaterialsAnalytics({ data }) {
     const selectedMat = evoMatKey !== ALL_KEY && evoMatKey !== DISTINCT_KEY ? findKpiMaterialByKey(summary, evoMatKey) : null
     const showDistinct = evoMatKey === DISTINCT_KEY
     const hasComp = !!(materialComparison?.summary?.length)
-    const materialSource = filteredEvoMats
+    const materialSource = summary
 
     const findCompMat = (name) => materialComparison?.summary?.find(m => m.name === name) || null
     const aggCompDaily = () => {
@@ -362,41 +389,46 @@ export default function KPIMaterialsAnalytics({ data }) {
       Materiales: currentMap[m] || 0,
       ...(hasComp ? { 'Período anterior': prevMap[prevMonthLabels[i]] || 0 } : {}),
     }))
-  }, [evoMatKey, filteredEvoMats, evoMonths, evoCustom, evoDateFrom, evoDateTo, summary, materialComparison])
+  }, [evoMatKey, evoMonths, summary, materialComparison, materialMeta.date_from, materialMeta.date_to])
 
   const evoSubtitle = useMemo(() => {
     const selectedMat = evoMatKey !== ALL_KEY && evoMatKey !== DISTINCT_KEY ? findKpiMaterialByKey(summary, evoMatKey) : null
     const showDistinct = evoMatKey === DISTINCT_KEY
-    const useCustom = evoCustom && evoDateFrom && evoDateTo
+    const rangeFrom = materialMeta.date_from || getPeriodFallbackStart()
+    const rangeTo = materialMeta.date_to || new Date().toISOString()
+    const displayDateFrom = formatRangeDay(rangeFrom, materialMeta.timezone)
+    const displayDateTo = formatRangeDay(rangeTo, materialMeta.timezone, true)
+    const useCustom = true
     const hasComp = !!(materialComparison?.summary?.length)
     const compSuffix = hasComp ? ' vs período anterior' : ''
     if (showDistinct) {
       return useCustom
-        ? `Materiales diferentes utilizados del ${evoDateFrom} al ${evoDateTo}${compSuffix}.`
+        ? `Referencias de materiales diferentes del ${displayDateFrom} al ${displayDateTo}${compSuffix}.`
         : `Materiales diferentes utilizados en los últimos ${evoMonths} mes${evoMonths > 1 ? 'es' : ''}${compSuffix}.`
     }
     if (selectedMat) {
       return useCustom
-        ? `Uso de ${selectedMat.name} del ${evoDateFrom} al ${evoDateTo}${compSuffix}.`
+        ? `Referencias de ${selectedMat.name} del ${displayDateFrom} al ${displayDateTo}${compSuffix}.`
         : `Uso de ${selectedMat.name} en los últimos ${evoMonths} mes${evoMonths > 1 ? 'es' : ''}${compSuffix}.`
     }
     return useCustom
-      ? `Total de materiales utilizados del ${evoDateFrom} al ${evoDateTo}${compSuffix}.`
+      ? `Referencias de materiales del ${displayDateFrom} al ${displayDateTo}${compSuffix}.`
       : `Total de materiales utilizados en los últimos ${evoMonths} mes${evoMonths > 1 ? 'es' : ''}${compSuffix}.`
-  }, [evoMatKey, summary, evoMonths, evoCustom, evoDateFrom, evoDateTo, materialComparison])
+  }, [evoMatKey, summary, evoMonths, materialComparison, materialMeta.date_from, materialMeta.date_to, materialMeta.timezone])
 
   const starMaterials = useMemo(() =>
-    summary.filter(m => m.total_orders >= 5 && (m.cancel_rate || 0) < 10)
+    summary.filter(m => m.total_orders >= 1)
       .sort((a, b) => b.total_orders - a.total_orders)
       .slice(0, 5),
     [summary]
   )
 
   const highCancelMaterials = useMemo(() =>
-    summary.filter(m => m.cancel_rate > 20 && m.total_orders >= 3)
-      .sort((a, b) => b.cancel_rate - a.cancel_rate)
+    (periodMetrics.cancellation_by_material || EMPTY_ARRAY)
+      .filter(m => Number(m.cancelled_orders) > 0)
+      .sort((a, b) => Number(b.cancelled_orders) - Number(a.cancelled_orders))
       .slice(0, 5),
-    [summary]
+    [periodMetrics.cancellation_by_material]
   )
 
   const heatmapData = useMemo(() => {
@@ -414,47 +446,38 @@ export default function KPIMaterialsAnalytics({ data }) {
     return { months, materials: topMats, map: matMonthMap }
   }, [summary])
 
-  const orderTypePieData = useMemo(() => {
-    const selectedOrderTypeMat = orderTypeMatKey !== ALL_KEY ? findKpiMaterialByKey(summary, orderTypeMatKey) : null
-    if (selectedOrderTypeMat) {
-      const m = selectedOrderTypeMat
-      return [
-        { name: 'Normal', value: m.normal_orders || 0, color: PALETTE.cyan },
-        { name: '911 (Urgente)', value: m.urgent_orders || 0, color: PALETTE.rose },
-      ].filter(d => d.value > 0)
-    }
-    const totalNormal = orderTypeByMaterial.reduce((s, m) => s + m.normal, 0)
-    const totalUrgent = orderTypeByMaterial.reduce((s, m) => s + m.urgent, 0)
-    return [
-      { name: 'Normal', value: totalNormal, color: PALETTE.cyan },
-      { name: '911 (Urgente)', value: totalUrgent, color: PALETTE.rose },
-    ].filter(d => d.value > 0)
-  }, [orderTypeByMaterial, orderTypeMatKey, summary])
-
   if (!data) return null
 
   const selectedMat = selectedMaterialKey !== ALL_KEY ? findKpiMaterialByKey(filteredSummary, selectedMaterialKey) : null
+  const detailMaterial = detailMaterialKey ? findKpiMaterialByKey(summary, detailMaterialKey) : null
+  const detailPreviousMaterial = detailMaterial
+    ? materialComparison?.summary?.find(item => item.name === detailMaterial.name) || null
+    : null
   const detailPageData = selectedMat
     ? [selectedMat]
     : filteredSummary.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   return (
-    <div className="kpi-section">
-      <div className="kpi-section-header">
-        <div>
-          <span className="kpi-section-kicker">Materiales</span>
-          <h2 className="kpi-section-title">Análisis de Materiales</h2>
-          <p className="kpi-section-subtitle">Ranking, uso, tendencias y cancelaciones por material.</p>
-        </div>
-      </div>
+    <div className="kpi-section kpi-materials-analytics">
+      {hasVerifiedContract && (
+        <section className="kpi-materials-snapshot" aria-label="Resumen actual de materiales" aria-describedby="materials-data-scope">
+          <span id="materials-data-scope" className="kpi-materials-assistive-copy">Referencias registradas en órdenes; no representa stock, consumo físico ni disponibilidad de inventario.</span>
+          <div className="kpi-hero-grid kpi-hero-grid--3">
+            <MiniCard label="Materiales registrados" value={formatMetricValue(materialSnapshot.catalog_materials)} sub="En el catálogo actual" icon={<Icons.Package size={18} />} sem={SEMANTIC.neutral} iconColor={PALETTE.cyan} emphasis="snapshot" />
+            <MiniCard label="Órdenes abiertas sin material" value={formatMetricValue(materialSnapshot.open_orders_without_material)} sub="Requieren asignación" icon={<Icons.Orders size={18} />} sem={Number(materialSnapshot.open_orders_without_material) > 0 ? SEMANTIC.warning : SEMANTIC.positive} emphasis="snapshot" />
+            <MiniCard label="Referencias no reconocidas" value={formatMetricValue(materialCoverage.unrecognized_period_references)} sub="En el período seleccionado" icon={<Icons.AlertCircle size={18} />} sem={Number(materialCoverage.unrecognized_period_references) > 0 ? SEMANTIC.warning : SEMANTIC.positive} emphasis="snapshot" />
+          </div>
+        </section>
+      )}
 
-      {/* ─── SUMMARY CARDS ─── */}
-      <div className="kpi-hero-grid kpi-hero-grid--4">
-        <MiniCard label="Órdenes Totales" value={formatNumber(totalCurrent)} sub="en el Sistema" icon={<Icons.Orders size={16} />} sem={SEMANTIC.neutral} trend={trendCurrent} />
-        <MiniCard label="Material Más Usado" value={topMaterial?.name || 'N/A'} sub={topMaterial ? `${formatNumber(topMaterial.total_orders)} órdenes` : ''} icon={<Icons.Package size={16} />} sem={SEMANTIC.positive} trend={getTrendConfig(topMaterial?.total_orders || 0, materialComparison?.summary?.[0]?.total_orders || 0)} />
-        <MiniCard label="Tasa de Cancelación" value={`${avgCancelRate}%`} sub="órdenes con material canceladas" icon={<Icons.AlertCircle size={16} />} sem={avgCancelRate > 15 ? SEMANTIC.negative : SEMANTIC.positive} trend={trendCancelRate} />
-        <MiniCard label="Materiales Activos" value={summary.length} sub="usados en el mes" icon={<Icons.Clipboard size={16} />} sem={SEMANTIC.neutral} trend={trendMaterials} />
-      </div>
+      <section className="kpi-materials-period-metrics" aria-label="Actividad del período seleccionado">
+        <div className="kpi-hero-grid kpi-hero-grid--4">
+          <MiniCard label="Órdenes con material" value={formatNumber(totalOrdersWithMaterial)} sub="Creadas en el período seleccionado" icon={<Icons.Orders size={18} />} sem={SEMANTIC.neutral} iconColor={PALETTE.cyan} trend={trendCurrent} />
+          <MiniCard label="Referencias de material" value={formatNumber(totalCurrent)} sub="Una orden puede tener más de una" icon={<Icons.Package size={18} />} sem={SEMANTIC.neutral} iconColor={PALETTE.cyan} trend={trendCurrent} />
+          <MiniCard label="Material más referenciado" value={topMaterial?.name || 'N/D'} sub={topMaterial ? `${formatNumber(topMaterial.total_orders)} órdenes que lo registran` : 'Sin referencias en el período'} icon={<Icons.Package size={18} />} sem={SEMANTIC.positive} trend={getTrendConfig(topMaterial?.total_orders || 0, materialComparison?.summary?.[0]?.total_orders || 0)} />
+          <MiniCard label="Cancelaciones auditables" value={cancelledAuditable === null ? 'N/D' : formatNumber(cancelledAuditable)} sub={cancelledAuditable === null ? 'Requiere eventos de estado' : 'Transiciones a cancelada en el período'} icon={<Icons.AlertCircle size={18} />} sem={cancelledAuditable === null ? SEMANTIC.neutral : (cancelledAuditable > 0 ? SEMANTIC.negative : SEMANTIC.positive)} trend={trendCancellations} />
+        </div>
+      </section>
 
       {/* ─── EVOLUTION CHART ─── */}
       <div className="kpi-section">
@@ -464,68 +487,30 @@ export default function KPIMaterialsAnalytics({ data }) {
             <h2 className="kpi-section-title">Evolución de Materiales</h2>
             <p className="kpi-section-subtitle">{evoSubtitle}</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
-            <div className="kpi-filter-row" style={{ flex: '0 0 auto', margin: 0 }}>
-              <KPISearchBox
-                value={evoMatSearch}
-                onChange={value => {
-                  setEvoMatSearch(value)
-                  if (evoMatKey !== ALL_KEY && evoMatKey !== DISTINCT_KEY && !filterKpiMaterials(summary, value).some(material => getMaterialKey(material) === evoMatKey)) setEvoMatKey(ALL_KEY)
-                }}
-                onClear={() => setEvoMatSearch('')}
-                placeholder="Buscar material, cliente o periodo..."
-                resultCount={filteredEvoMats.length}
-                totalCount={summary.length}
-              />
-              <label>
-                <span>Material</span>
-                <select value={evoMatKey} onChange={e => setEvoMatKey(e.target.value)}>
-                  <option value={ALL_KEY}>Todos</option>
-                  <option value={DISTINCT_KEY}>Materiales diferentes</option>
-                  {filteredEvoMats.map((m, i) => <option key={`${getMaterialKey(m)}-${i}`} value={getMaterialKey(m)}>{m.name}</option>)}
-                </select>
-              </label>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginLeft: 'auto' }}>
-              {!evoCustom && (
-                <div className="kpi-pipeline-view-toggle" style={{ margin: 0 }}>
-                  {[
-                    { val: 1, label: '1 mes' },
-                    { val: 3, label: '3 meses' },
-                    { val: 6, label: '6 meses' },
-                  ].map(({ val, label }) => (
-                    <button key={val} className={`kpi-pipeline-view-btn ${evoMonths === val ? 'active' : ''}`} onClick={() => setEvoMonths(val)}>{label}</button>
-                  ))}
-                </div>
-              )}
-              <div className="kpi-pipeline-view-toggle" style={{ margin: 0 }}>
-                <button
-                  className={`kpi-pipeline-view-btn ${evoCustom ? 'active' : ''}`}
-                  onClick={() => setEvoCustom(!evoCustom)}
-                  style={evoCustom ? { height: 40, padding: '0 14px', borderRadius: 10, fontSize: 12 } : undefined}
-                >{evoCustom ? 'Usar fechas por defecto' : 'Personalizar fecha'}</button>
-              </div>
-            </div>
-            {evoCustom && (
-              <div className="kpi-filter-row" style={{ flex: '0 0 auto', margin: 0 }}>
-                <label>
-                  <span>Desde</span>
-                  <input type="date" value={evoDateFrom} onChange={e => setEvoDateFrom(e.target.value)} />
-                </label>
-                <label>
-                  <span>Hasta</span>
-                  <input type="date" value={evoDateTo} onChange={e => setEvoDateTo(e.target.value)} />
-                </label>
-              </div>
-            )}
-          </div>
         </div>
-        <div className="kpi-card" style={{ padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <div className="kpi-card kpi-materials-chart-card" style={{ padding: 24 }}>
+          <div className="kpi-materials-chart-toolbar">
+            <div className="kpi-materials-chart-controls">
+            <div className="kpi-materials-evolution-filter">
+              <FilterSelect
+                icon={<Icons.Package />}
+                value={evoMatKey}
+                onChange={setEvoMatKey}
+                label="Filtrar evolución por material"
+                options={[
+                  { value: ALL_KEY, label: 'Todos' },
+                  { value: DISTINCT_KEY, label: 'Materiales diferentes' },
+                  ...summary.map((m, i) => ({ value: getMaterialKey(m), label: m.name, key: i })),
+                ]}
+                searchable
+                isActive={evoMatKey !== ALL_KEY}
+              />
+            </div>
             <div className="kpi-pipeline-view-toggle" style={{ margin: 0 }}>
-              <button className={`kpi-pipeline-view-btn ${evoChartType === 'area' ? 'active' : ''}`} onClick={() => setEvoChartType('area')}>Área</button>
-              <button className={`kpi-pipeline-view-btn ${evoChartType === 'line' ? 'active' : ''}`} onClick={() => setEvoChartType('line')}>Línea</button>
-              <button className={`kpi-pipeline-view-btn ${evoChartType === 'bar' ? 'active' : ''}`} onClick={() => setEvoChartType('bar')}>Barras</button>
+              <button type="button" className={`kpi-pipeline-view-btn ${evoChartType === 'area' ? 'active' : ''}`} onClick={() => setEvoChartType('area')} aria-pressed={evoChartType === 'area'}><Icons.ChartArea size={14} />Área</button>
+              <button type="button" className={`kpi-pipeline-view-btn ${evoChartType === 'line' ? 'active' : ''}`} onClick={() => setEvoChartType('line')} aria-pressed={evoChartType === 'line'}><Icons.ChartLine size={14} />Línea</button>
+              <button type="button" className={`kpi-pipeline-view-btn ${evoChartType === 'bar' ? 'active' : ''}`} onClick={() => setEvoChartType('bar')} aria-pressed={evoChartType === 'bar'}><Icons.BarChart size={14} />Barras</button>
+            </div>
             </div>
           </div>
           {(() => {
@@ -533,9 +518,6 @@ export default function KPIMaterialsAnalytics({ data }) {
             const compColor = '#94A3B8'
             return (
               <>
-                {filteredEvoMats.length === 0 && (
-                  <div className="kpi-search-empty-hint">{getMaterialEmptyText(evoMatSearch)}</div>
-                )}
                 <div style={{ height: 280 }} key={`evo-mat-${evoMatKey}-${evoMonths}-${evoCustom}-${evoChartType}`}>
                   <ResponsiveContainer width="100%" height="100%">
                     {evoChartType === 'bar' ? (
@@ -578,7 +560,7 @@ export default function KPIMaterialsAnalytics({ data }) {
                     )}
                   </ResponsiveContainer>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 12 }}>
+                <div className="kpi-materials-chart-legend" style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 12, height: 3, borderRadius: 2, background: PALETTE.cyan }} />
                     <span style={{ fontSize: 12, fontWeight: 500, color: '#475569' }}>
@@ -598,24 +580,36 @@ export default function KPIMaterialsAnalytics({ data }) {
         </div>
       </div>
 
-      {/* ─── PERIOD COMPARISON ─── */}
-      {materialComparison && (() => {
-        const currBounds = getPeriodBounds('month')
-        const prevBounds = getComparePeriodBounds('month')
+      <MaterialsComparisonPanel
+        globalBounds={comparisonBounds}
+        fallbackAnalytics={materialAnalytics}
+        userId={userId}
+      />
+
+      {/* Legacy visual kept out of render while the new comparison workspace is active. */}
+      {false && materialComparison && (() => {
+        const currBounds = {
+          dateFrom: materialMeta.date_from || getPeriodFallbackStart(),
+          dateTo: materialMeta.date_to || new Date().toISOString(),
+        }
+        const prevBounds = {
+          dateFrom: materialMeta.compare_from || currBounds.dateFrom,
+          dateTo: materialMeta.compare_to || currBounds.dateFrom,
+        }
         const fmtDate = (d) => new Date(d).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })
+        const fmtInclusiveEnd = (d) => fmtDate(new Date(new Date(d).getTime() - 1))
         const currDays = Math.round((new Date(currBounds.dateTo) - new Date(currBounds.dateFrom)) / 86400000)
         const prevDays = Math.round((new Date(prevBounds.dateTo) - new Date(prevBounds.dateFrom)) / 86400000)
-        const dayDiff = Math.abs(currDays - prevDays)
         return (
         <div className="kpi-section">
           <div className="kpi-section-header">
             <div>
               <span className="kpi-section-kicker">Comparación</span>
               <h2 className="kpi-section-title">Comparación con Período Anterior</h2>
-              <p className="kpi-section-subtitle">Compara el uso de materiales entre el mes actual ({currDays} días: {fmtDate(currBounds.dateFrom)} - {fmtDate(currBounds.dateTo)}) y el mes anterior ({prevDays} días: {fmtDate(prevBounds.dateFrom)} - {fmtDate(prevBounds.dateTo)}){dayDiff > 0 ? `. Los períodos difieren en ${dayDiff} día${dayDiff > 1 ? 's' : ''}, por lo que los totales pueden variar ligeramente.` : ''}</p>
+              <p className="kpi-section-subtitle">Compara las referencias registradas durante el período seleccionado con el período anterior de igual duración.</p>
             </div>
           </div>
-          <div className="kpi-card" style={{ padding: 24 }}>
+          <div className="kpi-card kpi-materials-comparison-card" style={{ padding: 24 }}>
             {/* ── Hero: dos períodos lado a lado ── */}
             {(() => {
               const prevMats = new Set((materialComparison.summary || []).map(m => m.name))
@@ -623,57 +617,64 @@ export default function KPIMaterialsAnalytics({ data }) {
               const kept = [...prevMats].filter(m => currMats.has(m))
               const newMats = [...currMats].filter(m => !prevMats.has(m))
               const lost = [...prevMats].filter(m => !currMats.has(m))
-              const change = prevMats.size > 0 ? Math.round(((currMats.size - prevMats.size) / prevMats.size) * 100) : (currMats.size > 0 ? 100 : 0)
-              const isUp = currMats.size > prevMats.size
-              const isDown = currMats.size < prevMats.size
+              const referencesCurrent = Number(totalCurrent || 0)
+              const referencesPrevious = Number(totalComparison || 0)
+              const referencesDifference = referencesCurrent - referencesPrevious
+              const hasPreviousBaseline = referencesPrevious > 0
+              const variation = hasPreviousBaseline
+                ? Math.round((referencesDifference / referencesPrevious) * 100)
+                : (referencesCurrent === 0 ? 0 : null)
+              const isUp = referencesDifference > 0
+              const isDown = referencesDifference < 0
+              const referenceLabel = count => `${formatNumber(count)} referencia${Number(count) === 1 ? '' : 's'}`
+              const differenceLabel = referencesDifference === 0
+                ? 'Sin diferencia'
+                : `${isUp ? '+' : '−'}${referenceLabel(Math.abs(referencesDifference))}`
+              const variationLabel = variation === null
+                ? 'Sin base anterior'
+                : `${variation > 0 ? '+' : ''}${variation}% de variación`
               return (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: 160, textAlign: 'center', padding: '20px 16px', borderRadius: 14, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Mes Anterior ({prevDays}d)</div>
-                      <div style={{ fontSize: 32, fontWeight: 800, color: '#091127' }}>{prevMats.size}</div>
-                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>materiales · {fmtDate(prevBounds.dateFrom)} - {fmtDate(prevBounds.dateTo)}</div>
+                  <div className="kpi-materials-period-comparison">
+                    <article className="kpi-materials-period-card is-previous">
+                      <div className="kpi-materials-period-card-heading"><span className="kpi-materials-period-icon"><Icons.Calendar size={16} /></span><span>Período anterior</span></div>
+                      <strong>{formatNumber(referencesPrevious)}</strong>
+                      <span className="kpi-materials-period-metric">Referencias registradas</span>
+                      <span className="kpi-materials-period-duration">{prevDays} días</span>
+                      <span className="kpi-materials-period-date">{fmtDate(prevBounds.dateFrom)} - {fmtInclusiveEnd(prevBounds.dateTo)}</span>
+                    </article>
+                    <div className={`kpi-materials-period-change ${isUp ? 'is-up' : isDown ? 'is-down' : 'is-flat'}`} aria-label={`${isUp ? 'Aumento' : isDown ? 'Disminución' : 'Sin variación'}: ${differenceLabel}; ${variationLabel}`}>
+                      <span className="kpi-materials-period-change-icon">{isUp ? '↑' : isDown ? '↓' : '→'}</span>
+                      <strong>{differenceLabel}</strong>
+                      <span>{variationLabel}</span>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                      <div style={{
-                        width: 44, height: 44, borderRadius: 12,
-                        background: isUp ? '#DCFCE7' : isDown ? '#FEF2F2' : '#F1F5F9',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 20, color: isUp ? '#16A34A' : isDown ? '#DC2626' : '#64748b',
-                      }}>
-                        {isUp ? '↑' : isDown ? '↓' : '→'}
-                      </div>
-                      <div style={{
-                        fontSize: 13, fontWeight: 700,
-                        color: isUp ? '#16A34A' : isDown ? '#DC2626' : '#64748b',
-                      }}>
-                        {isUp ? '+' : ''}{change}%
-                      </div>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 160, textAlign: 'center', padding: '20px 16px', borderRadius: 14, background: '#F0F9FF', border: '1px solid #BAE6FD' }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#0284C7', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Mes Actual ({currDays}d)</div>
-                      <div style={{ fontSize: 32, fontWeight: 800, color: '#0284C7' }}>{currMats.size}</div>
-                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>materiales · {fmtDate(currBounds.dateFrom)} - {fmtDate(currBounds.dateTo)}</div>
-                    </div>
+                    <article className="kpi-materials-period-card is-current">
+                      <div className="kpi-materials-period-card-heading"><span className="kpi-materials-period-icon"><Icons.Package size={16} /></span><span>Período seleccionado</span></div>
+                      <strong>{formatNumber(referencesCurrent)}</strong>
+                      <span className="kpi-materials-period-metric">Referencias registradas</span>
+                      <span className="kpi-materials-period-duration">{currDays} días</span>
+                      <span className="kpi-materials-period-date">{fmtDate(currBounds.dateFrom)} - {fmtInclusiveEnd(currBounds.dateTo)}</span>
+                    </article>
                   </div>
 
                   {/* ── Cards de movimiento ── */}
-                   <div className="kpi-hero-grid kpi-hero-grid--3" style={{ marginBottom: 24, gap: 12 }}>
-                    <div style={{ padding: '14px 16px', borderRadius: 12, background: '#F0F9FF', border: '1px solid #BAE6FD', textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, fontWeight: 800, color: '#0284C7' }}>{kept.length}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#0284C7', marginTop: 2 }}>Mantenidos</div>
-                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>en ambos períodos</div>
-                    </div>
-                    <div style={{ padding: '14px 16px', borderRadius: 12, background: '#DCFCE7', border: '1px solid #BBF7D0', textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, fontWeight: 800, color: '#16A34A' }}>{newMats.length}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#16A34A', marginTop: 2 }}>Nuevos</div>
-                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{newMats.length > 0 ? newMats.join(', ') : '—'}</div>
-                    </div>
-                    <div style={{ padding: '14px 16px', borderRadius: 12, background: '#FEF2F2', border: '1px solid #FECACA', textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, fontWeight: 800, color: '#DC2626' }}>{lost.length}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#DC2626', marginTop: 2 }}>Perdidos</div>
-                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{lost.length > 0 ? lost.join(', ') : '—'}</div>
-                    </div>
+                  <div className="kpi-materials-movement-heading">
+                    <span>Cambios en materiales</span>
+                    <small>Desglose de materiales entre ambos períodos</small>
+                  </div>
+                  <div className="kpi-materials-movement-grid">
+                    <article className="kpi-materials-movement-card is-kept">
+                      <span className="kpi-materials-movement-icon"><Icons.CheckCircle size={16} /></span>
+                      <div><strong>{kept.length}</strong><span>Mantenidos</span><p>Presentes en ambos períodos</p></div>
+                    </article>
+                    <article className="kpi-materials-movement-card is-new">
+                      <span className="kpi-materials-movement-icon"><Icons.Plus size={16} /></span>
+                      <div><strong>{newMats.length}</strong><span>Solo en período seleccionado</span><p>{newMats.length > 0 ? newMats.join(', ') : 'Sin materiales nuevos'}</p></div>
+                    </article>
+                    <article className="kpi-materials-movement-card is-lost">
+                      <span className="kpi-materials-movement-icon"><Icons.ArrowLeft size={16} /></span>
+                      <div><strong>{lost.length}</strong><span>Solo en período anterior</span><p>{lost.length > 0 ? lost.join(', ') : 'Sin materiales retirados'}</p></div>
+                    </article>
                   </div>
 
                   {/* ── Tabla simplificada ── */}
@@ -683,8 +684,8 @@ export default function KPIMaterialsAnalytics({ data }) {
                         <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Detalle por material</div>
                         <Pagination page={compPage} total={materialComparison.summary.length} pageSize={7} onPage={setCompPage} />
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: 8, padding: '6px 12px', fontSize: 10, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <div className="kpi-materials-comparison-table" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div className="kpi-materials-comparison-table-head" style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: 8, padding: '6px 12px', fontSize: 10, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           <div>Material</div>
                           <div style={{ textAlign: 'center' }}>Anterior</div>
                           <div style={{ textAlign: 'center' }}>Actual</div>
@@ -698,15 +699,15 @@ export default function KPIMaterialsAnalytics({ data }) {
                           const isGone = m.total_orders > 0 && currTotal === 0
                           const isNew = m.total_orders === 0 && currTotal > 0
                           return (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: 8, padding: '10px 12px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', alignItems: 'center' }}>
+                            <div className="kpi-materials-comparison-row" key={i} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: 8, padding: '10px 12px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', alignItems: 'center' }}>
                               <div style={{ fontWeight: 600, color: '#091127', fontSize: 13 }}>{m.name}</div>
                               <div style={{ textAlign: 'center', fontSize: 13, color: '#64748b' }}>{formatNumber(m.total_orders)}</div>
                               <div style={{ textAlign: 'center', fontSize: 13, color: '#091127', fontWeight: 600 }}>{formatNumber(currTotal)}</div>
                               <div style={{ textAlign: 'center' }}>
                                 {isGone ? (
-                                  <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#DC2626', background: '#FEE2E2', padding: '3px 10px', borderRadius: 12 }}>Perdido</span>
+                                  <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#DC2626', background: '#FEE2E2', padding: '3px 10px', borderRadius: 12 }}>Solo anterior</span>
                                 ) : isNew ? (
-                                  <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#16A34A', background: '#DCFCE7', padding: '3px 10px', borderRadius: 12 }}>Nuevo</span>
+                                  <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#16A34A', background: '#DCFCE7', padding: '3px 10px', borderRadius: 12 }}>Solo actual</span>
                                 ) : diff > 0 ? (
                                   <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#16A34A', background: '#DCFCE7', padding: '3px 10px', borderRadius: 12 }}>↑ {pct}%</span>
                                 ) : diff < 0 ? (
@@ -729,94 +730,19 @@ export default function KPIMaterialsAnalytics({ data }) {
          )
        })()}
 
-      {/* ─── ORDER TYPE PIE (unified) ─── */}
-      <div className="kpi-section">
-        <div className="kpi-section-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <span className="kpi-section-kicker">Distribución</span>
-              <h2 className="kpi-section-title">Tipo de Orden por Material</h2>
-              <p className="kpi-section-subtitle">
-                {orderTypeMatKey !== ALL_KEY
-                  ? `Órdenes normales vs urgentes de ${findKpiMaterialByKey(summary, orderTypeMatKey)?.name || ''}.`
-                  : 'Participación de órdenes normales vs urgentes en el período.'}
-              </p>
-            </div>
-            <div className="kpi-filter-row" style={{ flex: '0 0 auto', margin: 0 }}>
-              <label>
-                <span>Material</span>
-                <select value={orderTypeMatKey} onChange={e => setOrderTypeMatKey(e.target.value)}>
-                  <option value={ALL_KEY}>Todos</option>
-                  {summary.map((m, i) => <option key={`${getMaterialKey(m)}-${i}`} value={getMaterialKey(m)}>{m.name}</option>)}
-                </select>
-              </label>
-            </div>
-          </div>
-        </div>
-        <div className="kpi-card" style={{ padding: 24 }}>
-          {orderTypePieData.length > 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 48 }}>
-              <div style={{ position: 'relative', width: 280, height: 280, flexShrink: 0 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={orderTypePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={orderTypePieData.length > 1 ? 5 : 0} stroke="none">
-                      {orderTypePieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                    </Pie>
-                    <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
-                      if (!active || !payload?.length) return null
-                      const d = payload[0].payload
-                      const total = orderTypePieData.reduce((s, e) => s + e.value, 0)
-                      return (
-                        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10, padding: '10px 14px', boxShadow: '0 4px 16px rgba(15,30,64,0.1)', fontSize: 13 }}>
-                          <p style={{ margin: 0, fontWeight: 600, color: '#091127' }}>{d.name}</p>
-                          <p style={{ margin: '4px 0 0', color: '#64748b' }}>{d.value} órdenes — {total > 0 ? Math.round((d.value / total) * 100) : 0}%</p>
-                        </div>
-                      )
-                    }} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
-                  <div style={{ fontSize: 36, fontWeight: 800, color: '#091127' }}>{formatNumber(orderTypePieData.reduce((s, e) => s + e.value, 0))}</div>
-                  <div style={{ fontSize: 13, color: '#94A3B8' }}>órdenes</div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 240 }}>
-                {orderTypePieData.map((entry, i) => {
-                  const total = orderTypePieData.reduce((s, e) => s + e.value, 0)
-                  const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
-                  return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                      <div style={{ width: 48, height: 48, borderRadius: 14, background: entry.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <div style={{ width: 16, height: 16, borderRadius: 4, background: entry.color }} />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: '#091127' }}>{entry.name}</div>
-                        <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{entry.value} órdenes</div>
-                      </div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: entry.color }}>{pct}%</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">Sin datos de tipos de orden</div></div>
-          )}
-        </div>
-      </div>
-
       {/* ─── RANKING SECTION ─── */}
       <div className="kpi-section">
-        <div className="kpi-section-header">
-          <div>
-            <span className="kpi-section-kicker">Ranking</span>
-            <h2 className="kpi-section-title">Ranking de Materiales</h2>
-            <p className="kpi-section-subtitle">Materiales con mayor utilización durante el período seleccionado. · {filteredSummary.length} materiales</p>
-          </div>
+          <div className="kpi-section-header">
+            <div>
+              <span className="kpi-section-kicker">Ranking</span>
+              <h2 className="kpi-section-title">Ranking de Materiales</h2>
+            <p className="kpi-section-subtitle">Materiales con mayor número de referencias durante el período seleccionado.</p>
+            </div>
+            <span className="kpi-section-fact-badge">{formatMaterialCount(filteredSummary.length)}</span>
         </div>
 
         {/* ─── TABS: RANKING / HEATMAP / ALERTAS ─── */}
-        <div className="kpi-pipeline-view-toggle" style={{ marginBottom: 16 }}>
+        <div className="kpi-pipeline-view-toggle kpi-materials-detail-tabs" style={{ marginBottom: 16 }}>
           {[['ranking', 'Ranking de Materiales'], ['heatmap', 'Heatmap'], ['alerts', 'Alertas']].map(([key, label]) => (
             <button key={key} onClick={() => setDetailTab(key)}
               className={`kpi-pipeline-view-btn ${detailTab === key ? 'active' : ''}`}>
@@ -827,8 +753,8 @@ export default function KPIMaterialsAnalytics({ data }) {
 
       {/* ─── RANKING TAB ─── */}
       {detailTab === 'ranking' && (
-        <div className="kpi-card" style={{ padding: 24 }}>
-          <div className="kpi-filter-row" style={{ marginBottom: 16 }}>
+        <div className="kpi-card kpi-materials-ranking-card kpi-materials-detail-card" style={{ padding: 24 }}>
+          <div className="kpi-filter-row kpi-materials-ranking-filter-bar" style={{ marginBottom: 16 }}>
               <KPISearchBox
                 value={materialSearch}
                 onChange={value => {
@@ -846,68 +772,90 @@ export default function KPIMaterialsAnalytics({ data }) {
                 resultCount={filteredSummary.length}
                 totalCount={summary.length}
               />
-              <label>
+              <div className="kpi-materials-filter-control">
                 <span>Material</span>
-                <select value={selectedMaterialKey} onChange={e => { setSelectedMaterialKey(e.target.value); setPage(0); setTopClientsPage(0) }}>
-                  <option value={ALL_KEY}>Todos</option>
-                  {filteredSummary.map((m, i) => <option key={`${getMaterialKey(m)}-${i}`} value={getMaterialKey(m)}>{m.name}</option>)}
-                </select>
-              </label>
+                <FilterSelect
+                  icon={<Icons.Package />}
+                  value={selectedMaterialKey}
+                  onChange={value => { setSelectedMaterialKey(value); setPage(0); setTopClientsPage(0) }}
+                  label="Filtrar ranking por material"
+                  options={[
+                    { value: ALL_KEY, label: 'Todos' },
+                    ...filteredSummary.map(m => ({ value: getMaterialKey(m), label: m.name })),
+                  ]}
+                  searchable
+                  isActive={selectedMaterialKey !== ALL_KEY}
+                />
+              </div>
             </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="kpi-materials-ranking-table" role="table" aria-label="Ranking de materiales">
+            <div className="kpi-materials-ranking-table-head" role="row">
+              <span>#</span><span>Material</span><span>Referencias</span><span>Órdenes</span><span>Participación</span><span>Uso por orden</span><span>Tendencia</span><span>Clientes</span>
+            </div>
+          <div className="kpi-materials-ranking-list" role="rowgroup">
             {detailPageData.length === 0 ? (
               <div className="kpi-search-empty-hint">{getMaterialEmptyText(materialSearch)}</div>
             ) : detailPageData.map((m, i) => {
               const rank = selectedMat ? 1 : page * PAGE_SIZE + i + 1
-              const pct = totalCurrent > 0 ? Math.round((m.total_orders / totalCurrent) * 100) : 0
+              const references = Number(m.reference_count ?? m.total_orders ?? 0)
+              const pct = totalCurrent > 0 ? Math.round((references / totalCurrent) * 100) : 0
               const topClient = m.top_clients?.[0]
-              const sparkData = (m.monthly_trend || []).map(t => ({ v: t.count }))
-              const prevOrders = materialComparison?.summary?.find(c => c.name === m.name)?.total_orders || 0
-              const trendPct = prevOrders > 0 ? Math.round(((m.total_orders - prevOrders) / prevOrders) * 100) : (m.total_orders > 0 ? 100 : 0)
-              const trendUp = m.total_orders > prevOrders
-              const trendDown = m.total_orders < prevOrders
+              const prevReferences = Number(materialComparison?.summary?.find(c => c.name === m.name)?.reference_count ?? materialComparison?.summary?.find(c => c.name === m.name)?.total_orders ?? 0)
+              const trendPct = prevReferences > 0 ? Math.round(((references - prevReferences) / prevReferences) * 100) : (references > 0 ? 100 : 0)
+              const trendUp = references > prevReferences
+              const trendDown = references < prevReferences
+              const materialKey = getMaterialKey(m)
               return (
-                <div key={i} style={{ display: 'flex', alignItems: 'stretch', borderRadius: 10, background: '#F8FAFC', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
-                  <div style={{ width: 4, background: PALETTE.pie[(rank - 1) % PALETTE.pie.length], flexShrink: 0 }} />
-                  <div style={{ flex: 1, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: '#94A3B8', width: 28, textAlign: 'center', flexShrink: 0 }}>{rank}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: '#091127' }}>{m.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', background: '#E2E8F0', padding: '2px 8px', borderRadius: 20 }}>{pct}% uso</span>
-                        {materialComparison?.summary && (
-                          <span style={{
-                            fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
-                            color: trendUp ? '#16A34A' : trendDown ? '#DC2626' : '#64748b',
-                            background: trendUp ? '#DCFCE7' : trendDown ? '#FEF2F2' : '#F1F5F9',
-                          }}>
-                            {trendUp ? `↑ +${trendPct}%` : trendDown ? `↓ ${trendPct}%` : '='}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#64748b', marginBottom: 6 }}>
-                        <span><strong style={{ color: '#091127' }}>{m.total_orders}</strong> órdenes</span>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icons.User size={12} /> <strong style={{ color: '#091127' }}>{m.top_clients?.length || 0}</strong> clientes</span>
-                        {topClient && <span style={{ color: '#94A3B8' }}>· {topClient.client_name} ({topClient.count})</span>}
-                      </div>
-                      <div style={{ height: 4, background: '#E2E8F0', borderRadius: 2, overflow: 'hidden', maxWidth: 300 }}>
-                        <div style={{ width: `${pct}%`, height: '100%', background: PALETTE.pie[(rank - 1) % PALETTE.pie.length], borderRadius: 2 }} />
-                      </div>
-                    </div>
-                    {sparkData.length > 1 && (
-                      <div style={{ flexShrink: 0, width: 80, height: 32 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={sparkData}>
-                            <Line type="monotone" dataKey="v" stroke={PALETTE.cyan} strokeWidth={1.5} dot={false} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    )}
+                <article
+                  className="kpi-materials-ranking-row is-interactive"
+                  key={i}
+                  role="row"
+                  tabIndex={0}
+                  aria-label={`Ver detalle de ${m.name}`}
+                  onClick={() => setDetailMaterialKey(materialKey)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setDetailMaterialKey(materialKey)
+                    }
+                  }}
+                >
+                  <div className="kpi-materials-ranking-position" role="cell" aria-label={`Posición ${rank}`}>{rank}</div>
+                  <div className="kpi-materials-ranking-copy" role="cell">
+                    <button
+                      type="button"
+                      className="kpi-materials-ranking-material-button"
+                      ref={node => { if (node) materialTriggerRefs.current.set(materialKey, node); else materialTriggerRefs.current.delete(materialKey) }}
+                      onClick={() => setDetailMaterialKey(materialKey)}
+                      aria-label={`Ver detalle de ${m.name}`}
+                    >
+                      <span className="kpi-materials-ranking-material-icon"><Icons.Package size={15} /></span>
+                      <span><span className="kpi-materials-ranking-name">{m.name}</span>{topClient && <span className="kpi-materials-ranking-client">{topClient.client_name}</span>}</span>
+                    </button>
                   </div>
-                </div>
+                  <div className="kpi-materials-ranking-references" role="cell">{formatNumber(references)}</div>
+                  <div className="kpi-materials-ranking-references" role="cell">{formatNumber(m.total_orders)}</div>
+                  <div className="kpi-materials-ranking-participation" role="cell">
+                    <strong>{pct}%</strong>
+                    <div className="kpi-materials-ranking-progress" aria-label={`${pct}% de referencias`}><span style={{ width: `${pct}%` }} /></div>
+                  </div>
+                  <div className="kpi-materials-ranking-usage" role="cell" aria-label={`911 ${m.urgent_orders || 0}, normal ${m.normal_orders || 0}, diseño interno ${m.internal_design_orders || 0}, externo ${m.external_design_orders || 0}`}>
+                    <span>911 {formatNumber(m.urgent_orders || 0)} · N {formatNumber(m.normal_orders || 0)}</span>
+                    <small>Int {formatNumber(m.internal_design_orders || 0)} · Ext {formatNumber(m.external_design_orders || 0)}</small>
+                  </div>
+                  {materialComparison?.summary && (
+                    <div className={`kpi-materials-ranking-trend ${trendUp ? 'is-up' : trendDown ? 'is-down' : 'is-flat'}`} role="cell">
+                      <span>{trendUp ? '↑' : trendDown ? '↓' : '—'}</span>
+                      <strong>{trendUp ? `+${trendPct}%` : trendDown ? `${trendPct}%` : 'Sin cambio'}</strong>
+                    </div>
+                  )}
+                  {!materialComparison?.summary && <span className="kpi-materials-ranking-trend is-flat" role="cell">—</span>}
+                  <div className="kpi-materials-ranking-clients" role="cell"><Icons.User size={13} /><strong>{m.top_clients?.length || 0}</strong></div>
+                </article>
               )
             })}
+          </div>
           </div>
 
           {!selectedMat && (
@@ -920,8 +868,14 @@ export default function KPIMaterialsAnalytics({ data }) {
 
       {/* ─── HEATMAP TAB ─── */}
       {detailTab === 'heatmap' && (
-        <div className="kpi-card" style={{ padding: 24 }}>
-          <div className="kpi-card-title">Heatmap: Uso Mensual por Material (Top 6)</div>
+        <div className="kpi-card kpi-materials-heatmap-card kpi-materials-detail-card" style={{ padding: 24 }}>
+          <div className="kpi-materials-panel-heading">
+            <div>
+              <span className="kpi-materials-panel-kicker">Actividad mensual</span>
+              <div className="kpi-card-title"><Icons.ChartArea size={17} /> Heatmap: referencias por material</div>
+            </div>
+            <span className="kpi-materials-panel-meta">Top {Math.min(6, heatmapData.materials.length)}</span>
+          </div>
           {heatmapData.months.length > 0 ? (
             <div className="kpi-table-wrapper" style={{ marginTop: 12 }}>
               <table className="kpi-table">
@@ -942,7 +896,7 @@ export default function KPIMaterialsAnalytics({ data }) {
                         {heatmapData.months.map((mo, moi) => {
                           const val = heatmapData.map[mat.name]?.[mo] || 0
                           const intensity = val / maxVal
-                          const bg = val === 0 ? '#F8FAFC' : `rgba(6, 182, 212, ${0.1 + intensity * 0.8})`
+                          const bg = val === 0 ? '#F8FAFC' : `rgba(36, 84, 217, ${0.1 + intensity * 0.8})`
                           const textColor = intensity > 0.5 ? '#fff' : '#091127'
                           return (
                             <td key={moi} style={{ textAlign: 'center', background: bg, color: textColor, fontWeight: val > 0 ? 700 : 400, borderRadius: 4 }}>
@@ -964,9 +918,15 @@ export default function KPIMaterialsAnalytics({ data }) {
 
       {/* ─── ALERTS TAB ─── */}
       {detailTab === 'alerts' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          <div className="kpi-card" style={{ padding: 24 }}>
-            <div className="kpi-card-title"><Icons.AlertCircle size={16} color={PALETTE.amber} /> Materiales Estrella</div>
+        <div className="kpi-materials-alerts-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div className="kpi-card kpi-materials-alert-card kpi-materials-detail-card" style={{ padding: 24 }}>
+            <div className="kpi-materials-panel-heading">
+              <div>
+                <span className="kpi-materials-panel-kicker">Uso destacado</span>
+                <div className="kpi-card-title"><Icons.Package size={16} color={PALETTE.amber} /> Materiales más referenciados</div>
+              </div>
+              <span className="kpi-materials-panel-meta is-positive">{starMaterials.length}</span>
+            </div>
             {starMaterials.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {starMaterials.map((m, i) => (
@@ -974,19 +934,25 @@ export default function KPIMaterialsAnalytics({ data }) {
                     <Icons.CheckCircle size={16} color="#16A34A" />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#065F46' }}>{m.name}</div>
-                      <div style={{ fontSize: 12, color: '#047857' }}>{formatNumber(m.total_orders)} órdenes · {m.cancel_rate}% cancelación</div>
+                      <div style={{ fontSize: 12, color: '#047857' }}>{formatNumber(m.total_orders)} órdenes que lo registran · {formatNumber(m.reference_count || m.total_orders)} referencias</div>
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: PALETTE.green, background: '#D1FAE5', padding: '2px 8px', borderRadius: 20 }}>Óptimo</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: PALETTE.green, background: '#D1FAE5', padding: '2px 8px', borderRadius: 20 }}>Mayor uso</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">No hay materiales estrella aún</div></div>
+              <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">No hay referencias de materiales en el período</div></div>
             )}
           </div>
 
-          <div className="kpi-card" style={{ padding: 24 }}>
-            <div className="kpi-card-title"><Icons.AlertCircle size={16} color={PALETTE.rose} /> Alta Tasa de Cancelación</div>
+          <div className="kpi-card kpi-materials-alert-card kpi-materials-detail-card" style={{ padding: 24 }}>
+            <div className="kpi-materials-panel-heading">
+              <div>
+                <span className="kpi-materials-panel-kicker">Seguimiento</span>
+                <div className="kpi-card-title"><Icons.AlertCircle size={16} color={PALETTE.rose} /> Cancelaciones auditables por material</div>
+              </div>
+              <span className="kpi-materials-panel-meta is-negative">{highCancelMaterials.length}</span>
+            </div>
             {highCancelMaterials.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {highCancelMaterials.map((m, i) => (
@@ -994,14 +960,14 @@ export default function KPIMaterialsAnalytics({ data }) {
                     <Icons.AlertCircle size={16} color="#DC2626" />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#991B1B' }}>{m.name}</div>
-                      <div style={{ fontSize: 12, color: '#B91C1C' }}>{formatNumber(m.total_orders)} órdenes · <strong>{m.cancel_rate}%</strong> cancelación</div>
+                      <div style={{ fontSize: 12, color: '#B91C1C' }}><strong>{formatNumber(m.cancelled_orders)}</strong> transición{Number(m.cancelled_orders) === 1 ? '' : 'es'} a cancelada en el período</div>
                     </div>
                     <span style={{ fontSize: 11, fontWeight: 600, color: PALETTE.rose, background: '#FEE2E2', padding: '2px 8px', borderRadius: 20 }}>Revisar</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">No hay materiales con alta cancelación</div></div>
+              <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">No hay cancelaciones auditables por material</div></div>
             )}
           </div>
         </div>
@@ -1013,10 +979,10 @@ export default function KPIMaterialsAnalytics({ data }) {
         const topClientsTotal = selectedMat.top_clients.length
         const topClientsPaged = selectedMat.top_clients.slice(topClientsPage * TOP_PAGE_SIZE, (topClientsPage + 1) * TOP_PAGE_SIZE)
         return (
-          <div className="kpi-card" style={{ padding: 24, marginTop: 20 }}>
+          <div className="kpi-card kpi-materials-clients-card" style={{ padding: 24, marginTop: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <div className="kpi-card-title" style={{ marginBottom: 0 }}>
-                Clientes que más usan <strong style={{ color: '#091127' }}>{selectedMat.name}</strong> · {topClientsTotal} clientes
+                Clientes con más órdenes que registran <strong style={{ color: '#091127' }}>{selectedMat.name}</strong> · {topClientsTotal} clientes
               </div>
               {topClientsTotal > TOP_PAGE_SIZE && (
                 <Pagination page={topClientsPage} total={topClientsTotal} pageSize={TOP_PAGE_SIZE} onPage={setTopClientsPage} />
@@ -1044,6 +1010,17 @@ export default function KPIMaterialsAnalytics({ data }) {
           </div>
         )
       })()}
+      <MaterialDetailModal
+        material={detailMaterial}
+        previousMaterial={detailPreviousMaterial}
+        totalReferences={totalCurrent}
+        onClose={() => {
+          const materialKey = detailMaterialKey
+          setDetailMaterialKey(null)
+          const scheduleFocus = window.requestAnimationFrame || (callback => window.setTimeout(callback, 0))
+          scheduleFocus(() => materialTriggerRefs.current.get(materialKey)?.focus())
+        }}
+      />
       </div>
     </div>
   )

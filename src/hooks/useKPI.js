@@ -1,103 +1,82 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApiFetch } from '../utils/adminApi'
 import { getPeriodBounds, getComparePeriodBounds } from '../utils/kpiHelpers'
+import { queryKeys } from '../utils/queryKeys'
+import useOrdersRealtimeSync from './useOrdersRealtimeSync'
 
-const CACHE_TTL = 60000 // 60 seconds
+const KPI_REALTIME_TABLES = ['orders', 'order_events', 'order_production_files', 'profiles', 'clients']
 
-export function useKPI() {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [period, setPeriod] = useState('month')
-  const [customDateFrom, setCustomDateFrom] = useState('')
-  const [customDateTo, setCustomDateTo] = useState('')
+async function fetchKpi(action, params) {
+  const { response, result } = await adminApiFetch('/api/kpi-data', { action, ...params })
+  if (response.ok) return result
 
-  const cacheRef = useRef(new Map())
-  const abortControllerRef = useRef(null)
+  const errorMessage = result?.details
+    ? result.details.join('; ')
+    : result?.error || `Error HTTP ${response.status}: ${response.statusText}`
+  const error = new Error(errorMessage)
+  error.code = result?.backendCode || result?.code || null
+  error.status = response.status
+  error.details = result?.details || null
+  throw error
+}
 
-  const fetchKPI = useCallback(async (action = 'all', params = {}) => {
-    const cacheKey = `${action}_${JSON.stringify(params)}`
-    const cached = cacheRef.current.get(cacheKey)
+function getKpiBounds(period, customDateFrom, customDateTo) {
+  if (period === 'custom') {
+    if (!customDateFrom || !customDateTo || customDateFrom > customDateTo) return null
 
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return cached.data
+    const dateFrom = new Date(`${customDateFrom}T00:00:00`).toISOString()
+    const exclusiveEnd = new Date(`${customDateTo}T00:00:00`)
+    exclusiveEnd.setDate(exclusiveEnd.getDate() + 1)
+    const dateTo = exclusiveEnd.toISOString()
+    const duration = new Date(dateTo) - new Date(dateFrom)
+    return {
+      date_from: dateFrom,
+      date_to: dateTo,
+      compare_from: new Date(new Date(dateFrom) - duration).toISOString(),
+      compare_to: dateFrom,
     }
+  }
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    abortControllerRef.current = new AbortController()
+  const bounds = getPeriodBounds(period)
+  const compareBounds = getComparePeriodBounds(period)
+  return {
+    date_from: bounds.dateFrom,
+    date_to: bounds.dateTo,
+    compare_from: compareBounds.dateFrom,
+    compare_to: compareBounds.dateTo,
+  }
+}
 
-    try {
-      const result = await adminApiFetch('/api/kpi-data', {
-        action,
-        ...params,
-      })
+export function useKPI(initialState = {}, userId) {
+  const [period, setPeriod] = useState(() => initialState.period || 'month')
+  const [customDateFrom, setCustomDateFrom] = useState(() => initialState.customDateFrom || '')
+  const [customDateTo, setCustomDateTo] = useState(() => initialState.customDateTo || '')
+  const queryClient = useQueryClient()
 
-      if (!result.response.ok) {
-        const errorMsg = result.result?.details
-          ? result.result.details.join('; ')
-          : result.result?.error || `Error HTTP ${result.response.status}: ${result.response.statusText}`
-        throw new Error(errorMsg)
-      }
+  const bounds = useMemo(
+    () => getKpiBounds(period, customDateFrom, customDateTo),
+    [customDateFrom, customDateTo, period],
+  )
+  const queryKey = useMemo(() => queryKeys.kpiExecutive(userId, bounds), [bounds, userId])
+  const query = useQuery({
+    queryKey,
+    queryFn: () => fetchKpi('all', bounds),
+    enabled: Boolean(bounds && userId),
+    placeholderData: keepPreviousData,
+  })
 
-      cacheRef.current.set(cacheKey, { data: result.result, timestamp: Date.now() })
-      return result.result
-    } catch (err) {
-      if (err.name === 'AbortError') return null
-      throw err
-    }
-  }, [])
+  const refresh = useCallback(
+    () => queryClient.invalidateQueries({ queryKey }),
+    [queryClient, queryKey],
+  )
 
-  const loadKPI = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      let dateFrom, dateTo, compareFrom, compareTo
-
-      if (period === 'custom' && customDateFrom && customDateTo) {
-        dateFrom = customDateFrom
-        dateTo = customDateTo
-        // For custom, compare with same duration before
-        const diff = new Date(dateTo) - new Date(dateFrom)
-        compareFrom = new Date(new Date(dateFrom) - diff).toISOString()
-        compareTo = dateFrom
-      } else {
-        const bounds = getPeriodBounds(period)
-        const compareBounds = getComparePeriodBounds(period)
-        dateFrom = bounds.dateFrom
-        dateTo = bounds.dateTo
-        compareFrom = compareBounds.dateFrom
-        compareTo = compareBounds.dateTo
-      }
-
-      const result = await fetchKPI('all', {
-        date_from: dateFrom,
-        date_to: dateTo,
-        compare_from: compareFrom,
-        compare_to: compareTo,
-      })
-
-      if (result) {
-        setData(result)
-      }
-    } catch (err) {
-      setError(err.message)
-      console.error('KPI Load Error:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [period, customDateFrom, customDateTo, fetchKPI])
-
-  useEffect(() => {
-    loadKPI()
-  }, [loadKPI])
-
-  const refresh = useCallback(async () => {
-    cacheRef.current.clear()
-    await loadKPI()
-  }, [loadKPI])
+  useOrdersRealtimeSync({
+    userId,
+    scope: 'kpi-executive',
+    tables: KPI_REALTIME_TABLES,
+    refreshOrders: refresh,
+  })
 
   const setPeriodAndDates = useCallback((newPeriod, from = '', to = '') => {
     setPeriod(newPeriod)
@@ -108,9 +87,12 @@ export function useKPI() {
   }, [])
 
   return {
-    data,
-    loading,
-    error,
+    data: query.data || null,
+    loading: query.isLoading,
+    fetching: query.isFetching,
+    error: query.error?.message || null,
+    errorInfo: query.error ? { code: query.error.code || null, status: query.error.status || null } : null,
+    isPlaceholderData: query.isPlaceholderData,
     period,
     setPeriod: setPeriodAndDates,
     customDateFrom,
@@ -121,28 +103,22 @@ export function useKPI() {
   }
 }
 
-export function useKPISingle(action, params = {}) {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+export function useKPISingle(action, params = {}, userId, enabled = true) {
+  const queryKey = useMemo(() => queryKeys.kpiDetail(userId, action, params), [action, params, userId])
+  const query = useQuery({
+    queryKey,
+    queryFn: () => fetchKpi(action, params),
+    enabled: Boolean(userId) && enabled,
+    placeholderData: keepPreviousData,
+  })
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await adminApiFetch('/api/kpi-data', { action, ...params })
-      if (!result.response.ok) throw new Error(result.result.error)
-      setData(result.result)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [action, params])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  return { data, loading, error, refresh: load }
+  return {
+    data: query.data || null,
+    loading: query.isLoading,
+    fetching: query.isFetching,
+    error: query.error?.message || null,
+    errorInfo: query.error ? { code: query.error.code || null, status: query.error.status || null } : null,
+    isPlaceholderData: query.isPlaceholderData,
+    refresh: query.refetch,
+  }
 }

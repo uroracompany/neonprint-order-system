@@ -1504,6 +1504,21 @@ function UserDetailModal({ open, user, onClose, onEdit, onCreateOrder, onRequest
   );
 }
 
+const getAdminTabTitle = (tab) => {
+  switch (tab) {
+    case "overview": return "Panel General";
+    case "kpi": return "KPI";
+    case "orders": return "Gestión de Órdenes";
+    case "credits": return "Gestión de Seguimiento";
+    case "notifications": return "Notificaciones";
+    case "clients": return "Gestión de Clientes";
+    case "materials": return "Gestión de Materiales";
+    case "profile": return "Mi Perfil";
+    case "users": return "Gestión de Empleados";
+    default: return "Administración";
+  }
+};
+
 const ADMIN_SIDEBAR_STORAGE_KEY = "neonprint_admin_sidebar_open";
 
 const getInitialAdminSidebarOpen = () => {
@@ -2002,29 +2017,36 @@ export default function Dashboard() {
     }
   }, [user?.id]);
 
-  useEffect(() => {
-    if (!user?.id) return undefined;
-
-    const refreshReminderClock = async () => {
-      await syncCreditReminderServerTime();
-      await dispatchDueCreditReminderNotifications();
-      fetchCreditCustomReminders();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        refreshReminderClock();
-      }
-    };
-
-    window.addEventListener("focus", refreshReminderClock);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("focus", refreshReminderClock);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [dispatchDueCreditReminderNotifications, fetchCreditCustomReminders, syncCreditReminderServerTime, user?.id]);
+  const handleHeaderRefresh = useCallback(async () => {
+    switch (activeTab) {
+      case "orders":
+        await loadOrders();
+        break;
+      case "credits":
+        await fetchAccountsReceivable();
+        await fetchCreditCustomReminders();
+        break;
+      case "clients":
+        await fetchClients();
+        break;
+      case "materials":
+        await fetchMaterials();
+        break;
+      case "users":
+        await loadProfiles();
+        break;
+      case "kpi":
+        break;
+      case "profile":
+        break;
+      default:
+        await loadOrders();
+        await fetchAccountsReceivable();
+        await fetchCreditCustomReminders();
+        await fetchClients();
+        break;
+    }
+  }, [activeTab, loadOrders, fetchAccountsReceivable, fetchCreditCustomReminders, fetchClients, fetchMaterials, loadProfiles]);
 
   useEffect(() => {
     if (!authUser?.id) return undefined;
@@ -3878,7 +3900,7 @@ export default function Dashboard() {
     <div className="pa-root">
       <Sidebar isOpen={sidebarOpen} activeTab={activeTab} onTabChange={handleAdminTabChange} role="Admin" userName={getUserDisplayName(profile)} menuItems={menuItems} onLogout={handleLogout} scrollNavigation />
       <div className="pa-main-wrap">
-        <header className="pa-header">
+<header className="pa-header">
           <div className="pa-header-left">
             <button
               className="pa-icon-btn pa-sidebar-toggle"
@@ -3888,10 +3910,26 @@ export default function Dashboard() {
             >
               {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
             </button>
-            <div><span className="pa-kicker">Administrador</span><h1>{activeTab === "overview" ? "Panel General" : activeTab === "kpi" ? "KPI" : activeTab === "orders" ? "Gestión de Órdenes" : activeTab === "credits" ? "Gestión de seguimiento" : activeTab === "notifications" ? "Notificaciones" : activeTab === "clients" ? "Gestión de clientes" : activeTab === "materials" ? "Gestión de Materiales" : activeTab === "profile" ? "Mi perfil" : "Gestión de Empleados"}</h1></div>
+            <div>
+              <h1>{getAdminTabTitle(activeTab)}</h1>
+              <span className="pa-header-date">
+                {new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+              </span>
+            </div>
           </div>
           <div className="pa-header-right">
             {feedback && <div className={`pa-feedback ${feedback.type}`}>{feedback.message}</div>}
+            <div className="pa-header-actions">
+              <button className="pa-action-btn pa-action-btn-primary" onClick={() => selectAdminTab("orders")} title="Gestionar órdenes">
+                <Icons.Orders /> <span>Gestionar órdenes</span>
+              </button>
+              <button className="pa-action-btn" onClick={() => selectAdminTab("credits")} title="Seguimiento">
+                <Icons.AlertCircle /> <span>Seguimiento</span>
+              </button>
+              <button className="pa-refresh-btn" onClick={handleHeaderRefresh} title="Recargar" aria-label="Recargar datos">
+                <Icons.Refresh />
+              </button>
+            </div>
             <NotificationCenter
               notifications={adminVisibleNotifications}
               unreadCount={adminUnreadCount}
@@ -3908,7 +3946,7 @@ export default function Dashboard() {
 
         {activeTab === "kpi" && (
           <Suspense fallback={<div className="pa-feedback info">Cargando KPI...</div>}>
-            <KPIModule />
+            <KPIModule userId={authUser?.id} />
           </Suspense>
         )}
 

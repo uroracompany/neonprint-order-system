@@ -1,153 +1,38 @@
 import { Icons } from '../../utils/icons'
 import { formatNumber, formatPercent, getTrendConfig } from '../../utils/kpiHelpers'
 
+const display = (value, formatter = formatNumber) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? formatter(Number(value)) : 'N/D'
+
+function Ranking({ title, ranking, icon, color }) {
+  if (!ranking) return null
+  return <article className="kpi-quality-top-seller"><div className="kpi-quality-top-seller-header" style={{ background: color.background, color: color.foreground }}>{icon}<span>{title}</span></div><div className="kpi-quality-top-seller-name">{ranking.name}</div><div className="kpi-quality-top-seller-stat">{display(ranking.total)} órdenes del período</div></article>
+}
+
 export default function KPIQualityMetrics({ data }) {
-  if (!data) return (
-    <div className="kpi-section">
-      <div className="kpi-section-header">
-        <div>
-          <span className="kpi-section-kicker">Panel de Calidad</span>
-          <h2 className="kpi-section-title">Calidad y Equipo</h2>
-          <p className="kpi-section-subtitle">Indicadores de calidad del servicio y rendimiento del equipo</p>
-        </div>
-      </div>
-      <div className="kpi-empty-state">
-        <div className="kpi-empty-icon"><Icons.Clipboard size={28} /></div>
-        <div className="kpi-empty-title">Sin datos disponibles</div>
-        <div className="kpi-empty-message">Los datos de calidad aún no están disponibles. Intenta refrescar el panel.</div>
-      </div>
-    </div>
-  )
+  const summary = data?.executive_summary
+  const period = summary?.period
+  const comparison = summary?.comparison
+  if (!period || !comparison) return null
 
-  const current = data.business_summary?.current || {}
-  const previous = data.business_summary?.previous || {}
-  const clientAnalytics = data.client_analytics || {}
-  const userAnalytics = data.user_analytics || {}
-  const ordersAnalytics = data.orders_analytics || {}
-
-  const cancellationRate = ordersAnalytics.cancellation_rate || 0
-  const returnCount = ordersAnalytics.return_count || 0
-  const retentionRate = clientAnalytics.retention_rate?.rate || 0
-  const sellers = userAnalytics.sellers || []
-  const designers = userAnalytics.designers || []
-  const topSeller = sellers[0] || null
-  const topDesigner = designers[0] || null
-  const topClients = clientAnalytics.top_clients || []
-  const topClient = topClients[0] || null
-  const inactiveUsers = userAnalytics.inactive_users || []
-
-  const cancelTrend = getTrendConfig(
-    current.cancelled_orders || 0,
-    previous.cancelled_orders || 0
-  )
+  const cancellationTrend = getTrendConfig(period.orders_cancelled || 0, comparison.orders_cancelled || 0)
+  const rankings = period.rankings || {}
+  const metrics = [
+    { label: 'Cancelaciones / altas', value: display(period.cancellation_rate, formatPercent), icon: <Icons.AlertCircle />, badge: 'Eventos registrados', footer: cancellationTrend.change !== '0.0' ? `${Math.abs(cancellationTrend.change)}% cancelaciones vs. anterior` : 'Sin variación vs. período anterior', color: cancellationTrend.color },
+    { label: 'Devoluciones', value: display(period.return_count), icon: <Icons.Refresh />, badge: 'Eventos registrados', footer: 'Eventos de devolución del período', color: '#64748B' },
+    { label: 'Retención', value: display(period.retention_rate, formatPercent), icon: <Icons.Users />, badge: 'Período actual', footer: 'Clientes previos que volvieron en el período', color: '#64748B' },
+  ]
 
   return (
     <div className="kpi-section">
-      <div className="kpi-section-header">
-        <div>
-          <span className="kpi-section-kicker">Panel de Calidad</span>
-          <h2 className="kpi-section-title">Calidad y Equipo</h2>
-          <p className="kpi-section-subtitle">Indicadores de calidad del servicio y rendimiento del equipo</p>
-        </div>
-      </div>
-
+      <div className="kpi-section-header"><div><span className="kpi-section-kicker">Calidad del período</span><h2 className="kpi-section-title">Calidad y equipo</h2><p className="kpi-section-subtitle">Las cancelaciones y devoluciones se contabilizan por eventos registrados.</p></div></div>
       <div className="kpi-quality-grid">
         <div className="kpi-quality-metrics-row">
-          <div className="kpi-quality-metric">
-            <div className="kpi-quality-metric-header">
-              <div className="kpi-quality-metric-icon" style={{ background: '#091127', color: '#ffffff' }}>
-                <Icons.AlertCircle />
-              </div>
-              <span className="kpi-quality-metric-label">Cancelación</span>
-            </div>
-            <div className="kpi-quality-metric-value">
-              {formatPercent(cancellationRate)}
-            </div>
-            <div className="kpi-quality-metric-trend" style={{ color: cancelTrend.color }}>
-              <span>{cancelTrend.arrow}</span>
-              {cancelTrend.change !== '0.0' && <span>{Math.abs(cancelTrend.change)}%</span>}
-            </div>
-          </div>
-
-          <div className="kpi-quality-metric">
-            <div className="kpi-quality-metric-header">
-              <div className="kpi-quality-metric-icon" style={{ background: '#091127', color: '#ffffff' }}>
-                <Icons.Refresh />
-              </div>
-              <span className="kpi-quality-metric-label">Devoluciones</span>
-            </div>
-            <div className="kpi-quality-metric-value">
-              {formatNumber(returnCount)}
-            </div>
-            <div className="kpi-quality-metric-trend" style={{ color: '#6B7280' }}>
-              Órdenes devueltas
-            </div>
-          </div>
-
-          <div className="kpi-quality-metric">
-            <div className="kpi-quality-metric-header">
-              <div className="kpi-quality-metric-icon" style={{ background: '#091127', color: '#ffffff' }}>
-                <Icons.Users />
-              </div>
-              <span className="kpi-quality-metric-label">Retención</span>
-            </div>
-            <div className="kpi-quality-metric-value">
-              {formatPercent(retentionRate)}
-            </div>
-            <div className="kpi-quality-metric-trend" style={{ color: '#6B7280' }}>
-              Clientes que vuelven
-            </div>
-          </div>
+          {metrics.map(metric => <article className="kpi-quality-metric kpi-lower-metric-card" key={metric.label}><div className="kpi-quality-metric-header"><span className="kpi-lower-metric-icon">{metric.icon}</span><span className="kpi-lower-metric-badge">{metric.badge}</span></div><span className="kpi-quality-metric-label">{metric.label}</span><div className="kpi-quality-metric-value">{metric.value}</div><div className="kpi-quality-metric-trend" style={{ color: metric.color }}>{metric.footer}</div></article>)}
         </div>
-
         <div className="kpi-quality-side">
-          {topSeller && (
-            <div className="kpi-quality-top-seller">
-              <div className="kpi-quality-top-seller-header" style={{ background: '#E0F2FE', color: '#0284C7' }}>
-                <Icons.User size={14} />
-                <span>Top Vendedor</span>
-              </div>
-              <div className="kpi-quality-top-seller-name">{topSeller.name}</div>
-              <div className="kpi-quality-top-seller-stat">
-                {formatNumber(topSeller.orders_created)} órdenes · {topSeller.completed_rate || 0}% completado
-              </div>
-            </div>
-          )}
-
-          {topDesigner && (
-            <div className="kpi-quality-top-seller">
-              <div className="kpi-quality-top-seller-header" style={{ background: '#F3E8FF', color: '#9333EA' }}>
-                <Icons.Brush size={14} />
-                <span>Top Diseñador</span>
-              </div>
-              <div className="kpi-quality-top-seller-name">{topDesigner.name}</div>
-              <div className="kpi-quality-top-seller-stat">
-                {formatNumber(topDesigner.orders_processed)} órdenes · {topDesigner.avg_days_per_order ? `${topDesigner.avg_days_per_order.toFixed(1)}d promedio` : 'Sin datos'}
-              </div>
-            </div>
-          )}
-
-          {topClient && (
-            <div className="kpi-quality-top-seller">
-              <div className="kpi-quality-top-seller-header" style={{ background: '#DCFCE7', color: '#16A34A' }}>
-                <Icons.User size={14} />
-                <span>Top Cliente</span>
-              </div>
-              <div className="kpi-quality-top-seller-name">{topClient.name}</div>
-              <div className="kpi-quality-top-seller-stat">
-                {formatNumber(topClient.total_orders)} órdenes · {topClient.completed_orders || 0} completadas
-              </div>
-            </div>
-          )}
-
-          {inactiveUsers.length > 0 && (
-            <div className="kpi-quality-inactive">
-              <div className="kpi-quality-inactive-header">
-                <Icons.UserMinus size={14} />
-                <span>{inactiveUsers.length} usuario{inactiveUsers.length !== 1 ? 's' : ''} inactivo{inactiveUsers.length !== 1 ? 's' : ''}</span>
-              </div>
-            </div>
-          )}
+          <Ranking title="Top vendedor" ranking={rankings.top_seller} icon={<Icons.User size={14} />} color={{ background: '#E0F2FE', foreground: '#0284C7' }} />
+          <Ranking title="Top diseñador" ranking={rankings.top_designer} icon={<Icons.Brush size={14} />} color={{ background: '#F3E8FF', foreground: '#9333EA' }} />
+          <Ranking title="Top cliente" ranking={rankings.top_client} icon={<Icons.User size={14} />} color={{ background: '#DCFCE7', foreground: '#16A34A' }} />
         </div>
       </div>
     </div>

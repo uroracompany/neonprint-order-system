@@ -21,18 +21,15 @@ describe("realtime de produccion", () => {
     expect(migration).toContain("alter publication supabase_realtime add table public.order_production_user_archives");
   });
 
-  it("refresca produccion ante asignaciones, archivos, SUBSCRIBED y recuperacion de pestana", () => {
+  it("centraliza la reconciliacion de produccion en eventos reales", () => {
     const source = readProjectFile("src/pages/page-production.jsx");
     const sharedHook = readProjectFile("src/hooks/useOrdersRealtimeSync.js");
 
-    expect(source).toContain('table: "order_production_assignments"');
     expect(source).toContain("refreshProductionOrdersSilently");
-    expect(source).toContain('.subscribe((status) =>');
-    expect(source).toContain('status === "SUBSCRIBED"');
-    expect(source).toContain("refreshFilesAndOrders");
+    expect(source).toContain("refreshProductionState");
     expect(source).toContain("useOrdersRealtimeSync({");
-    expect(sharedHook).toContain('document.addEventListener("visibilitychange", refreshWhenVisible)');
-    expect(sharedHook).toContain('window.addEventListener("focus", refreshWhenVisible)');
-    expect(sharedHook).toContain('window.addEventListener("online", requestRefresh)');
+    expect(source).toContain('"order_production_assignments"');
+    expect(sharedHook).toContain("registerRealtimeListener");
+    expect(sharedHook).not.toContain('addEventListener("focus"');
   });
 });

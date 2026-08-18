@@ -798,10 +798,16 @@ export default function PageProduction() {
     return refreshOrdersRef.current(true);
   }, []);
 
+  const refreshProductionState = useCallback(() => {
+    setTeamRefreshKey((value) => value + 1);
+    return refreshProductionOrdersSilently();
+  }, [refreshProductionOrdersSilently]);
+
   useOrdersRealtimeSync({
     userId: user?.id,
     scope: "production",
-    refreshOrders: refreshProductionOrdersSilently,
+    refreshOrders: refreshProductionState,
+    tables: ["orders", "order_production_files", "order_production_assignments", "order_production_user_archives"],
   });
 
   const handleArchiveOrder = (order) => {
@@ -863,42 +869,6 @@ export default function PageProduction() {
     if (!user?.id || !profileRole) return;
     refreshOrders();
   }, [user?.id, profileRole, refreshOrders]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const refreshFilesAndOrders = () => {
-      setTeamRefreshKey((value) => value + 1);
-      refreshProductionOrdersSilently();
-    };
-
-    const channel = supabase
-      .channel(`production-orders-${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "order_production_files" },
-        refreshFilesAndOrders
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "order_production_assignments" },
-        refreshProductionOrdersSilently
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "order_production_user_archives" },
-        refreshProductionOrdersSilently
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          refreshProductionOrdersSilently();
-        }
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, refreshProductionOrdersSilently]);
 
   const handleLogout = async () => {
     await signOut();

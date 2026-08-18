@@ -60,16 +60,10 @@ export default function PageTracking() {
   }, [order]);
 
   useEffect(() => {
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  useEffect(() => {
-    const onVisible = () => {
+    const interval = setInterval(() => {
       if (!document.hidden) fetchData();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    }, 10000);
+    return () => clearInterval(interval);
   }, [fetchData]);
 
   if (loading && !order) {

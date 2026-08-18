@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useKPI } from '../../hooks/useKPI'
 import { Icons } from '../../utils/icons'
 import KPIHeader from './KPIHeader'
@@ -19,6 +20,7 @@ import { DesignerDetailView } from './KPIDesignIntelligence'
 import { QuoteDetailView } from './KPIQuoteIntelligence'
 import { ProductionAreaDetailView, ProductionEmployeeDetailView } from './KPIProductionIntelligence'
 import { DeliveryDetailView } from './KPIDeliveryIntelligence'
+import { getKpiTabFromSearch, getKpiTabSearch, KPI_TAB_PARAM, readKpiWorkspace, writeKpiWorkspace } from '../../utils/kpiWorkspace'
 import '../../css-components/page-kpi.css'
 
 const TABS = [
@@ -66,18 +68,26 @@ function CriticalAlertsInline({ alerts }) {
   )
 }
 
-export default function KPIModule() {
+export default function KPIModule({ userId }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const initialWorkspace = useMemo(() => readKpiWorkspace(userId), [userId])
+  const hasRouteKpiTab = new URLSearchParams(location.search).has(KPI_TAB_PARAM)
   const {
-    data, loading, error, refresh, period, customDateFrom, customDateTo,
-  } = useKPI()
+    data, loading, error, refresh, period, setPeriod, customDateFrom, customDateTo,
+  } = useKPI(initialWorkspace || {}, userId)
 
-  const [activeTab, setActiveTab] = useState('overview')
-  const [sellerDetailId, setSellerDetailId] = useState(null)
-  const [designerDetailId, setDesignerDetailId] = useState(null)
-  const [quoteDetailId, setQuoteDetailId] = useState(null)
-  const [productionAreaCode, setProductionAreaCode] = useState(null)
-  const [productionEmployeeDetail, setProductionEmployeeDetail] = useState(null)
-  const [deliveryUserId, setDeliveryUserId] = useState(null)
+  const [activeTab, setActiveTab] = useState(() => hasRouteKpiTab ? getKpiTabFromSearch(location.search) : initialWorkspace?.activeTab || 'overview')
+  const [pipelineFilters, setPipelineFilters] = useState(() => initialWorkspace?.pipelineFilters || { designType: 'all', orderType: 'all' })
+  const [sellerDetailId, setSellerDetailId] = useState(() => initialWorkspace?.detail?.type === 'seller' ? initialWorkspace.detail.id : null)
+  const [designerDetailId, setDesignerDetailId] = useState(() => initialWorkspace?.detail?.type === 'designer' ? initialWorkspace.detail.id : null)
+  const [quoteDetailId, setQuoteDetailId] = useState(() => initialWorkspace?.detail?.type === 'quote' ? initialWorkspace.detail.id : null)
+  const [productionAreaCode, setProductionAreaCode] = useState(() => initialWorkspace?.detail?.type === 'production-area' ? initialWorkspace.detail.id : null)
+  const [productionEmployeeDetail, setProductionEmployeeDetail] = useState(() => initialWorkspace?.detail?.type === 'production-employee' ? { employeeId: initialWorkspace.detail.employeeId, areaCode: initialWorkspace.detail.areaCode } : null)
+  const [deliveryUserId, setDeliveryUserId] = useState(() => initialWorkspace?.detail?.type === 'delivery-user' ? initialWorkspace.detail.id : null)
+  const scrollYRef = useRef(initialWorkspace?.scrollY || 0)
+  const restoredScrollRef = useRef(false)
+  const restoredWorkspaceUserRef = useRef(null)
 
   const getDateBounds = useCallback(() => {
     if (period === 'custom' && customDateFrom && customDateTo) {
@@ -110,6 +120,87 @@ export default function KPIModule() {
     return { date_from: start.toISOString(), date_to: end.toISOString() }
   }, [period, customDateFrom, customDateTo])
 
+  const clearDetail = useCallback(() => {
+    setSellerDetailId(null)
+    setDesignerDetailId(null)
+    setQuoteDetailId(null)
+    setProductionAreaCode(null)
+    setProductionEmployeeDetail(null)
+    setDeliveryUserId(null)
+  }, [])
+
+  const selectKpiTab = useCallback((nextTab, { replace = false } = {}) => {
+    clearDetail()
+    setActiveTab(nextTab)
+    const nextSearch = getKpiTabSearch(location.search, nextTab)
+    if (nextSearch !== location.search) navigate({ pathname: location.pathname, search: nextSearch }, { replace })
+  }, [clearDetail, location.pathname, location.search, navigate])
+
+  const workspaceDetail = useMemo(() => {
+    if (sellerDetailId) return { type: 'seller', id: sellerDetailId }
+    if (designerDetailId) return { type: 'designer', id: designerDetailId }
+    if (quoteDetailId) return { type: 'quote', id: quoteDetailId }
+    if (productionEmployeeDetail) return { type: 'production-employee', ...productionEmployeeDetail }
+    if (productionAreaCode) return { type: 'production-area', id: productionAreaCode }
+    if (deliveryUserId) return { type: 'delivery-user', id: deliveryUserId }
+    return null
+  }, [deliveryUserId, designerDetailId, productionAreaCode, productionEmployeeDetail, quoteDetailId, sellerDetailId])
+
+  useEffect(() => {
+    if (!userId || restoredWorkspaceUserRef.current === userId) return
+    restoredWorkspaceUserRef.current = userId
+    const restored = readKpiWorkspace(userId)
+    if (!restored) return
+    if (!new URLSearchParams(location.search).has(KPI_TAB_PARAM)) setActiveTab(restored.activeTab)
+    setPeriod(restored.period, restored.customDateFrom, restored.customDateTo)
+    setPipelineFilters(restored.pipelineFilters)
+    scrollYRef.current = restored.scrollY
+    const detail = restored.detail
+    if (!detail) return
+    if (detail.type === 'seller') setSellerDetailId(detail.id)
+    if (detail.type === 'designer') setDesignerDetailId(detail.id)
+    if (detail.type === 'quote') setQuoteDetailId(detail.id)
+    if (detail.type === 'production-area') setProductionAreaCode(detail.id)
+    if (detail.type === 'production-employee') setProductionEmployeeDetail({ employeeId: detail.employeeId, areaCode: detail.areaCode })
+    if (detail.type === 'delivery-user') setDeliveryUserId(detail.id)
+  }, [location.search, setPeriod, userId])
+
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has(KPI_TAB_PARAM)) return
+    clearDetail()
+    setActiveTab(getKpiTabFromSearch(location.search))
+  }, [clearDetail, location.search])
+
+  useEffect(() => {
+    const persistWorkspace = () => writeKpiWorkspace(userId, {
+      activeTab,
+      period,
+      customDateFrom,
+      customDateTo,
+      pipelineFilters,
+      detail: workspaceDetail,
+      scrollY: scrollYRef.current,
+    })
+    const captureScroll = () => { scrollYRef.current = window.scrollY }
+    persistWorkspace()
+    window.addEventListener('scroll', captureScroll, { passive: true })
+    window.addEventListener('pagehide', persistWorkspace)
+    document.addEventListener('visibilitychange', persistWorkspace)
+    return () => {
+      captureScroll()
+      persistWorkspace()
+      window.removeEventListener('scroll', captureScroll)
+      window.removeEventListener('pagehide', persistWorkspace)
+      document.removeEventListener('visibilitychange', persistWorkspace)
+    }
+  }, [activeTab, customDateFrom, customDateTo, period, pipelineFilters, userId, workspaceDetail])
+
+  useEffect(() => {
+    if (restoredScrollRef.current || loading || !data) return
+    restoredScrollRef.current = true
+    window.requestAnimationFrame(() => window.scrollTo({ top: scrollYRef.current, behavior: 'auto' }))
+  }, [data, loading])
+
   const handleSellerClick = useCallback((sellerId) => { setSellerDetailId(sellerId) }, [])
   const handleSellerBack = useCallback(() => { setSellerDetailId(null) }, [])
   const handleDesignerClick = useCallback((designerId) => { setDesignerDetailId(designerId) }, [])
@@ -137,14 +228,8 @@ export default function KPIModule() {
       sales: 'orders',
       overview: 'overview',
     }
-    setActiveTab(tabMap[module] || 'overview')
-    setSellerDetailId(null)
-    setDesignerDetailId(null)
-    setQuoteDetailId(null)
-    setProductionAreaCode(null)
-    setProductionEmployeeDetail(null)
-    setDeliveryUserId(null)
-  }, [])
+    selectKpiTab(tabMap[module] || 'overview')
+  }, [selectKpiTab])
 
   if (loading && !data) {
     return (
@@ -205,13 +290,18 @@ export default function KPIModule() {
           <KPIHeader
             onRefresh={refresh}
             loading={loading}
+            period={period}
+            onPeriodChange={setPeriod}
+            customDateFrom={customDateFrom}
+            customDateTo={customDateTo}
+            meta={data?.executive_summary?.meta}
           />
 
           <div className="kpi-tabs">
             {TABS.map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => selectKpiTab(tab.id)}
                 className={`kpi-tab ${activeTab === tab.id ? 'active' : ''}`}
               >
                 {tab.icon}
@@ -221,9 +311,9 @@ export default function KPIModule() {
           </div>
 
           {activeTab === 'overview' && (
-            <div className="kpi-tab-content" key="overview">
+            <div className="kpi-tab-content kpi-executive-overview" key="overview">
               <KPISummaryCards data={data} />
-              <KPIOrderPipeline data={data} />
+              <KPIOrderPipeline data={data} filters={pipelineFilters} onFiltersChange={setPipelineFilters} />
               <KPIProductionMini data={data} />
               <KPIStatusTrend data={data} />
               <KPICreditsSummary data={data} />
@@ -234,7 +324,7 @@ export default function KPIModule() {
 
           {activeTab === 'orders' && <div className="kpi-tab-content" key="orders"><KPIOrdersAnalytics data={data} /></div>}
           {activeTab === 'clients' && <div className="kpi-tab-content" key="clients"><KPIClientAnalytics data={data} /></div>}
-          {activeTab === 'materials' && <div className="kpi-tab-content" key="materials"><KPIMaterialsAnalytics data={data} /></div>}
+          {activeTab === 'materials' && <div className="kpi-tab-content" key="materials"><KPIMaterialsAnalytics data={data} userId={userId} /></div>}
           {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={handleSellerClick} onDesignerClick={handleDesignerClick} onQuoteClick={handleQuoteClick} onProductionAreaClick={handleProductionAreaClick} onProductionEmployeeClick={handleProductionEmployeeClick} onDeliveryUserClick={handleDeliveryUserClick} /></div>}
           {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} onAreaClick={handleProductionAreaClick} /></div>}
           {activeTab === 'alerts' && <div className="kpi-tab-content" key="alerts"><KPIAlertsPanel data={data} onNavigateTarget={handleAlertTarget} /></div>}

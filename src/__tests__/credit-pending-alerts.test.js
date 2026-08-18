@@ -83,8 +83,8 @@ describe("recordatorios visibles de creditos pendientes", () => {
     expect(dashboard).not.toContain("setCreditReminderNow(Date.now())");
     expect(dashboard).toContain("const timeout = setTimeout(async () => {");
     expect(dashboard).toContain("fetchCreditCustomReminders();");
-    expect(dashboard).toContain("window.addEventListener(\"focus\", refreshReminderClock)");
-    expect(dashboard).toContain("document.addEventListener(\"visibilitychange\", handleVisibilityChange)");
+    expect(dashboard).not.toContain("window.addEventListener(\"focus\", refreshReminderClock)");
+    expect(dashboard).not.toContain("document.addEventListener(\"visibilitychange\", handleVisibilityChange)");
   });
 
   it("valida estrictamente recordatorios personalizados antes de crearlos", () => {

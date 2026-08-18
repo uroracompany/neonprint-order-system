@@ -1,4 +1,5 @@
 export const ADMIN_TAB_PARAM = "tab";
+const KPI_TAB_PARAM = "kpiTab";
 
 const adminTabs = new Set([
   "overview",
@@ -24,6 +25,7 @@ export const getAdminTabSearch = (search = "", tab = "overview") => {
   } else {
     params.set(ADMIN_TAB_PARAM, tab);
   }
+  if (tab !== "kpi") params.delete(KPI_TAB_PARAM);
   const nextSearch = params.toString();
   return nextSearch ? `?${nextSearch}` : "";
 };

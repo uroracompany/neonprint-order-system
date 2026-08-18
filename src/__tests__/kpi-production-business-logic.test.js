@@ -35,10 +35,11 @@ describe("logica de negocio de KPI Produccion", () => {
     expect(handler).not.toMatch(/\(\(completed(?:Files)?\.length - reversions\) \/ completed(?:Files)?\.length\) \* 100/);
   });
 
-  it("la vista mini usa la misma definicion de carga activa que el resto de Produccion", () => {
+  it("la vista mini usa la carga actual verificable y no filtra por creacion del archivo", () => {
     const mini = readProjectFile("src/components/kpi/KPIProductionMini.jsx");
 
-    expect(mini).toContain("(stats.pending || 0) + (stats.in_production || 0) + (stats.in_termination || 0)");
-    expect(mini).not.toContain("const totalPending");
+    expect(mini).toContain("data?.executive_summary?.snapshot?.production");
+    expect(mini).toContain("Archivos abiertos actualmente");
+    expect(mini).toContain("bottleneck_count");
   });
 });

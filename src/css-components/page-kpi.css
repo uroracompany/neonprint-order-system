@@ -10080,3 +10080,1210 @@
     margin-inline: 0;
   }
 }
+
+/* Executive summary visual alignment. The banner and KPI navigation remain unchanged. */
+.kpi-executive-overview {
+  display: grid;
+  gap: 24px;
+}
+
+.kpi-executive-overview .kpi-section {
+  margin: 0;
+  padding: 0;
+  animation: none;
+}
+
+.kpi-executive-metrics { margin: 0; }
+
+.kpi-executive-overview .kpi-hero-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+}
+
+.kpi-executive-overview .kpi-hero-card,
+.kpi-materials-analytics .kpi-materials-metric-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  min-height: 116px;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 30, 64, .055);
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.kpi-executive-overview .kpi-hero-card::before,
+.kpi-materials-analytics .kpi-materials-metric-card::before { display: none; }
+
+.kpi-executive-overview .kpi-hero-card:hover,
+.kpi-materials-analytics .kpi-materials-metric-card:hover {
+  border-color: #c7d5eb;
+  box-shadow: 0 14px 30px rgba(15, 30, 64, .09);
+  transform: translateY(-1px);
+}
+
+.kpi-executive-overview .kpi-hero-icon,
+.kpi-materials-analytics .kpi-hero-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+}
+
+.kpi-executive-overview .kpi-hero-content,
+.kpi-materials-analytics .kpi-hero-content {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.kpi-executive-overview .kpi-hero-label,
+.kpi-materials-analytics .kpi-hero-label {
+  overflow: hidden;
+  color: var(--text-sub, #475569);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.kpi-executive-overview .kpi-hero-value,
+.kpi-materials-analytics .kpi-hero-value {
+  margin: 4px 0 0;
+  color: var(--text, #0f1e40);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+}
+
+.kpi-executive-overview .kpi-hero-footer,
+.kpi-materials-analytics .kpi-hero-footer {
+  align-items: flex-end;
+  margin-top: 5px;
+}
+
+.kpi-executive-overview .kpi-hero-subtitle,
+.kpi-materials-analytics .kpi-hero-subtitle {
+  overflow: hidden;
+  color: var(--text-muted, #64748b);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kpi-executive-overview .kpi-hero-trend,
+.kpi-materials-analytics .kpi-hero-trend {
+  padding: 0;
+  background: transparent !important;
+  color: var(--text-muted, #64748b) !important;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.kpi-executive-overview .kpi-section-header {
+  align-items: flex-end;
+  margin: 0 0 12px;
+}
+
+.kpi-executive-overview .kpi-section-kicker {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.kpi-executive-overview .kpi-section-title {
+  margin-top: 3px;
+  color: var(--text, #0f1e40);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.kpi-executive-overview .kpi-section-subtitle {
+  margin-top: 4px;
+  color: var(--text-muted, #64748b);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.kpi-executive-overview .kpi-pipeline-card,
+.kpi-executive-overview .kpi-prod-mini-card,
+.kpi-executive-overview .kpi-trend-card,
+.kpi-executive-overview .kpi-credit-card,
+.kpi-executive-overview .kpi-quality-metric,
+.kpi-executive-overview .kpi-quality-top-seller {
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 30, 64, .055);
+}
+
+.kpi-executive-overview .kpi-pipeline-card { padding: 18px; }
+
+.kpi-executive-overview .kpi-pipeline-filters {
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+}
+
+.kpi-executive-overview .kpi-pipeline-filter-label {
+  color: var(--text-sub, #475569);
+  font-size: 10px;
+  letter-spacing: .04em;
+}
+
+.kpi-executive-overview .kpi-pipeline-vertical {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.kpi-executive-overview .kpi-pipeline-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.kpi-executive-overview .kpi-pipeline-row:hover {
+  border-color: #c7d5eb;
+  background: #ffffff;
+}
+
+.kpi-executive-overview .kpi-pipeline-row-left {
+  gap: 8px;
+  min-width: 0;
+}
+
+.kpi-executive-overview .kpi-pipeline-stage-icon {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--kpi-stage-color);
+  background: #ffffff;
+}
+
+.kpi-executive-overview .kpi-pipeline-stage-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.kpi-executive-overview .kpi-pipeline-name {
+  overflow: hidden;
+  color: var(--text, #0f1e40);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kpi-executive-overview .kpi-pipeline-row-right {
+  display: grid;
+  gap: 1px;
+  justify-items: end;
+  text-align: right;
+}
+
+.kpi-executive-overview .kpi-pipeline-count {
+  color: var(--text, #0f1e40);
+  font-size: 18px;
+}
+
+.kpi-executive-overview .kpi-pipeline-pct {
+  color: var(--text-muted, #64748b);
+  font-size: 10px;
+}
+
+.kpi-executive-overview .kpi-pipeline-row-center { grid-column: 1 / -1; }
+
+.kpi-executive-overview .kpi-pipeline-bar-bg {
+  height: 7px;
+  border-radius: 999px;
+  background: #e8edf8;
+}
+
+.kpi-executive-overview .kpi-pipeline-bar-fill {
+  border-radius: inherit;
+  background: var(--kpi-stage-color);
+}
+
+.kpi-executive-overview .kpi-pipeline-summary {
+  margin-top: 16px;
+  padding-top: 14px;
+}
+
+.kpi-executive-overview .kpi-prod-mini-grid,
+.kpi-executive-overview .kpi-trend-grid,
+.kpi-executive-overview .kpi-credits-grid,
+.kpi-executive-overview .kpi-quality-grid { gap: 14px; }
+
+.kpi-executive-overview .kpi-prod-mini-card,
+.kpi-executive-overview .kpi-trend-card,
+.kpi-executive-overview .kpi-credit-card,
+.kpi-executive-overview .kpi-quality-metric { padding: 18px; }
+
+.kpi-executive-overview .kpi-prod-mini-title,
+.kpi-executive-overview .kpi-credit-label,
+.kpi-executive-overview .kpi-trend-card-title,
+.kpi-executive-overview .kpi-quality-metric-label {
+  color: var(--text-sub, #475569);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.kpi-executive-overview .kpi-credit-card { min-height: 124px; }
+
+.kpi-executive-overview .kpi-credit-value,
+.kpi-executive-overview .kpi-quality-metric-value,
+.kpi-executive-overview .kpi-trend-card-value {
+  color: var(--text, #0f1e40);
+  font-weight: 800;
+}
+
+.kpi-executive-overview .kpi-quality-top-seller { overflow: hidden; }
+
+@media (max-width: 1120px) {
+  .kpi-executive-overview .kpi-pipeline-vertical { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 840px) {
+  .kpi-executive-overview .kpi-hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-executive-overview .kpi-pipeline-vertical { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .kpi-executive-overview { gap: 20px; }
+  .kpi-executive-overview .kpi-hero-grid,
+  .kpi-executive-overview .kpi-pipeline-vertical { grid-template-columns: 1fr; }
+  .kpi-executive-overview .kpi-pipeline-filters { align-items: stretch; }
+  .kpi-executive-overview .kpi-hero-card,
+  .kpi-materials-analytics .kpi-materials-metric-card { min-height: 0; }
+}
+
+/* Executive workspace controls and lower-detail card family. */
+.kpi-banner {
+  border: 1px solid #dbe3ef;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 30, 64, .055);
+}
+
+.kpi-banner::before,
+.kpi-banner::after { display: none; }
+
+.kpi-banner-kicker-badge.acm-badge {
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 4px 9px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.kpi-banner-kicker-badge svg,
+.kpi-banner-meta-badge svg,
+.kpi-section-fact-badge svg { width: 13px; height: 13px; }
+
+.kpi-banner-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.kpi-banner-meta-badge,
+.kpi-section-fact-badge,
+.kpi-executive-count-badge,
+.kpi-lower-metric-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  border: 1px solid #dbe3ef;
+  border-radius: 20px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.kpi-banner-meta-badge { padding: 5px 9px; }
+.kpi-banner-meta-badge.is-verified { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
+.kpi-banner-meta-badge.is-updated { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+
+.kpi-banner-right { align-items: flex-end; }
+.kpi-banner-period-control { display: grid; gap: 6px; min-width: 186px; }
+.kpi-banner-period-control .kpi-label { margin: 0; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.kpi-banner-period-control .pp-filter-select-wrap { width: 100%; }
+.kpi-banner-period-control .pp-filter-select-trigger { min-height: 42px; }
+
+.kpi-executive-overview .kpi-pipeline-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 230px));
+  align-items: end;
+  padding: 14px;
+  border: 1px solid #e5ebf4;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.kpi-executive-overview .kpi-pipeline-filter-group { min-width: 0; }
+.kpi-executive-overview .kpi-pipeline-filter-label { display: block; margin-bottom: 6px; font-weight: 800; }
+.kpi-executive-overview .pp-filter-select-wrap { width: 100%; }
+.kpi-executive-overview .pp-filter-select-trigger { min-height: 42px; }
+
+.kpi-executive-overview .kpi-pipeline-vertical { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.kpi-executive-overview .kpi-pipeline-row.is-completed { border-color: #bbf7d0; background: #f0fdf4; }
+.kpi-executive-overview .kpi-pipeline-row.is-completed .kpi-pipeline-stage-icon { background: #dcfce7; }
+
+.kpi-executive-overview .kpi-prod-mini-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.kpi-executive-overview .kpi-production-load-card,
+.kpi-executive-overview .kpi-production-timing-card { min-height: 310px; }
+
+.kpi-executive-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.kpi-executive-card-heading .kpi-prod-mini-title { margin: 0; color: #0f1e40; font-size: 13px; font-weight: 800; }
+.kpi-executive-card-heading > div > span { display: block; margin-top: 4px; color: #64748b; font-size: 10px; font-weight: 600; }
+.kpi-executive-count-badge { padding: 5px 8px; white-space: nowrap; }
+.kpi-executive-count-badge.is-info { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+
+.kpi-production-chart { height: 225px; min-width: 0; }
+.kpi-production-tooltip {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 30, 64, .12);
+  color: #475569;
+  font-size: 11px;
+}
+.kpi-production-tooltip strong { color: #0f1e40; }
+
+.kpi-executive-overview .kpi-prod-mini-timing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.kpi-executive-overview .kpi-prod-mini-timing-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px 8px;
+  min-height: 74px;
+  padding: 11px;
+  border: 1px solid #e5ebf4;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.kpi-prod-mini-timing-icon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.kpi-prod-mini-timing-icon svg { width: 14px; height: 14px; }
+.kpi-executive-overview .kpi-prod-mini-timing-label { align-self: center; font-size: 10px; font-weight: 700; line-height: 1.35; }
+.kpi-executive-overview .kpi-prod-mini-timing-value { grid-column: 2; align-self: end; color: #0f1e40; font-size: 16px; }
+.kpi-executive-overview .kpi-production-timing-card .kpi-card-subtitle { margin: 12px 0 0; color: #64748b; font-size: 10px; line-height: 1.45; }
+
+.kpi-executive-overview .kpi-trend-grid,
+.kpi-executive-overview .kpi-credits-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.kpi-executive-overview .kpi-lower-metric-card {
+  position: relative;
+  min-height: 150px;
+  overflow: hidden;
+}
+
+.kpi-executive-overview .kpi-trend-card-header,
+.kpi-executive-overview .kpi-credit-card-header,
+.kpi-executive-overview .kpi-quality-metric-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.kpi-lower-metric-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.kpi-lower-metric-icon svg { width: 16px; height: 16px; }
+.kpi-lower-metric-badge { padding: 4px 7px; white-space: nowrap; }
+
+.kpi-executive-overview .kpi-trend-card-header > svg { margin-left: auto; }
+.kpi-executive-overview .kpi-trend-card-title,
+.kpi-executive-overview .kpi-credit-label,
+.kpi-executive-overview .kpi-quality-metric-label { display: block; color: #475569; font-size: 11px; font-weight: 700; }
+.kpi-executive-overview .kpi-trend-card-value,
+.kpi-executive-overview .kpi-credit-value,
+.kpi-executive-overview .kpi-quality-metric-value { margin-top: 7px; font-size: 24px; letter-spacing: -.02em; }
+.kpi-executive-overview .kpi-trend-card-comparison,
+.kpi-executive-overview .kpi-credit-subtitle,
+.kpi-executive-overview .kpi-quality-metric-trend { min-height: 28px; margin-top: 8px; font-size: 10px; font-weight: 600; line-height: 1.4; }
+
+.kpi-executive-overview .kpi-credit-icon { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 9px; background: #eff6ff !important; color: #1d4ed8 !important; }
+.kpi-executive-overview .kpi-credit-icon svg { width: 16px; height: 16px; }
+.kpi-executive-overview .kpi-credit-card.is-warning .kpi-credit-icon { background: #fef3c7 !important; color: #b45309 !important; }
+.kpi-executive-overview .kpi-credit-card.is-danger .kpi-credit-icon { background: #fee2e2 !important; color: #dc2626 !important; }
+.kpi-executive-overview .kpi-credit-card.is-purple .kpi-credit-icon { background: #f3e8ff !important; color: #9333ea !important; }
+
+.kpi-executive-overview .kpi-section-fact-badge { padding: 6px 9px; border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.kpi-executive-overview .kpi-quality-metrics-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.kpi-executive-overview .kpi-quality-metric { min-height: 156px; }
+.kpi-executive-overview .kpi-quality-metric .kpi-lower-metric-icon { background: #f3e8ff; color: #7e22ce; }
+.kpi-executive-overview .kpi-quality-top-seller {
+  padding: 14px 16px 16px;
+}
+
+.kpi-executive-overview .kpi-quality-top-seller::after {
+  top: 15px;
+  right: 16px;
+}
+
+.kpi-executive-overview .kpi-quality-top-seller-header {
+  align-self: flex-start;
+  margin-bottom: 12px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.kpi-executive-overview .kpi-quality-top-seller-name {
+  padding: 0;
+  color: #0f1e40;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.kpi-executive-overview .kpi-quality-top-seller-stat {
+  padding: 4px 0 0;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.kpi-materials-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -2px 0 2px;
+}
+
+.kpi-materials-coverage span {
+  padding: 6px 9px;
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.kpi-materials-coverage strong { color: #0f1e40; }
+
+/* Materials KPI: visual language aligned with the executive workspace. */
+.kpi-materials-analytics {
+  --kpi-materials-accent: #2454d9;
+  --kpi-materials-accent-soft: #e8edff;
+  display: grid;
+  gap: 28px;
+  margin: 0;
+  padding: 0;
+}
+
+.kpi-materials-analytics > .kpi-section {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+.kpi-materials-analytics .kpi-section-header {
+  align-items: flex-end;
+  margin: 0;
+}
+
+.kpi-materials-analytics .kpi-section-kicker {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--kpi-materials-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
+}
+
+.kpi-materials-analytics .kpi-section-title {
+  margin-top: 4px;
+  color: #0f1e40;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -.015em;
+  line-height: 1.2;
+}
+
+.kpi-materials-analytics .kpi-section-subtitle {
+  max-width: 720px;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.kpi-materials-snapshot .kpi-hero-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+}
+
+.kpi-materials-assistive-copy {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.kpi-materials-period-metrics .kpi-hero-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+}
+
+.kpi-materials-analytics .kpi-section > .kpi-card,
+.kpi-materials-analytics .kpi-materials-alert-card {
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 30, 64, .055);
+}
+
+.kpi-materials-analytics .kpi-filter-row {
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.kpi-materials-analytics .kpi-materials-filter-control {
+  display: grid;
+  min-width: 180px;
+  gap: 5px;
+}
+
+.kpi-materials-analytics .kpi-materials-filter-control > span {
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.kpi-materials-analytics .kpi-materials-filter-control .pp-filter-select-wrap { width: 100%; }
+.kpi-materials-analytics .kpi-materials-filter-control .pp-filter-select-trigger {
+  min-height: 42px;
+  border-color: #c8d4f0;
+  background: #ffffff;
+  color: #334155;
+}
+
+.kpi-materials-analytics .kpi-materials-filter-control .pp-filter-select-trigger:hover,
+.kpi-materials-analytics .kpi-materials-filter-control .pp-filter-select-trigger.is-open,
+.kpi-materials-analytics .kpi-materials-filter-control .pp-filter-select-trigger:focus-visible {
+  border-color: var(--kpi-materials-accent);
+  box-shadow: 0 0 0 3px rgba(36, 84, 217, .12);
+}
+
+.kpi-materials-analytics .kpi-materials-filter-control .pp-filter-select-icon > svg,
+.kpi-materials-analytics .kpi-materials-filter-control .pp-filter-select-trigger > svg:last-child {
+  color: var(--kpi-materials-accent);
+}
+
+.kpi-materials-analytics .pp-filter-dropdown-search:focus-within {
+  border-color: var(--kpi-materials-accent);
+  box-shadow: 0 0 0 3px rgba(36, 84, 217, .12);
+}
+
+.kpi-materials-analytics .pp-filter-dropdown-option.selected,
+.kpi-materials-analytics .pp-filter-dropdown-option.selected:hover,
+.kpi-materials-analytics .pp-filter-dropdown-option.selected.active {
+  border-color: var(--kpi-materials-accent);
+  background: var(--kpi-materials-accent);
+}
+
+.kpi-materials-analytics .kpi-pipeline-view-toggle {
+  padding: 4px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.kpi-materials-analytics .kpi-pipeline-view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 11px;
+  border-radius: 7px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.kpi-materials-analytics .kpi-pipeline-view-btn.active {
+  background: #091127;
+  color: #ffffff;
+  box-shadow: 0 5px 12px rgba(9, 17, 39, .18);
+}
+
+.kpi-materials-chart-card { min-height: 358px; }
+.kpi-materials-chart-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 48px;
+  margin-bottom: 16px;
+}
+
+.kpi-materials-chart-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kpi-materials-evolution-filter {
+  display: block;
+  min-width: 220px;
+}
+
+.kpi-materials-evolution-filter .pp-filter-select-trigger {
+  min-height: 38px;
+  border-color: #c8d4f0;
+  background: #ffffff;
+}
+
+.kpi-materials-evolution-filter .pp-filter-select-trigger:hover,
+.kpi-materials-evolution-filter .pp-filter-select-trigger.is-open,
+.kpi-materials-evolution-filter .pp-filter-select-trigger:focus-visible {
+  border-color: var(--kpi-materials-accent);
+  box-shadow: 0 0 0 3px rgba(36, 84, 217, .12);
+}
+
+.kpi-materials-evolution-filter .pp-filter-select-icon > svg,
+.kpi-materials-evolution-filter .pp-filter-select-trigger > svg:last-child { color: var(--kpi-materials-accent); }
+
+.kpi-materials-chart-legend {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.kpi-materials-period-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 16px;
+  padding: 2px 0;
+}
+
+.kpi-materials-period-card {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  min-height: 158px;
+  padding: 20px;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+
+.kpi-materials-period-card.is-previous { background: #f8fafc; }
+.kpi-materials-period-card.is-current { border-color: #c8d4f0; background: #f7f9ff; }
+.kpi-materials-period-card-heading { display: inline-flex; align-items: center; gap: 8px; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.kpi-materials-period-icon { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; background: #e9eef8; color: #64748b; }
+.kpi-materials-period-card.is-current .kpi-materials-period-icon { background: var(--kpi-materials-accent-soft); color: var(--kpi-materials-accent); }
+.kpi-materials-period-card > strong { margin-top: 13px; color: #0f1e40; font-size: 30px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.kpi-materials-period-card.is-current > strong { color: var(--kpi-materials-accent); }
+.kpi-materials-period-metric { margin-top: 6px; color: #475569; font-size: 11px; font-weight: 700; }
+.kpi-materials-period-duration { margin-top: 4px; color: #64748b; font-size: 11px; font-weight: 700; }
+.kpi-materials-period-date { margin-top: 3px; color: #94a3b8; font-size: 11px; font-weight: 600; }
+
+.kpi-materials-period-change { display: grid; align-content: center; justify-items: center; gap: 4px; text-align: center; }
+.kpi-materials-period-change-icon { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid currentColor; border-radius: 12px; background: #f8fafc; font-size: 19px; font-weight: 800; }
+.kpi-materials-period-change strong { font-size: 14px; font-weight: 800; line-height: 1.25; }
+.kpi-materials-period-change > span:last-child { max-width: 128px; color: #64748b; font-size: 10px; font-weight: 700; line-height: 1.3; }
+.kpi-materials-period-change.is-up { color: #16a34a; }
+.kpi-materials-period-change.is-down { color: #dc2626; }
+.kpi-materials-period-change.is-flat { color: #64748b; }
+
+.kpi-materials-movement-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 20px; }
+.kpi-materials-movement-heading > span { color: #0f1e40; font-size: 12px; font-weight: 800; }
+.kpi-materials-movement-heading small { color: #94a3b8; font-size: 10px; font-weight: 650; }
+.kpi-materials-movement-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 8px; margin-bottom: 24px; }
+.kpi-materials-movement-card { display: flex; align-items: flex-start; gap: 11px; min-width: 0; min-height: 108px; padding: 15px; border: 1px solid #dbe3ef; border-radius: 12px; background: #ffffff; }
+.kpi-materials-movement-icon { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 9px; }
+.kpi-materials-movement-card > div { min-width: 0; }
+.kpi-materials-movement-card strong { display: block; color: #0f1e40; font-size: 22px; font-weight: 800; line-height: 1; }
+.kpi-materials-movement-card span:not(.kpi-materials-movement-icon) { display: block; margin-top: 5px; color: #334155; font-size: 11px; font-weight: 800; }
+.kpi-materials-movement-card p { overflow: hidden; margin: 4px 0 0; color: #94a3b8; font-size: 10px; font-weight: 600; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-materials-movement-card.is-kept { border-color: #c8d4f0; background: #f7f9ff; }
+.kpi-materials-movement-card.is-kept .kpi-materials-movement-icon { background: var(--kpi-materials-accent-soft); color: var(--kpi-materials-accent); }
+.kpi-materials-movement-card.is-new { border-color: #bbf7d0; background: #f6fdf8; }
+.kpi-materials-movement-card.is-new .kpi-materials-movement-icon { background: #dcfce7; color: #16a34a; }
+.kpi-materials-movement-card.is-lost { border-color: #fecaca; background: #fffafa; }
+.kpi-materials-movement-card.is-lost .kpi-materials-movement-icon { background: #fee2e2; color: #dc2626; }
+
+.kpi-materials-comparison-table-head { padding: 8px 12px !important; }
+
+.kpi-materials-comparison-row {
+  min-height: 46px;
+  transition: border-color .16s ease, background-color .16s ease;
+}
+
+.kpi-materials-comparison-row:hover { border-color: #c7d5eb !important; background: #ffffff !important; }
+
+.kpi-materials-detail-tabs { display: inline-flex; width: fit-content; }
+
+.kpi-materials-detail-card {
+  border-color: #d6e0ee !important;
+  box-shadow: 0 12px 30px rgba(15, 30, 64, .06) !important;
+}
+
+.kpi-materials-ranking-filter-bar {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 270px);
+  align-items: end !important;
+  gap: 12px !important;
+  padding: 12px !important;
+  border-color: #dce5f2 !important;
+  background: #f8fafc !important;
+}
+
+.kpi-materials-ranking-filter-bar .kpi-search-box {
+  min-width: 0;
+  max-width: none;
+}
+
+/* Los inputs internos no deben heredar el campo genérico de la barra de filtros. */
+.kpi-materials-ranking-filter-bar .kpi-search-control input,
+.kpi-materials-ranking-filter-bar .kpi-search-control input:hover,
+.kpi-materials-ranking-filter-bar .kpi-search-control input:focus,
+.kpi-materials-ranking-filter-bar .pp-filter-dropdown-search input,
+.kpi-materials-ranking-filter-bar .pp-filter-dropdown-search input:focus {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.kpi-materials-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.kpi-materials-panel-kicker {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--kpi-materials-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.kpi-materials-panel-heading .kpi-card-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.kpi-materials-panel-meta {
+  display: inline-flex;
+  min-width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px solid #cddafb;
+  border-radius: 999px;
+  background: #f4f7ff;
+  color: var(--kpi-materials-accent);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.kpi-materials-panel-meta.is-positive { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
+.kpi-materials-panel-meta.is-negative { border-color: #fecaca; background: #fff7f7; color: #dc2626; }
+
+.kpi-materials-heatmap-card .kpi-table-wrapper {
+  margin-top: 0 !important;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+}
+
+.kpi-materials-heatmap-card .kpi-table { min-width: 540px; }
+.kpi-materials-alert-card .kpi-empty-state { display: grid; min-height: 112px; place-items: center; border: 1px dashed #d7e2f0; border-radius: 12px; background: #fbfdff; text-align: center; }
+.kpi-materials-alert-card .kpi-empty-title::before { content: '✓'; display: grid; width: 26px; height: 26px; margin: 0 auto 7px; place-items: center; border-radius: 50%; background: #ecfdf5; color: #16a34a; font-size: 15px; font-weight: 700; }
+
+.kpi-materials-analytics .kpi-section-fact-badge {
+  padding: 6px 9px;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.kpi-materials-ranking-table { overflow: hidden; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; }
+.kpi-materials-ranking-table-head,
+.kpi-materials-ranking-row { display: grid; grid-template-columns: 42px minmax(160px, 1.25fr) 88px 72px minmax(144px, .95fr) minmax(132px, .9fr) 92px 72px; align-items: center; column-gap: 14px; }
+.kpi-materials-ranking-table-head { min-height: 38px; padding: 0 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .02em; }
+.kpi-materials-ranking-table-head span:nth-child(n + 3) { text-align: center; }
+.kpi-materials-ranking-list { display: grid; }
+.kpi-materials-ranking-row { min-height: 58px; padding: 9px 14px; border-bottom: 1px solid #edf1f7; transition: background-color .16s ease; }
+.kpi-materials-ranking-row:last-child { border-bottom: 0; }
+.kpi-materials-ranking-row:hover { background: #f9fbff; }
+.kpi-materials-ranking-row.is-interactive { cursor: pointer; }
+.kpi-materials-ranking-row.is-interactive:focus-visible { outline: 2px solid #2454d9; outline-offset: -2px; background: #f3f6ff; }
+.kpi-materials-ranking-position { color: var(--kpi-materials-accent); font-size: 12px; font-weight: 800; }
+.kpi-materials-ranking-copy { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.kpi-materials-ranking-material-button { display: flex; align-items: center; min-width: 0; gap: 9px; padding: 3px; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.kpi-materials-ranking-material-button:hover { background: #eef3ff; }
+.kpi-materials-ranking-material-button:focus-visible { outline: 2px solid #2454d9; outline-offset: 2px; }
+.kpi-materials-ranking-material-icon { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border: 1px solid #dbe3ef; border-radius: 8px; background: #f7f9ff; color: var(--kpi-materials-accent); }
+.kpi-materials-ranking-name { overflow: hidden; color: #0f1e40; font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-materials-ranking-client { display: block; overflow: hidden; margin-top: 2px; color: #94a3b8; font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-materials-ranking-references { color: #475569; font-size: 12px; font-weight: 700; text-align: center; }
+.kpi-materials-ranking-participation { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 8px; }
+.kpi-materials-ranking-participation > strong { color: #475569; font-size: 11px; font-weight: 700; }
+.kpi-materials-ranking-progress { height: 5px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+.kpi-materials-ranking-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--kpi-materials-accent); }
+.kpi-materials-ranking-trend { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 11px; }
+.kpi-materials-ranking-trend.is-up { color: #16a34a; }
+.kpi-materials-ranking-trend.is-down { color: #dc2626; }
+.kpi-materials-ranking-trend.is-flat { color: #64748b; }
+.kpi-materials-ranking-clients { display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: #475569; font-size: 12px; }
+.kpi-materials-ranking-usage { display: grid; gap: 2px; color: #475569; font-size: 10px; line-height: 1.3; text-align: center; white-space: nowrap; }
+.kpi-materials-ranking-usage > span { color: #334155; font-weight: 700; }
+.kpi-materials-ranking-usage > small { color: #7c8ca5; font-size: 10px; font-weight: 600; }
+
+.kpi-materials-heatmap-card .kpi-card-title,
+.kpi-materials-alert-card .kpi-card-title,
+.kpi-materials-clients-card .kpi-card-title {
+  color: #0f1e40;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.kpi-materials-alerts-grid { gap: 14px !important; }
+.kpi-materials-alert-card { min-height: 180px; }
+
+/* Espacio de trabajo de comparación de materiales */
+.kpi-materials-comparison-workspace { padding: 20px; border-color: #d6e0ee !important; box-shadow: 0 12px 30px rgba(15, 30, 64, .06) !important; }
+.kpi-materials-compare-controls { display: grid; grid-template-columns: minmax(190px, 1.35fr) repeat(3, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+.kpi-materials-compare-controls > * { min-width: 0; }
+.kpi-materials-compare-date-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid #e1e8f2; border-radius: 12px; background: #f8fafc; }
+.kpi-materials-compare-date-grid label { display: grid; gap: 5px; color: #52637f; font-size: 10px; font-weight: 700; }
+.kpi-materials-compare-date-grid input { width: 100%; height: 36px; padding: 0 9px; border: 1px solid #cbd8eb; border-radius: 8px; background: #fff; color: #0f1e40; font: 600 11px/1 'Poppins', sans-serif; }
+.kpi-materials-compare-date-grid input:focus { outline: 0; border-color: #2454d9; box-shadow: 0 0 0 3px rgba(36, 84, 217, .12); }
+.kpi-materials-compare-date-grid.is-equivalent { grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(180px, 1.2fr); align-items: end; }
+.kpi-materials-compare-date-grid.is-equivalent p { margin: 0; padding: 9px 11px; border-left: 3px solid #2454d9; border-radius: 8px; background: #edf3ff; color: #42567a; font-size: 10px; font-weight: 600; line-height: 1.5; }
+.kpi-materials-compare-periods { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; margin: 16px 0; padding: 13px 15px; border: 1px solid #dbe4f2; border-radius: 12px; background: linear-gradient(110deg, #f7f9ff, #fff); }
+.kpi-materials-compare-periods > div { display: grid; gap: 3px; }
+.kpi-materials-compare-periods > div:last-child { text-align: right; }
+.kpi-materials-compare-periods span { color: #71809a; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.kpi-materials-compare-periods strong { color: #0f1e40; font-size: 12px; }
+.kpi-materials-compare-periods > svg { color: #2454d9; }
+.kpi-materials-compare-feedback { margin: -6px 0 12px; color: #52637f; font-size: 11px; font-weight: 600; }
+.kpi-materials-compare-feedback.is-error { color: #b45309; }
+.kpi-materials-compare-unavailable { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 132px; padding: 18px; border: 1px solid #f2cf9c; border-radius: 12px; background: linear-gradient(120deg, #fffaf1, #fff); }
+.kpi-materials-compare-unavailable strong { color: #7c4a03; font-size: 13px; }
+.kpi-materials-compare-unavailable p { max-width: 680px; margin: 5px 0 0; color: #786040; font-size: 11px; font-weight: 600; line-height: 1.5; }
+.kpi-materials-compare-unavailable button { flex: 0 0 auto; min-height: 34px; padding: 0 13px; border: 1px solid #2454d9; border-radius: 8px; background: #2454d9; color: #fff; font: 700 11px/1 'Poppins', sans-serif; cursor: pointer; }
+.kpi-materials-compare-unavailable button:hover { background: #1e46bc; }
+.kpi-materials-compare-unavailable button:focus-visible { outline: 2px solid #2454d9; outline-offset: 3px; }
+.kpi-materials-compare-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.kpi-materials-compare-metric { position: relative; display: grid; gap: 3px; min-height: 112px; padding: 15px; border: 1px solid #e0e7f1; border-radius: 12px; background: #fff; }
+.kpi-materials-compare-metric > span { color: #71809a; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.kpi-materials-compare-metric-label--emphasized { font-weight: 800; }
+.kpi-materials-compare-metric > strong { color: #0f1e40; font-size: 24px; line-height: 1.1; }
+.kpi-materials-compare-metric > small { color: #71809a; font-size: 11px; font-weight: 600; }
+.kpi-materials-compare-metric > em { width: fit-content; margin-top: 3px; padding: 3px 7px; border-radius: 999px; font-size: 10px; font-style: normal; font-weight: 700; }
+.kpi-materials-compare-metric > em.is-up { background: #ecfdf5; color: #15803d; }
+.kpi-materials-compare-metric > em.is-down { background: #fff1f2; color: #dc2626; }
+.kpi-materials-compare-metric > em.is-flat { background: #f1f5f9; color: #64748b; }
+.kpi-materials-compare-metric.is-skeleton { pointer-events: none; }
+.kpi-materials-compare-metric.is-skeleton > i,
+.kpi-materials-compare-split.is-skeleton > i,
+.kpi-materials-comparison-chart-empty.is-skeleton > i { display: block; border-radius: 99px; background: linear-gradient(90deg, #edf2f8 25%, #f8fafc 38%, #edf2f8 55%); background-size: 220% 100%; animation: kpi-materials-skeleton 1.25s ease-in-out infinite; }
+.kpi-materials-compare-metric.is-skeleton > i:nth-of-type(1) { width: 42%; height: 23px; margin-top: 4px; }
+.kpi-materials-compare-metric.is-skeleton > i:nth-of-type(2) { width: 78%; height: 10px; }
+.kpi-materials-compare-metric.is-skeleton > i:nth-of-type(3) { width: 33%; height: 18px; }
+.kpi-materials-compare-splits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.kpi-materials-compare-split { display: grid; gap: 8px; padding: 14px; border: 1px solid #e0e7f1; border-radius: 12px; background: #fbfcff; }
+.kpi-materials-compare-split > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.kpi-materials-compare-split > div:first-child span { color: #0f1e40; font-size: 12px; font-weight: 700; }
+.kpi-materials-compare-split > div:first-child small { color: #71809a; font-size: 10px; font-weight: 600; }
+.kpi-materials-compare-split-bar { height: 7px; overflow: hidden; border-radius: 99px; background: #e5ebf4; }
+.kpi-materials-compare-split-bar i { display: block; height: 100%; border-radius: inherit; background: #2454d9; }
+.kpi-materials-compare-split-legend { display: flex; justify-content: space-between; color: #667793; font-size: 10px; }
+.kpi-materials-compare-split-legend strong { color: #334155; }
+.kpi-materials-compare-split.is-skeleton { min-height: 104px; align-content: center; }
+.kpi-materials-compare-split.is-skeleton > i:nth-of-type(1) { width: 46%; height: 12px; }
+.kpi-materials-compare-split.is-skeleton > i:nth-of-type(2) { width: 100%; height: 7px; }
+.kpi-materials-compare-split.is-skeleton > i:nth-of-type(3) { width: 62%; height: 10px; }
+.kpi-materials-comparison-chart { margin-top: 16px; padding: 17px; border: 1px solid #dce5f2; border-radius: 14px; background: linear-gradient(140deg, #fbfcff, #fff); }
+.kpi-materials-comparison-chart-header { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 13px; }
+.kpi-materials-comparison-chart-header > div { display: grid; gap: 3px; }
+.kpi-materials-comparison-chart-header span { color: #2454d9; font-size: 10px; font-weight: 800; letter-spacing: .06em; }
+.kpi-materials-comparison-chart-header h3 { margin: 0; color: #0f1e40; font-size: 15px; line-height: 1.2; }
+.kpi-materials-comparison-chart-header h3.is-emphasized { font-weight: 800; }
+.kpi-materials-comparison-chart-summary { display: grid; justify-items: end; gap: 5px; }
+.kpi-materials-comparison-chart-header small { padding: 5px 8px; border: 1px solid #d6e2f5; border-radius: 999px; background: #f5f8ff; color: #536989; font-size: 10px; font-weight: 700; }
+.kpi-materials-comparison-shares { display: flex; align-items: center; gap: 5px; color: #71809a; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.kpi-materials-comparison-shares span { color: inherit; font-size: inherit; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.kpi-materials-comparison-shares b { font-size: 11px; }
+.kpi-materials-comparison-shares > i { color: #a3b2c7; font-style: normal; }
+.kpi-materials-comparison-shares .is-previous { color: #71809a; }
+.kpi-materials-comparison-shares .is-up { color: #16a34a; }
+.kpi-materials-comparison-shares .is-down { color: #dc2626; }
+.kpi-materials-comparison-shares .is-flat { color: #2454d9; }
+.kpi-materials-comparison-chart-tabs { display: flex; width: fit-content; max-width: 100%; margin-bottom: 14px; overflow-x: auto; border: 1px solid #dce5f2; border-radius: 10px; background: #f8fafc; }
+.kpi-materials-comparison-chart-tabs button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-right: 1px solid #e3e9f3; background: transparent; color: #64748b; font: 700 11px/1 'Poppins', sans-serif; white-space: nowrap; cursor: pointer; }
+.kpi-materials-comparison-chart-tabs button:last-child { border-right: 0; }
+.kpi-materials-comparison-chart-tabs button:hover { color: #2454d9; background: #f0f4ff; }
+.kpi-materials-comparison-chart-tabs button.is-active { border-radius: 8px; background: #2454d9; color: #fff; box-shadow: 0 3px 8px rgba(36, 84, 217, .18); }
+.kpi-materials-comparison-chart-tabs button:focus-visible { position: relative; z-index: 1; outline: 2px solid #2454d9; outline-offset: -2px; }
+.kpi-materials-comparison-chart-canvas { height: 248px; }
+.kpi-materials-comparison-chart-legend { display: flex; justify-content: center; gap: 18px; margin-top: 8px; color: #52637f; font-size: 10px; font-weight: 700; }
+.kpi-materials-comparison-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.kpi-materials-comparison-chart-legend i,
+.kpi-materials-compare-tooltip i { display: inline-block; width: 11px; height: 3px; border-radius: 99px; background: #2454d9; }
+.kpi-materials-comparison-chart-legend i.is-up,
+.kpi-materials-compare-tooltip .is-up i { background: #16a34a; }
+.kpi-materials-comparison-chart-legend i.is-down,
+.kpi-materials-compare-tooltip .is-down i { background: #dc2626; }
+.kpi-materials-comparison-chart-legend i.is-flat,
+.kpi-materials-compare-tooltip .is-flat i { background: #2454d9; }
+.kpi-materials-comparison-chart-legend i.is-previous,
+.kpi-materials-compare-tooltip .is-previous i { background: #94a3b8; }
+.kpi-materials-compare-tooltip .is-reference { color: #536989; }
+.kpi-materials-compare-tooltip .is-reference i { background: #536989; }
+.kpi-materials-compare-tooltip .is-reference b { color: #536989; }
+.kpi-materials-comparison-chart-legend i.is-gradient { background: linear-gradient(90deg, #dc2626, #f97316 30%, #eab308 55%, #84cc16 76%, #16a34a); }
+.kpi-materials-compare-tooltip { display: grid; gap: 6px; min-width: 172px; padding: 10px 12px; border: 1px solid #d9e3f1; border-radius: 9px; background: rgba(255, 255, 255, .98); box-shadow: 0 8px 22px rgba(15, 30, 64, .13); color: #52637f; font-size: 10px; font-weight: 600; }
+.kpi-materials-compare-tooltip strong { color: #0f1e40; font-size: 11px; }
+.kpi-materials-compare-tooltip span { display: flex; align-items: center; gap: 6px; }
+.kpi-materials-compare-tooltip b { margin-left: auto; color: #0f1e40; }
+.kpi-materials-compare-tooltip .is-current { color: var(--comparison-current-color); }
+.kpi-materials-compare-tooltip .is-current i { background: var(--comparison-current-color); }
+.kpi-materials-compare-tooltip .is-current b { color: var(--comparison-current-color); }
+.kpi-materials-compare-tooltip .is-up b { color: #15803d; }
+.kpi-materials-compare-tooltip .is-down b { color: #dc2626; }
+.kpi-materials-compare-tooltip .is-flat b { color: #2454d9; }
+.kpi-materials-comparison-chart-empty { display: grid; min-height: 180px; place-items: center; padding: 18px; border: 1px dashed #cfdaeb; border-radius: 10px; color: #637593; text-align: center; font-size: 12px; font-weight: 600; }
+.kpi-materials-comparison-chart-empty.is-skeleton { align-content: center; gap: 14px; grid-template-columns: 1fr; border-style: solid; }
+.kpi-materials-comparison-chart-empty.is-skeleton > i:nth-of-type(1) { width: 86%; height: 8px; }
+.kpi-materials-comparison-chart-empty.is-skeleton > i:nth-of-type(2) { width: 61%; height: 8px; }
+.kpi-materials-comparison-chart-empty.is-skeleton > i:nth-of-type(3) { width: 74%; height: 8px; }
+@keyframes kpi-materials-skeleton { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* Modal de detalle de Materiales; conserva la jerarquía visual de los paneles KPI. */
+.kpi-material-detail-overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(15, 30, 64, .36); backdrop-filter: blur(5px); animation: kpi-alert-modal-fade 160ms ease both; }
+.kpi-material-detail-modal { display: flex; width: min(840px, 100%); max-height: min(820px, calc(100dvh - 48px)); flex-direction: column; overflow: auto; border: 1px solid #dbe3ef; border-radius: 18px; background: #fff; box-shadow: 0 28px 80px rgba(15, 30, 64, .24); animation: kpi-alert-modal-enter 180ms ease both; }
+.kpi-material-detail-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 24px 24px 18px; border-bottom: 1px solid #edf1f7; }
+.kpi-material-detail-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; background: #edf3ff; color: #2454d9; }
+.kpi-material-detail-header .kpi-section-kicker { margin-bottom: 3px; }
+.kpi-material-detail-header h2 { margin: 0; color: #0f1e40; font-size: 21px; line-height: 1.25; }
+.kpi-material-detail-header p { margin: 4px 0 0; color: #64748b; font-size: 12px; }
+.kpi-material-detail-close { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid #dbe3ef; border-radius: 9px; background: #fff; color: #475569; cursor: pointer; }
+.kpi-material-detail-close:hover { background: #f8fafc; color: #0f1e40; }
+.kpi-material-detail-close:focus-visible { outline: 2px solid #2454d9; outline-offset: 2px; }
+.kpi-material-detail-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 18px 24px; }
+.kpi-material-detail-metric { display: grid; gap: 4px; min-height: 70px; padding: 12px; border: 1px solid #e3eaf4; border-radius: 11px; background: #fbfcff; }
+.kpi-material-detail-metric > span { color: #71809a; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.kpi-material-detail-metric > strong { color: #0f1e40; font-size: 16px; }
+.kpi-material-detail-metric.is-positive > strong { color: #16a34a; }
+.kpi-material-detail-metric.is-negative > strong { color: #dc2626; }
+.kpi-material-detail-metric.is-neutral > strong { color: #64748b; }
+.kpi-material-detail-distributions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 24px 18px; }
+.kpi-material-detail-distribution { padding: 13px; border: 1px solid #e3eaf4; border-radius: 11px; background: #fff; }
+.kpi-material-detail-distribution-heading { display: flex; justify-content: space-between; gap: 8px; color: #64748b; font-size: 11px; }
+.kpi-material-detail-distribution-heading strong { color: #334155; font-weight: 700; }
+.kpi-material-detail-distribution-bar { display: flex; height: 7px; margin: 11px 0 8px; overflow: hidden; border-radius: 99px; background: #e6ebf3; }
+.kpi-material-detail-distribution-bar > span { display: block; min-width: 0; border-radius: inherit; background: #2454d9; }
+.kpi-material-detail-distribution-legend { display: flex; justify-content: space-between; gap: 8px; color: #64748b; font-size: 10px; }
+.kpi-material-detail-distribution-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.kpi-material-detail-distribution-legend i { width: 6px; height: 6px; border-radius: 50%; background: #e6ebf3; }
+.kpi-material-detail-distribution-legend i.is-primary { background: #2454d9; }
+.kpi-material-detail-distribution-legend strong { color: #334155; }
+.kpi-material-detail-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 24px 18px; }
+.kpi-material-detail-list { min-height: 145px; padding: 14px; border: 1px solid #e3eaf4; border-radius: 11px; }
+.kpi-material-detail-list h3, .kpi-material-detail-trend h3 { display: flex; align-items: center; gap: 7px; margin: 0; color: #0f1e40; font-size: 13px; }
+.kpi-material-detail-list h3 svg { color: #2454d9; }
+.kpi-material-detail-list ol { display: grid; gap: 6px; margin: 11px 0 0; padding: 0; list-style: none; }
+.kpi-material-detail-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; color: #334155; font-size: 11px; }
+.kpi-material-detail-list li > span { color: #2454d9; font-weight: 700; }
+.kpi-material-detail-list li > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-material-detail-list li > em { color: #71809a; font-style: normal; white-space: nowrap; }
+.kpi-material-detail-empty { margin: 13px 0 0; color: #71809a; font-size: 11px; line-height: 1.5; }
+.kpi-material-detail-trend { min-height: 208px; padding: 0 24px 24px; }
+.kpi-material-detail-trend > div:first-child { display: flex; align-items: end; justify-content: space-between; margin-bottom: 5px; }
+.kpi-material-detail-trend .kpi-section-kicker { display: block; margin-bottom: 2px; }
+
+@media (max-width: 1360px) {
+  .kpi-materials-snapshot .kpi-hero-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .kpi-materials-period-metrics .kpi-hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 840px) {
+  .kpi-materials-analytics .kpi-section-header { align-items: flex-start; }
+  .kpi-materials-snapshot .kpi-hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-materials-period-comparison { grid-template-columns: 1fr; }
+  .kpi-materials-period-change { grid-auto-flow: column; justify-content: center; }
+  .kpi-materials-movement-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .kpi-materials-alerts-grid { grid-template-columns: 1fr !important; }
+  .kpi-materials-ranking-table { overflow-x: auto; }
+  .kpi-materials-ranking-table-head,
+  .kpi-materials-ranking-row { min-width: 910px; }
+  .kpi-materials-ranking-filter-bar { grid-template-columns: 1fr; }
+  .kpi-materials-compare-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-materials-compare-date-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-materials-compare-date-grid.is-equivalent { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-materials-compare-date-grid.is-equivalent p { grid-column: 1 / -1; }
+}
+
+@media (max-width: 560px) {
+  .kpi-materials-analytics { gap: 22px; }
+  .kpi-materials-snapshot .kpi-hero-grid,
+  .kpi-materials-period-metrics .kpi-hero-grid { grid-template-columns: 1fr; }
+  .kpi-materials-analytics .kpi-filter-row { width: 100%; }
+  .kpi-materials-analytics .kpi-materials-filter-control { min-width: 0; width: 100%; }
+  .kpi-materials-analytics .kpi-pipeline-view-toggle { width: 100%; overflow-x: auto; }
+  .kpi-materials-analytics .kpi-pipeline-view-btn { flex: 1 0 auto; }
+  .kpi-materials-chart-toolbar { align-items: stretch; flex-direction: column; }
+  .kpi-materials-chart-controls { align-items: stretch; flex-direction: column; }
+  .kpi-materials-evolution-filter { width: 100%; }
+  .kpi-materials-chart-controls .kpi-pipeline-view-toggle { width: 100%; overflow-x: auto; }
+  .kpi-materials-chart-controls .kpi-pipeline-view-btn { flex: 1 0 auto; }
+  .kpi-materials-panel-heading { align-items: flex-start; }
+  .kpi-materials-comparison-table-head,
+  .kpi-materials-comparison-row { min-width: 510px; }
+  .kpi-materials-comparison-table { overflow-x: auto; }
+  .kpi-materials-movement-grid { grid-template-columns: 1fr; }
+  .kpi-material-detail-overlay { align-items: stretch; padding: 12px; }
+  .kpi-material-detail-modal { max-height: calc(100dvh - 24px); border-radius: 15px; }
+  .kpi-material-detail-header { padding: 18px 18px 15px; }
+  .kpi-material-detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px 18px; }
+  .kpi-material-detail-distributions,
+  .kpi-material-detail-lists { grid-template-columns: 1fr; padding-right: 18px; padding-left: 18px; }
+  .kpi-material-detail-trend { padding: 0 18px 18px; }
+  .kpi-materials-compare-controls,
+  .kpi-materials-compare-metrics,
+  .kpi-materials-compare-splits { grid-template-columns: 1fr; }
+  .kpi-materials-compare-date-grid { grid-template-columns: 1fr; }
+  .kpi-materials-compare-date-grid.is-equivalent { grid-template-columns: 1fr; }
+  .kpi-materials-comparison-workspace { padding: 14px; }
+  .kpi-materials-compare-unavailable { align-items: flex-start; flex-direction: column; }
+  .kpi-materials-compare-periods { grid-template-columns: 1fr; gap: 7px; }
+  .kpi-materials-compare-periods > svg { display: none; }
+  .kpi-materials-compare-periods > div:last-child { text-align: left; }
+  .kpi-materials-comparison-chart { padding: 14px; }
+  .kpi-materials-comparison-chart-header { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .kpi-materials-comparison-chart-summary { justify-items: start; }
+  .kpi-materials-comparison-chart-tabs { width: 100%; }
+  .kpi-materials-comparison-chart-tabs button { padding: 0 10px; }
+  .kpi-materials-comparison-chart-canvas { height: 220px; }
+}
+
+@media (max-width: 1240px) {
+  .kpi-executive-overview .kpi-pipeline-vertical { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .kpi-executive-overview .kpi-trend-grid,
+  .kpi-executive-overview .kpi-credits-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 840px) {
+  .kpi-banner-right { width: 100%; flex-wrap: wrap; }
+  .kpi-banner-period-control { flex: 1 1 200px; }
+  .kpi-executive-overview .kpi-prod-mini-grid { grid-template-columns: 1fr; }
+  .kpi-executive-overview .kpi-quality-metrics-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .kpi-banner-meta { gap: 6px; }
+  .kpi-banner-meta-badge { width: 100%; }
+  .kpi-executive-overview .kpi-pipeline-filters,
+  .kpi-executive-overview .kpi-trend-grid,
+  .kpi-executive-overview .kpi-credits-grid,
+  .kpi-executive-overview .kpi-prod-mini-timing-grid { grid-template-columns: 1fr; }
+  .kpi-executive-overview .kpi-section-header { align-items: flex-start; flex-direction: column; }
+  .kpi-executive-overview .kpi-section-fact-badge { margin-top: 8px; }
+}

@@ -1359,6 +1359,70 @@ export async function handleKpiData(body, env) {
         break
       }
 
+      case 'materials_analytics': {
+        if (![date_from, date_to, compare_from, compare_to].every(Boolean)) {
+          return { status: 400, body: { error: 'Los dos períodos de comparación son requeridos.' } }
+        }
+        const { data, error } = await supabase.rpc('kpi_materials_analytics', {
+          p_date_from: date_from, p_date_to: date_to,
+          p_compare_from: compare_from, p_compare_to: compare_to,
+        })
+        if (error) throw error
+        result = data
+        break
+      }
+
+      case 'materials_comparison_series': {
+        if (![date_from, date_to, compare_from, compare_to].every(Boolean)) {
+          return { status: 400, body: { error: 'Los dos períodos de comparación son requeridos.' } }
+        }
+
+        const materialKey = body.material_key ? String(body.material_key).trim() : null
+        const orderType = body.order_type || null
+        const designType = body.design_type || null
+        const granularity = body.granularity || 'day'
+        if (orderType && !['normal', 'urgent'].includes(orderType)) {
+          return { status: 400, body: { error: 'El filtro de prioridad no es válido.' } }
+        }
+        if (designType && !['internal', 'external'].includes(designType)) {
+          return { status: 400, body: { error: 'El filtro de diseño no es válido.' } }
+        }
+
+        if (!['day', 'week', 'month'].includes(granularity)) {
+          return { status: 400, body: { error: 'La granularidad de comparación no es válida.', code: 'MATERIALS_COMPARISON_INVALID_GRANULARITY' } }
+        }
+
+        const { data, error } = await supabase.rpc('kpi_materials_comparison_series', {
+          p_date_from: date_from,
+          p_date_to: date_to,
+          p_compare_from: compare_from,
+          p_compare_to: compare_to,
+          p_material_filter: materialKey,
+          p_order_type: orderType,
+          p_design_type: designType,
+          p_granularity: granularity,
+        })
+        if (error) {
+          console.error('materials_comparison_series RPC error:', error)
+          const developmentDetails = env.NODE_ENV === 'production'
+            ? undefined
+            : [
+              `Supabase code: ${error.code || 'unknown'}`,
+              `Supabase message: ${error.message || 'unknown'}`,
+              ...(error.hint ? [`Supabase hint: ${error.hint}`] : []),
+            ]
+          if (error.code === 'PGRST202' || /schema cache|could not find the function/i.test(error.message || '')) {
+            return { status: 503, body: { error: 'La fuente de comparación se está actualizando. Inténtalo nuevamente en unos instantes.', code: 'MATERIALS_COMPARISON_SOURCE_UNAVAILABLE', details: developmentDetails } }
+          }
+          if (error.code === '42501' || /solo administradores|permission denied/i.test(error.message || '')) {
+            return { status: 403, body: { error: 'No tienes permisos para consultar la comparación de materiales.', code: 'MATERIALS_COMPARISON_FORBIDDEN', details: developmentDetails } }
+          }
+          return { status: 500, body: { error: 'No se pudo consultar la comparación de materiales.', code: 'MATERIALS_COMPARISON_QUERY_FAILED', details: developmentDetails } }
+        }
+        result = data
+        break
+      }
+
       case 'user_analytics': {
         const { data, error } = await supabase.rpc('kpi_user_analytics', {
           p_date_from: date_from, p_date_to: date_to,
@@ -3534,7 +3598,8 @@ export async function handleKpiData(body, env) {
         const now = new Date()
         const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000)
 
-        const [bs, oa, ca, ui, pi, sa, ot, sv, empCount, empCountAll, clientCount, credito, parcial, pendingPayment, pendingAged, materialsResult] = await Promise.all([
+        const [executiveSummary, bs, oa, ca, ui, pi, sa, ot, sv, materialAnalytics, empCount, empCountAll, clientCount, credito, parcial, pendingPayment, pendingAged, materialsResult] = await Promise.all([
+          supabase.rpc('kpi_executive_summary', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
           supabase.rpc('kpi_business_summary', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
           supabase.rpc('kpi_orders_analytics', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
           supabase.rpc('kpi_client_analytics', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
@@ -3545,13 +3610,14 @@ export async function handleKpiData(body, env) {
           supabase.rpc('kpi_smart_alerts'),
           supabase.rpc('kpi_orders_trend', { p_days: 30 }),
           supabase.rpc('kpi_sla_violations'),
+          supabase.rpc('kpi_materials_analytics', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
           supabase.from('profiles').select('id', { count: 'exact', head: true }).neq('role', 'admin').eq('employment_status', true),
           supabase.from('profiles').select('id', { count: 'exact', head: true }).neq('role', 'admin'),
           supabase.from('clients').select('id', { count: 'exact', head: true }),
           supabase.from('orders').select('id', { count: 'exact', head: true }).eq('payment_status', 'credito').not('status', 'in', '(cancelled,in_completed,in_delivered)'),
           supabase.from('orders').select('id', { count: 'exact', head: true }).eq('payment_status', 'parcial').not('status', 'in', '(cancelled,in_completed,in_delivered)'),
           supabase.from('orders').select('id', { count: 'exact', head: true }).eq('payment_status', 'Pending_Payment').not('status', 'in', '(cancelled,in_completed,in_delivered)'),
-          supabase.from('orders').select('id, created_at').not('status', 'in', '(cancelled,in_completed,in_delivered)').gte('created_at', threeDaysAgo.toISOString()),
+          supabase.from('orders').select('id, created_at').in('payment_status', ['Pending_Payment', 'pendiente']).neq('status', 'cancelled').lt('created_at', threeDaysAgo.toISOString()),
           (() => {
             let q = supabase.from('orders').select('material, created_at').not('material', 'is', null)
             if (date_from) q = q.gte('created_at', date_from)
@@ -3574,6 +3640,7 @@ export async function handleKpiData(body, env) {
           })(),
         ])
 
+        if (executiveSummary.error) console.error('kpi_executive_summary:', executiveSummary.error.message)
         if (bs.error) console.error('kpi_business_summary:', bs.error.message)
         if (oa.error) console.error('kpi_orders_analytics:', oa.error.message)
         if (ca.error) console.error('kpi_client_analytics:', ca.error.message)
@@ -3582,6 +3649,7 @@ export async function handleKpiData(body, env) {
         if (sa.error) console.error('kpi_smart_alerts:', sa.error.message)
         if (ot.error) console.error('kpi_orders_trend:', ot.error.message)
         if (sv.error) console.error('kpi_sla_violations:', sv.error.message)
+        if (materialAnalytics.error) console.error('kpi_materials_analytics:', materialAnalytics.error.message)
         if (empCount.error) console.error('total_employees:', empCount.error.message)
         if (empCountAll.error) console.error('total_employees_all:', empCountAll.error.message)
         if (clientCount.error) console.error('total_clients:', clientCount.error.message)
@@ -3986,6 +4054,7 @@ export async function handleKpiData(body, env) {
         ])
 
         result = {
+          executive_summary: executiveSummary.data || null,
           business_summary: bs.data || null,
           orders_analytics: oa.data || null,
           client_analytics: ca.data || null,
@@ -4016,10 +4085,13 @@ export async function handleKpiData(body, env) {
             order_type_by_client: orderTypeByClientResult?.data || [],
             delivery_time_by_client: deliveryTimeByClientResult?.data || [],
             frequency_by_client: frequencyByClientResult?.data || [],
+            // Transitional fallback retained only for deployments where the migration
+            // has not yet been applied. The Materials KPI consumes materials_analytics.
             material_analytics: materialAnalyticsResult?.data || {},
             material_comparison: materialComparison,
             retention_new_clients: { rate: ca.data?.retention_rate?.rate || 0 },
           },
+          materials_analytics: materialAnalytics.data || null,
           order_counts_by_date: {
             today: todayCounts,
             week: weekCounts,

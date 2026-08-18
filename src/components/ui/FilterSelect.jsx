@@ -22,6 +22,7 @@ export function FilterSelect({
   emptyText = "No se encontraron opciones.",
   isActive = false,
   allowMultiline = false,
+  disabled = false,
 }) {
   const listboxId = useId();
   const ref = useRef(null);
@@ -67,14 +68,16 @@ export function FilterSelect({
 
   const selectOption = useCallback(
     (option) => {
+      if (disabled) return;
       onChange?.(option.value);
       setOpen(false);
     },
-    [onChange]
+    [disabled, onChange]
   );
 
   const handleKeyDown = useCallback(
     (event) => {
+      if (disabled) return;
       if (!open) {
         if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -105,7 +108,7 @@ export function FilterSelect({
         setOpen(false);
       }
     },
-    [open, visibleOptions, activeIndex, selectOption]
+    [disabled, open, visibleOptions, activeIndex, selectOption]
   );
 
   return (
@@ -113,8 +116,9 @@ export function FilterSelect({
       <button
         type="button"
         className={`pp-filter-control pp-filter-select-trigger ${shouldUseMultiline ? "pp-filter-select-trigger--multiline" : ""} ${open ? "is-open" : ""} ${isActive ? "is-active" : ""}`}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => !disabled && setOpen((current) => !current)}
         onKeyDown={handleKeyDown}
+        disabled={disabled}
         aria-expanded={open}
         aria-controls={listboxId}
         aria-haspopup="listbox"

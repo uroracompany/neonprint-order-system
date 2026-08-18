@@ -1472,30 +1472,6 @@ export default function PageQuote() {
     });
   };
 
-  useEffect(() => {
-    if (!user?.id) return undefined;
-
-    const refreshReminderClock = async () => {
-      await syncCreditReminderServerTime();
-      await dispatchDueCreditReminderNotifications();
-      fetchCreditCustomReminders();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        refreshReminderClock();
-      }
-    };
-
-    window.addEventListener("focus", refreshReminderClock);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("focus", refreshReminderClock);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [dispatchDueCreditReminderNotifications, fetchCreditCustomReminders, syncCreditReminderServerTime, user?.id]);
-
   const fetchOrders = async (...args) => fetchOrdersImpl(...args);
   const fetchOrdersRef = useRef(fetchOrders);
 

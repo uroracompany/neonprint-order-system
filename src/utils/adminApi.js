@@ -94,9 +94,11 @@ export async function adminApiFetch(path, payload = {}) {
   }
 
   if (!output.response.ok) {
+    const backendCode = output.result?.code || null;
     output.result = {
       ...output.result,
-      code: getApiErrorCode({ status: output.response.status, result: output.result }),
+      code: backendCode || getApiErrorCode({ status: output.response.status, result: output.result }),
+      backendCode,
       error: getApiErrorMessage({ status: output.response.status, result: output.result }),
     };
   }
