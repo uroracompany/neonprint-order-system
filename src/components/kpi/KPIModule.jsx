@@ -113,6 +113,13 @@ export default function KPIModule({ userId }) {
         start = new Date(now.getFullYear(), 0, 1)
         end = new Date(now.getFullYear() + 1, 0, 1)
         break
+      case 'general': {
+        start = new Date('1970-01-01T00:00:00.000Z')
+        end = new Date(now)
+        end.setHours(0, 0, 0, 0)
+        end.setDate(end.getDate() + 1)
+        break
+      }
       default:
         start = new Date(now.getFullYear(), now.getMonth(), 1)
         end = new Date(now.getFullYear(), now.getMonth() + 1, 1)

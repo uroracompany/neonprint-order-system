@@ -516,6 +516,7 @@ export function DesignerDetailView({ designerId, onBack, period, customDateFrom,
     if (period === 'today') { from.setHours(0, 0, 0, 0) }
     else if (period === 'week') { from.setDate(from.getDate() - from.getDay()) }
     else if (period === 'year') { from.setMonth(0, 1); from.setDate(1) }
+    else if (period === 'general') { from.setFullYear(1970, 0, 1); from.setHours(0, 0, 0, 0) }
     else { from.setDate(1) }
     return { date_from: from.toISOString(), date_to: to.toISOString() }
   }, [period, customDateFrom, customDateTo])
@@ -619,6 +620,7 @@ export function DesignerDetailView({ designerId, onBack, period, customDateFrom,
   const periodLabel = (() => {
     if (period === 'today') return 'Hoy'
     if (period === 'week') return 'Esta semana'
+    if (period === 'general') return 'Todo el historial'
     if (period === 'year') return new Date().getFullYear()
     if (period === 'custom' && customDateFrom && customDateTo) {
       const f = new Date(customDateFrom)
@@ -1038,6 +1040,7 @@ export default function KPIDesignIntelligence({ period, customDateFrom, customDa
     if (period === 'today') { from.setHours(0, 0, 0, 0) }
     else if (period === 'week') { from.setDate(from.getDate() - from.getDay()) }
     else if (period === 'year') { from.setMonth(0, 1); from.setDate(1) }
+    else if (period === 'general') { from.setFullYear(1970, 0, 1); from.setHours(0, 0, 0, 0) }
     else { from.setDate(1) }
     return { date_from: from.toISOString(), date_to: to.toISOString() }
   }, [period, customDateFrom, customDateTo])

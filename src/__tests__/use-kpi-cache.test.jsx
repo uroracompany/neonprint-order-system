@@ -31,4 +31,33 @@ describe('useKPI cache', () => {
     expect(adminApiFetch).toHaveBeenCalledTimes(1)
     expect(result.current.data?.snapshot?.open_total).toBe(4)
   })
+
+  it('starts with a valid monthly comparison instead of the unbounded historical range', async () => {
+    adminApiFetch.mockResolvedValue({ response: { ok: true }, result: { snapshot: { open_total: 4 } } })
+    renderHook(() => useKPI({}, 'admin-1'), { wrapper: createWrapper() })
+
+    await waitFor(() => expect(adminApiFetch).toHaveBeenCalled())
+    const [, params] = adminApiFetch.mock.calls.at(-1)
+    const currentDuration = new Date(params.date_to) - new Date(params.date_from)
+    const comparisonDuration = new Date(params.compare_to) - new Date(params.compare_from)
+
+    expect(params.action).toBe('all')
+    expect(params.date_from).not.toBe('1970-01-01T00:00:00.000Z')
+    expect(currentDuration).toBeGreaterThan(0)
+    expect(comparisonDuration).toBe(currentDuration)
+    expect(params.compare_to).toBe(params.date_from)
+  })
+
+  it('keeps the optional general range comparable when restored from the workspace', async () => {
+    adminApiFetch.mockResolvedValue({ response: { ok: true }, result: { snapshot: { open_total: 4 } } })
+    renderHook(() => useKPI({ period: 'general' }, 'admin-1'), { wrapper: createWrapper() })
+
+    await waitFor(() => expect(adminApiFetch).toHaveBeenCalled())
+    const [, params] = adminApiFetch.mock.calls.at(-1)
+
+    expect(new Date(params.date_to) - new Date(params.date_from)).toBeGreaterThan(0)
+    expect(new Date(params.compare_to) - new Date(params.compare_from))
+      .toBe(new Date(params.date_to) - new Date(params.date_from))
+    expect(params.compare_to).toBe(params.date_from)
+  })
 })

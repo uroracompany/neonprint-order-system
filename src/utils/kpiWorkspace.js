@@ -42,7 +42,7 @@ export function readKpiWorkspace(userId, storage = globalThis.sessionStorage) {
     }
     return {
       activeTab: KPI_TABS.has(saved.activeTab) ? saved.activeTab : KPI_DEFAULT_TAB,
-      period: ['today', 'week', 'month', 'year', 'custom'].includes(saved.period) ? saved.period : 'month',
+      period: ['general', 'today', 'week', 'month', 'year', 'custom'].includes(saved.period) ? saved.period : 'general',
       customDateFrom: stringValue(saved.customDateFrom),
       customDateTo: stringValue(saved.customDateTo),
       pipelineFilters: {

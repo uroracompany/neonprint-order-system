@@ -3797,7 +3797,7 @@ export async function handleKpiData(body, env) {
               .slice(0, 10) }
           })),
           safeQuery(() => {
-            let q = supabase.from('orders').select('client_id, client_name, material, created_at, order_type, status')
+            let q = supabase.from('orders').select('client_id, client_name, material, created_at, order_type, order_design_type, status')
             if (date_from) q = q.gte('created_at', date_from)
             if (date_to) q = q.lt('created_at', date_to)
             return q.then(({ data, error }) => {
@@ -3808,13 +3808,18 @@ export async function handleKpiData(body, env) {
               ;(data || []).forEach(o => {
                 if (!o.material) return
                 const isUrgent = (o.order_type || '').toLowerCase().includes('911')
+                const designType = String(o.order_design_type || '')
+                const isInternalDesign = designType === 'INTERNAL_DESING'
+                const isExternalDesign = designType === 'EXTERNAL_DESING'
                 o.material.split(',').map(s => s.trim()).filter(Boolean).forEach(m => {
                   allMaterials.add(m)
-                  if (!materialMap[m]) materialMap[m] = { name: m, total: 0, cancelled: 0, clients: {}, months: {}, daily: {}, normal: 0, urgent: 0 }
+                  if (!materialMap[m]) materialMap[m] = { name: m, total: 0, cancelled: 0, clients: {}, months: {}, daily: {}, normal: 0, urgent: 0, internal: 0, external: 0 }
                   materialMap[m].total++
                   if ((o.status || '').toLowerCase() === 'cancelled') materialMap[m].cancelled++
                   if (isUrgent) materialMap[m].urgent++
                   else materialMap[m].normal++
+                  if (isInternalDesign) materialMap[m].internal++
+                  if (isExternalDesign) materialMap[m].external++
                   if (!orderTypeMap[m]) orderTypeMap[m] = { name: m, normal: 0, urgent: 0 }
                   if (isUrgent) orderTypeMap[m].urgent++
                   else orderTypeMap[m].normal++
@@ -3840,6 +3845,8 @@ export async function handleKpiData(body, env) {
                     usage_pct: totalOrdersWithMaterial > 0 ? Math.round((m.total / totalOrdersWithMaterial) * 1000) / 10 : 0,
                     normal_orders: m.normal,
                     urgent_orders: m.urgent,
+                    internal_design_orders: m.internal,
+                    external_design_orders: m.external,
                     top_clients: Object.values(m.clients).sort((a, b) => b.count - a.count).slice(0, 5).map(c => ({ client_name: c.client_name, count: c.count })),
                     monthly_trend: Object.entries(m.months).sort((a, b) => a[0].localeCompare(b[0])).map(([month, count]) => ({ month, count })),
                     daily: m.daily,
@@ -3854,17 +3861,25 @@ export async function handleKpiData(body, env) {
         let materialComparison = null
         if (compare_from || compare_to) {
           try {
-            let pq = supabase.from('orders').select('material, status, created_at')
+            let pq = supabase.from('orders').select('material, status, created_at, order_type, order_design_type')
             if (compare_from) pq = pq.gte('created_at', compare_from)
             if (compare_to) pq = pq.lt('created_at', compare_to)
             const prevResult = await pq
             const prevMatMap = {}
             ;(prevResult.data || []).forEach(o => {
               if (!o.material) return
+              const isUrgent = (o.order_type || '').toLowerCase().includes('911')
+              const designType = String(o.order_design_type || '')
+              const isInternalDesign = designType === 'INTERNAL_DESING'
+              const isExternalDesign = designType === 'EXTERNAL_DESING'
               o.material.split(',').map(s => s.trim()).filter(Boolean).forEach(m => {
-                if (!prevMatMap[m]) prevMatMap[m] = { name: m, total: 0, cancelled: 0, daily: {}, months: {} }
+                if (!prevMatMap[m]) prevMatMap[m] = { name: m, total: 0, cancelled: 0, daily: {}, months: {}, normal: 0, urgent: 0, internal: 0, external: 0 }
                 prevMatMap[m].total++
                 if ((o.status || '').toLowerCase() === 'cancelled') prevMatMap[m].cancelled++
+                if (isUrgent) prevMatMap[m].urgent++
+                else prevMatMap[m].normal++
+                if (isInternalDesign) prevMatMap[m].internal++
+                if (isExternalDesign) prevMatMap[m].external++
                 const dayKey = new Date(o.created_at).toISOString().slice(0, 10)
                 prevMatMap[m].daily[dayKey] = (prevMatMap[m].daily[dayKey] || 0) + 1
                 const monthKey = new Date(o.created_at).toISOString().slice(0, 7)
@@ -3878,6 +3893,10 @@ export async function handleKpiData(body, env) {
                 .map(m => ({
                   name: m.name,
                   total_orders: m.total,
+                  normal_orders: m.normal,
+                  urgent_orders: m.urgent,
+                  internal_design_orders: m.internal,
+                  external_design_orders: m.external,
                   cancel_rate: m.total > 0 ? Math.round((m.cancelled / m.total) * 1000) / 10 : 0,
                   usage_pct: prevTotal > 0 ? Math.round((m.total / prevTotal) * 1000) / 10 : 0,
                   daily: m.daily,

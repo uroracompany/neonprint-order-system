@@ -2,6 +2,7 @@ import { Icons } from '../../utils/icons'
 import { FilterSelect } from '../ui/FilterSelect'
 
 const PERIODS = [
+  { value: 'general', label: 'General' },
   { value: 'today', label: 'Hoy' },
   { value: 'week', label: 'Esta semana' },
   { value: 'month', label: 'Este mes' },
@@ -30,7 +31,7 @@ export default function KPIHeader({ onRefresh, loading, period, onPeriodChange, 
         <div className="kpi-banner-right">
           <div className="kpi-banner-period-control">
             <span className="kpi-label">Período de rendimiento</span>
-            <FilterSelect icon={<Icons.Calendar />} value={period} onChange={onPeriodChange} options={PERIODS} label="Período de rendimiento" disabled={loading} isActive={period !== 'month'} />
+            <FilterSelect icon={<Icons.Calendar />} value={period} onChange={onPeriodChange} options={PERIODS} label="Período de rendimiento" disabled={loading} isActive={period !== 'general'} />
           </div>
           {period === 'custom' && (
             <>

@@ -104,6 +104,12 @@ export function QuoteDetailView({ quoteId, onBack, period, customDateFrom, custo
         start = new Date(now.getFullYear(), 0, 1)
         end = new Date(now.getFullYear() + 1, 0, 1)
         break
+      case 'general':
+        start = new Date('1970-01-01T00:00:00.000Z')
+        end = new Date(now)
+        end.setHours(0, 0, 0, 0)
+        end.setDate(end.getDate() + 1)
+        break
       default:
         start = new Date(now.getFullYear(), now.getMonth(), 1)
         end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -226,6 +232,7 @@ export function QuoteDetailView({ quoteId, onBack, period, customDateFrom, custo
   const periodLabel = (() => {
     if (period === 'today') return 'Hoy'
     if (period === 'week') return 'Esta semana'
+    if (period === 'general') return 'Todo el historial'
     if (period === 'year') return new Date().getFullYear()
     if (period === 'custom' && customDateFrom && customDateTo) {
       const f = new Date(customDateFrom)
@@ -630,6 +637,12 @@ export default function KPIQuoteIntelligence({ period, customDateFrom, customDat
       case 'year':
         start = new Date(now.getFullYear(), 0, 1)
         end = new Date(now.getFullYear() + 1, 0, 1)
+        break
+      case 'general':
+        start = new Date('1970-01-01T00:00:00.000Z')
+        end = new Date(now)
+        end.setHours(0, 0, 0, 0)
+        end.setDate(end.getDate() + 1)
         break
       default:
         start = new Date(now.getFullYear(), now.getMonth(), 1)

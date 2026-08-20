@@ -39,7 +39,7 @@ function getKpiBounds(period, customDateFrom, customDateTo) {
   }
 
   const bounds = getPeriodBounds(period)
-  const compareBounds = getComparePeriodBounds(period)
+  const compareBounds = getComparePeriodBounds(period, bounds)
   return {
     date_from: bounds.dateFrom,
     date_to: bounds.dateTo,
@@ -49,6 +49,9 @@ function getKpiBounds(period, customDateFrom, customDateTo) {
 }
 
 export function useKPI(initialState = {}, userId) {
+  // The complete historical range is available from the selector, but it is not
+  // a safe initial request: it fans out into every executive KPI and used to
+  // send an empty comparison range. Start with the normal monthly snapshot.
   const [period, setPeriod] = useState(() => initialState.period || 'month')
   const [customDateFrom, setCustomDateFrom] = useState(() => initialState.customDateFrom || '')
   const [customDateTo, setCustomDateTo] = useState(() => initialState.customDateTo || '')

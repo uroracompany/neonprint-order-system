@@ -56,6 +56,10 @@ export function getPeriodBounds(period, offsetMonths = 0) {
       start = new Date(now.getFullYear(), now.getMonth(), 1)
       end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
       break
+    case '2months':
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      break
     case '3months':
       start = new Date(now.getFullYear(), now.getMonth() - 2, 1)
       end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -64,6 +68,12 @@ export function getPeriodBounds(period, offsetMonths = 0) {
       start = new Date(now.getFullYear(), 0, 1)
       end = new Date(now.getFullYear() + 1, 0, 1)
       break
+    case 'general': {
+      const generalStart = new Date('1970-01-01T00:00:00.000Z')
+      start = generalStart
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+      break
+    }
     default:
       start = new Date(now.getFullYear(), now.getMonth(), 1)
       end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -72,12 +82,25 @@ export function getPeriodBounds(period, offsetMonths = 0) {
   return { dateFrom: start.toISOString(), dateTo: end.toISOString() }
 }
 
-export function getComparePeriodBounds(period) {
-  const current = getPeriodBounds(period)
+export function getComparePeriodBounds(period, current = getPeriodBounds(period)) {
   const duration = new Date(current.dateTo) - new Date(current.dateFrom)
   const compareTo = new Date(current.dateFrom)
   const compareFrom = new Date(compareTo.getTime() - duration)
   return { dateFrom: compareFrom.toISOString(), dateTo: compareTo.toISOString() }
+}
+
+export const MATERIAL_GLOBAL_START = '1970-01-01T00:00:00.000Z'
+
+export function getMaterialGlobalBounds() {
+  const end = new Date()
+  end.setHours(0, 0, 0, 0)
+  end.setDate(end.getDate() + 1)
+  return {
+    date_from: MATERIAL_GLOBAL_START,
+    date_to: end.toISOString(),
+    compare_from: MATERIAL_GLOBAL_START,
+    compare_to: MATERIAL_GLOBAL_START,
+  }
 }
 
 export function getSeverityConfig(severity) {

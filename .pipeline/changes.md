@@ -1,33 +1,38 @@
-## Changes Summary
+# Changes: Smooth Curve for Evolution Chart
 
-### File 1: `src/css-components/page-quote.css`
+## Files changed
 
-1. **Change 1** — Added 4 new card CSS variables (`--pq-card-border`, `--pq-card-radius`, `--pq-card-shadow`, `--pq-card-shadow-hover`) to `:root` after the existing shadow variables.
+### `src/components/kpi/KPIMaterialsAnalytics.jsx`
 
-2. **Change 2** — Added `margin-bottom: 28px` to `.pq-metrics-grid`.
+1. **Added `interpolatePoints` helper** (after `getMaterialEmptyText`, before `ChartTooltip`):
+   - New constant `INTERPOLATION_STEPS = 6` and function `interpolatePoints(startVal, endVal, steps)` that generates 7 intermediate points using an easeInOutQuad easing function between the two real values.
 
-3. **Change 3** — Replaced `.pq-metric-card` styles: removed flex layout, increased padding to `22px 22px`, increased `min-height` to `140px`, simplified transition, added `cursor: default`.
+2. **Rewrote `evoData` return** (was lines 283-294):
+   - Replaced the 2-point array with an interpolated 7-point array using `interpolatePoints`.
+   - First point has `name: 'Mes anterior'`, last has `name: 'Mes actual'`, intermediate points have `name: ''`.
+   - Each point includes an `isIntermediate` boolean flag.
+   - The comparison series `'Periodo anterior'` is also interpolated.
 
-4. **Change 4** — Split the combined `.pq-metric-card:hover, .pq-order-card:hover` rule into two separate rules. Metric card hover now uses `transform: none` and `--pq-card-shadow-hover`. Order card hover keeps original behavior.
+3. **Added custom `EvoTick` component** (inside the chart IIFE):
+   - Renders `<text>` only when `payload.value` is truthy, hiding intermediate `''` labels on the XAxis.
 
-5. **Change 5** — Replaced `.pq-metric-icon` styles: removed fixed dimensions/gradient background, now uses `display: flex`, `border-radius: 10px`, `padding: 10px`, `margin-bottom: 16px`, `width: fit-content`.
+4. **Replaced all 3 `<XAxis>` instances** (BarChart, LineChart, AreaChart):
+   - Changed from `tick={{ fontSize: 11 }}` to `tick={<EvoTick />} tickLine={false} axisLine={false}`.
 
-6. **Change 6** — Replaced `.pq-metric-copy span` and `.pq-metric-copy strong` with three new classes: `.pq-metric-value`, `.pq-metric-label`, `.pq-metric-sub`.
+### `src/__tests__/kpi-materials-analytics.test.jsx`
 
-7. **Change 7** — Added `.pq-metric-glow` rule (absolute positioned circle element) after the hover rule block.
+- `'genera exactamente 2 data points...'` → now expects `toHaveLength(7)`, checks index 0 and 6 for names.
+- `'asigna los valores correctos...'` → checks `chartData[0]` and `chartData[6]` instead of index 1.
+- `'incluye la serie "Periodo anterior"...'` → checks index 0 and 6 instead of index 1.
+- `'el toggle de chart type...'` → all `.toHaveLength(2)` changed to `.toHaveLength(7)`, test name updated.
+- Subtitle test unchanged.
 
-### File 2: `src/pages/page-quote.jsx`
+## Test results
 
-8. **Change 8** — Added `CARD_ACCENTS` array with 5 color configs. Updated `metrics` array to include `accentIdx` and `sub` properties. Added `MetricCard` component function that renders icon, value, label, sub text, and glow circle with per-card accent colors.
+All 10 tests pass.
 
-9. **Change 9** — Replaced the inline `<article>` rendering in `.pq-metrics-grid` with `<MetricCard>` component usage via `.map()`.
+## What to focus on
 
-### What to test
-
-- All 5 metric cards render with correct values and labels
-- Each card has a distinct color accent (navy, amber, emerald, violet, cyan)
-- Glow circle is visible but subtle (positioned top-right of each card)
-- Sub-text ("Activas en caja", "Requieren seguimiento", etc.) appears in each card
-- Cards have no hover lift effect (flat interaction)
-- Order card hover behavior is unchanged
-- No regressions in other Quote module features (filters, modals, credit section)
+- The easing curve (easeInOutQuad) produces smooth S-shaped transitions — verify visually in the browser that the curve looks natural between "Mes anterior" and "Mes actual".
+- Tooltip behavior with intermediate points (they have empty `name` labels but visible `Materiales` values).
+- All 3 chart types (area, line, bar) render correctly with the new 7-point data.

@@ -48,4 +48,14 @@ export function getComparisonColor(current, previous) {
   return interpolateColor(COMPARISON_COLORS.flat, COMPARISON_COLORS.up, difference / 10)
 }
 
+export function getPeakComparisonColor(current, previousPeak) {
+  const peak = Number(previousPeak) || 0
+  if (peak <= 0) return COMPARISON_COLORS.flat
+
+  const difference = getComparisonDelta(current, peak)
+  if (difference <= -40) return COMPARISON_COLORS.down
+  if (difference >= 10) return COMPARISON_COLORS.up
+  return COMPARISON_COLORS.flat
+}
+
 export { NEGATIVE_COMPARISON_SCALE }

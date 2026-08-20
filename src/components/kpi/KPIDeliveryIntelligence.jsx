@@ -30,6 +30,7 @@ function getDateBoundsForPeriod(period, customDateFrom, customDateTo) {
   if (period === 'today') from.setHours(0, 0, 0, 0)
   else if (period === 'week') from.setDate(from.getDate() - from.getDay())
   else if (period === 'year') { from.setMonth(0, 1); from.setDate(1) }
+  else if (period === 'general') { from.setFullYear(1970, 0, 1); from.setHours(0, 0, 0, 0) }
   else from.setDate(1)
   return { date_from: from.toISOString(), date_to: to.toISOString() }
 }
@@ -59,6 +60,7 @@ function getChartBounds(chartPeriod, chartCustom, chartDateFrom, chartDateTo) {
 function getPeriodLabel(period, customDateFrom, customDateTo) {
   if (period === 'today') return 'Hoy'
   if (period === 'week') return 'Esta semana'
+  if (period === 'general') return 'Todo el historial'
   if (period === 'year') return `${new Date().getFullYear()}`
   if (period === 'custom' && customDateFrom && customDateTo) {
     return `${new Date(customDateFrom).toLocaleDateString('es-DO')} - ${new Date(customDateTo).toLocaleDateString('es-DO')}`

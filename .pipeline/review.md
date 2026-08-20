@@ -1,103 +1,145 @@
-# Final Comprehensive Review — Production & Delivery Intelligence
+# Review: Smooth Curve for Evolution Chart
 
-## VERDICT: NEEDS WORK
+## VERDICT: SHIP
 
-One functional bug and one code quality issue remain. All structure, imports, hooks, and data flows are otherwise correct.
-
----
-
-## 1. Backend `server/kpi-data-handler.js` — ALL CASES PRESENT ✅
-
-| Case | Lines | Key Data |
-|------|-------|----------|
-| `production_overview` | 1155–1229 | area ranking, trend (by area×date), comparison |
-| `production_area_detail` | 1231–1303 | employee ranking, bottlenecks (>3d), pie data |
-| `production_employee_detail` | 1305–1360 | `files_by_area`, daily trend, status breakdown |
-| `production_employee_ranking` | 1362–1425 | area filtering via `area_code`, rank, pct |
-| `production_employee_activity` | 1427–1472 | order_events + file_events, paginated |
-| `production_daily_trend` | 1474–1497 | completed files by area×date |
-| `delivery_metrics` | 1503–1591 | user ranking, `on_time_rate`, `avg_delivery_time_days`, trend |
-| `delivery_detail` | 1593–1676 | payment breakdown, comparison, `vs_team` |
-| `delivery_profile` | 1678–1729 | `top_clients`, `materials`, `order_frequency` |
-| `delivery_daily_trend` | 1731–1755 | delivered + pending by date |
-
-No issues. All required parameters validated, error handling consistent.
+The interpolation feature is mathematically correct, edge cases are handled, and the visual smooth-curve approach is sound. Previous review's `hasComp` bug has been fixed (line 421 now uses `evoComparison`). All 10 tests pass. Minor code quality notes below — none are blocking.
 
 ---
 
-## 2. `KPIProductionIntelligence.jsx` — ✅ CORRECT
+## 1. `interpolatePoints` — Correct
 
-| View | Renders | Status |
-|------|---------|--------|
-| GlobalView | 4 hero cards, area ranking cards (click → area detail), LineChart with period selector, comparison | ✅ |
-| AreaDetailView | 4 area hero cards, employee ranking list (click → employee detail), PieChart (status), bottlenecks list | ✅ |
-| EmployeeDetailView | 4 employee hero cards, PieChart (status), BarChart (files by area), activity feed | ✅ |
+**Math verified:**
+- `interpolatePoints(15, 23)` → `[15, 15, 17, 19, 21, 23, 23]` — first=15, last=23 ✓
+- `interpolatePoints(10, 10)` → `[10, 10, 10, 10, 10, 10, 10]` — flat, correct ✓
+- `interpolatePoints(0, 0)` → `[0, 0, 0, 0, 0, 0, 0]` — flat, correct ✓
+- `interpolatePoints(0, 15)` → `[0, 1, 3, 8, 12, 14, 15]` — smooth S-curve ✓
 
-- **Imports**: `useState`, `useEffect`, `useCallback`, `useMemo`, recharts components, `Icons`, `formatNumber`, `formatDays`, `adminApiFetch` — all used ✅
-- **No unused variables** ✅
-- **Hook order correct** (useState → useCallback → useMemo → useEffect) ✅
-- **All props passed correctly** through navigation chain ✅
+The easeInOutQuad formula is standard: `t < 0.5 ? 2t² : 1 - (-2t+2)²/2`. It produces 0 at t=0, 1 at t=1, and a smooth S-curve in between.
 
----
+**Edge cases:**
+- startVal === endVal: All 7 points equal — flat line. No crash. ✓
+- Both zero: All zeros. ✓
+- Negative values: `Math.round(-5 + (5-(-5)) * ease)` produces correct negative-to-positive transitions. ✓
 
-## 3. `KPIDeliveryIntelligence.jsx` — 1 BUG
-
-| View | Renders | Status |
-|------|---------|--------|
-| GlobalView | 4 hero cards, user ranking with metric selector (click → detail), LineChart, comparison | ⚠️ |
-| DeliveryDetailView | 4 hero cards, trend LineChart, 2× PieCharts (status + payment), top clients, materials, alerts, comparison | ✅ |
-
-- **Imports**: all used ✅
-- **Hook order correct** ✅
-- **No unused variables** ✅
+**Performance:** Called inside `useMemo` with proper dependencies `[evoMatKey, evoMonths, evoSummary, evoComparison, evoMeta.date_from, evoMeta.date_to]`. Lightweight (7 iterations, no allocations beyond the return array). ✓
 
 ---
 
-### BUG: Discarded `delivery_daily_trend` fetch result in GlobalView (lines 127–139)
+## 2. EvoTick — Correct
 
 ```js
-useEffect(() => {
-    let cancelled = false
-    async function fetchTrend() {
-      setLoadingTrend(true)
-      const bounds = getChartBounds()
-      try {
-        await adminApiFetch('/api/kpi-data', { action: 'delivery_daily_trend', ...bounds })
-        // ^^^ Result discarded — no state setter called
-      } catch { /* ignore */ }
-      if (!cancelled) setLoadingTrend(false)
-    }
-    fetchTrend()
-    return () => { cancelled = true }
-  }, [getChartBounds])
+const EvoTick = ({ x, y, payload }) => {
+  if (!payload?.value) return null
+  return <text x={x} y={y + 12} textAnchor="middle" fill="#71809a" fontSize={11}>{payload.value}</text>
+}
 ```
 
-**Impact:**
-1. **Chart period selector is non-functional.** When user clicks 7d/1m/3m/6m/Personalizar, `getChartBounds` changes → this effect fires → loading spinner flashes → but the chart data comes from `data.trend` (the `delivery_metrics` overview), NOT from this fetch. The chart always shows the same period data.
-2. **Wasted API call** on every chart period change (response is thrown away).
-3. **Misleading UX** — spinner implies data is being filtered when it isn't.
-
-**Fix:** Add a `trendData` state, store the result, and use it in the LineChart. Alternatively, remove the unused fetch and `loadingTrend` state entirely, since the chart works fine with `delivery_metrics` data (matching the production pattern).
-
-**Preferred fix (remove dead code):** Delete lines 127–139, delete `loadingTrend`/`setLoadingTrend` state (line 67), and remove the `loadingTrend` conditional at line 228. This eliminates the wasted API call and misleading spinner.
+- For intermediate points: `payload.value` is `''` (empty string, falsy) → returns null → no tick label rendered. ✓
+- For "Mes anterior" / "Mes actual": `payload.value` is truthy → renders label. ✓
+- `tickLine={false}` and `axisLine={false}` on all 3 XAxis instances — clean axis styling. ✓
 
 ---
 
-## 4. Integration `KPIUserAnalytics.jsx` — ✅ CORRECT
+## 3. `evoData` Return — Correct
 
-- `KPIProductionIntelligence` imported (line 8) ✅
-- `KPIDeliveryIntelligence` imported (line 9) ✅
-- Production section with header (lines 294–302) ✅
-- Delivery section with header (lines 304–312) ✅
-- Both receive `period`, `customDateFrom`, `customDateTo` props ✅
+- 7-point array with `name: ''` for intermediates. ✓
+- `isIntermediate` flag on each point (currently unused — see note below). ✓
+- `'Período anterior'` series interpolated with same 7 points when `hasComp` is true. ✓
+- `hasComp` in both the memo (line 218) and the chart IIFE (line 421) now use the same source: `evoComparison`. Previous review's mismatch bug is fixed. ✓
 
 ---
 
-## 5. Remaining Issues Summary
+## 4. Chart Rendering — All 3 Types Work
 
-| # | Severity | File | Issue | Fix |
-|---|----------|------|-------|-----|
-| 1 | **Functional** | `KPIDeliveryIntelligence.jsx` | `delivery_daily_trend` fetch result discarded in GlobalView — chart period selector non-functional, wasted API call | Remove the dead fetch + `loadingTrend` state (lines 67, 127–139, 228), OR store result and use it |
-| 2 | Cosmetic | `KPIDeliveryIntelligence.jsx` | `DeliveryDetailView` line 460 labels `ord.pending` as "Completadas" — semantically incorrect (these are orders pending delivery, not completed) | Rename to "Pendientes de Entrega" or "Listas para Entregar" |
+| Type | Data Prop | Series | Status |
+|------|-----------|--------|--------|
+| BarChart | `data={evoData}` | `<Bar dataKey="Materiales">` + conditional `<Bar dataKey="Período anterior">` | ✓ |
+| LineChart | `data={evoData}` | `<Line dataKey="Materiales">` + conditional `<Line dataKey="Período anterior">` | ✓ |
+| AreaChart | `data={evoData}` | `<Area dataKey="Materiales">` + conditional `<Area dataKey="Período anterior">` | ✓ |
 
-**Note:** The production GlobalView has the same discarded-fetch pattern for `production_daily_trend` (identified in prior review, still present). Both should be fixed consistently — either remove both dead fetches or wire both up properly.
+**BarChart with 7 bars:** Each interpolated bar has a height proportional to its eased value. The visual result is a staircase pattern — semantically unusual for bar charts but acceptable as noted in the changes summary. No data corruption.
+
+---
+
+## 5. Tests — Adequate for This Feature
+
+| Test | What it verifies | Quality |
+|------|------------------|---------|
+| `toHaveLength(7)` | Correct interpolation count | ✓ Meaningful |
+| `chartData[0].name === 'Mes anterior'` | First point labeled | ✓ Meaningful |
+| `chartData[6].name === 'Mes actual'` | Last point labeled | ✓ Meaningful |
+| `chartData[0].Materiales === 15` | Start value correct | ✓ Meaningful |
+| `chartData[6].Materiales === 23` | End value correct | ✓ Meaningful |
+| `toHaveProperty('Período anterior')` | Comparison series exists | ✓ Meaningful |
+| Chart type toggle with 7 points | All 3 types work | ✓ Meaningful |
+
+**What's NOT tested** (acceptable for this change):
+- Intermediate point values (they're computed by a pure function, already verified above)
+- Intermediate point names being empty strings
+- `isIntermediate` flag values
+- Tooltip behavior with intermediate points
+
+---
+
+## 6. Minor Code Quality Notes (Non-blocking)
+
+### 6a. `EvoTick` defined inside render IIFE (lines 424-427)
+
+**Issue:** `EvoTick` is created inside the `(() => {...})()` IIFE that runs on every render. This means a **new function reference** for `tick={<EvoTick />}` is generated each render. Recharts' XAxis may see a new `tick` prop and re-render/re-measure.
+
+**Impact:** Minor performance — unlikely to be noticeable since the chart only re-renders when data changes. But it's wasteful.
+
+**Fix (optional):** Hoist `EvoTick` outside the IIFE (or to module level):
+```js
+// Before the component:
+const EvoTick = ({ x, y, payload }) => {
+  if (!payload?.value) return null
+  return <text x={x} y={y + 12} textAnchor="middle" fill="#71809a" fontSize={11}>{payload.value}</text>
+}
+```
+
+### 6b. `isIntermediate` flag is dead metadata
+
+The `isIntermediate: i > 0 && i < currentPoints.length - 1` property is set on every data point (line 301) but **never read** anywhere in the rendering code, tests, or tooltip. It's harmless but adds unnecessary payload to each data point.
+
+**Fix (optional):** Remove it, or keep it if future tooltip customization is planned.
+
+### 6c. Verbose IIFEs for shifted month keys (lines 270-279)
+
+Two immediate-invoked arrow functions compute `shiftedPrevMonth` and `shiftedCurrentMonth`:
+```js
+const shiftedPrevMonth = (() => {
+  const d = new Date(prevMonthKey + '-01')
+  d.setMonth(d.getMonth() - compMonthShift)
+  return d.toISOString().slice(0, 7)
+})()
+```
+
+Since `compMonthShift` is always `1` (hardcoded `evoMonths = 1`), this could be simplified, but the current form is correct and future-proof if `evoMonths` changes.
+
+### 6d. Legend uses `summary` instead of `evoSummary` (line 477)
+
+```js
+findKpiMaterialByKey(summary, evoMatKey)?.name
+```
+
+This looks up the material name from `summary` (main KPI data) but the chart uses `evoSummary` (evo query). If a material exists in one but not the other, the legend would show `undefined`. This is a **pre-existing inconsistency** from the monthly comparison code, not introduced by the smooth curve change. Noted but not blocking.
+
+---
+
+## 7. Previous Review Issues — Status
+
+| Previous Issue | Status |
+|----------------|--------|
+| `hasComp` data source mismatch (line 415→421) | **FIXED** ✓ |
+| Dead code: `rangeFrom`/`dateFrom` in evoData | **FIXED** ✓ (removed) |
+| Dead code: `evoCustom` constant | **FIXED** ✓ (removed) |
+| Test gaps: edge cases | **Still open** — no tests for no-comparison, material filter, or distinct filter in evo chart |
+
+---
+
+## Summary
+
+The smooth curve interpolation is **correct and well-implemented**. The `interpolatePoints` function produces mathematically sound values with proper easeInOutQuad easing, edge cases are handled, and the EvoTick correctly hides intermediate labels. The previous review's `hasComp` bug has been fixed. All 10 tests pass with no regressions.
+
+The remaining items (EvoTick hoisting, dead `isIntermediate` flag, legend data source) are non-blocking quality improvements that can be addressed in follow-up work.

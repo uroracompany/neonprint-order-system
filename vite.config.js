@@ -24,7 +24,7 @@ import {
   handleImportRemoteFile,
   handleInitiateFileUpload,
 } from './server/storage-gateway.js'
-function createApiHandler(path, handler) {
+function createApiHandler(path, handler, { timeoutMs = 20000 } = {}) {
   return {
     name: `api-handler-${path}`,
     configureServer(server) {
@@ -53,7 +53,7 @@ function createApiHandler(path, handler) {
             }
             const body = rawBody ? JSON.parse(rawBody) : {};
             const authHeader = req.headers["authorization"] || "";
-            const HANDLER_TIMEOUT_MS = 20000;
+            const HANDLER_TIMEOUT_MS = timeoutMs;
 
             const result = await Promise.race([
               handler(body, { ...env, authHeader }),
@@ -187,7 +187,10 @@ return {
       createApiHandler("/api/admin-set-user-status", handleAdminSetUserStatus),
       createApiHandler("/api/get-user-email", handleGetUserEmail),
       createApiHandler("/api/change-user-password", handleChangeUserPassword),
-      createApiHandler("/api/kpi-data", handleKpiData),
+      // The executive KPI aggregates several independent analytics sources.
+      // Keep the normal API guardrail for all endpoints, while allowing this
+      // one complete local request to finish instead of being cut off at 20s.
+      createApiHandler("/api/kpi-data", handleKpiData, { timeoutMs: 60000 }),
       createApiHandler("/api/seller-profile", handleSellerProfile),
       createApiHandler("/api/designer-profile", handleDesignerProfile),
       createApiHandler("/api/quote-profile", handleQuoteProfile),
