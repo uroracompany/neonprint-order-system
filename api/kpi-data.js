@@ -1,4 +1,4 @@
-import { handleKpiData } from '../../server/kpi-data-handler.js'
+import { handleKpiData } from '../server/kpi-data-handler.js'
 import { rateLimit } from "../server/rateLimit.js";
 
 export default async function handler(req, res) {
