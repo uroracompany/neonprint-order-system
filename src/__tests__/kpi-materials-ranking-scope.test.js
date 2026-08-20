@@ -6,7 +6,7 @@ import { getMaterialGlobalBounds, MATERIAL_GLOBAL_START } from '../utils/kpiHelp
 
 const readProjectFile = path => readFileSync(join(process.cwd(), path), 'utf8')
 
-describe('ranking de materiales: alcance global por defecto con filtro global/período', () => {
+describe('ranking de materiales: alcance temporal propio', () => {
   const component = () => readProjectFile('src/components/kpi/KPIMaterialsAnalytics.jsx')
 
   it('define los límites globales con el ancla de todo el historial y comparación vacía', () => {
@@ -20,24 +20,23 @@ describe('ranking de materiales: alcance global por defecto con filtro global/pe
   })
 
   it('consulta el histórico global mediante useKPISingle con los límites compartidos', () => {
-    expect(component()).toContain("useKPISingle('materials_analytics', getMaterialGlobalBounds(), userId, rankingScope === 'global')")
+    expect(component()).toContain("const rankingQuery = useKPISingle('materials_analytics', rankingBounds, userId)")
+    expect(component()).toContain("if (rankingPeriod === 'general') return getMaterialGlobalBounds()")
     expect(component()).toContain("import { useKPISingle } from '../../hooks/useKPI'")
   })
 
-  it('muestra el ranking global por defecto y ofrece el filtro global/período', () => {
-    expect(component()).toContain("useState('global')")
-    expect(component()).toContain('aria-label="Alcance del ranking de materiales"')
-    expect(component()).toContain("aria-pressed={rankingScope === 'global'}")
-    expect(component()).toContain("aria-pressed={rankingScope === 'period'}")
-    expect(component()).toContain("onClick={() => changeRankingScope('global')}")
-    expect(component()).toContain("onClick={() => changeRankingScope('period')}")
-    expect(component()).toContain('rankingScope === \'global\' ? \'Materiales con mayor número de referencias en todo el historial registrado.')
+  it('inicia en General y ofrece el filtro temporal del ranking', () => {
+    expect(component()).toContain("useState('general')")
+    expect(component()).toContain('const RANKING_PERIOD_OPTIONS')
+    expect(component()).toContain('label="Período del ranking"')
+    expect(component()).toContain('value={rankingPeriod}')
+    expect(component()).toContain('onChange={changeRankingPeriod}')
   })
 
   it('deriva resumen, total, comparación y búsqueda del alcance activo', () => {
-    expect(component()).toContain('rankingGlobalQuery.data?.period?.summary || EMPTY_ARRAY')
-    expect(component()).toContain('Number(rankingGlobalQuery.data?.period?.material_references || 0)')
-    expect(component()).toContain('rankingGlobalQuery.data?.comparison?.summary || null')
+    expect(component()).toContain('rankingAnalytics?.period?.summary || EMPTY_ARRAY')
+    expect(component()).toContain('Number(rankingAnalytics?.period?.material_references || 0)')
+    expect(component()).toContain('rankingAnalytics?.comparison?.summary || null')
     expect(component()).toContain('const hasRankingComparison = Boolean(rankingPrevSummary?.length)')
     expect(component()).toContain('filterKpiMaterials(rankingSummary, deferredMaterialSearch)')
   })
@@ -48,14 +47,16 @@ describe('ranking de materiales: alcance global por defecto con filtro global/pe
   })
 
   it('maneja carga y error del histórico global sin mezclar datos del período', () => {
-    expect(component()).toContain('Cargando histórico de materiales…')
-    expect(component()).toContain('No fue posible obtener el histórico global de materiales.')
-    expect(component()).toContain('onClick={rankingGlobalQuery.refresh}')
+    expect(component()).toContain('Cargando ranking de materiales…')
+    expect(component()).toContain('No fue posible actualizar el ranking de materiales.')
+    expect(component()).toContain('onClick={rankingQuery.refresh}')
   })
 
-  it('mantiene el detalle del material en el período del módulo para el modal', () => {
-    expect(component()).toContain('const detailMaterial = detailMaterialKey ? findKpiMaterialByKey(summary, detailMaterialKey) : null')
-    expect(component()).toContain('totalReferences={totalCurrent}')
+  it('resuelve el detalle con el mismo dataset del ranking', () => {
+    expect(component()).toContain('const detailMaterial = detailMaterialKey ? findKpiMaterialByKey(rankingSummary, detailMaterialKey) : null')
+    expect(component()).toContain('findKpiMaterialByKey(rankingPrevSummary || EMPTY_ARRAY, detailMaterialKey)')
+    expect(component()).toContain('totalReferences={rankingTotal}')
+    expect(component()).toContain('periodMeta={rankingAnalytics?.meta || materialMeta}')
   })
 
   it('comparte los límites globales con el modal de detalle sin duplicar el ancla', () => {

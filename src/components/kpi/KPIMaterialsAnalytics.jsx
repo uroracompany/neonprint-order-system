@@ -388,9 +388,13 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
   if (!data) return null
 
   const selectedMat = selectedMaterialKey !== ALL_KEY ? findKpiMaterialByKey(filteredSummary, selectedMaterialKey) : null
-  const detailMaterial = detailMaterialKey ? findKpiMaterialByKey(summary, detailMaterialKey) : null
+  // El detalle se abre desde el ranking, cuyo rango puede diferir del resumen
+  // superior del KPI. Resolverlo desde la misma consulta evita que un material
+  // histórico quede en null al no haber actividad en el período del banner.
+  const detailMaterial = detailMaterialKey ? findKpiMaterialByKey(rankingSummary, detailMaterialKey) : null
   const detailPreviousMaterial = detailMaterial
-    ? materialComparison?.summary?.find(item => item.name === detailMaterial.name) || null
+    ? findKpiMaterialByKey(rankingPrevSummary || EMPTY_ARRAY, detailMaterialKey)
+      || rankingPrevSummary?.find(item => item.name === detailMaterial.name) || null
     : null
   const rankingTotalPages = Math.max(1, Math.ceil(filteredSummary.length / PAGE_SIZE))
   const safeRankingPage = Math.min(page, rankingTotalPages - 1)
@@ -992,9 +996,9 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
       <MaterialDetailModal
         material={detailMaterial}
         previousMaterial={detailPreviousMaterial}
-        totalReferences={totalCurrent}
+        totalReferences={rankingTotal}
         userId={userId}
-        periodMeta={materialMeta}
+        periodMeta={rankingAnalytics?.meta || materialMeta}
         onClose={() => {
           const materialKey = detailMaterialKey
           setDetailMaterialKey(null)

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   evolutionKpiSingle: { data: null, loading: true, fetching: false, isPlaceholderData: false, error: null, refresh: vi.fn() },
   chartDataCapture: { current: null },
   chartCalls: [],
+  detailModalProps: { current: null },
 }))
 
 vi.mock('recharts', () => ({
@@ -34,7 +35,12 @@ vi.mock('../hooks/useKPI', () => ({
   },
 }))
 
-vi.mock('../components/kpi/MaterialDetailModal', () => ({ default: () => null }))
+vi.mock('../components/kpi/MaterialDetailModal', () => ({
+  default: props => {
+    mocks.detailModalProps.current = props
+    return null
+  },
+}))
 vi.mock('../components/kpi/MaterialsComparisonPanel', () => ({ default: () => null }))
 
 const materialRow = (name, id, referenceCount, totalOrders) => ({
@@ -79,6 +85,7 @@ const data = {
 
 beforeEach(() => {
   mocks.useKPISingle.mockClear()
+  mocks.detailModalProps.current = null
   mocks.kpiSingle = { data: { period: { summary: globalRows, material_references: 21 }, comparison: { summary: [] } }, loading: false, fetching: false, isPlaceholderData: false, error: null, refresh: vi.fn() }
   mocks.evolutionKpiSingle = { data: data.materials_analytics, loading: false, fetching: false, isPlaceholderData: false, error: null, refresh: vi.fn() }
 })
@@ -107,6 +114,32 @@ describe('KPIMaterialsAnalytics ranking render', () => {
 
     expect(screen.getAllByText('48%').length).toBeGreaterThan(0)
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+  })
+
+  it('abre el detalle desde el material y los metadatos del ranking, aunque no exista en el resumen superior', () => {
+    const rankingMeta = { date_from: '1970-01-01T00:00:00.000Z', date_to: '2026-08-21T00:00:00.000Z', timezone: 'UTC' }
+    mocks.kpiSingle = {
+      data: {
+        period: { summary: globalRows, material_references: 21 },
+        comparison: { summary: [materialRow('Acrilico', 1, 7, 7)] },
+        meta: rankingMeta,
+      },
+      loading: false,
+      fetching: false,
+      isPlaceholderData: false,
+      error: null,
+      refresh: vi.fn(),
+    }
+
+    render(<KPIMaterialsAnalytics data={data} userId="user-1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalle de Acrilico' }))
+
+    expect(mocks.detailModalProps.current).toMatchObject({
+      material: expect.objectContaining({ name: 'Acrilico' }),
+      previousMaterial: expect.objectContaining({ name: 'Acrilico', reference_count: 7 }),
+      totalReferences: 21,
+      periodMeta: rankingMeta,
+    })
   })
 
   it('consulta Mensual, Semanal y Hoy únicamente para el ranking', () => {
