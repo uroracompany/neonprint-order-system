@@ -373,7 +373,9 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
   const heatmapData = useMemo(() => {
     const monthSet = new Set()
     const matMonthMap = {}
-    summary.forEach(m => {
+    // El Heatmap es una vista del ranking: debe usar su consulta temporal
+    // independiente y no el resumen del banner superior.
+    rankingSummary.forEach(m => {
       matMonthMap[m.name] = {}
       ;(m.monthly_trend || []).forEach(t => {
         monthSet.add(t.month)
@@ -381,9 +383,9 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
       })
     })
     const months = [...monthSet].sort()
-    const topMats = summary.slice(0, 6)
+    const topMats = rankingSummary.slice(0, 6)
     return { months, materials: topMats, map: matMonthMap }
-  }, [summary])
+  }, [rankingSummary])
 
   if (!data) return null
 

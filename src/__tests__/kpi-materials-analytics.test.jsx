@@ -116,6 +116,33 @@ describe('KPIMaterialsAnalytics ranking render', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
 
+  it('construye el Heatmap con el historial del ranking y no con el resumen mensual del banner', () => {
+    const globalRowsWithMonthlyTrend = [
+      { ...globalRows[0], monthly_trend: [{ month: '2026-06', count: 1 }, { month: '2026-07', count: 9 }] },
+      { ...globalRows[1], monthly_trend: [{ month: '2026-06', count: 1 }, { month: '2026-07', count: 9 }] },
+      { ...globalRows[2], monthly_trend: [{ month: '2026-08', count: 1 }] },
+    ]
+    mocks.kpiSingle = {
+      data: { period: { summary: globalRowsWithMonthlyTrend, material_references: 21 }, comparison: { summary: [] } },
+      loading: false,
+      fetching: false,
+      isPlaceholderData: false,
+      error: null,
+      refresh: vi.fn(),
+    }
+
+    render(<KPIMaterialsAnalytics data={data} userId="user-1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Heatmap' }))
+
+    expect(screen.getByText('Top 3')).toBeInTheDocument()
+    expect(screen.getByText('Acrilico')).toBeInTheDocument()
+    expect(screen.getByText('Adhesivo')).toBeInTheDocument()
+    expect(screen.getAllByText('Banner').length).toBeGreaterThan(1)
+    expect(screen.getByText('2026-06')).toBeInTheDocument()
+    expect(screen.getByText('2026-07')).toBeInTheDocument()
+    expect(screen.getByText('2026-08')).toBeInTheDocument()
+  })
+
   it('abre el detalle desde el material y los metadatos del ranking, aunque no exista en el resumen superior', () => {
     const rankingMeta = { date_from: '1970-01-01T00:00:00.000Z', date_to: '2026-08-21T00:00:00.000Z', timezone: 'UTC' }
     mocks.kpiSingle = {
