@@ -143,6 +143,32 @@ describe('KPIMaterialsAnalytics ranking render', () => {
     expect(screen.getByText('2026-08')).toBeInTheDocument()
   })
 
+  it('construye Alertas con los materiales y cancelaciones del ranking, no con el banner mensual', () => {
+    const globalRowsWithAlerts = [
+      { ...globalRows[0], cancelled_orders: 2 },
+      { ...globalRows[1], cancelled_orders: 0 },
+      { ...globalRows[2], cancelled_orders: 0 },
+    ]
+    mocks.kpiSingle = {
+      data: { period: { summary: globalRowsWithAlerts, material_references: 21 }, comparison: { summary: [] } },
+      loading: false,
+      fetching: false,
+      isPlaceholderData: false,
+      error: null,
+      refresh: vi.fn(),
+    }
+
+    render(<KPIMaterialsAnalytics data={data} userId="user-1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Alertas' }))
+
+    const featuredCard = screen.getByText('Materiales más referenciados').closest('.kpi-materials-alert-card')
+    const cancellationsCard = screen.getByText('Cancelaciones auditables por material').closest('.kpi-materials-alert-card')
+    expect(featuredCard).toHaveTextContent('Acrilico')
+    expect(featuredCard).toHaveTextContent('Adhesivo')
+    expect(cancellationsCard).toHaveTextContent('Acrilico')
+    expect(cancellationsCard).not.toHaveTextContent('No hay cancelaciones auditables por material')
+  })
+
   it('abre el detalle desde el material y los metadatos del ranking, aunque no exista en el resumen superior', () => {
     const rankingMeta = { date_from: '1970-01-01T00:00:00.000Z', date_to: '2026-08-21T00:00:00.000Z', timezone: 'UTC' }
     mocks.kpiSingle = {

@@ -356,18 +356,18 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
   }, [evoMatKey, evoPeriod, evolutionMaterialOptions])
 
   const starMaterials = useMemo(() =>
-    summary.filter(m => m.total_orders >= 1)
+    rankingSummary.filter(m => m.total_orders >= 1)
       .sort((a, b) => b.total_orders - a.total_orders)
       .slice(0, 5),
-    [summary]
+    [rankingSummary]
   )
 
   const highCancelMaterials = useMemo(() =>
-    (periodMetrics.cancellation_by_material || EMPTY_ARRAY)
-      .filter(m => Number(m.cancelled_orders) > 0)
-      .sort((a, b) => Number(b.cancelled_orders) - Number(a.cancelled_orders))
+    rankingSummary
+      .filter(material => Number(material.cancelled_orders) > 0)
+      .sort((first, second) => Number(second.cancelled_orders) - Number(first.cancelled_orders))
       .slice(0, 5),
-    [periodMetrics.cancellation_by_material]
+    [rankingSummary]
   )
 
   const heatmapData = useMemo(() => {
