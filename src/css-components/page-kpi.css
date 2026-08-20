@@ -10387,6 +10387,9 @@
 
 /* Executive workspace controls and lower-detail card family. */
 .kpi-banner {
+  position: relative;
+  z-index: 2;
+  overflow: visible;
   border: 1px solid #dbe3ef;
   background: #ffffff;
   box-shadow: 0 10px 28px rgba(15, 30, 64, .055);
@@ -10437,10 +10440,11 @@
 .kpi-banner-meta-badge.is-updated { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 
 .kpi-banner-right { align-items: flex-end; }
-.kpi-banner-period-control { display: grid; gap: 6px; min-width: 186px; }
+.kpi-banner-period-control { position: relative; z-index: 3; display: grid; gap: 6px; min-width: 186px; }
 .kpi-banner-period-control .kpi-label { margin: 0; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .kpi-banner-period-control .pp-filter-select-wrap { width: 100%; }
 .kpi-banner-period-control .pp-filter-select-trigger { min-height: 42px; }
+.kpi-banner-period-control .pp-filter-dropdown { z-index: 4; }
 
 .kpi-executive-overview .kpi-pipeline-filters {
   display: grid;
