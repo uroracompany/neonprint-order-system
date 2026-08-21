@@ -11192,6 +11192,7 @@
 .kpi-material-detail-metric-label { display: inline-flex; align-items: center; gap: 6px; color: #71809a; font-size: 10px; font-weight: 700; line-height: 1.2; text-transform: uppercase; letter-spacing: .055em; }
 .kpi-material-detail-metric-label svg { flex: 0 0 auto; color: #2454d9; }
 .kpi-material-detail-metric > strong { overflow-wrap: anywhere; color: #0f1e40; font-size: 19px; font-weight: 800; line-height: 1.3; }
+.kpi-material-detail-metric > small { color: #71809a; font-size: 10px; font-weight: 600; line-height: 1.35; }
 .kpi-material-detail-metric.is-positive > strong { color: #16a34a; }
 .kpi-material-detail-metric.is-negative > strong { color: #dc2626; }
 .kpi-material-detail-metric.is-neutral > strong { color: #64748b; }

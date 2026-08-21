@@ -23,7 +23,7 @@ describe('modal de material: rendimiento global por defecto con períodos select
     expect(modal()).toContain("{ value: 'previous', label: 'Período anterior' }")
     expect(modal()).toContain("{ value: 'day', label: 'Fecha específica' }")
     expect(modal()).toContain("{ value: 'range', label: 'Rango de fechas' }")
-    expect(modal()).toContain("'Sin comparación'")
+    expect(modal()).toContain("label=\"Cancelación\"")
     expect(modal()).toContain('Rendimiento global del material: todo el historial registrado.')
   })
 
@@ -33,7 +33,7 @@ describe('modal de material: rendimiento global por defecto con períodos select
   })
 
   it('recibe el usuario y el meta del período desde el panel de materiales', () => {
-    expect(panel()).toContain('periodMeta={materialMeta}')
+    expect(panel()).toContain('periodMeta={rankingAnalytics?.meta || materialMeta}')
     expect(modal()).toContain('periodMeta,')
     expect(modal()).toContain('userId,')
   })

@@ -67,11 +67,12 @@ const formatTrendDay = (value) => {
   return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short' }).format(new Date(year, month - 1, day))
 }
 
-function Metric({ label, value, tone = 'default', icon }) {
+function Metric({ label, value, tone = 'default', icon, detail }) {
   return (
     <div className={`kpi-material-detail-metric is-${tone}`}>
       <span className="kpi-material-detail-metric-label">{icon}{label}</span>
       <strong>{value}</strong>
+      {detail && <small>{detail}</small>}
     </div>
   )
 }
@@ -196,20 +197,6 @@ export default function MaterialDetailModal({ material, previousMaterial, totalR
     }
   }, [detailQuery.data, detailQuery.error, detailQuery.fetching, detailQuery.isPlaceholderData, detailQuery.loading, detailQuery.refresh, material, periodMeta, periodMode, previousMaterial, requestBounds, totalReferences])
 
-  const trend = useMemo(() => {
-    const current = Number(resolved.material?.reference_count ?? resolved.material?.total_orders ?? 0)
-    const previous = Number(resolved.previousMaterial?.reference_count ?? resolved.previousMaterial?.total_orders ?? 0)
-    if (!previous) {
-      return periodMode === 'global'
-        ? { label: 'Sin comparación', tone: 'neutral' }
-        : current ? { label: 'Nuevo en el período', tone: 'positive' } : { label: 'Sin cambios', tone: 'neutral' }
-    }
-    const percent = Math.round(((current - previous) / previous) * 100)
-    return percent > 0
-      ? { label: `↑ +${percent}%`, tone: 'positive' }
-      : percent < 0 ? { label: `↓ ${percent}%`, tone: 'negative' } : { label: 'Sin cambios', tone: 'neutral' }
-  }, [periodMode, resolved.material, resolved.previousMaterial])
-
   const periodLabel = useMemo(() => {
     const timezone = resolved.meta?.timezone || 'UTC'
     const formatRange = value => new Intl.DateTimeFormat('es-DO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: timezone }).format(new Date(value))
@@ -247,6 +234,13 @@ export default function MaterialDetailModal({ material, previousMaterial, totalR
   const activeMaterial = resolved.material || material
   const references = Number(activeMaterial.reference_count ?? activeMaterial.total_orders ?? 0)
   const orders = Number(activeMaterial.total_orders || 0)
+  const cancelledOrders = Number.isFinite(Number(activeMaterial.cancelled_orders))
+    ? Math.max(0, Number(activeMaterial.cancelled_orders))
+    : 0
+  const cancellationPercentage = orders > 0 ? Math.round((cancelledOrders / orders) * 100) : 0
+  const cancellationDetail = orders > 0
+    ? `${formatNumber(cancelledOrders)} de ${formatNumber(orders)} órdenes canceladas`
+    : 'Sin órdenes registradas'
   const participation = resolved.totalReferences ? Math.round((references / resolved.totalReferences) * 100) : 0
   const trendData = Object.entries(activeMaterial.daily || {}).sort(([a], [b]) => a.localeCompare(b)).map(([day, count]) => ({ day, count }))
   const clients = activeMaterial.top_clients || EMPTY_ARRAY
@@ -304,7 +298,7 @@ export default function MaterialDetailModal({ material, previousMaterial, totalR
             <Metric label="Referencias" value={formatNumber(references)} icon={<Icons.Package size={15} />} />
             <Metric label="Órdenes" value={formatNumber(orders)} icon={<Icons.FileText size={15} />} />
             <Metric label="Participación" value={`${participation}%`} icon={<Icons.ChartArea size={15} />} />
-            <Metric label="Variación" value={trend.label} tone={trend.tone} icon={<Icons.ChartLine size={15} />} />
+            <Metric label="Cancelación" value={`${cancellationPercentage}%`} tone={cancelledOrders > 0 ? 'negative' : 'default'} icon={<Icons.AlertCircle size={15} />} detail={cancellationDetail} />
           </div>
 
           <div className="kpi-material-detail-distributions">

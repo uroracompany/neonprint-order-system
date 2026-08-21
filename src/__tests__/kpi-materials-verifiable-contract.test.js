@@ -22,6 +22,7 @@ describe('contrato verificable de KPI Materiales', () => {
 
     expect(sql).toContain("lower(coalesce(e.new_status, '')) = 'cancelled'")
     expect(sql).toContain("lower(coalesce(e.old_status, '')) <> 'cancelled'")
+    expect(sql).toContain('count(DISTINCT r.order_id) AS cancelled_orders')
     expect(sql).toContain("'cancellation_events_auditable'")
   })
 

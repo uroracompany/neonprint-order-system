@@ -35,6 +35,7 @@ const material = {
   normal_orders: 3,
   internal_design_orders: 1,
   external_design_orders: 4,
+  cancelled_orders: 1,
   daily: { '2026-08-01': 3, '2026-08-02': 5 },
   top_clients: [{ client_id: 'client-1', client_name: 'Cliente con un nombre muy extenso', count: 5 }],
   top_sellers: [],
@@ -62,6 +63,7 @@ const globalAnalytics = () => ({
         normal_orders: 10,
         internal_design_orders: 9,
         external_design_orders: 3,
+        cancelled_orders: 3,
         daily: { '2025-03-01': 2, '2026-01-10': 4 },
         top_clients: [{ client_id: 'c-global', client_name: 'Cliente Global', count: 5 }],
         top_sellers: [{ seller_id: 's-global', seller_name: 'Vendedor Global', count: 3 }],
@@ -100,7 +102,7 @@ describe('MaterialDetailModal', () => {
       'user-1',
       true,
     )
-    expect(screen.getByText('Sin comparación')).toBeInTheDocument()
+    expect(screen.getByText('Cancelación')).toBeInTheDocument()
     expect(screen.getByText('Cliente Global')).toBeInTheDocument()
     expect(screen.getByText('Vendedor Global')).toBeInTheDocument()
     expect(document.body.style.overflow).toBe('hidden')
@@ -112,6 +114,29 @@ describe('MaterialDetailModal', () => {
 
     expect(screen.getByText('12')).toBeInTheDocument()
     expect(screen.getByText('40%')).toBeInTheDocument()
+  })
+
+  it('reemplaza Variación por la cancelación del material activo', () => {
+    mocks.kpiSingle = { ...mocks.kpiSingle, data: globalAnalytics() }
+    render(<MaterialDetailModal {...baseModalProps} />)
+
+    expect(screen.getByText('Cancelación')).toBeInTheDocument()
+    expect(screen.getByText('27%')).toBeInTheDocument()
+    expect(screen.getByText('3 de 11 órdenes canceladas')).toBeInTheDocument()
+    expect(screen.queryByText('Variación')).not.toBeInTheDocument()
+    expect(screen.queryByText('Sin comparación')).not.toBeInTheDocument()
+  })
+
+  it('muestra cero y un detalle seguro cuando el material no tiene órdenes', () => {
+    const emptyMaterial = { ...material, total_orders: 0, reference_count: 0, cancelled_orders: 0, daily: {} }
+    mocks.kpiSingle = {
+      ...mocks.kpiSingle,
+      data: { ...globalAnalytics(), period: { ...globalAnalytics().period, summary: [emptyMaterial], material_references: 0 } },
+    }
+    render(<MaterialDetailModal {...baseModalProps} material={emptyMaterial} />)
+
+    expect(screen.getAllByText('0%')).toHaveLength(2)
+    expect(screen.getByText('Sin órdenes registradas')).toBeInTheDocument()
   })
 
   it('abre con barras y alterna a línea sin cambiar la consulta ni los datos de tendencia', () => {
