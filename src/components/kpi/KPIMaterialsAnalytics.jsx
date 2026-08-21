@@ -185,7 +185,6 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
   const [materialSearch, setMaterialSearch] = useState('')
   const deferredMaterialSearch = useDeferredValue(materialSearch)
   const [page, setPage] = useState(0)
-  const [detailTab, setDetailTab] = useState('ranking')
   const [compPage, setCompPage] = useState(0)
   const [evoMatKey, setEvoMatKey] = useState(ALL_KEY)
   const [evoPeriod, setEvoPeriod] = useState('month')
@@ -354,38 +353,6 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
     }
     return `Acumulado de referencias de materiales: ${periodLabel}.`
   }, [evoMatKey, evoPeriod, evolutionMaterialOptions])
-
-  const starMaterials = useMemo(() =>
-    rankingSummary.filter(m => m.total_orders >= 1)
-      .sort((a, b) => b.total_orders - a.total_orders)
-      .slice(0, 5),
-    [rankingSummary]
-  )
-
-  const highCancelMaterials = useMemo(() =>
-    rankingSummary
-      .filter(material => Number(material.cancelled_orders) > 0)
-      .sort((first, second) => Number(second.cancelled_orders) - Number(first.cancelled_orders))
-      .slice(0, 5),
-    [rankingSummary]
-  )
-
-  const heatmapData = useMemo(() => {
-    const monthSet = new Set()
-    const matMonthMap = {}
-    // El Heatmap es una vista del ranking: debe usar su consulta temporal
-    // independiente y no el resumen del banner superior.
-    rankingSummary.forEach(m => {
-      matMonthMap[m.name] = {}
-      ;(m.monthly_trend || []).forEach(t => {
-        monthSet.add(t.month)
-        matMonthMap[m.name][t.month] = t.count
-      })
-    })
-    const months = [...monthSet].sort()
-    const topMats = rankingSummary.slice(0, 6)
-    return { months, materials: topMats, map: matMonthMap }
-  }, [rankingSummary])
 
   if (!data) return null
 
@@ -709,18 +676,7 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
             <span className="kpi-section-fact-badge">{formatMaterialCount(filteredSummary.length)}</span>
         </div>
 
-        {/* ─── TABS: RANKING / HEATMAP / ALERTAS ─── */}
-        <div className="kpi-pipeline-view-toggle kpi-materials-detail-tabs" style={{ marginBottom: 16 }}>
-          {[['ranking', 'Ranking de Materiales'], ['heatmap', 'Heatmap'], ['alerts', 'Alertas']].map(([key, label]) => (
-            <button key={key} onClick={() => setDetailTab(key)}
-              className={`kpi-pipeline-view-btn ${detailTab === key ? 'active' : ''}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-      {/* ─── RANKING TAB ─── */}
-      {detailTab === 'ranking' && (
+      {/* ─── RANKING ─── */}
         <div className="kpi-card kpi-materials-ranking-card kpi-materials-detail-card" style={{ padding: 24 }}>
           <div className="kpi-filter-row kpi-materials-ranking-filter-bar" style={{ marginBottom: 16 }}>
               <KPISearchBox
@@ -849,116 +805,8 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
             </div>
           )}
         </div>
-      )}
 
-      {/* ─── HEATMAP TAB ─── */}
-      {detailTab === 'heatmap' && (
-        <div className="kpi-card kpi-materials-heatmap-card kpi-materials-detail-card" style={{ padding: 24 }}>
-          <div className="kpi-materials-panel-heading">
-            <div>
-              <span className="kpi-materials-panel-kicker">Actividad mensual</span>
-              <div className="kpi-card-title"><Icons.ChartArea size={17} /> Heatmap: referencias por material</div>
-            </div>
-            <span className="kpi-materials-panel-meta">Top {Math.min(6, heatmapData.materials.length)}</span>
-          </div>
-          {heatmapData.months.length > 0 ? (
-            <div className="kpi-table-wrapper" style={{ marginTop: 12 }}>
-              <table className="kpi-table">
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', position: 'sticky', left: 0, zIndex: 1 }}>Material</th>
-                    {heatmapData.months.map(m => (
-                      <th key={m} style={{ textAlign: 'center', minWidth: 70 }}>{m}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {heatmapData.materials.map((mat, mi) => {
-                    const maxVal = Math.max(...heatmapData.months.map(mo => heatmapData.map[mat.name]?.[mo] || 0), 1)
-                    return (
-                      <tr key={mi}>
-                        <td style={{ fontWeight: 600, position: 'sticky', left: 0, zIndex: 1, whiteSpace: 'nowrap' }}>{mat.name}</td>
-                        {heatmapData.months.map((mo, moi) => {
-                          const val = heatmapData.map[mat.name]?.[mo] || 0
-                          const intensity = val / maxVal
-                          const bg = val === 0 ? '#F8FAFC' : `rgba(36, 84, 217, ${0.1 + intensity * 0.8})`
-                          const textColor = intensity > 0.5 ? '#fff' : '#091127'
-                          return (
-                            <td key={moi} style={{ textAlign: 'center', background: bg, color: textColor, fontWeight: val > 0 ? 700 : 400, borderRadius: 4 }}>
-                              {val > 0 ? val : '—'}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">Sin datos de tendencia mensual disponibles</div></div>
-          )}
-        </div>
-      )}
-
-      {/* ─── ALERTS TAB ─── */}
-      {detailTab === 'alerts' && (
-        <div className="kpi-materials-alerts-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          <div className="kpi-card kpi-materials-alert-card kpi-materials-detail-card" style={{ padding: 24 }}>
-            <div className="kpi-materials-panel-heading">
-              <div>
-                <span className="kpi-materials-panel-kicker">Uso destacado</span>
-                <div className="kpi-card-title"><Icons.Package size={16} color={PALETTE.amber} /> Materiales más referenciados</div>
-              </div>
-              <span className="kpi-materials-panel-meta is-positive">{starMaterials.length}</span>
-            </div>
-            {starMaterials.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {starMaterials.map((m, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: '#ECFDF5', border: '1px solid #A7F3D0' }}>
-                    <Icons.CheckCircle size={16} color="#16A34A" />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#065F46' }}>{m.name}</div>
-                      <div style={{ fontSize: 12, color: '#047857' }}>{formatNumber(m.total_orders)} órdenes que lo registran · {formatNumber(m.reference_count || m.total_orders)} referencias</div>
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: PALETTE.green, background: '#D1FAE5', padding: '2px 8px', borderRadius: 20 }}>Mayor uso</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">No hay referencias de materiales en el período</div></div>
-            )}
-          </div>
-
-          <div className="kpi-card kpi-materials-alert-card kpi-materials-detail-card" style={{ padding: 24 }}>
-            <div className="kpi-materials-panel-heading">
-              <div>
-                <span className="kpi-materials-panel-kicker">Seguimiento</span>
-                <div className="kpi-card-title"><Icons.AlertCircle size={16} color={PALETTE.rose} /> Cancelaciones auditables por material</div>
-              </div>
-              <span className="kpi-materials-panel-meta is-negative">{highCancelMaterials.length}</span>
-            </div>
-            {highCancelMaterials.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {highCancelMaterials.map((m, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: '#FEF2F2', border: '1px solid #FECACA' }}>
-                    <Icons.AlertCircle size={16} color="#DC2626" />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#991B1B' }}>{m.name}</div>
-                      <div style={{ fontSize: 12, color: '#B91C1C' }}><strong>{formatNumber(m.cancelled_orders)}</strong> transición{Number(m.cancelled_orders) === 1 ? '' : 'es'} a cancelada en el período</div>
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: PALETTE.rose, background: '#FEE2E2', padding: '2px 8px', borderRadius: 20 }}>Revisar</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="kpi-empty-state" style={{ padding: 20 }}><div className="kpi-empty-title">No hay cancelaciones auditables por material</div></div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ─── TOP CLIENTS BY MATERIAL (below tabs) ─── */}
+      {/* ─── TOP CLIENTS BY MATERIAL ─── */}
       {selectedMat && selectedMat.top_clients?.length > 0 && (() => {
         const TOP_PAGE_SIZE = 7
         const topClientsTotal = selectedMat.top_clients.length

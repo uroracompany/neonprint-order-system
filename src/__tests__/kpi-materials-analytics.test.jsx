@@ -116,57 +116,12 @@ describe('KPIMaterialsAnalytics ranking render', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
 
-  it('construye el Heatmap con el historial del ranking y no con el resumen mensual del banner', () => {
-    const globalRowsWithMonthlyTrend = [
-      { ...globalRows[0], monthly_trend: [{ month: '2026-06', count: 1 }, { month: '2026-07', count: 9 }] },
-      { ...globalRows[1], monthly_trend: [{ month: '2026-06', count: 1 }, { month: '2026-07', count: 9 }] },
-      { ...globalRows[2], monthly_trend: [{ month: '2026-08', count: 1 }] },
-    ]
-    mocks.kpiSingle = {
-      data: { period: { summary: globalRowsWithMonthlyTrend, material_references: 21 }, comparison: { summary: [] } },
-      loading: false,
-      fetching: false,
-      isPlaceholderData: false,
-      error: null,
-      refresh: vi.fn(),
-    }
-
+  it('mantiene Ranking de materiales como la única vista del apartado', () => {
     render(<KPIMaterialsAnalytics data={data} userId="user-1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Heatmap' }))
 
-    expect(screen.getByText('Top 3')).toBeInTheDocument()
-    expect(screen.getByText('Acrilico')).toBeInTheDocument()
-    expect(screen.getByText('Adhesivo')).toBeInTheDocument()
-    expect(screen.getAllByText('Banner').length).toBeGreaterThan(1)
-    expect(screen.getByText('2026-06')).toBeInTheDocument()
-    expect(screen.getByText('2026-07')).toBeInTheDocument()
-    expect(screen.getByText('2026-08')).toBeInTheDocument()
-  })
-
-  it('construye Alertas con los materiales y cancelaciones del ranking, no con el banner mensual', () => {
-    const globalRowsWithAlerts = [
-      { ...globalRows[0], cancelled_orders: 2 },
-      { ...globalRows[1], cancelled_orders: 0 },
-      { ...globalRows[2], cancelled_orders: 0 },
-    ]
-    mocks.kpiSingle = {
-      data: { period: { summary: globalRowsWithAlerts, material_references: 21 }, comparison: { summary: [] } },
-      loading: false,
-      fetching: false,
-      isPlaceholderData: false,
-      error: null,
-      refresh: vi.fn(),
-    }
-
-    render(<KPIMaterialsAnalytics data={data} userId="user-1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Alertas' }))
-
-    const featuredCard = screen.getByText('Materiales más referenciados').closest('.kpi-materials-alert-card')
-    const cancellationsCard = screen.getByText('Cancelaciones auditables por material').closest('.kpi-materials-alert-card')
-    expect(featuredCard).toHaveTextContent('Acrilico')
-    expect(featuredCard).toHaveTextContent('Adhesivo')
-    expect(cancellationsCard).toHaveTextContent('Acrilico')
-    expect(cancellationsCard).not.toHaveTextContent('No hay cancelaciones auditables por material')
+    expect(screen.getByRole('table', { name: 'Ranking de materiales' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Heatmap' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Alertas' })).not.toBeInTheDocument()
   })
 
   it('abre el detalle desde el material y los metadatos del ranking, aunque no exista en el resumen superior', () => {

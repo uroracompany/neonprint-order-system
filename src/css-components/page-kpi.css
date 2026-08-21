@@ -10709,8 +10709,7 @@
   margin: 0;
 }
 
-.kpi-materials-analytics .kpi-section > .kpi-card,
-.kpi-materials-analytics .kpi-materials-alert-card {
+.kpi-materials-analytics .kpi-section > .kpi-card {
   border: 1px solid #dbe3ef;
   border-radius: 14px;
   background: #ffffff;
@@ -10997,60 +10996,6 @@
   box-shadow: none;
 }
 
-.kpi-materials-panel-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 14px;
-}
-
-.kpi-materials-panel-kicker {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--kpi-materials-accent);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
-.kpi-materials-panel-heading .kpi-card-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-}
-
-.kpi-materials-panel-meta {
-  display: inline-flex;
-  min-width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-  border: 1px solid #cddafb;
-  border-radius: 999px;
-  background: #f4f7ff;
-  color: var(--kpi-materials-accent);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.kpi-materials-panel-meta.is-positive { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
-.kpi-materials-panel-meta.is-negative { border-color: #fecaca; background: #fff7f7; color: #dc2626; }
-
-.kpi-materials-heatmap-card .kpi-table-wrapper {
-  margin-top: 0 !important;
-  border: 1px solid #dbe3ef;
-  border-radius: 12px;
-}
-
-.kpi-materials-heatmap-card .kpi-table { min-width: 540px; }
-.kpi-materials-alert-card .kpi-empty-state { display: grid; min-height: 112px; place-items: center; border: 1px dashed #d7e2f0; border-radius: 12px; background: #fbfdff; text-align: center; }
-.kpi-materials-alert-card .kpi-empty-title::before { content: '✓'; display: grid; width: 26px; height: 26px; margin: 0 auto 7px; place-items: center; border-radius: 50%; background: #ecfdf5; color: #16a34a; font-size: 15px; font-weight: 700; }
-
 .kpi-materials-analytics .kpi-section-fact-badge {
   padding: 6px 9px;
   border-color: #bfdbfe;
@@ -11096,16 +11041,11 @@
 .kpi-materials-ranking-usage-normal { color: #2454D9; }
 .kpi-materials-ranking-usage > small { color: #7c8ca5; font-size: 10px; font-weight: 600; }
 
-.kpi-materials-heatmap-card .kpi-card-title,
-.kpi-materials-alert-card .kpi-card-title,
 .kpi-materials-clients-card .kpi-card-title {
   color: #0f1e40;
   font-size: 14px;
   font-weight: 800;
 }
-
-.kpi-materials-alerts-grid { gap: 14px !important; }
-.kpi-materials-alert-card { min-height: 180px; }
 
 /* Espacio de trabajo de comparación de materiales */
 .kpi-materials-comparison-workspace { padding: 20px; border-color: #d6e0ee !important; box-shadow: 0 12px 30px rgba(15, 30, 64, .06) !important; }
@@ -11331,7 +11271,6 @@
   .kpi-materials-period-comparison { grid-template-columns: 1fr; }
   .kpi-materials-period-change { grid-auto-flow: column; justify-content: center; }
   .kpi-materials-movement-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
-  .kpi-materials-alerts-grid { grid-template-columns: 1fr !important; }
   .kpi-materials-ranking-table { overflow-x: auto; }
   .kpi-materials-ranking-table-head,
   .kpi-materials-ranking-row { min-width: 910px; }
@@ -11355,7 +11294,6 @@
   .kpi-materials-evolution-filter { width: 100%; }
   .kpi-materials-chart-controls .kpi-pipeline-view-toggle { width: 100%; overflow-x: auto; }
   .kpi-materials-chart-controls .kpi-pipeline-view-btn { flex: 1 0 auto; }
-  .kpi-materials-panel-heading { align-items: flex-start; }
   .kpi-materials-comparison-table-head,
   .kpi-materials-comparison-row { min-width: 510px; }
   .kpi-materials-comparison-table { overflow-x: auto; }
