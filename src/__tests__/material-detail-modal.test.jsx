@@ -5,6 +5,7 @@ import MaterialDetailModal from '../components/kpi/MaterialDetailModal'
 const mocks = vi.hoisted(() => ({
   useKPISingle: vi.fn(),
   kpiSingle: { data: null, loading: false, fetching: false, isPlaceholderData: false, error: null, refresh: vi.fn() },
+  cancellationKpiSingle: { data: null, loading: false, fetching: false, isPlaceholderData: false, error: null, refresh: vi.fn() },
 }))
 
 vi.mock('recharts', () => ({
@@ -22,7 +23,7 @@ vi.mock('recharts', () => ({
 vi.mock('../hooks/useKPI', () => ({
   useKPISingle: (...args) => {
     mocks.useKPISingle(...args)
-    return mocks.kpiSingle
+    return args[0] === 'material_cancellation_stats' ? mocks.cancellationKpiSingle : mocks.kpiSingle
   },
 }))
 
@@ -87,6 +88,7 @@ afterEach(() => {
 
 beforeEach(() => {
   mocks.kpiSingle = { data: null, loading: false, fetching: false, isPlaceholderData: false, error: null, refresh: vi.fn() }
+  mocks.cancellationKpiSingle = { data: null, loading: false, fetching: false, isPlaceholderData: false, error: null, refresh: vi.fn() }
 })
 
 describe('MaterialDetailModal', () => {
@@ -118,6 +120,7 @@ describe('MaterialDetailModal', () => {
 
   it('reemplaza Variación por la cancelación del material activo', () => {
     mocks.kpiSingle = { ...mocks.kpiSingle, data: globalAnalytics() }
+    mocks.cancellationKpiSingle = { ...mocks.cancellationKpiSingle, data: { total_orders: 11, cancelled_orders: 3 } }
     render(<MaterialDetailModal {...baseModalProps} />)
 
     expect(screen.getByText('Cancelación')).toBeInTheDocument()
@@ -133,6 +136,7 @@ describe('MaterialDetailModal', () => {
       ...mocks.kpiSingle,
       data: { ...globalAnalytics(), period: { ...globalAnalytics().period, summary: [emptyMaterial], material_references: 0 } },
     }
+    mocks.cancellationKpiSingle = { ...mocks.cancellationKpiSingle, data: { total_orders: 0, cancelled_orders: 0 } }
     render(<MaterialDetailModal {...baseModalProps} material={emptyMaterial} />)
 
     expect(screen.getAllByText('0%')).toHaveLength(2)
@@ -166,7 +170,13 @@ describe('MaterialDetailModal', () => {
 
     selectPeriodMode('Período actual')
 
-    expect(mocks.useKPISingle).toHaveBeenLastCalledWith('materials_analytics', null, 'user-1', false)
+    expect(mocks.useKPISingle).toHaveBeenCalledWith('materials_analytics', null, 'user-1', false)
+    expect(mocks.useKPISingle).toHaveBeenLastCalledWith(
+      'material_cancellation_stats',
+      expect.objectContaining({ material_name: material.name, date_from: periodMeta.date_from, date_to: periodMeta.date_to }),
+      'user-1',
+      true,
+    )
     expect(screen.getByText('Uso registrado en las órdenes del período seleccionado.')).toBeInTheDocument()
     expect(screen.queryByText('Cliente Global')).not.toBeInTheDocument()
     expect(screen.getByText('Cliente con un nombre muy extenso')).toBeInTheDocument()
@@ -181,7 +191,7 @@ describe('MaterialDetailModal', () => {
     const dayInput = screen.getByLabelText('Fecha')
     fireEvent.change(dayInput, { target: { value: '2026-08-08' } })
 
-    expect(mocks.useKPISingle).toHaveBeenLastCalledWith(
+    expect(mocks.useKPISingle).toHaveBeenCalledWith(
       'materials_analytics',
       expect.objectContaining({
         date_from: new Date('2026-08-08T00:00:00').toISOString(),
@@ -211,7 +221,7 @@ describe('MaterialDetailModal', () => {
 
     selectPeriodMode('Período anterior')
 
-    expect(mocks.useKPISingle).toHaveBeenLastCalledWith(
+    expect(mocks.useKPISingle).toHaveBeenCalledWith(
       'materials_analytics',
       expect.objectContaining({
         date_from: '2026-07-01T00:00:00.000Z',
@@ -222,6 +232,19 @@ describe('MaterialDetailModal', () => {
       'user-1',
       true,
     )
+  })
+
+  it('no presenta una cancelación falsa mientras la métrica se actualiza o falla', () => {
+    mocks.kpiSingle = { ...mocks.kpiSingle, data: globalAnalytics() }
+    mocks.cancellationKpiSingle = { ...mocks.cancellationKpiSingle, loading: true }
+    const { rerender } = render(<MaterialDetailModal {...baseModalProps} />)
+
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('Calculando cancelación…')).toBeInTheDocument()
+
+    mocks.cancellationKpiSingle = { ...mocks.cancellationKpiSingle, loading: false, error: 'fallo de red' }
+    rerender(<MaterialDetailModal {...baseModalProps} />)
+    expect(screen.getByText('No disponible para este período.')).toBeInTheDocument()
   })
 
   it('muestra el error del período consultado con reintento sin mostrar datos mezclados', () => {

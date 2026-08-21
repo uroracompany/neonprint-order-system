@@ -38,11 +38,6 @@ const RANKING_PERIOD_OPTIONS = [
   { value: 'today', label: 'Hoy', subtitle: 'Materiales con mayor actividad registrada hoy.' },
 ]
 
-const getPeriodFallbackStart = () => {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-}
-
 const formatMaterialCount = (count) => `${formatNumber(count)} ${Number(count) === 1 ? 'material' : 'materiales'}`
 const formatMetricValue = (value) => value === null || value === undefined ? 'N/D' : formatNumber(value)
 
@@ -185,7 +180,6 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
   const [materialSearch, setMaterialSearch] = useState('')
   const deferredMaterialSearch = useDeferredValue(materialSearch)
   const [page, setPage] = useState(0)
-  const [compPage, setCompPage] = useState(0)
   const [evoMatKey, setEvoMatKey] = useState(ALL_KEY)
   const [evoPeriod, setEvoPeriod] = useState('month')
   const [evoChartType, setEvoChartType] = useState('area')
@@ -212,13 +206,6 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
   const materialCoverage = hasVerifiedContract ? (materialAnalytics.coverage || EMPTY_OBJECT) : EMPTY_OBJECT
   const materialMeta = hasVerifiedContract ? (materialAnalytics.meta || EMPTY_OBJECT) : EMPTY_OBJECT
   const summary = periodMetrics.summary || EMPTY_ARRAY
-  const comparisonBounds = useMemo(() => ({
-    date_from: materialMeta.date_from || getPeriodFallbackStart(),
-    date_to: materialMeta.date_to || new Date().toISOString(),
-    compare_from: materialMeta.compare_from || materialMeta.date_from || getPeriodFallbackStart(),
-    compare_to: materialMeta.compare_to || materialMeta.date_from || getPeriodFallbackStart(),
-  }), [materialMeta.compare_from, materialMeta.compare_to, materialMeta.date_from, materialMeta.date_to])
-
   const evolutionBounds = useMemo(() => {
     const current = getPeriodBounds(evoPeriod)
     const comparison = getComparePeriodBounds(evoPeriod, current)
@@ -521,150 +508,6 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
 
       <MaterialsComparisonPanel userId={userId} />
 
-      {/* Legacy visual kept out of render while the new comparison workspace is active. */}
-      {false && materialComparison && (() => {
-        const currBounds = {
-          dateFrom: materialMeta.date_from || getPeriodFallbackStart(),
-          dateTo: materialMeta.date_to || new Date().toISOString(),
-        }
-        const prevBounds = {
-          dateFrom: materialMeta.compare_from || currBounds.dateFrom,
-          dateTo: materialMeta.compare_to || currBounds.dateFrom,
-        }
-        const fmtDate = (d) => new Date(d).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })
-        const fmtInclusiveEnd = (d) => fmtDate(new Date(new Date(d).getTime() - 1))
-        const currDays = Math.round((new Date(currBounds.dateTo) - new Date(currBounds.dateFrom)) / 86400000)
-        const prevDays = Math.round((new Date(prevBounds.dateTo) - new Date(prevBounds.dateFrom)) / 86400000)
-        return (
-        <div className="kpi-section">
-          <div className="kpi-section-header">
-            <div>
-              <span className="kpi-section-kicker">Comparación</span>
-              <h2 className="kpi-section-title">Comparación con Período Anterior</h2>
-              <p className="kpi-section-subtitle">Compara las referencias registradas durante el período seleccionado con el período anterior de igual duración.</p>
-            </div>
-          </div>
-          <div className="kpi-card kpi-materials-comparison-card" style={{ padding: 24 }}>
-            {/* ── Hero: dos períodos lado a lado ── */}
-            {(() => {
-              const prevMats = new Set((materialComparison.summary || []).map(m => m.name))
-              const currMats = new Set(summary.map(m => m.name))
-              const kept = [...prevMats].filter(m => currMats.has(m))
-              const newMats = [...currMats].filter(m => !prevMats.has(m))
-              const lost = [...prevMats].filter(m => !currMats.has(m))
-              const referencesCurrent = Number(totalCurrent || 0)
-              const referencesPrevious = Number(totalComparison || 0)
-              const referencesDifference = referencesCurrent - referencesPrevious
-              const hasPreviousBaseline = referencesPrevious > 0
-              const variation = hasPreviousBaseline
-                ? Math.round((referencesDifference / referencesPrevious) * 100)
-                : (referencesCurrent === 0 ? 0 : null)
-              const isUp = referencesDifference > 0
-              const isDown = referencesDifference < 0
-              const referenceLabel = count => `${formatNumber(count)} referencia${Number(count) === 1 ? '' : 's'}`
-              const differenceLabel = referencesDifference === 0
-                ? 'Sin diferencia'
-                : `${isUp ? '+' : '−'}${referenceLabel(Math.abs(referencesDifference))}`
-              const variationLabel = variation === null
-                ? 'Sin base anterior'
-                : `${variation > 0 ? '+' : ''}${variation}% de variación`
-              return (
-                <>
-                  <div className="kpi-materials-period-comparison">
-                    <article className="kpi-materials-period-card is-previous">
-                      <div className="kpi-materials-period-card-heading"><span className="kpi-materials-period-icon"><Icons.Calendar size={16} /></span><span>Período anterior</span></div>
-                      <strong>{formatNumber(referencesPrevious)}</strong>
-                      <span className="kpi-materials-period-metric">Referencias registradas</span>
-                      <span className="kpi-materials-period-duration">{prevDays} días</span>
-                      <span className="kpi-materials-period-date">{fmtDate(prevBounds.dateFrom)} - {fmtInclusiveEnd(prevBounds.dateTo)}</span>
-                    </article>
-                    <div className={`kpi-materials-period-change ${isUp ? 'is-up' : isDown ? 'is-down' : 'is-flat'}`} aria-label={`${isUp ? 'Aumento' : isDown ? 'Disminución' : 'Sin variación'}: ${differenceLabel}; ${variationLabel}`}>
-                      <span className="kpi-materials-period-change-icon">{isUp ? '↑' : isDown ? '↓' : '→'}</span>
-                      <strong>{differenceLabel}</strong>
-                      <span>{variationLabel}</span>
-                    </div>
-                    <article className="kpi-materials-period-card is-current">
-                      <div className="kpi-materials-period-card-heading"><span className="kpi-materials-period-icon"><Icons.Package size={16} /></span><span>Período seleccionado</span></div>
-                      <strong>{formatNumber(referencesCurrent)}</strong>
-                      <span className="kpi-materials-period-metric">Referencias registradas</span>
-                      <span className="kpi-materials-period-duration">{currDays} días</span>
-                      <span className="kpi-materials-period-date">{fmtDate(currBounds.dateFrom)} - {fmtInclusiveEnd(currBounds.dateTo)}</span>
-                    </article>
-                  </div>
-
-                  {/* ── Cards de movimiento ── */}
-                  <div className="kpi-materials-movement-heading">
-                    <span>Cambios en materiales</span>
-                    <small>Desglose de materiales entre ambos períodos</small>
-                  </div>
-                  <div className="kpi-materials-movement-grid">
-                    <article className="kpi-materials-movement-card is-kept">
-                      <span className="kpi-materials-movement-icon"><Icons.CheckCircle size={16} /></span>
-                      <div><strong>{kept.length}</strong><span>Mantenidos</span><p>Presentes en ambos períodos</p></div>
-                    </article>
-                    <article className="kpi-materials-movement-card is-new">
-                      <span className="kpi-materials-movement-icon"><Icons.Plus size={16} /></span>
-                      <div><strong>{newMats.length}</strong><span>Solo en período seleccionado</span><p>{newMats.length > 0 ? newMats.join(', ') : 'Sin materiales nuevos'}</p></div>
-                    </article>
-                    <article className="kpi-materials-movement-card is-lost">
-                      <span className="kpi-materials-movement-icon"><Icons.ArrowLeft size={16} /></span>
-                      <div><strong>{lost.length}</strong><span>Solo en período anterior</span><p>{lost.length > 0 ? lost.join(', ') : 'Sin materiales retirados'}</p></div>
-                    </article>
-                  </div>
-
-                  {/* ── Tabla simplificada ── */}
-                  {materialComparison.summary?.length > 0 && (
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Detalle por material</div>
-                        <Pagination page={compPage} total={materialComparison.summary.length} pageSize={7} onPage={setCompPage} />
-                      </div>
-                      <div className="kpi-materials-comparison-table" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <div className="kpi-materials-comparison-table-head" style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: 8, padding: '6px 12px', fontSize: 10, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          <div>Material</div>
-                          <div style={{ textAlign: 'center' }}>Anterior</div>
-                          <div style={{ textAlign: 'center' }}>Actual</div>
-                          <div style={{ textAlign: 'center' }}>Tendencia</div>
-                        </div>
-                        {materialComparison.summary.slice(compPage * 7, (compPage + 1) * 7).map((m, i) => {
-                          const curr = summary.find(s => s.name === m.name)
-                          const currTotal = curr?.total_orders || 0
-                          const diff = currTotal - m.total_orders
-                          const pct = m.total_orders > 0 ? Math.round(((currTotal - m.total_orders) / m.total_orders) * 100) : (currTotal > 0 ? 100 : 0)
-                          const isGone = m.total_orders > 0 && currTotal === 0
-                          const isNew = m.total_orders === 0 && currTotal > 0
-                          return (
-                            <div className="kpi-materials-comparison-row" key={i} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: 8, padding: '10px 12px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', alignItems: 'center' }}>
-                              <div style={{ fontWeight: 600, color: '#091127', fontSize: 13 }}>{m.name}</div>
-                              <div style={{ textAlign: 'center', fontSize: 13, color: '#64748b' }}>{formatNumber(m.total_orders)}</div>
-                              <div style={{ textAlign: 'center', fontSize: 13, color: '#091127', fontWeight: 600 }}>{formatNumber(currTotal)}</div>
-                              <div style={{ textAlign: 'center' }}>
-                                {isGone ? (
-                                  <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#DC2626', background: '#FEE2E2', padding: '3px 10px', borderRadius: 12 }}>Solo anterior</span>
-                                ) : isNew ? (
-                                  <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#16A34A', background: '#DCFCE7', padding: '3px 10px', borderRadius: 12 }}>Solo actual</span>
-                                ) : diff > 0 ? (
-                                  <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#16A34A', background: '#DCFCE7', padding: '3px 10px', borderRadius: 12 }}>↑ {pct}%</span>
-                                ) : diff < 0 ? (
-                                  <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#DC2626', background: '#FEE2E2', padding: '3px 10px', borderRadius: 12 }}>↓ {pct}%</span>
-                                ) : (
-                                  <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 600, color: '#64748b', background: '#F1F5F9', padding: '3px 10px', borderRadius: 12 }}>=</span>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                 </>
-               )
-             })()}
-           </div>
-         </div>
-         )
-       })()}
-
       {/* ─── RANKING SECTION ─── */}
       <div className="kpi-section">
           <div className="kpi-section-header">
@@ -724,8 +567,10 @@ export default function KPIMaterialsAnalytics({ data, userId }) {
             </div>
 
           <div className="kpi-materials-ranking-table" role="table" aria-label="Ranking de materiales">
-            <div className="kpi-materials-ranking-table-head" role="row">
-              <span>#</span><span>Material</span><span>Referencias</span><span>Órdenes</span><span>Participación</span><span>Uso por orden</span><span>Tendencia</span><span>Clientes</span>
+            <div role="rowgroup">
+              <div className="kpi-materials-ranking-table-head" role="row">
+                <span role="columnheader">#</span><span role="columnheader">Material</span><span role="columnheader">Referencias</span><span role="columnheader">Órdenes</span><span role="columnheader">Participación</span><span role="columnheader">Uso por orden</span><span role="columnheader">Tendencia</span><span role="columnheader">Clientes</span>
+              </div>
             </div>
           <div className="kpi-materials-ranking-list" role="rowgroup">
             {isRankingLoading ? (

@@ -32,6 +32,18 @@ describe('modal de material: rendimiento global por defecto con períodos select
     expect(modal()).toContain("periodMode === 'current' || !requestBounds")
   })
 
+  it('calcula Cancelación con órdenes únicas del mismo rango del detalle', () => {
+    const sql = readProjectFile('supabase/migrations/20260820010000_material_cancellation_stats.sql')
+    const handler = readProjectFile('server/kpi-data-handler.js')
+
+    expect(modal()).toContain("useKPISingle('material_cancellation_stats'")
+    expect(sql).toContain('SELECT DISTINCT')
+    expect(sql).toContain("count(*) FILTER (WHERE status = 'cancelled')")
+    expect(sql).toContain("coalesce(o.is_archived, false) = false")
+    expect(handler).toContain("case 'material_cancellation_stats'")
+    expect(handler).toContain("supabase.rpc('kpi_material_cancellation_stats'")
+  })
+
   it('recibe el usuario y el meta del período desde el panel de materiales', () => {
     expect(panel()).toContain('periodMeta={rankingAnalytics?.meta || materialMeta}')
     expect(modal()).toContain('periodMeta,')

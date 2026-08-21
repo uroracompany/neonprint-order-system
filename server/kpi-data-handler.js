@@ -1372,6 +1372,32 @@ export async function handleKpiData(body, env) {
         break
       }
 
+      case 'material_cancellation_stats': {
+        const materialName = String(body.material_name || '').trim()
+        const validRange = date_from && date_to && new Date(date_to) > new Date(date_from)
+        if (!materialName || !validRange) {
+          return { status: 400, body: { error: 'El material y un rango válido son requeridos.', code: 'MATERIAL_CANCELLATION_INVALID_REQUEST' } }
+        }
+
+        const { data, error } = await supabase.rpc('kpi_material_cancellation_stats', {
+          p_material_name: materialName,
+          p_date_from: date_from,
+          p_date_to: date_to,
+        })
+        if (error) {
+          console.error('material_cancellation_stats RPC error:', error)
+          if (error.code === 'PGRST202' || /schema cache|could not find the function/i.test(error.message || '')) {
+            return { status: 503, body: { error: 'La métrica de cancelación se está actualizando. Inténtalo nuevamente en unos instantes.', code: 'MATERIAL_CANCELLATION_SOURCE_UNAVAILABLE' } }
+          }
+          if (error.code === '42501' || /solo administradores|permission denied/i.test(error.message || '')) {
+            return { status: 403, body: { error: 'No tienes permisos para consultar la métrica de cancelación.', code: 'MATERIAL_CANCELLATION_FORBIDDEN' } }
+          }
+          return { status: 500, body: { error: 'No se pudo consultar la métrica de cancelación.', code: 'MATERIAL_CANCELLATION_QUERY_FAILED' } }
+        }
+        result = data
+        break
+      }
+
       case 'materials_comparison_series': {
         if (![date_from, date_to, compare_from, compare_to].every(Boolean)) {
           return { status: 400, body: { error: 'Los dos períodos de comparación son requeridos.' } }

@@ -7,6 +7,7 @@ import { FilterSelect } from '../ui/FilterSelect'
 import { useKPISingle } from '../../hooks/useKPI'
 
 const EMPTY_ARRAY = Object.freeze([])
+const EMPTY_OBJECT = Object.freeze({})
 
 const PERIOD_MODES = [
   { value: 'global', label: 'Rendimiento global' },
@@ -67,9 +68,9 @@ const formatTrendDay = (value) => {
   return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short' }).format(new Date(year, month - 1, day))
 }
 
-function Metric({ label, value, tone = 'default', icon, detail }) {
+function Metric({ label, value, tone = 'default', icon, detail, loading = false }) {
   return (
-    <div className={`kpi-material-detail-metric is-${tone}`}>
+    <div className={`kpi-material-detail-metric is-${tone}`} aria-busy={loading || undefined}>
       <span className="kpi-material-detail-metric-label">{icon}{label}</span>
       <strong>{value}</strong>
       {detail && <small>{detail}</small>}
@@ -197,6 +198,19 @@ export default function MaterialDetailModal({ material, previousMaterial, totalR
     }
   }, [detailQuery.data, detailQuery.error, detailQuery.fetching, detailQuery.isPlaceholderData, detailQuery.loading, detailQuery.refresh, material, periodMeta, periodMode, previousMaterial, requestBounds, totalReferences])
 
+  const cancellationParams = useMemo(() => {
+    const materialName = String(material?.name || '').trim()
+    const dateFrom = requestBounds?.date_from || periodMeta?.date_from
+    const dateTo = requestBounds?.date_to || periodMeta?.date_to
+    if (!materialName || !dateFrom || !dateTo) return null
+    return { material_name: materialName, date_from: dateFrom, date_to: dateTo }
+  }, [material?.name, periodMeta?.date_from, periodMeta?.date_to, requestBounds?.date_from, requestBounds?.date_to])
+  const cancellationQuery = useKPISingle('material_cancellation_stats', cancellationParams || EMPTY_OBJECT, userId, Boolean(cancellationParams))
+  const isCancellationLoading = cancellationQuery.loading || cancellationQuery.fetching || cancellationQuery.isPlaceholderData
+  const cancellationStats = !isCancellationLoading && !cancellationQuery.error
+    ? (cancellationQuery.data || EMPTY_OBJECT)
+    : null
+
   const periodLabel = useMemo(() => {
     const timezone = resolved.meta?.timezone || 'UTC'
     const formatRange = value => new Intl.DateTimeFormat('es-DO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: timezone }).format(new Date(value))
@@ -234,13 +248,23 @@ export default function MaterialDetailModal({ material, previousMaterial, totalR
   const activeMaterial = resolved.material || material
   const references = Number(activeMaterial.reference_count ?? activeMaterial.total_orders ?? 0)
   const orders = Number(activeMaterial.total_orders || 0)
-  const cancelledOrders = Number.isFinite(Number(activeMaterial.cancelled_orders))
-    ? Math.max(0, Number(activeMaterial.cancelled_orders))
+  const cancellationTotalOrders = Number.isFinite(Number(cancellationStats?.total_orders))
+    ? Math.max(0, Number(cancellationStats.total_orders))
     : 0
-  const cancellationPercentage = orders > 0 ? Math.round((cancelledOrders / orders) * 100) : 0
-  const cancellationDetail = orders > 0
-    ? `${formatNumber(cancelledOrders)} de ${formatNumber(orders)} órdenes canceladas`
-    : 'Sin órdenes registradas'
+  const cancelledOrders = Number.isFinite(Number(cancellationStats?.cancelled_orders))
+    ? Math.min(cancellationTotalOrders, Math.max(0, Number(cancellationStats.cancelled_orders)))
+    : 0
+  const cancellationPercentage = cancellationTotalOrders > 0
+    ? Math.round((cancelledOrders / cancellationTotalOrders) * 100)
+    : 0
+  const cancellationValue = isCancellationLoading || cancellationQuery.error ? '—' : `${cancellationPercentage}%`
+  const cancellationDetail = isCancellationLoading
+    ? 'Calculando cancelación…'
+    : cancellationQuery.error
+      ? 'No disponible para este período.'
+      : cancellationTotalOrders > 0
+        ? `${formatNumber(cancelledOrders)} de ${formatNumber(cancellationTotalOrders)} órdenes canceladas`
+        : 'Sin órdenes registradas'
   const participation = resolved.totalReferences ? Math.round((references / resolved.totalReferences) * 100) : 0
   const trendData = Object.entries(activeMaterial.daily || {}).sort(([a], [b]) => a.localeCompare(b)).map(([day, count]) => ({ day, count }))
   const clients = activeMaterial.top_clients || EMPTY_ARRAY
@@ -298,7 +322,7 @@ export default function MaterialDetailModal({ material, previousMaterial, totalR
             <Metric label="Referencias" value={formatNumber(references)} icon={<Icons.Package size={15} />} />
             <Metric label="Órdenes" value={formatNumber(orders)} icon={<Icons.FileText size={15} />} />
             <Metric label="Participación" value={`${participation}%`} icon={<Icons.ChartArea size={15} />} />
-            <Metric label="Cancelación" value={`${cancellationPercentage}%`} tone={cancelledOrders > 0 ? 'negative' : 'default'} icon={<Icons.AlertCircle size={15} />} detail={cancellationDetail} />
+            <Metric label="Cancelación" value={cancellationValue} tone={cancelledOrders > 0 ? 'negative' : 'default'} icon={<Icons.AlertCircle size={15} />} detail={cancellationDetail} loading={isCancellationLoading} />
           </div>
 
           <div className="kpi-material-detail-distributions">

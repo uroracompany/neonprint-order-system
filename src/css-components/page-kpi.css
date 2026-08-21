@@ -10901,10 +10901,6 @@
   transition: border-color .16s ease, background-color .16s ease;
 }
 
-.kpi-materials-comparison-row:hover { border-color: #c7d5eb !important; background: #ffffff !important; }
-
-.kpi-materials-detail-tabs { display: inline-flex; width: fit-content; }
-
 .kpi-materials-detail-card {
   border-color: #d6e0ee !important;
   box-shadow: 0 12px 30px rgba(15, 30, 64, .06) !important;
@@ -11266,13 +11262,19 @@
   .kpi-materials-period-metrics .kpi-hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+@media (min-width: 841px) and (max-width: 960px) {
+  .kpi-materials-ranking-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .kpi-materials-ranking-table-head,
+  .kpi-materials-ranking-row { min-width: 910px; }
+}
+
 @media (max-width: 840px) {
   .kpi-materials-analytics .kpi-section-header { align-items: flex-start; }
   .kpi-materials-snapshot .kpi-hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi-materials-period-comparison { grid-template-columns: 1fr; }
   .kpi-materials-period-change { grid-auto-flow: column; justify-content: center; }
   .kpi-materials-movement-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
-  .kpi-materials-ranking-table { overflow-x: auto; }
+  .kpi-materials-ranking-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .kpi-materials-ranking-table-head,
   .kpi-materials-ranking-row { min-width: 910px; }
   .kpi-materials-ranking-filter-bar { grid-template-columns: 1fr; }
