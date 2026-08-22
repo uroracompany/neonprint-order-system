@@ -30,6 +30,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useOrderReturnHandoffs from "../hooks/useOrderReturnHandoffs";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
 import SharedCreateOrderModal from "../components/orders/CreateOrderModal";
@@ -42,6 +43,8 @@ import DesignerNotificationsModule from "../components/designer/DesignerNotifica
 import "../components/designer/DesignerNotificationsModule.css";
 import { loadClients, searchClients } from "../utils/clients";
 import { adminApiFetch } from "../utils/adminApi";
+import { getAvatarInitials } from "../utils/avatar-initials";
+import ReturnToCashierModal from "../components/orders/ReturnToCashierModal";
 
 export { default as OrderDetailModal } from "../components/orders/OrderDetailModal";
 
@@ -58,13 +61,6 @@ const canSellerEditOrder = (order) => (
   !order.is_archived &&
   !isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)
 );
-
-const getInitials = (name) => String(name || "?")
-  .split(/\s+/)
-  .filter(Boolean)
-  .slice(0, 2)
-  .map(part => part[0]?.toUpperCase())
-  .join("") || "?";
 
 const isInteractiveOrderRowTarget = (target) => Boolean(
   target?.closest?.("button, a, input, select, textarea, [data-row-action]")
@@ -303,6 +299,8 @@ export default function PageSeller() {
   const [sendingToDesigner, setSendingToDesigner] = useState(null);
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
   const [sendingLoading, setSendingLoading] = useState(false);
+  const [returningToCashier, setReturningToCashier] = useState(null);
+  const [returningToCashierLoading, setReturningToCashierLoading] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
   const toastTimeoutRef = useRef(null);
   const ordersRequestIdRef = useRef(0);
@@ -310,6 +308,7 @@ export default function PageSeller() {
   const visibleOrdersLoadingRef = useRef(false);
   const notif = useNotifications(user?.id);
   const orderReviews = useOrderEventReviews(user?.id);
+  const orderReturns = useOrderReturnHandoffs(user?.id);
   const pendingOrderReviews = orderReviews.pendingByOrder;
   const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
   const showToast = useCallback((message, type = "success") => {
@@ -644,6 +643,27 @@ export default function PageSeller() {
     }
   };
 
+  const handleReturnToCashier = async (correctionNote) => {
+    if (!returningToCashier) return;
+    setReturningToCashierLoading(true);
+    const { error } = await supabase.rpc("return_order_to_cashier", {
+      p_handoff_id: returningToCashier.id,
+      p_correction_note: correctionNote,
+    });
+    setReturningToCashierLoading(false);
+    if (error) {
+      showToast(error.message || "No se pudo regresar la orden a Caja", "error");
+      return;
+    }
+    setReturningToCashier(null);
+    setSelectedOrder(null);
+    await Promise.all([
+      fetchOrders({ nextPage: page, includeDashboard: true, silent: true }),
+      orderReturns.refresh(),
+      notif.refresh({ showNewToasts: true }),
+    ]);
+  };
+
   const handleConfirmSendToDesigner = async (designerId) => {
     if (!sendingToDesigner) return;
 
@@ -869,16 +889,17 @@ export default function PageSeller() {
                           >
                             <td className="td-pad td-name">
                               <div className="ps-client-cell">
-                                <span className="acm-avatar acm-avatar-small">{getInitials(o.client_name)}</span>
+                                <span className="acm-avatar acm-avatar-small">{getAvatarInitials(o.client_name)}</span>
                                 <span className="ps-client-cell-main">
                                   <strong title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</strong>
                                   <span className="ps-client-cell-badges">
                                     <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                                    {isReturnedOrder(o) && <ReturnedBadge compact />}
                                   </span>
                                 </span>
                               </div>
                             </td>
-                            <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number || "---"}</td>
+                            <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number ? <span className="td-invoice-badge">{o.invoice_number}</span> : "---"}</td>
                             <td className="td-pad"><StatusBadge status={o.status} /></td>
                             <td className="td-pad td-actions" data-row-action>
                               <div className="table-actions" data-row-action>
@@ -1034,7 +1055,7 @@ export default function PageSeller() {
                             >
                               <td className="td-pad td-name">
                                 <div className="ps-client-cell">
-                                  <span className="acm-avatar acm-avatar-small">{getInitials(o.client_name)}</span>
+                                  <span className="acm-avatar acm-avatar-small">{getAvatarInitials(o.client_name)}</span>
                                   <span className="ps-client-cell-main">
                                     <strong title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</strong>
                                     <span className="ps-client-cell-badges">
@@ -1044,7 +1065,7 @@ export default function PageSeller() {
                                   </span>
                                 </div>
                               </td>
-                              <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number || "---"}</td>
+                            <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number ? <span className="td-invoice-badge">{o.invoice_number}</span> : "---"}</td>
                               <td className="td-pad"><StatusBadge status={o.status} /></td>
                               <td className="td-pad"><StatusBadge status={o.payment_status} type="payment" /></td>
                               <td className="td-pad">
@@ -1123,7 +1144,7 @@ export default function PageSeller() {
                           data-order-type={isUrgent ? "911" : "normal"}
                         >
                           <div className="ps-order-card-client">
-                            <span className="acm-avatar acm-avatar-small">{getInitials(o.client_name)}</span>
+                            <span className="acm-avatar acm-avatar-small">{getAvatarInitials(o.client_name)}</span>
                             <span className="ps-order-card-client-main">
                               <strong title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</strong>
                               <span className="ps-order-card-client-badges">
@@ -1247,6 +1268,17 @@ export default function PageSeller() {
         reviewError={orderReviews.acknowledgeError}
         onSendToDesigner={handleSendToDesigner}
         onSendToQuotation={handleSendToQuotation}
+        returnHandoff={selectedOrder ? orderReturns.incomingByOrder[selectedOrder.id] : null}
+        returnHistory={selectedOrder ? orderReturns.historyByOrder[selectedOrder.id] || [] : []}
+        onReturnToCashier={setReturningToCashier}
+      />
+      <ReturnToCashierModal
+        open={!!returningToCashier}
+        handoff={returningToCashier}
+        order={selectedOrder}
+        onClose={() => setReturningToCashier(null)}
+        onConfirm={handleReturnToCashier}
+        loading={returningToCashierLoading}
       />
       <AssignModal
         open={!!sendingToDesigner}

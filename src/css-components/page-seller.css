@@ -607,7 +607,7 @@
   display: flex; justify-content: space-between; align-items: center;
 }
 .ps-panel-title { font-size: 14px; font-weight: 700; color: var(--text); }
-.ps-panel-sub   { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.ps-panel-sub   { font-size: 11px; color: #1E40AF; margin-top: 2px; font-weight: 600; }
 
 .ps-link-btn {
   background: none; border: none;
@@ -650,7 +650,18 @@
 }
 
 .td-id        { color: var(--text-muted); font-family: monospace; font-size: 11px; }
-.td-invoice   { color: var(--text-muted); font-size: 12px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-invoice   { font-size: 12px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-invoice-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .td-name      { color: var(--text); font-weight: 600; white-space: nowrap; }
 .td-desc      { color: var(--text-sub); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-mat       { color: var(--text-sub); }

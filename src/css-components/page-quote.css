@@ -1089,7 +1089,6 @@
 }
 
 .pq-recent-table .td-invoice {
-  color: #0f172a;
   font-size: 12px;
   font-weight: 600;
   max-width: 130px;
@@ -1129,8 +1128,9 @@
 }
 
 .td-invoice {
-  color: var(--pq-text-muted);
+  color: #1E40AF;
   font-size: 12px;
+  font-weight: 600;
   max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
