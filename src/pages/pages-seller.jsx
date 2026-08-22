@@ -110,7 +110,7 @@ const CARD_ACCENTS = [
   { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
   { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
-  { color: "#06B6D4", bg: "#CFFAFE", glow: "#CFFAFE" },
+  { color: "#1E40AF", bg: "#dbeafe", glow: "#dbeafe" },
 ];
 
 
@@ -126,7 +126,7 @@ function StatusBadge({ status, type = "status" }) {
 }
 
 // CARTA DE METRICA PARA DASHBOARD
-function MetricCard({ icon, label, value, sub, accentIdx = 0, trend }) {
+function MetricCard({ icon, label, value, sub, accentIdx = 0, trend, subColor }) {
   const acc = CARD_ACCENTS[accentIdx];
   return (
     <div className="ps-card">
@@ -135,7 +135,7 @@ function MetricCard({ icon, label, value, sub, accentIdx = 0, trend }) {
       <div className="ps-card-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
       <div className="ps-card-value">{value}</div>
       <div className="ps-card-label">{label}</div>
-      {sub && <div className="ps-card-sub" style={{ color: acc.color }}>{sub}</div>}
+      {sub && <div className="ps-card-sub" style={{ color: subColor || acc.color }}>{sub}</div>}
     </div>
   );
 }
@@ -753,13 +753,13 @@ export default function PageSeller() {
 
   // Valores para las cartas metricas
   const metrics = [
-    { icon: <Icons.Orders />, label: "Ordenes hoy", value: sellerSummary.todayOrders, sub: "Creadas por ti", accentIdx: 0, trend: 12 },
+    { icon: <Icons.Orders />, label: "Ordenes hoy", value: sellerSummary.todayOrders, sub: "Creadas por ti", accentIdx: 0, subColor: "#1E40AF" },
     { icon: <Icons.Package />, label: "Pendientes", value: sellerSummary.pending, sub: "Ordenes Pendientes", accentIdx: 1 },
     { icon: <Icons.Edit />, label: "En diseño", value: sellerSummary.inDesign, sub: "En proceso de diseño", accentIdx: 2 },
     { icon: <Icons.Package />, label: "En caja", value: sellerSummary.inQuote, sub: "Esperando aprobación", accentIdx: 5 },
     { icon: <Icons.Package />, label: "En producción", value: sellerSummary.inProduction, sub: "Siendo impresas", accentIdx: 3 },
     { icon: <Icons.Package />, label: "Terminación", value: sellerSummary.inTermination, sub: "En proceso final", accentIdx: 2 },
-    { icon: <Icons.Truck />, label: "Completadas", value: sellerSummary.completed, sub: "Entregadas al cliente", accentIdx: 4, trend: 8 },
+    { icon: <Icons.Truck />, label: "Completadas", value: sellerSummary.completed, sub: "Entregadas al cliente", accentIdx: 4 },
     { icon: <Icons.X />, label: "Devueltas", value: sellerSummary.returned, sub: "Pendientes de corrección", accentIdx: 3 },
   ];
 
@@ -793,11 +793,10 @@ export default function PageSeller() {
           </div>
           <div className="ps-topbar-right">
             <button className="ps-icon-btn" onClick={() => fetchOrders({ nextPage: page, includeDashboard: true })}><Icons.Refresh /></button>
-            <div className="ps-topbar-divider" />
             {/* Boton para agregar  registrar Nuevo Cliente */}
-            <button className="ps-topbar-client-btn" onClick={() => setShowNewClientModal(true)}>
-              <div className="ps-topbar-client-inner"><Icons.Plus /> Nuevo Cliente</div>
-            </button>
+    <button className="ps-topbar-client-btn" onClick={() => setShowNewClientModal(true)}>
+      <div className="ps-topbar-client-inner"><Icons.Users /> Nuevo Cliente</div>
+    </button>
             {/* Boton para regitrar Nueva Orden */}
              <button className="ps-topbar-new-btn" onClick={() => setShowCreate(true)}>
               <div className="ps-topbar-new-inner"><Icons.Plus /> Nueva Orden</div>
@@ -845,10 +844,10 @@ export default function PageSeller() {
                     <Icons.Plus />
                     Crear Ordenes
                   </button>
-                  <button type="button" className="ps-greeting-btn secondary" onClick={() => setShowNewClientModal(true)}>
-                    <Icons.Users />
-                    Crear Usuarios
-                  </button>
+    <button type="button" className="ps-greeting-btn secondary" onClick={() => setShowNewClientModal(true)}>
+      <Icons.Users />
+      Nuevo Cliente
+    </button>
                 </div>
               </div>
               <div className="ps-metrics">
