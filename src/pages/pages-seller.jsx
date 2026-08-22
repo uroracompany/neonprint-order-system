@@ -111,6 +111,7 @@ const CARD_ACCENTS = [
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
   { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
   { color: "#1E40AF", bg: "#dbeafe", glow: "#dbeafe" },
+  { color: "#991b1b", bg: "#fef2f2", glow: "#fef2f2" },
 ];
 
 
@@ -760,7 +761,7 @@ export default function PageSeller() {
     { icon: <Icons.Package />, label: "En producción", value: sellerSummary.inProduction, sub: "Siendo impresas", accentIdx: 3 },
     { icon: <Icons.Package />, label: "Terminación", value: sellerSummary.inTermination, sub: "En proceso final", accentIdx: 2 },
     { icon: <Icons.Truck />, label: "Completadas", value: sellerSummary.completed, sub: "Entregadas al cliente", accentIdx: 4 },
-    { icon: <Icons.X />, label: "Devueltas", value: sellerSummary.returned, sub: "Pendientes de corrección", accentIdx: 3 },
+    { icon: <Icons.ArrowLeft />, label: "Devueltas", value: sellerSummary.returned, sub: "Pendientes de corrección", accentIdx: 6 },
   ];
 
   return (
