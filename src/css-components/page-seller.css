@@ -573,7 +573,7 @@
   color: var(--text); line-height: 1;
 }
 .ps-card-label {
-  font-size: 13px; color: var(--text-sub);
+  font-size: 13px; color: #000000;
   margin-top: 6px; font-weight: 700;
 }
 .ps-card-sub {
@@ -611,7 +611,7 @@
 
 .ps-link-btn {
   background: none; border: none;
-  color: var(--primary); font-family: 'Poppins', sans-serif;
+  color: #1E40AF; font-family: 'Poppins', sans-serif;
   font-size: 12px; font-weight: 600; cursor: pointer;
   display: flex; align-items: center; gap: 4px;
   padding: 6px 10px; border-radius: 7px;
