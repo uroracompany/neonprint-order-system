@@ -38,6 +38,8 @@ import { useAuth } from "../hooks/useAuth";
 import { showCreditActionFeedback } from "../utils/notifications";
 import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useOrderReturnHandoffs from "../hooks/useOrderReturnHandoffs";
+import useNewOrderAssignments from "../hooks/useNewOrderAssignments";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
@@ -48,8 +50,10 @@ import "../css-components/page-admin.css";
 import "../components/clients/AdminClientsModule.css";
 import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
+import NewOrderBadge from "../components/orders/NewOrderBadge";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import FileCard from "../components/FileCard";
+import { OrderReturnHandoffPanel, ReturnedToCashierBadge } from "../components/orders/OrderReturnHandoff";
 import { loadClients, orderMatchesClientFilter, searchClients, formatDominicanPhone, NO_CLIENT_FILTER_VALUE } from "../utils/clients";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import "../css-components/page-production.css";
@@ -302,6 +306,10 @@ function QuoteOrderDetailModal({
   onAcknowledgeReview,
   reviewAcknowledging,
   reviewError,
+  returnAcknowledgement,
+  returnHistory,
+  onAcknowledgeReturn,
+  returnAcknowledging,
 }) {
   const [receiptFile, setReceiptFile] = useState(null);
   const [receiptPreviewAvailable, setReceiptPreviewAvailable] = useState(true);
@@ -310,6 +318,7 @@ function QuoteOrderDetailModal({
   const [paymentStatus, setPaymentStatus] = useState("pagado");
   const [localError, setLocalError] = useState("");
   const [creditClientRequired, setCreditClientRequired] = useState(false);
+  const [initialPaymentStatus, setInitialPaymentStatus] = useState(null);
   const [receiptUrl, setReceiptUrl] = useState("");
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
   const fileInputRef = useRef(null);
@@ -320,7 +329,9 @@ function QuoteOrderDetailModal({
       setReceiptPreviewAvailable(true);
       setReceiptZoneError("");
       setReceiptZoneErrorKey(0);
-      setPaymentStatus(isPaymentPartial(order?.payment_status) ? PAYMENT_STATUS.PAID : order?.payment_status || PAYMENT_STATUS.PENDING);
+      const defaultStatus = isPaymentPartial(order?.payment_status) ? PAYMENT_STATUS.PAID : order?.payment_status || PAYMENT_STATUS.PENDING;
+      setPaymentStatus(defaultStatus);
+      setInitialPaymentStatus(defaultStatus);
       setLocalError("");
       setCreditClientRequired(false);
       setReceiptUrl("");
@@ -470,6 +481,12 @@ function QuoteOrderDetailModal({
         </div>
 
         <div className="pq-modal-body">
+          <OrderReturnHandoffPanel
+            acknowledgementHandoff={returnAcknowledgement}
+            history={returnHistory}
+            onAcknowledge={onAcknowledgeReturn}
+            acknowledging={returnAcknowledging}
+          />
           <div className="pq-flow-summary">
             <StatusBadge status={order.status} className="pq-badge" />
             <PaymentBadge status={order.payment_status} className="pq-badge" />
@@ -798,7 +815,7 @@ function QuoteOrderDetailModal({
                 </button>
               )}
               <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
-              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving}>
+              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving || paymentStatus === initialPaymentStatus}>
                 {getPaymentConfirmButtonLabel(paymentStatus, paymentSaving)}
               </button>
             </div>
@@ -1234,13 +1251,11 @@ export default function PageQuote() {
   // Hook personalizado para notificaciones y alertas
   const notif = useNotifications(user?.id);
   const orderReviews = useOrderEventReviews(user?.id);
+  const orderReturns = useOrderReturnHandoffs(user?.id);
+  const newOrderAssignments = useNewOrderAssignments(user?.id, "quote");
   const pendingOrderReviews = orderReviews.pendingByOrder;
+  const pendingNewAssignments = newOrderAssignments.pendingByOrder;
   const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
-
-  // Referencias mutables para rastrear cambios sin causar re-renders
-  const previousAssignedIdsRef = useRef(new Set());
-  const previousOrdersRef = useRef({});
-  const assignmentsInitializedRef = useRef(false);
 
   // ============= EFECTO 1: VALIDAR SESIÓN Y ROL =============
   // Se ejecuta una sola vez al montar el componente
@@ -1715,37 +1730,8 @@ export default function PageQuote() {
       additionalOrders: creditOrders,
     });
     await syncSellerDirectory(fetchedOrders);
-    registerNewAssignments(fetchedOrders);
     if (!silent) setLoading(false);
   }
-
-  // ============= FUNCIÓN: REGISTRAR NUEVAS ASIGNACIONES =============
-  // Mantiene el seguimiento local de qué órdenes se han visto
-  // Se usa para detectar cambios sin hacer queries constantes a BD
-  // Las notificaciones de cambios las maneja Supabase en tiempo real
-  const registerNewAssignments = (nextOrders) => {
-    const nextIds = new Set(nextOrders.map(order => order.id));
-
-    // INICIALIZACIÓN (primera carga)
-    if (!assignmentsInitializedRef.current) {
-      previousAssignedIdsRef.current = nextIds;
-      previousOrdersRef.current = nextOrders.reduce((acc, order) => {
-        acc[order.id] = order;
-        return acc;
-      }, {});
-      assignmentsInitializedRef.current = true;
-      return;
-    }
-
-    // ACTUALIZACIONES POSTERIORES
-    previousAssignedIdsRef.current = nextIds;
-    previousOrdersRef.current = nextOrders.reduce((acc, order) => {
-      acc[order.id] = order;
-      return acc;
-    }, {});
-  };
-
-
 
   // ============= FUNCIÓN: ABRIR DETALLE DE ORDEN =============
   // Se ejecuta cuando el usuario hace click en una orden
@@ -1760,6 +1746,9 @@ export default function PageQuote() {
     const nextOrder = data || order;
     await syncSellerDirectory([nextOrder]);
     setSelectedOrder(nextOrder);
+    if (pendingNewAssignments[order.id]) {
+      void newOrderAssignments.acknowledgeOrder(order.id);
+    }
   };
 
   // ============= FUNCIÓN: CONFIRMAR PAGO DE ORDEN =============
@@ -2020,17 +2009,10 @@ export default function PageQuote() {
 
     setReturnLoading(true);
     const isExternalDesign = returningOrder.order_design_type === "EXTERNAL_DESING";
-    const nextStatus = isExternalDesign ? ORDER_STATUS.PENDING : ORDER_STATUS.IN_DESIGN;
-    const returnedAt = new Date().toISOString();
-
-    const { error } = await supabase
-      .from("orders")
-      .update({
-        status: nextStatus,
-        return_reason: reason,
-        returned_to_designer_at: returnedAt,
-      })
-      .eq("id", returningOrder.id);
+    const { data: updatedOrder, error } = await supabase.rpc("return_quote_order_for_correction", {
+      p_order_id: returningOrder.id,
+      p_reason: reason,
+    });
 
     setReturnLoading(false);
 
@@ -2046,12 +2028,7 @@ export default function PageQuote() {
       return;
     }
 
-    const nextOrder = {
-      ...returningOrder,
-      status: nextStatus,
-      return_reason: reason,
-      returned_to_designer_at: returnedAt,
-    };
+    const nextOrder = updatedOrder || returningOrder;
     setOrders(prev => (
       isExternalDesign
         ? prev.filter(order => order.id !== returningOrder.id)
@@ -2062,6 +2039,18 @@ export default function PageQuote() {
     }
 
     setReturningOrder(null);
+    await orderReturns.refresh();
+  };
+
+  const handleAcknowledgeReturn = async (handoff) => {
+    if (!handoff?.id) return;
+    const { error } = await supabase.rpc("acknowledge_order_return", { p_handoff_id: handoff.id });
+    if (error) {
+      showCreditFeedback("error", "No se pudo confirmar", error.message || "Intenta nuevamente.");
+      return;
+    }
+    await orderReturns.refresh();
+    await notif.refresh();
   };
 
   const handleLogout = async () => {
@@ -2729,6 +2718,8 @@ export default function PageQuote() {
                             <td className="td-pad">
                               <div className="pq-status-stack">
                                 <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
                                 {isReturnedOrder(order) && <ReturnedBadge compact />}
                                 <StatusBadge status={order.status} className="pq-badge" />
                               </div>
@@ -2945,7 +2936,7 @@ export default function PageQuote() {
             onToggleAll={toggleAllCreditOrdersForClient}
             onSettle={openCreditSettlementModal}
             onCreateReminder={openCreditReminderModal}
-            onViewOrder={setSelectedOrder}
+            onViewOrder={handleViewOrder}
             onBack={() => { setCreditView("list"); setCreditDetailClientId(null); }}
           />
         )}
@@ -3156,6 +3147,8 @@ export default function PageQuote() {
                                 <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                                 <span className="ps-client-cell-badges">
                                   <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                  {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                  {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
                                   {isReturnedOrder(order) && <ReturnedBadge compact />}
                                 </span>
                               </span>
@@ -3207,6 +3200,8 @@ export default function PageQuote() {
                           <span className="ps-order-card-client-badges">
                             <span className="ps-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
                             <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                            {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                            {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
                             {isReturnedOrder(order) && <ReturnedBadge compact />}
                           </span>
                         </span>
@@ -3303,6 +3298,10 @@ export default function PageQuote() {
         onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
         reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
         reviewError={orderReviews.acknowledgeError}
+        returnAcknowledgement={selectedOrder ? orderReturns.acknowledgementByOrder[selectedOrder.id] : null}
+        returnHistory={selectedOrder ? orderReturns.historyByOrder[selectedOrder.id] || [] : []}
+        onAcknowledgeReturn={handleAcknowledgeReturn}
+        returnAcknowledging={false}
       />
 
       <ArchiveOrderModal
