@@ -22,7 +22,6 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
 }
 
 .order-detail-actions-copy strong,
@@ -114,7 +113,6 @@
 .order-detail-section {
   border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow: var(--shadow-sm);
 }
 
 .order-detail-flow {
@@ -131,13 +129,18 @@
   background: var(--surface);
   border-radius: 16px;
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
 }
 
 .order-detail-flow .ps-flow-circle {
   width: 34px;
   height: 34px;
   font-size: 12px;
+}
+
+.order-detail-flow .ps-flow-circle.done {
+  background: var(--green);
+  border-color: var(--green);
+  color: #ffffff;
 }
 
 .order-detail-flow .ps-flow-label {
@@ -186,4 +189,88 @@
   .pa-order-actions {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── PARTICIPATION TIMELINE ──────────────────────────────────── */
+.participation-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.participation-entry {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.participation-entry:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.participation-entry:first-child {
+  padding-top: 0;
+}
+
+.participation-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.participation-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.participation-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.participation-role {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.participation-user {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.participation-action {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.participation-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.participation-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

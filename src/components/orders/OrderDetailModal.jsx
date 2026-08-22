@@ -14,6 +14,8 @@ import { PaymentBadge, StatusBadge as SharedStatusBadge } from "../ui/Badge";
 import { Modal } from "./CreateOrderModal";
 import OrderAssignmentAction from "./OrderAssignmentAction";
 import OrderReviewCard from "./OrderReviewCard";
+import { OrderReturnHandoffPanel } from "./OrderReturnHandoff";
+import OrderParticipationTimeline from "./OrderParticipationTimeline";
 import "./OrderDetailModal.css";
 
 const ACTIVE_WORKFLOW_STATUSES_FOR_SELLER = [
@@ -111,6 +113,7 @@ function TrackingLinkField({ orderId }) {
               flex: 1,
               padding: "8px 12px",
               fontSize: 12,
+              fontWeight: 600,
               fontFamily: "'SF Mono', 'Fira Code', monospace",
               border: "1.5px solid var(--border)",
               borderRadius: "var(--radius-sm)",
@@ -163,6 +166,9 @@ export default function OrderDetailModal({
   onAcknowledgeReview,
   reviewAcknowledging = false,
   reviewError = "",
+  returnHandoff = null,
+  returnHistory = [],
+  onReturnToCashier,
   adminIntervention = null,
   adminActions = null,
 }) {
@@ -202,10 +208,11 @@ export default function OrderDetailModal({
   if (!hasOrder) return null;
 
   const isExternalDesign = order.order_design_type === "EXTERNAL_DESING";
-  const primaryActionHandler = isExternalDesign ? onSendToQuotation : onSendToDesigner;
-  const primaryLabel = primaryActionLabel || (isExternalDesign ? "Enviar a Caja" : "Enviar a Diseño");
+  const isReturningToCashier = Boolean(returnHandoff && !returnHandoff.responded_at);
+  const primaryActionHandler = isReturningToCashier ? () => onReturnToCashier?.(returnHandoff) : (isExternalDesign ? onSendToQuotation : onSendToDesigner);
+  const primaryLabel = isReturningToCashier ? "Regresar a Caja" : (primaryActionLabel || (isExternalDesign ? "Enviar a Caja" : "Enviar a Diseño"));
   const shouldShowPrimaryAction = showPrimaryAction
-    && !isOrderStatusIn(order.status, ACTIVE_WORKFLOW_STATUSES_FOR_SELLER);
+    && (isReturningToCashier || !isOrderStatusIn(order.status, ACTIVE_WORKFLOW_STATUSES_FOR_SELLER));
   const displayResponsibleName = responsibleName || user?.displayName || "---";
 
   return (
@@ -247,43 +254,52 @@ export default function OrderDetailModal({
             background: "var(--surface)",
             padding: 20,
             marginBottom: 18,
-            position: "relative",
-            overflow: "hidden"
           }}>
-            <div style={{
-              position: "absolute",
-              top: 0, right: 0,
-              width: 100, height: 100,
-              background: "linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, transparent 100%)",
-              borderRadius: "0 0 0 100px",
-              pointerEvents: "none"
-            }} />
-
             <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
               <div style={{
                 width: 50, height: 50,
                 borderRadius: "50%",
-                background: "var(--pink)",
+                background: "var(--primary)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#fff", fontSize: 22, fontWeight: 700,
-                flexShrink: 0
+                color: "#fff", fontSize: 18, fontWeight: 700,
+                flexShrink: 0,
+                letterSpacing: "0.02em"
               }}>
-                {order.client_name?.charAt(0)?.toUpperCase()}
+                {order.client_name?.split(" ").slice(0, 2).map(n => n.charAt(0)?.toUpperCase()).join("") || "?"}
               </div>
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", margin: 0, marginBottom: 5 }}>
                   {order.client_name}
                 </p>
                 {order.client_contact && (
-                  <p style={{ fontSize: 12, color: "var(--text-sub)", margin: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "4px 10px",
+                    background: "var(--surface-alt)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 20,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "var(--text)"
+                  }}>
                     <Icons.Phone />{order.client_contact}
-                  </p>
+                  </span>
                 )}
               </div>
             </div>
 
             <div style={{ paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-              <p style={{ fontSize: 13, color: "var(--text-sub)", lineHeight: 1.6, margin: 0 }}>
+              <p style={{
+                fontSize: 11, fontWeight: 700, color: "#1E40AF",
+                textTransform: "uppercase", letterSpacing: "0.07em",
+                margin: "0 0 10px 0",
+                display: "flex", alignItems: "center", gap: 6
+              }}>
+                <Icons.FileText /> Descripción de la orden
+              </p>
+              <p style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, lineHeight: 1.6, margin: 0 }}>
                 {order.description}
               </p>
             </div>
@@ -302,10 +318,11 @@ export default function OrderDetailModal({
             marginBottom: 18
           }}>
             <p style={{
-              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+              fontSize: 11, fontWeight: 700, color: "#1E40AF",
               textTransform: "uppercase", letterSpacing: "0.07em",
-              marginBottom: 14, margin: "0 0 14px 0"
-            }}>Especificaciones</p>
+              marginBottom: 14, margin: "0 0 14px 0",
+              display: "flex", alignItems: "center", gap: 6
+            }}><Icons.Clipboard /> Especificaciones</p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {[
@@ -326,9 +343,9 @@ export default function OrderDetailModal({
                   gap: 10, alignItems: "center", paddingBottom: 11,
                   borderBottom: index < 5 ? "1px solid var(--border)" : "none"
                 }}>
-                  <div style={{ color: "var(--text-muted)" }}>{item.icon}</div>
+                  <div style={{ color: "var(--pink)" }}>{item.icon}</div>
                   <div>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 3px 0", fontWeight: 600 }}>
+                    <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>
                       {item.label}
                     </p>
                     <p style={{ fontSize: 13, color: "var(--text)", margin: 0, fontWeight: 600 }}>
@@ -346,27 +363,18 @@ export default function OrderDetailModal({
             background: "var(--surface)",
             padding: 20,
             marginBottom: 18,
-            position: "relative",
-            overflow: "hidden"
           }}>
-            <div style={{
-              position: "absolute", top: 0, right: -30,
-              width: 100, height: 100,
-              background: statusConfig?.bg || "rgba(0,0,0,0.02)",
-              borderRadius: "50%",
-              pointerEvents: "none"
-            }} />
-
             <p style={{
-              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+              fontSize: 11, fontWeight: 700, color: "#1E40AF",
               textTransform: "uppercase", letterSpacing: "0.07em",
-              marginBottom: 14
-            }}>Estado & Pago</p>
+              marginBottom: 14,
+              display: "flex", alignItems: "center", gap: 6
+            }}><Icons.CheckCircle /> Estado & Pago</p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 7px 0", fontWeight: 600 }}>
-                  ESTADO ACTUAL
+                <p style={{ fontSize: 11, color: "#1E40AF", margin: "0 0 7px 0", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icons.Check /> ESTADO ACTUAL
                 </p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <StatusBadge status={order.status} />
@@ -375,8 +383,8 @@ export default function OrderDetailModal({
               </div>
 
               <div>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 7px 0", fontWeight: 600 }}>
-                  ESTADO DE PAGO
+                <p style={{ fontSize: 11, color: "#1E40AF", margin: "0 0 7px 0", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icons.Money /> ESTADO DE PAGO
                 </p>
                 <StatusBadge status={order.payment_status} type="payment" />
               </div>
@@ -396,6 +404,7 @@ export default function OrderDetailModal({
                   </p>
                 </div>
               )}
+              <OrderReturnHandoffPanel incomingHandoff={returnHandoff} history={returnHistory} />
             </div>
 
             {shouldShowPrimaryAction && (
@@ -416,31 +425,38 @@ export default function OrderDetailModal({
             marginBottom: 18
           }}>
             <p style={{
-              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+              fontSize: 11, fontWeight: 700, color: "#1E40AF",
               textTransform: "uppercase", letterSpacing: "0.07em",
-              marginBottom: 12
-            }}>Información del Sistema</p>
+              marginBottom: 12,
+              display: "flex", alignItems: "center", gap: 6
+            }}><Icons.Clipboard /> Información del Sistema</p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {[
-                { label: "ID Orden", value: order.id?.slice(0, 8), icon: <Icons.Key /> },
-                { label: "Creada", value: created, icon: <Icons.Clock /> },
-                { label: "Responsable", value: displayResponsibleName, icon: <Icons.User /> },
-                ...(order.designer_id ? [{ label: "Diseñador", value: designerName || "Asignado", icon: <Icons.Edit style={{ color: "#8B5CF6" }} /> }] : []),
-              ].map((item) => (
-                <div key={item.label} style={{
-                  display: "grid", gridTemplateColumns: "20px 1fr auto",
-                  gap: 8, alignItems: "center"
-                }}>
-                  <span style={{ color: "var(--text-muted)" }}>{item.icon}</span>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, margin: 0 }}>
-                    {item.label}
-                  </p>
-                  <p style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, margin: 0, textAlign: "right" }}>
-                    {item.value}
-                  </p>
-                </div>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {(() => {
+                const items = [
+                  { label: "ID Orden", value: order.id?.slice(0, 8), icon: <Icons.Clipboard /> },
+                  { label: "Creada", value: created, icon: <Icons.Clock /> },
+                  { label: "Responsable", value: displayResponsibleName, icon: <Icons.User /> },
+                  ...(order.designer_id ? [{ label: "Diseñador", value: designerName || "Asignado", icon: <Icons.Edit /> }] : []),
+                ];
+                return items.map((item, index) => (
+                  <div key={item.label} style={{
+                    display: "grid", gridTemplateColumns: "28px 1fr",
+                    gap: 10, alignItems: "center", paddingBottom: 11,
+                    borderBottom: index < items.length - 1 ? "1px solid var(--border)" : "none"
+                  }}>
+                    <div style={{ color: "var(--pink)" }}>{item.icon}</div>
+                    <div>
+                      <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>
+                        {item.label}
+                      </p>
+                      <p style={{ fontSize: 13, color: "var(--text)", margin: 0, fontWeight: 600 }}>
+                        {item.value}
+                      </p>
+                    </div>
+                  </div>
+                ));
+              })()}
             </div>
           </div>
 
@@ -450,7 +466,7 @@ export default function OrderDetailModal({
             marginBottom: 18
           }}>
             <p style={{
-              fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+              fontSize: 11, fontWeight: 700, color: "#1E40AF",
               textTransform: "uppercase", letterSpacing: "0.07em",
               marginBottom: 12, display: "flex", alignItems: "center", gap: 8
             }}>
@@ -466,21 +482,20 @@ export default function OrderDetailModal({
         <div className="order-detail-section" style={{
           background: "var(--surface)",
           padding: 20,
-          boxShadow: "var(--shadow-sm)"
         }}>
           <p style={{
-            fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+            fontSize: 11, fontWeight: 700, color: "#1E40AF",
             textTransform: "uppercase", letterSpacing: "0.07em",
             marginBottom: 16,
             display: "flex", alignItems: "center", gap: 8
           }}>
-            <Icons.File /> Archivos Adjuntos
+            <Icons.Paperclip /> Archivos Adjuntos
           </p>
 
           <div style={{ display: "grid", gridTemplateColumns: order.preview_image && orderFileUrls.length > 0 ? "1fr 1fr" : "1fr", gap: 16 }}>
             {order.preview_image && (
               <div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pink)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                   <Icons.Eye /> Orden de Trabajo
                 </p>
                 <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
@@ -503,7 +518,7 @@ export default function OrderDetailModal({
 
             {orderFileUrls.length > 0 && (
               <div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "#1E40AF", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                   <Icons.Brush /> Diseño del cliente
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -548,6 +563,9 @@ export default function OrderDetailModal({
           )}
         </div>
       )}
+
+      <OrderParticipationTimeline orderId={order.id} />
+
       </div>
     </Modal>
   );
