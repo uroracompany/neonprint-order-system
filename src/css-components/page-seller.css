@@ -574,7 +574,7 @@
 }
 .ps-card-label {
   font-size: 13px; color: var(--text-sub);
-  margin-top: 6px; font-weight: 500;
+  margin-top: 6px; font-weight: 700;
 }
 .ps-card-sub {
   font-size: 11px; margin-top: 4px; font-weight: 500;
@@ -691,7 +691,7 @@
   place-items: center;
   border-radius: 50%;
   background: var(--primary);
-  border: 2px solid var(--green);
+  border: 2px solid transparent;
   color: #ffffff;
   font-weight: 700;
   letter-spacing: -.03em;
