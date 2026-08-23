@@ -10,10 +10,6 @@
   transition: border-color 0.15s ease;
 }
 
-.fc-file-item:hover {
-  border-color: var(--primary);
-}
-
 .fc-file-main {
   display: flex;
   align-items: center;
@@ -62,6 +58,16 @@
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 500;
+}
+
+.pd-modal .fc-file-secondary {
+  color: #1E40AF;
+  font-weight: 600;
+}
+
+.pp-modal .fc-file-secondary {
+  color: #1E40AF;
+  font-weight: 600;
 }
 
 .fc-file-actions {
@@ -152,6 +158,10 @@
   letter-spacing: 0.25px;
   line-height: 1.2;
   text-transform: uppercase;
+}
+
+.pd-modal .production-file-field-label {
+  color: #1E40AF;
 }
 
 .production-file-field input,

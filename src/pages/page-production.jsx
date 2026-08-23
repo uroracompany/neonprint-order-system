@@ -12,9 +12,11 @@ import FileCard from "../components/FileCard";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useNewOrderAssignments from "../hooks/useNewOrderAssignments";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
+import NewOrderBadge from "../components/orders/NewOrderBadge";
 import { Icons } from "../utils/icons";
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
@@ -59,22 +61,15 @@ const METRIC_ACCENTS = [
   { color: "#14532D", bg: "#DCFCE7", glow: "#DCFCE7" },
 ];
 
-function MetricCard({ icon, label, value, accentIdx = 0 }) {
+function MetricCard({ icon, label, value, sub, accentIdx = 0, subColor }) {
   const acc = METRIC_ACCENTS[accentIdx];
   return (
-    <div
-      className="pp-metric-card"
-      onMouseEnter={e => e.currentTarget.style.borderColor = acc.color}
-      onMouseLeave={e => e.currentTarget.style.borderColor = ""}
-    >
-      <div className="pp-metric-glow" style={{ background: acc.glow }} />
-      <div className="pp-metric-icon" style={{ background: acc.bg, color: acc.color }}>
-        {icon}
-      </div>
-      <div className="pp-metric-info">
-        <span className="pp-metric-value">{value}</span>
-        <span className="pp-metric-label">{label}</span>
-      </div>
+    <div className="pp-card">
+      <div className="pp-card-glow" style={{ background: acc.glow }} />
+      <div className="pp-card-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
+      <div className="pp-card-value">{value}</div>
+      <div className="pp-card-label">{label}</div>
+      {sub && <div className="pp-card-sub" style={{ color: subColor || acc.color }}>{sub}</div>}
     </div>
   );
 }
@@ -324,7 +319,7 @@ export function OrderDetailModal({
 
           <div className="pp-modal-grid">
             <div>
-              <div className="pp-modal-card">
+              <div className="pp-modal-card pp-client-info-card">
                 <div className="pp-modal-card-title">
                   <Icons.User />
                   <h4>Información del Cliente</h4>
@@ -370,7 +365,7 @@ export function OrderDetailModal({
                 </p>
               </div>
 
-              <div className="pp-modal-card" style={{ marginTop: 16 }}>
+              <div className="pp-modal-card pp-work-details-card" style={{ marginTop: 16 }}>
                 <div className="pp-modal-card-title">
                   <Icons.FileText />
                   <h4>Detalles del Trabajo</h4>
@@ -380,7 +375,7 @@ export function OrderDetailModal({
                     <p className="pp-modal-row-label">Descripción</p>
                     <p className="pp-modal-description">{order.description || "Sin descripción"}</p>
                   </div>
-                  <div className="pp-modal-row" style={{ marginTop: 10 }}>
+                  <div className="pp-modal-row pp-pink" style={{ marginTop: 10 }}>
                     <span className="pp-modal-row-icon"><Icons.Package /></span>
                     <div>
                       <p className="pp-modal-row-label">Material</p>
@@ -406,7 +401,7 @@ export function OrderDetailModal({
                     </div>
                   )}
                   {order.termination_type && (
-                    <div className="pp-modal-row">
+                    <div className="pp-modal-row pp-pink">
                       <span className="pp-modal-row-icon"><Icons.Check /></span>
                       <div>
                         <p className="pp-modal-row-label">Terminación</p>
@@ -421,10 +416,10 @@ export function OrderDetailModal({
             <div>
               <div className="pp-modal-status-card">
                 <div className="pp-modal-status-glow" style={{ background: statusCfg?.bg || "transparent" }} />
-                <p className="pp-modal-status-title">Estado</p>
+                <p className="pp-modal-status-title"><Icons.CheckCircle /> Estado</p>
                 <div className="pp-modal-status-grid">
                   <div className="pp-modal-status-section">
-                    <span className="pp-modal-status-label">Estado Actual</span>
+                    <span className="pp-modal-status-label"><Icons.Check /> Estado Actual</span>
                     <StatusBadge status={order.status} className="pp-badge" bordered />
                   </div>
                   {order.price && (
@@ -436,14 +431,14 @@ export function OrderDetailModal({
                 </div>
               </div>
 
-              <div className="pp-modal-card" style={{ marginTop: 16 }}>
+              <div className="pp-modal-card pp-system-info-card" style={{ marginTop: 16 }}>
                 <div className="pp-modal-card-title">
                   <Icons.Key />
                   <h4>Información del Sistema</h4>
                 </div>
                 <div className="pp-modal-card-body">
                   <div className="pp-modal-row">
-                    <span className="pp-modal-row-icon"><Icons.Key /></span>
+                    <span className="pp-modal-row-icon"><Icons.Hash /></span>
                     <div>
                       <p className="pp-modal-row-label">ID Orden</p>
                       <p className="pp-modal-row-value">{order.id?.slice(0, 8) || "---"}</p>
@@ -541,7 +536,7 @@ export function OrderDetailModal({
               <div style={{ display: "grid", gridTemplateColumns: order.preview_image && areaFiles.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
                 {order.preview_image && (
                   <div>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "#F43F5E", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                       <Icons.Eye /> Orden de Trabajo
                     </p>
                     <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
@@ -563,7 +558,7 @@ export function OrderDetailModal({
                 )}
                 {areaFiles.length > 0 && (
                   <div>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "#1E40AF", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                       <Icons.Brush /> Diseño del cliente
                     </p>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -694,11 +689,10 @@ export function OrderDetailModal({
     {showLastFileConfirm && (
       <div className="pp-modal-overlay" onClick={() => setShowLastFileConfirm(false)} style={{ zIndex: 1100 }}>
         <div className="pp-modal pp-modal-compact" onClick={(e) => e.stopPropagation()}>
-          <div className="pp-modal-stripe" />
           <div className="pp-modal-header">
             <div>
               <div className="pp-modal-title"><h3>Finalizar orden de producción</h3></div>
-              <div className="pp-modal-subtitle">Confirmación requerida</div>
+              <div className="pp-modal-subtitle" style={{ color: "#059669" }}>Confirmación requerida</div>
             </div>
             <button className="pp-modal-close" onClick={() => setShowLastFileConfirm(false)}><Icons.Close /></button>
           </div>
@@ -770,7 +764,9 @@ export default function PageProduction() {
   const [clients, setClients] = useState([]);
   const notif = useNotifications(user?.id);
   const orderReviews = useOrderEventReviews(user?.id);
+  const newOrderAssignments = useNewOrderAssignments(user?.id, "production");
   const pendingOrderReviews = orderReviews.pendingByOrder;
+  const pendingNewAssignments = newOrderAssignments.pendingByOrder;
   const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
 
   const refreshOrders = useCallback(async (silent = false) => {
@@ -900,14 +896,17 @@ export default function PageProduction() {
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
   const metrics = [
-    { icon: <Icons.Package />, label: "Producción", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, accentIdx: 0 },
-    { icon: <Icons.Package />, label: "Terminación", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length, accentIdx: 1 },
-    { icon: <Icons.Truck />, label: "Entregadas", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)).length, accentIdx: 2 },
-    { icon: <Icons.Check />, label: "Completadas", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length, accentIdx: 3 },
+    { icon: <Icons.Package />, label: "Producción", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, sub: "Archivos en proceso", accentIdx: 0 },
+    { icon: <Icons.Package />, label: "Terminación", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length, sub: "Listos para entregar", accentIdx: 1 },
+    { icon: <Icons.Truck />, label: "Entregadas", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)).length, sub: "Fuera de taller", accentIdx: 2 },
+    { icon: <Icons.Check />, label: "Completado", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length, sub: "Finalizadas hoy", accentIdx: 3 },
   ];
 
   const handleViewOrder = (order) => {
     setSelectedOrder(order);
+    if (pendingNewAssignments[order.id]) {
+      void newOrderAssignments.acknowledgeOrder(order.id);
+    }
   };
 
 
@@ -955,7 +954,7 @@ export default function PageProduction() {
             {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
           </button>
           <div className="pp-header-title">
-            <h2>{activeTab === "dashboard" ? "Dashboard" : activeTab === "notifications" ? "Notificaciones" : activeTab === "profile" ? "Mi Perfil" : "Órdenes de Producción"}</h2>
+            <h2>{activeTab === "dashboard" ? "Panel Principal" : activeTab === "notifications" ? "Notificaciones" : activeTab === "profile" ? "Mi Perfil" : "Órdenes de Producción"}</h2>
             <span className="pp-header-date">{dateStr}</span>
           </div>
           <div className="pp-header-actions">
@@ -971,6 +970,10 @@ export default function PageProduction() {
             />
             <button className="pp-refresh-btn" onClick={refreshOrders} title="Actualizar">
               <Icons.Refresh />
+            </button>
+            <button className="pp-action-btn" onClick={() => setActiveTab("orders")}>
+              <Icons.Orders />
+              <span>Gestionar Órdenes</span>
             </button>
           </div>
         </header>
@@ -997,6 +1000,12 @@ export default function PageProduction() {
                     </div>
                   </div>
                 </div>
+                <div className="pq-greeting-actions">
+                  <button type="button" className="pp-action-btn" onClick={() => setActiveTab("orders")}>
+                    <Icons.Orders />
+                    Gestionar Órdenes
+                  </button>
+                </div>
               </div>
 
               <div className="pp-metrics">
@@ -1010,7 +1019,7 @@ export default function PageProduction() {
                 <div className="pp-panel-header">
                   <div>
                     <div className="pp-panel-title">Órdenes Recientes</div>
-                    <div className="pp-panel-sub">Las últimas 5 órdenes en el flujo de producción</div>
+                    <div className="pp-panel-sub pp-panel-sub--blue">Las últimas 5 órdenes en el flujo de producción</div>
                   </div>
                   <button className="pp-link-btn" onClick={() => setActiveTab("orders")}>
                     Ver todas <Icons.ArrowRight />
@@ -1043,6 +1052,7 @@ export default function PageProduction() {
                                 <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
                                 <span>
                                   <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                  {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
                                 </span>
                               </div>
                             </td>
@@ -1190,6 +1200,7 @@ export default function PageProduction() {
                                 <span className="pp-client-cell-main">
                                   <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                                   <span className="pp-client-cell-badges">
+                                    {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
                                     <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                                   </span>
                                 </span>
@@ -1255,6 +1266,7 @@ export default function PageProduction() {
                             <span className="pp-client-cell-main">
                               <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                               <span className="pp-client-cell-badges">
+                                {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
                                 <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                               </span>
                             </span>

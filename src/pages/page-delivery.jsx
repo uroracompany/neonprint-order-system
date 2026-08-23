@@ -9,6 +9,7 @@ import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
+import useNewOrderAssignments from "../hooks/useNewOrderAssignments";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import { Icons } from "../utils/icons";
 import { FilterSelect } from "../components/ui/FilterSelect";
@@ -30,6 +31,7 @@ import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import NewOrderBadge from "../components/orders/NewOrderBadge";
 import DeliveryProfileModule from "../components/delivery/DeliveryProfileModule";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
 import {
@@ -71,15 +73,24 @@ const getSellerName = (order, sellerDirectory = {}) => (
   sellerDirectory[resolveSellerId(order)] || order?.seller_name || "Vendedor"
 );
 
-function SummaryCard({ icon, label, value, tone = "blue" }) {
+const CARD_ACCENTS = [
+  { color: "#0f1e40", bg: "#F1F5F9", glow: "#F1F5F9" },
+  { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
+  { color: "#991b1b", bg: "#fef2f2", glow: "#fef2f2" },
+  { color: "#1E40AF", bg: "#dbeafe", glow: "#dbeafe" },
+  { color: "#7e22ce", bg: "#faf5ff", glow: "#faf5ff" },
+];
+
+function SummaryCard({ icon, label, value, sub, accentIdx = 0 }) {
+  const acc = CARD_ACCENTS[accentIdx];
   return (
-    <section className={`pd-summary-card ${tone}`}>
-      <span className="pd-summary-icon">{icon}</span>
-      <div>
-        <span className="pd-summary-label">{label}</span>
-        <strong>{value}</strong>
-      </div>
-    </section>
+    <div className="dlv-card">
+      <div className="dlv-card-glow" style={{ background: acc.glow }} />
+      <div className="dlv-card-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
+      <div className="dlv-card-value">{value}</div>
+      <div className="dlv-card-label">{label}</div>
+      {sub && <div className="dlv-card-sub" style={{ color: acc.color }}>{sub}</div>}
+    </div>
   );
 }
 
@@ -90,6 +101,8 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
   const [designerName, setDesignerName] = useState("");
   const [quoteName, setQuoteName] = useState("");
   const [prodAssignments, setProdAssignments] = useState([]);
+  const [deliveryMessage, setDeliveryMessage] = useState("");
+  const [showMessage, setShowMessage] = useState(false);
 
   useEffect(() => {
     if (order?.seller_name) {
@@ -185,9 +198,14 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
 
     setUpdating(true);
     try {
+      const updateData = { status: newStatus };
+      if (newStatus === ORDER_STATUS.IN_DELIVERED && deliveryMessage.trim()) {
+        updateData.delivery_note = deliveryMessage.trim();
+      }
+
       const { data: updatedOrder, error } = await supabase
         .from("orders")
-        .update({ status: newStatus })
+        .update(updateData)
         .eq("id", order.id)
         .eq("delivery_id", deliveryUserId)
         .select("id")
@@ -195,6 +213,15 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
 
       if (error) throw error;
       if (!updatedOrder) throw new Error("La orden ya no esta asignada a tu perfil de Delivery.");
+
+      if (newStatus === ORDER_STATUS.IN_DELIVERED && deliveryMessage.trim()) {
+        await supabase.from("order_events").insert({
+          order_id: order.id,
+          user_id: deliveryUserId,
+          event_type: "delivery_note",
+          message: deliveryMessage.trim(),
+        });
+      }
 
       setUpdateSuccess(true);
       setTimeout(() => {
@@ -352,35 +379,81 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
         </div>
 
         <footer className="pd-modal-footer">
+          {isCompleted && showMessage && (
+            <div className="pd-delivery-message">
+              <div className="pd-delivery-message-header">
+                <label htmlFor="delivery-message">Mensaje de entrega (opcional)</label>
+                <button
+                  className="pd-icon-btn"
+                  type="button"
+                  onClick={() => { setShowMessage(false); setDeliveryMessage(""); }}
+                >
+                  <Icons.X />
+                </button>
+              </div>
+              <textarea
+                id="delivery-message"
+                className="pd-delivery-textarea"
+                placeholder="Escribe un mensaje sobre la entrega..."
+                value={deliveryMessage}
+                onChange={(e) => setDeliveryMessage(e.target.value)}
+                rows={3}
+                maxLength={500}
+              />
+            </div>
+          )}
           {isCompleted && (
-            <button
-              className="pd-btn pd-btn-primary"
-              type="button"
-              onClick={() => handleUpdateStatus(ORDER_STATUS.IN_DELIVERED)}
-              disabled={updating || order.is_archived_delivery || deliveryBlockedByPayment}
-              title={deliveryBlockedByPayment ? PAYMENT_DELIVERY_BLOCKED_MESSAGE : "Marcar entregado"}
-            >
-              {updating ? <span className="pd-btn-spinner" /> : <Icons.Check />}
-              {deliveryBlockedByPayment ? "Entrega bloqueada" : "Marcar entregado"}
-            </button>
+            <div className="pd-modal-footer-actions">
+              <button
+                className="pd-btn pd-btn-primary"
+                type="button"
+                onClick={() => handleUpdateStatus(ORDER_STATUS.IN_DELIVERED)}
+                disabled={updating || order.is_archived_delivery || deliveryBlockedByPayment}
+                title={deliveryBlockedByPayment ? PAYMENT_DELIVERY_BLOCKED_MESSAGE : "Marcar entregado"}
+              >
+                {updating ? <span className="pd-btn-spinner" /> : <Icons.Check />}
+                {deliveryBlockedByPayment ? "Entrega bloqueada" : "Marcar entregado"}
+              </button>
+              {!showMessage && (
+                <button
+                  className="pd-btn pd-link-btn"
+                  type="button"
+                  onClick={() => setShowMessage(true)}
+                >
+                  <Icons.Edit /> Agregar mensaje
+                </button>
+              )}
+              <button className="pd-btn pd-btn-secondary" type="button" onClick={onClose}>
+                Cerrar
+              </button>
+            </div>
           )}
 
           {isDelivered && (
-            <button
-              className="pd-btn pd-btn-primary"
-              type="button"
-              onClick={() => handleUpdateStatus(ORDER_STATUS.IN_COMPLETED)}
-              disabled={updating || order.is_archived_delivery}
-              title={order.is_archived_delivery ? "No se pueden cambiar estados de órdenes archivadas" : "Devolver a completada"}
-            >
-              {updating ? <span className="pd-btn-spinner" /> : <Icons.Refresh />}
-              Devolver a completada
-            </button>
+            <div className="pd-modal-footer-actions">
+              <button
+                className="pd-btn pd-btn-primary"
+                type="button"
+                onClick={() => handleUpdateStatus(ORDER_STATUS.IN_COMPLETED)}
+                disabled={updating || order.is_archived_delivery}
+                title={order.is_archived_delivery ? "No se pueden cambiar estados de órdenes archivadas" : "Devolver a completada"}
+              >
+                {updating ? <span className="pd-btn-spinner" /> : <Icons.Refresh />}
+                Devolver a completada
+              </button>
+              <button className="pd-btn pd-btn-secondary" type="button" onClick={onClose}>
+                Cerrar
+              </button>
+            </div>
           )}
 
-          <button className="pd-btn pd-btn-secondary" type="button" onClick={onClose}>
-            Cerrar
-          </button>
+          {!isCompleted && !isDelivered && (
+            <div className="pd-modal-footer-actions">
+              <button className="pd-btn pd-btn-secondary" type="button" onClick={onClose}>
+                Cerrar
+              </button>
+            </div>
+          )}
         </footer>
       </section>
     </div>
@@ -407,6 +480,8 @@ export default function PageDelivery() {
   const [page, setPage] = useState(1);
   const [sellerDirectory, setSellerDirectory] = useState({});
   const notif = useNotifications(user?.id);
+  const newOrderAssignments = useNewOrderAssignments(user?.id, "delivery");
+  const pendingNewAssignments = newOrderAssignments.pendingByOrder;
 
   const refreshOrders = useCallback(async (silent = false) => {
     if (!user?.id) return;
@@ -499,19 +574,22 @@ export default function PageDelivery() {
     {
       icon: <Icons.Package />,
       label: "Listas",
-      tone: "blue",
+      sub: "Órdenes listas",
+      accentIdx: 0,
       value: activeOrders.filter((order) => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length,
     },
     {
       icon: <Icons.CheckCircle />,
       label: "Entregadas",
-      tone: "green",
+      sub: "Entregadas al cliente",
+      accentIdx: 1,
       value: activeOrders.filter((order) => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length,
     },
     {
       icon: <Icons.AlertCircle />,
       label: "Bloqueadas",
-      tone: "red",
+      sub: "Pendientes de revisión",
+      accentIdx: 2,
       value: activeOrders.filter((order) => (
         isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)
         && !isPaymentDeliveryEligible(order.payment_status)
@@ -520,13 +598,15 @@ export default function PageDelivery() {
     {
       icon: <Icons.Clock />,
       label: "Pago parcial",
-      tone: "blue-light",
+      sub: "Pendientes de saldo",
+      accentIdx: 3,
       value: activeOrders.filter((order) => isPaymentPartial(order.payment_status)).length,
     },
     {
       icon: <Icons.Money />,
       label: "Pago a crédito",
-      tone: "purple",
+      sub: "Pendientes de cobro",
+      accentIdx: 4,
       value: activeOrders.filter((order) => isPaymentCredit(order.payment_status)).length,
     },
   ];
@@ -627,6 +707,13 @@ export default function PageDelivery() {
     }
   };
 
+  const handleViewOrder = (order) => {
+    setSelectedOrder(order);
+    if (pendingNewAssignments[order.id]) {
+      void newOrderAssignments.acknowledgeOrder(order.id);
+    }
+  };
+
   const renderOrderCard = (order) => {
     const canDeliver = !order.is_archived_delivery
       && isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)
@@ -639,7 +726,7 @@ export default function PageDelivery() {
       <article
         key={order.id}
         className={`pd-order-card ${deliverBlocked ? "blocked" : ""}`}
-        onClick={() => setSelectedOrder(order)}
+        onClick={() => handleViewOrder(order)}
       >
         <header className="pd-order-card-header">
           <div className="pd-order-card-identity">
@@ -650,6 +737,7 @@ export default function PageDelivery() {
             </span>
           </div>
           <div className="pd-order-card-badges">
+            {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
             <StatusBadge status={order.status} className="pd-badge" showDot={false} />
             <PaymentBadge status={order.payment_status} className="pd-badge" />
           </div>
@@ -709,7 +797,7 @@ export default function PageDelivery() {
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                setSelectedOrder(order);
+                handleViewOrder(order);
               }}
               title="Ver detalles"
               aria-label="Ver detalles"
@@ -802,6 +890,12 @@ export default function PageDelivery() {
             </div>
           </div>
           <div className="pd-header-right">
+            <button className="pd-icon-btn" type="button" onClick={() => refreshOrders()} aria-label="Actualizar">
+              <Icons.Refresh />
+            </button>
+            <button className="pd-dark-btn" type="button" onClick={() => setActiveTab("orders")}>
+              <Icons.Orders /> Gestionar Órdenes
+            </button>
             <NotificationCenter
               notifications={notif.notifications}
               unreadCount={notif.unreadCount}
@@ -813,9 +907,6 @@ export default function PageDelivery() {
               onDismissToast={notif.dismissToast}
               onViewAll={() => setActiveTab("notifications")}
             />
-            <button className="pd-icon-btn" type="button" onClick={() => refreshOrders()} aria-label="Actualizar">
-              <Icons.Refresh />
-            </button>
           </div>
         </header>
 
@@ -869,7 +960,7 @@ export default function PageDelivery() {
             <div className="dlv-greeting">
               <div className="dlv-greeting-copy">
                 <h2>Bienvenido, <span>{user?.user_metadata?.display_name || "Delivery"}</span></h2>
-                <p>Aqui tienes el resumen de tu actividad de hoy.</p>
+                <p style={{ fontWeight: 600, color: "#1E40AF" }}>Aqui tienes el resumen de tu actividad de hoy.</p>
                 <div className="dlv-greeting-badges" aria-label="Resumen de entregas">
                   <div className="dlv-greeting-count" aria-label={`${metrics[0].value} órdenes listas`}>
                     <Icons.Package />
@@ -892,6 +983,11 @@ export default function PageDelivery() {
                     <strong>{activeOrders.filter(o => isPaymentCredit(o.payment_status)).length}</strong> Pago a crédito
                   </div>
                 </div>
+              </div>
+              <div className="dlv-greeting-actions">
+                <button type="button" className="pd-dark-btn" onClick={() => setActiveTab("orders")}>
+                  <Icons.Orders /> Gestionar Órdenes
+                </button>
               </div>
             </div>
           )}
@@ -931,7 +1027,7 @@ export default function PageDelivery() {
               <div className="pd-panel-header">
                 <div>
                   <h2>Listas para entregar</h2>
-                  <p>Órdenes activas que requieren una acción de entrega.</p>
+                  <p style={{ fontWeight: 600, color: "#1E40AF" }}>Órdenes activas que requieren una acción de entrega.</p>
                 </div>
                 <button className="pd-link-btn" type="button" onClick={() => setActiveTab("orders")}>
                   Ver órdenes
