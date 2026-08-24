@@ -3998,7 +3998,7 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              <button className="pa-action-btn pa-action-btn-primary pa-overview-primary-action" onClick={() => selectAdminTab("orders")} title="Gestionar órdenes">
+              <button className="pa-action-btn pa-action-btn-primary" onClick={() => selectAdminTab("orders")} title="Gestionar órdenes">
                 <Icons.Orders /> <span>Gestionar órdenes</span>
               </button>
             </div>

@@ -25,7 +25,7 @@ describe("Admin overview summary contract", () => {
     expect(dashboard).not.toContain("overviewAdminAvatarUrl");
     expect(dashboard).not.toContain("overviewBannerMetrics");
     expect(dashboard).toContain('className="pa-overview-quick-actions"');
-    expect(dashboard).toContain('className="pa-action-btn pa-action-btn-primary pa-overview-primary-action"');
+    expect(dashboard).toContain('className="pa-action-btn pa-action-btn-primary"');
     expect(dashboard).not.toContain("pa-overview-banner-btn");
     expect(dashboard).toContain("formatOverviewDeliveryDate");
     expect(dashboard).toContain("const overviewRecentOrders = orders.slice(0, 3);");

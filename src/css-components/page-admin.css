@@ -6124,21 +6124,6 @@
   margin-top: 10px;
 }
 
-.pa-overview-primary-action {
-  flex-shrink: 0;
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 42px;
-  padding: 8px 16px;
-  border-radius: var(--radius-sm);
-  font-family: 'Poppins', sans-serif;
-  font-weight: 600;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
 .acm-heading .pa-overview-banner-badge {
   border: 1px solid var(--overview-badge-border);
   background: var(--overview-badge-bg);
