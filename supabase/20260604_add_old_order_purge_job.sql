@@ -78,6 +78,10 @@ as $$
     ) as notifications_count
   from public.orders o
   where o.created_at < p_cutoff
+    and (
+      coalesce(o.is_archived, false)
+      or o.status in ('in_Delivered', 'cancelled')
+    )
     and not exists (
       select 1
       from public.order_purge_audit a
@@ -199,6 +203,10 @@ begin
   from public.orders
   where id = p_order_id
     and created_at < p_cutoff
+    and (
+      coalesce(is_archived, false)
+      or status in ('in_Delivered', 'cancelled')
+    )
   for update;
 
   if not found then
@@ -241,6 +249,8 @@ begin
   )
   returning * into audit_row;
 
+  perform set_config('app.order_purge_authorized', 'on', true);
+
   delete from public.notifications
   where order_id = target_order.id;
 
@@ -263,6 +273,30 @@ revoke all on function public.purge_old_order_after_storage(uuid, timestamptz, i
 revoke all on function public.purge_old_order_after_storage(uuid, timestamptz, integer) from anon;
 revoke all on function public.purge_old_order_after_storage(uuid, timestamptz, integer) from authenticated;
 grant execute on function public.purge_old_order_after_storage(uuid, timestamptz, integer) to service_role;
+
+-- Direct SQL deletes cannot clean external object stores. Block them so every
+-- normal deletion must first pass through the storage-cleanup workflow above.
+create or replace function public.block_unmanaged_order_delete()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if coalesce(current_setting('app.order_purge_authorized', true), 'off') <> 'on' then
+    raise exception 'Orders must be purged through the managed storage cleanup workflow.';
+  end if;
+  return old;
+end;
+$$;
+
+revoke all on function public.block_unmanaged_order_delete() from public, anon, authenticated;
+
+drop trigger if exists trg_block_unmanaged_order_delete on public.orders;
+create trigger trg_block_unmanaged_order_delete
+  before delete on public.orders
+  for each row
+  execute function public.block_unmanaged_order_delete();
 
 -- Foreign-key inventory to run before enabling the job in production:
 -- select

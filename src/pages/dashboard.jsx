@@ -1570,8 +1570,6 @@ export default function Dashboard() {
   const [cancelReason, setCancelReason] = useState("");
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
-  const [deletingOrder, setDeletingOrder] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
@@ -2456,27 +2454,6 @@ export default function Dashboard() {
     setArchivingOrder(null);
     await loadOrders();
     showFeedback("success", "La orden fue archivada correctamente.");
-  };
-
-  const handleConfirmDeleteOrder = async () => {
-    if (!deletingOrder?.id) return;
-    setDeleteLoading(true);
-
-    const { response, result } = await adminApiFetch("/api/admin", {
-      action: "delete-order",
-      orderId: deletingOrder.id,
-    });
-
-    setDeleteLoading(false);
-
-    if (!response.ok) {
-      return showFeedback("error", result?.error || "No se pudo eliminar la orden y sus archivos.");
-    }
-
-    if (selectedOrder?.id === deletingOrder.id) setSelectedOrder(null);
-    setDeletingOrder(null);
-    await loadOrders();
-    showFeedback("success", "La orden y sus archivos fueron eliminados correctamente.");
   };
 
   const handleAssignOrder = async (userId) => {
@@ -5104,25 +5081,6 @@ export default function Dashboard() {
         order={archivingOrder}
         loading={archiveLoading}
       />
-      <ArchiveOrderModal
-        open={!!deletingOrder}
-        onClose={() => setDeletingOrder(null)}
-        onConfirm={handleConfirmDeleteOrder}
-        order={deletingOrder}
-        loading={deleteLoading}
-        title="Eliminar orden y archivos"
-        confirmText="Eliminar definitivamente"
-        cancelText="Conservar orden"
-      >
-        <p>
-          Vas a eliminar la orden{" "}
-          <strong>#{deletingOrder?.id?.slice(0, 8).toUpperCase()}</strong>
-          {" "}y todos sus archivos relacionados.
-        </p>
-        <p className="archive-modal-hint">
-          Primero se borraran archivos en Supabase Storage y Cloudflare R2. Si algo falla, la orden se conserva para evitar archivos huerfanos.
-        </p>
-      </ArchiveOrderModal>
       <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} />
       <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onCreateOrder={handleCreateOrderFromUser} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} currentUserId={user?.id} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />
