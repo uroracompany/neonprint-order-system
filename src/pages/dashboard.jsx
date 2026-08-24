@@ -3822,11 +3822,11 @@ export default function Dashboard() {
   useEffect(() => { setMaterialsPage(1); }, [filteredMaterials.length]);
 
   const overviewFlowMetrics = [
-    { label: "Pendientes", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, color: "#F59E0B" },
-    { label: "Caja", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Receipt />, color: "#06B6D4" },
-    { label: "Diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, color: "#8B5CF6" },
-    { label: "Producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length, icon: <Icons.Brush />, color: "#EF4444" },
-    { label: "Entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length, icon: <Icons.Truck />, color: "#6366F1" },
+    { label: "Pendientes", detail: "Órdenes por iniciar", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, color: "#F59E0B" },
+    { label: "Caja", detail: "Órdenes en cotización", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Package />, color: "#1E40AF" },
+    { label: "Diseño", detail: "Órdenes en diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, color: "#8B5CF6" },
+    { label: "Producción", detail: "Órdenes en producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length, icon: <Icons.Package />, color: "#F97316" },
+    { label: "Entrega", detail: "Órdenes en entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length, icon: <Icons.Truck />, color: "#10B981" },
   ];
 
   const overviewActiveOrders = orders.filter(order => (
@@ -3998,6 +3998,9 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+              <button className="pa-action-btn pa-action-btn-primary pa-overview-primary-action" onClick={() => selectAdminTab("orders")} title="Gestionar órdenes">
+                <Icons.Orders /> <span>Gestionar órdenes</span>
+              </button>
             </div>
 
             <nav className="pa-overview-quick-actions" aria-label="Accesos rápidos">
@@ -4010,114 +4013,75 @@ export default function Dashboard() {
             </nav>
 
             <div className="pa-overview-executive-grid">
-              <section className="pa-panel pa-overview-flow-panel">
-                <div className="pa-overview-card-head">
+              <div className="pa-overview-metrics-grid">
+                {overviewFlowMetrics.map(item => (
+                  <article key={item.label} className="pa-overview-flow-step" style={{ "--flow-color": item.color }}>
+                    <span className="pa-overview-flow-step-icon">{item.icon}</span>
+                    <strong className="pa-overview-flow-step-value">{loadingOrders ? "..." : item.value}</strong>
+                    <span className="pa-overview-flow-step-label">{item.label}</span>
+                    <span className="pa-overview-flow-step-sub">{item.detail}</span>
+                  </article>
+                ))}
+                <button type="button" className="pa-overview-flow-step pa-overview-flow-step--interactive" style={{ "--flow-color": "#F97316" }} onClick={() => selectAdminTab("credits")}>
+                  <span className="pa-overview-flow-step-icon"><Icons.AlertCircle /></span>
+                  <strong className="pa-overview-flow-step-value">{creditPendingClientCount}</strong>
+                  <span className="pa-overview-flow-step-label">Seguimiento de crédito</span>
+                  <span className="pa-overview-flow-step-sub">Clientes con saldo por revisar</span>
+                </button>
+              </div>
+
+              <section className="pa-panel pa-overview-activity-panel">
+                <div className="ps-panel-stripe" />
+                <div className="pa-overview-card-head pa-overview-card-head-row">
                   <div>
-                    <h2>Flujo de órdenes</h2>
-                    <p>Estado actual de tus órdenes.</p>
+                    <h2>Actividad reciente</h2>
+                    <p>Últimas órdenes registradas en el sistema.</p>
                   </div>
-                </div>
-                <div className="pa-overview-flow-track">
-                  {overviewFlowMetrics.map(item => (
-                    <article key={item.label} className="pa-overview-flow-step" style={{ "--flow-color": item.color }}>
-                      <div className="pa-overview-flow-step-header">
-                        <span className="pa-overview-flow-step-label">{item.label}</span>
-                      </div>
-                      <div className="pa-overview-flow-step-value">
-                        <span className="pa-overview-flow-step-icon">{item.icon}</span>
-                        <strong>{loadingOrders ? "..." : item.value}</strong>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-                <div className="pa-overview-flow-footer">
-                  <div>
-                    <span>Total de órdenes</span>
-                    <strong>{loadingOrders ? "..." : orders.length.toLocaleString("es-PE")}</strong>
-                  </div>
-                  <button className="pa-btn ghost pa-btn-sm" onClick={() => handleAdminTabChange("orders")}>
-                    Ver todas las órdenes
-                    <Icons.ChevronRight />
+                  <button className="ps-link-btn" onClick={() => handleAdminTabChange("orders")}>
+                    Ver todas <Icons.ArrowRight />
                   </button>
                 </div>
+                <div className="ps-table-wrap">
+                  <table className="ps-table">
+                    <thead>
+                      <tr>
+                        <th>Cliente</th>
+                        <th>Estado</th>
+                        <th>Vendedor</th>
+                        <th>Fecha de entrega</th>
+                        <th>Estado de pago</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overviewRecentOrders.length === 0 ? (
+                        <tr><td colSpan={5} className="ps-table-empty">No hay órdenes recientes para mostrar.</td></tr>
+                      ) : overviewRecentOrders.map(order => (
+                        <tr key={order.id} className="row-hover" onClick={() => setSelectedOrder(order)}>
+                          <td className="td-pad">
+                            <div className="ps-client-cell">
+                              <span className="acm-avatar acm-avatar-small">{String(order.client_name || "Cliente").trim().charAt(0).toUpperCase()}</span>
+                              <span className="ps-client-cell-main">
+                                <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Cliente sin nombre"}</strong>
+                              </span>
+                            </div>
+                          </td>
+                          <td className="td-pad"><StatusBadge status={order.status} className="ps-badge" showDot bordered /></td>
+                          <td className="td-pad td-name">{getUserDisplayName(usersById[order.seller_id || order.created_by])}</td>
+                          <td className="td-pad">
+                            <span className={`pa-overview-delivery-badge${formatOverviewDeliveryDate(order.delivery_date) ? "" : " is-indefinite"}`}>
+                              {formatOverviewDeliveryDate(order.delivery_date) || "Indefinida"}
+                            </span>
+                          </td>
+                          <td className="td-pad"><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="pa-overview-activity-footer">
+                  Mostrando {overviewRecentOrders.length} de {orders.length} órdenes
+                </div>
               </section>
-
-              <div className="pa-overview-secondary-grid">
-                <section className="pa-panel pa-overview-activity-panel">
-                  <div className="pa-overview-card-head pa-overview-card-head-row">
-                    <div>
-                      <h2>Actividad reciente</h2>
-                      <p>Últimas órdenes registradas en el sistema.</p>
-                    </div>
-                    <button className="pa-btn ghost pa-btn-sm" onClick={() => handleAdminTabChange("orders")}>
-                      Ver todas
-                    </button>
-                  </div>
-                  <div className="pa-overview-activity-table" role="table" aria-label="Órdenes recientes">
-                    <div className="pa-overview-activity-row pa-overview-activity-row-head" role="row">
-                      <span className="pa-overview-activity-cell client">Cliente</span>
-                      <span className="pa-overview-activity-cell status">Estado</span>
-                      <span className="pa-overview-activity-cell seller">Vendedor</span>
-                      <span className="pa-overview-activity-cell delivery">Fecha de entrega</span>
-                      <span className="pa-overview-activity-cell payment">Estado de pago</span>
-                    </div>
-                    {overviewRecentOrders.length === 0 ? (
-                      <div className="pa-overview-activity-empty">No hay órdenes recientes para mostrar.</div>
-                    ) : overviewRecentOrders.map(order => (
-                      <button key={order.id} type="button" className="pa-overview-activity-row" onClick={() => setSelectedOrder(order)} role="row">
-                        <strong className="pa-overview-activity-cell client" data-label="Cliente">
-                          <span className="pa-overview-client-avatar" aria-hidden="true">{String(order.client_name || "Cliente").trim().charAt(0).toUpperCase()}</span>
-                          <span className="pa-overview-client-name">{order.client_name || "Cliente sin nombre"}</span>
-                        </strong>
-                        <span className="pa-overview-activity-cell status" data-label="Estado"><StatusBadge status={order.status} className="ps-badge" showDot bordered /></span>
-                        <span className="pa-overview-activity-cell seller" data-label="Vendedor">{getUserDisplayName(usersById[order.seller_id || order.created_by])}</span>
-                        <span className="pa-overview-activity-cell delivery" data-label="Fecha de entrega">
-                          <span className={`pa-overview-delivery-badge${formatOverviewDeliveryDate(order.delivery_date) ? "" : " is-indefinite"}`}>
-                            {formatOverviewDeliveryDate(order.delivery_date) || "Indefinida"}
-                          </span>
-                        </span>
-                        <span className="pa-overview-activity-cell payment" data-label="Estado de pago"><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="pa-overview-activity-footer">
-                    Mostrando {overviewRecentOrders.length} de {orders.length} órdenes
-                  </div>
-                </section>
-
-                <aside className="pa-panel pa-overview-commercial-panel pa-overview-attention-panel">
-                  <div className="pa-overview-card-head">
-                  <div>
-                    <h2>Atención requerida</h2>
-                    <p>Casos que requieren seguimiento administrativo.</p>
-                  </div>
-                  </div>
-                  {overviewAttentionItems.length > 0 ? (
-                    overviewAttentionItems.map(item => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className="pa-overview-credit-summary pa-overview-attention-summary"
-                        data-tone={item.tone}
-                        onClick={() => item.id === "credit" ? openOverviewCreditTracking() : handleAdminTabChange("orders")}
-                      >
-                        <span className="pa-overview-credit-summary-icon">{item.icon}</span>
-                        <span>
-                          <small>{item.label}</small>
-                          <strong>{loadingOrders && item.id !== "credit" ? "..." : item.value}</strong>
-                          <em>{item.detail}</em>
-                        </span>
-                        <Icons.ChevronRight />
-                      </button>
-                    ))
-                  ) : (
-                    <div className="pa-overview-attention-empty">
-                      <Icons.Check />
-                      <span>No hay alertas prioritarias por revisar.</span>
-                    </div>
-                  )}
-                </aside>
-              </div>
             </div>
           </section>
         }

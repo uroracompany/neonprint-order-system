@@ -25,10 +25,10 @@ describe("Admin overview summary contract", () => {
     expect(dashboard).not.toContain("overviewAdminAvatarUrl");
     expect(dashboard).not.toContain("overviewBannerMetrics");
     expect(dashboard).toContain('className="pa-overview-quick-actions"');
+    expect(dashboard).toContain('className="pa-action-btn pa-action-btn-primary pa-overview-primary-action"');
+    expect(dashboard).not.toContain("pa-overview-banner-btn");
     expect(dashboard).toContain("formatOverviewDeliveryDate");
     expect(dashboard).toContain("const overviewRecentOrders = orders.slice(0, 3);");
-    expect(dashboard).toContain("Órdenes 911 activas");
-    expect(dashboard).toContain('Atención requerida');
     expect(dashboard).not.toContain("<AdminOverviewCarousel");
     expect(dashboard).toContain("<h2>Actividad reciente</h2>");
     expect(dashboard).not.toContain("<h2>Carga activa</h2>");
@@ -38,15 +38,15 @@ describe("Admin overview summary contract", () => {
     const overviewEnd = dashboard.indexOf('{activeTab === "orders"');
     const overviewSection = dashboard.slice(overviewStart, overviewEnd);
 
-    expect(overviewSection).toContain(">Cliente</span>");
-    expect(overviewSection).toContain(">Vendedor</span>");
+    expect(overviewSection).toContain("<th>Cliente</th>");
+    expect(overviewSection).toContain("<th>Vendedor</th>");
     expect(overviewSection).toContain("Fecha de entrega");
     expect(overviewSection).toContain("Estado de pago");
     expect(overviewSection).toContain("PaymentBadge status={order.payment_status}");
     expect(overviewSection).toContain('"Indefinida"');
     expect(overviewSection).not.toContain("#{order.id?.slice(0, 8)");
-    expect(overviewSection).toContain('className="pa-overview-client-avatar"');
-    expect(overviewSection).toContain('className="pa-overview-client-name"');
+    expect(overviewSection).toContain('acm-avatar acm-avatar-small');
+    expect(overviewSection).toContain('ps-client-cell-main');
 
     expect(adminCss).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
     expect(adminCss).toContain(".pa-overview-banner-badges");
@@ -55,17 +55,18 @@ describe("Admin overview summary contract", () => {
     expect(adminCss).toContain('.pa-overview-banner-badge[data-tone="clients"]');
     expect(adminCss).toContain('.pa-overview-banner-badge[data-tone="employees"]');
     expect(adminCss).toContain(".pa-overview-quick-actions svg");
+    const bannerButtonCss = adminCss.slice(
+      adminCss.indexOf(".pa-overview-primary-action {"),
+      adminCss.indexOf(".acm-heading .pa-overview-banner-badge")
+    );
+    expect(bannerButtonCss).not.toContain("background:");
+    expect(bannerButtonCss).not.toContain(".pa-overview-primary-action:hover");
     expect(adminCss).toContain("color: #091127;");
     expect(adminCss).toContain("font-weight: 600;");
     expect(adminCss).toContain("background: #091127;");
     expect(adminCss).toContain("color: #ffffff;");
     expect(adminCss).toContain(".pa-overview-delivery-badge");
-    expect(adminCss).toContain(".pa-overview-flow-step-header");
-    expect(adminCss).toContain(".pa-overview-client-avatar");
     expect(adminCss).toContain("background: #091127;");
-    expect(adminCss).toContain('.pa-overview-attention-summary[data-tone="priority"]');
-    expect(adminCss).toContain('.pa-overview-attention-summary[data-tone="credit"]::before');
-    expect(adminCss).toContain('.pa-overview-attention-summary[data-tone="credit"] strong');
 
     expect(sidebar).not.toContain("pa-overview-");
   });
