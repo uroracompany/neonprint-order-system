@@ -12,6 +12,7 @@ import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import FileUploadZone from "../components/ui/FileUploadZone";
 import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
+import NewOrderBadge from "../components/orders/NewOrderBadge";
 import {
   canArchiveOrder,
   archiveOrder,
@@ -25,6 +26,8 @@ import "../components/ui/FilterSelect.css";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useOrderReturnHandoffs from "../hooks/useOrderReturnHandoffs";
+import useNewOrderAssignments from "../hooks/useNewOrderAssignments";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
@@ -35,6 +38,8 @@ import { buildProductionFileRows } from "../utils/production";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import DesignerProfileModule from "../components/designer/DesignerProfileModule";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
+import ReturnToCashierModal from "../components/orders/ReturnToCashierModal";
+import { OrderReturnHandoffPanel } from "../components/orders/OrderReturnHandoff";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const PER_PAGE = 15;
@@ -167,8 +172,8 @@ const getDesignerFilesFromOrder = (order) => (
 );
 
 const CARD_ACCENTS = [
-  { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
-  { color: "#0EA5E9", bg: "#E0F2FE", glow: "#E0F2FE" },
+  { color: "#0f1e40", bg: "#F1F5F9", glow: "#F1F5F9" },
+  { color: "#1E40AF", bg: "#dbeafe", glow: "#dbeafe" },
   { color: "#EF4444", bg: "#FEE2E2", glow: "#FEE2E2" },
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
 ];
@@ -211,6 +216,9 @@ function OrderDetailModal({
   onAcknowledgeReview,
   reviewAcknowledging,
   reviewError,
+  returnHandoff,
+  returnHistory,
+  onReturnToCashier,
 }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingFileAreas, setPendingFileAreas] = useState([]);
@@ -516,6 +524,9 @@ function OrderDetailModal({
       : canSendToQuotation
         ? "La orden tiene archivos y preview. Lista para enviar a caja."
         : "Agrega archivos y preview para completar el trabajo de diseño.";
+  const footerNoteClass = !canEditDesignerAssets || hasChanges || canSendToQuotation
+    ? "pd-modal-footer-note"
+    : "pd-modal-footer-note pd-modal-footer-note--accent";
   
   return (
     <div className="pd-modal-overlay">
@@ -536,23 +547,23 @@ function OrderDetailModal({
         <div className="pd-modal-body">
           <div className="pd-modal-summary" aria-label="Resumen de la orden">
             <div className="pd-modal-summary-item">
-              <span>Estado</span>
+              <span><Icons.CheckCircle /> Estado</span>
               <StatusBadge status={order.status} className="pd-modal-summary-badge" showDot={false} bordered />
             </div>
             <div className="pd-modal-summary-item">
-              <span>Archivos</span>
+              <span><Icons.Paperclip /> Archivos</span>
               <strong className="acm-badge info pd-modal-summary-badge pd-modal-summary-badge-files">
                 {uniqueFiles.length.toLocaleString("es-DO")} Archivos
               </strong>
             </div>
             <div className="pd-modal-summary-item">
-              <span>Preview</span>
+              <span><Icons.Eye /> Preview</span>
               <strong className={`pd-modal-summary-badge pd-modal-summary-badge-preview ${hasPreview ? "is-ready" : "is-pending"}`}>
                 {hasPreview ? "Cargada" : "Pendiente"}
               </strong>
             </div>
             <div className={`pd-modal-summary-item ${workSummary.tone}`}>
-              <span>Trabajo</span>
+              <span><Icons.Package /> Trabajo</span>
               <strong className="pd-modal-work-status">
                 {workSummary.icon}
                 {workSummary.label}
@@ -594,15 +605,15 @@ function OrderDetailModal({
             </div>
             <div className="pd-modal-grid">
               <div className="pd-modal-item">
-                <span className="pd-modal-label">Cliente</span>
+                <span className="pd-modal-label"><Icons.User /> Cliente</span>
                 <span className="pd-modal-value">{order.client_name || "No especificado"}</span>
               </div>
               <div className="pd-modal-item">
-                <span className="pd-modal-label">Vendedor</span>
+                <span className="pd-modal-label"><Icons.User /> Vendedor</span>
                 <span className="pd-modal-value highlight">{sellerName || "No especificado"}</span>
               </div>
               <div className="pd-modal-item">
-                <span className="pd-modal-label">Teléfono</span>
+                <span className="pd-modal-label"><Icons.Phone /> Teléfono</span>
                 {order.client_contact ? (
                   <a 
                     href={`https://wa.me/${order.client_contact.replace(/\D/g, '')}`}
@@ -616,7 +627,7 @@ function OrderDetailModal({
                 ) : <span className="pd-modal-value">No especificado</span>}
               </div>
               <div className="pd-modal-item">
-                <span className="pd-modal-label">Tipo de Orden</span>
+                <span className="pd-modal-label"><Icons.Package /> Tipo de Orden</span>
                 <span className="pd-modal-value">
                   {order.order_type === "orden 911" ? (
                     <span className="acm-badge danger">⚡ 911 - Urgente</span>
@@ -626,7 +637,7 @@ function OrderDetailModal({
                 </span>
               </div>
               <div className="pd-modal-item">
-                <span className="pd-modal-label">Fecha de Creación</span>
+                <span className="pd-modal-label"><Icons.Calendar /> Fecha de Creación</span>
                 <span className="pd-modal-date-badge">{created}</span>
               </div>
             </div>
@@ -641,28 +652,28 @@ function OrderDetailModal({
 
           <div className="pd-modal-card">
             <div className="pd-modal-card-title">
-              <Icons.Package />
-              <h4>Detalles del Trabajo</h4>
+              <Icons.Clipboard />
+              <h4>Detalles de la orden de trabajo</h4>
               {isReturnedOrder(order) && <ReturnedBadge />}
             </div>
             <div className="pd-modal-grid">
               <div className="pd-modal-item full">
-                <span className="pd-modal-label">Descripción</span>
+                <span className="pd-modal-label"><Icons.FileText /> Descripción</span>
                 <p className="pd-modal-description">{order.description || "Sin descripción"}</p>
               </div>
               <div className="pd-modal-item">
-                <span className="pd-modal-label">Material</span>
+                <span className="pd-modal-label"><Icons.Package /> Material</span>
                 <span className="pd-modal-value highlight">{order.material || "No especificado"}</span>
               </div>
               {order.width && order.height && (
                 <div className="pd-modal-item">
-                  <span className="pd-modal-label">Dimensiones</span>
+                  <span className="pd-modal-label"><Icons.Maximize /> Dimensiones</span>
                   <span className="pd-modal-value">{order.width} x {order.height} cm</span>
                 </div>
               )}
               {order.quantity && (
                 <div className="pd-modal-item">
-                  <span className="pd-modal-label">Cantidad</span>
+                  <span className="pd-modal-label"><Icons.Hash /> Cantidad</span>
                   <span className="pd-modal-value">{order.quantity} unidades</span>
                 </div>
               )}
@@ -680,6 +691,7 @@ function OrderDetailModal({
               </div>
             </div>
           )}
+          <OrderReturnHandoffPanel incomingHandoff={returnHandoff} history={returnHistory} />
           
           <div className="pd-modal-card">
             <div className="pd-modal-card-title">
@@ -850,7 +862,7 @@ function OrderDetailModal({
         </div>
         {/* Footer Modal */}
         <div className="pd-modal-footer">
-          <div className="pd-modal-footer-note">{footerNote}</div>
+          <div className={footerNoteClass}>{footerNote}</div>
           {/* Boton para cerral el modal */}
           <button className="pd-btn pd-btn-secondary" onClick={handleClose}>
             Cerrar
@@ -858,7 +870,7 @@ function OrderDetailModal({
           {canSendToQuotation && (
             <button
               className="pd-btn pd-btn-quotation"
-              onClick={() => onSendToQuotation?.(order)}
+              onClick={() => returnHandoff ? onReturnToCashier?.(returnHandoff) : onSendToQuotation?.(order)}
               disabled={quotationSending}
             >
               {quotationSending ? (
@@ -869,7 +881,7 @@ function OrderDetailModal({
               ) : (
                 <>
                   <Icons.Send />
-                  Enviar a caja
+                  {returnHandoff ? "Regresar a Caja" : "Enviar a caja"}
                 </>
               )}
             </button>
@@ -901,7 +913,6 @@ function OrderDetailModal({
 export default function PageDesigner() {
   const navigate = useNavigate();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
-  const [nowTimestamp] = useState(() => Date.now());
   const [user, setUser] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -917,12 +928,6 @@ export default function PageDesigner() {
   const [viewMode, setViewMode] = useState("table");
   const [page, setPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [viewedOrders, setViewedOrders] = useState(() => {
-    try {
-      const saved = localStorage.getItem("pd_viewed_orders");
-      return saved ? JSON.parse(saved) : {};
-    } catch { return {}; }
-  });
   const [editedOrders, setEditedOrders] = useState(() => {
     try {
       const saved = localStorage.getItem(EDITED_ORDERS_STORAGE_KEY);
@@ -933,17 +938,20 @@ export default function PageDesigner() {
   const [orderPreviews, setOrderPreviews] = useState({});
   const notif = useNotifications(user?.id);
   const orderReviews = useOrderEventReviews(user?.id);
+  const orderReturns = useOrderReturnHandoffs(user?.id);
+  const newOrderAssignments = useNewOrderAssignments(user?.id, "design");
   const pendingOrderReviews = orderReviews.pendingByOrder;
+  const pendingNewAssignments = newOrderAssignments.pendingByOrder;
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
+  const [returningToCashier, setReturningToCashier] = useState(null);
+  const [returningToCashierLoading, setReturningToCashierLoading] = useState(false);
   const [originalQuoterId, setOriginalQuoterId] = useState(null);
   const [quotationSending, setQuotationSending] = useState(false);
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   
   const ordersRef = useRef([]);
-  const viewedOrdersRef = useRef({});
   const userRef = useRef(null);
-  const knownOrderIdsRef = useRef(new Set());
   const previousOrdersRef = useRef({});
   const ordersInitializedRef = useRef(false);
   const mainScrollRef = useRef(null);
@@ -958,11 +966,9 @@ export default function PageDesigner() {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      const nextOrderIds = new Set(data.map(order => order.id));
       const previousOrders = previousOrdersRef.current;
 
       if (!ordersInitializedRef.current) {
-        knownOrderIdsRef.current = nextOrderIds;
         previousOrdersRef.current = data.reduce((acc, order) => {
           acc[order.id] = order;
           return acc;
@@ -987,7 +993,6 @@ export default function PageDesigner() {
         }
       });
 
-      knownOrderIdsRef.current = nextOrderIds;
       previousOrdersRef.current = data.reduce((acc, order) => {
         acc[order.id] = order;
         return acc;
@@ -1001,14 +1006,6 @@ export default function PageDesigner() {
   useEffect(() => {
     loadClients(supabase).then(setClients);
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("pd_viewed_orders", JSON.stringify(viewedOrders));
-  }, [viewedOrders]);
-
-  useEffect(() => {
-    viewedOrdersRef.current = viewedOrders;
-  }, [viewedOrders]);
 
   useEffect(() => {
     localStorage.setItem(EDITED_ORDERS_STORAGE_KEY, JSON.stringify(editedOrders));
@@ -1052,10 +1049,9 @@ export default function PageDesigner() {
       setSelectedOrder(order);
     }
     
-    setViewedOrders(prev => {
-      if (prev[order.id]) return prev;
-      return { ...prev, [order.id]: Date.now() };
-    });
+    if (pendingNewAssignments[order.id]) {
+      void newOrderAssignments.acknowledgeOrder(order.id);
+    }
   };
 
   const isInteractiveOrderRowTarget = (target) => Boolean(
@@ -1096,12 +1092,7 @@ export default function PageDesigner() {
     };
   }, []);
 
-  const isNewOrder = (order) => {
-    if (viewedOrders[order.id]) return false;
-    const createdAt = new Date(order.created_at).getTime();
-    const hoursAgo = (nowTimestamp - createdAt) < 24 * 60 * 60 * 1000;
-    return hoursAgo;
-  };
+  const isNewOrder = (order) => Boolean(pendingNewAssignments[order.id]);
 
   const getEditLabel = (order) => {
     if (editedOrders[order.id] && !pendingOrderReviews[order.id]) return "Editada";
@@ -1141,7 +1132,7 @@ export default function PageDesigner() {
   const returnedOrders = useMemo(() => orders.filter(o => isReturnedOrder(o)), [orders]);
 
   const metrics = useMemo(() => [
-    { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", accentIdx: 0, icon: <Icons.Package /> },
+    { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", accentIdx: 0, icon: <Icons.Orders /> },
     { label: "En caja", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length, sub: "Listas para seguir flujo", accentIdx: 1, icon: <Icons.Send /> },
     { label: "Devueltas", value: returnedOrdersCount, sub: "Requieren corrección", accentIdx: 2, icon: <Icons.ArrowLeft /> },
     { label: "En producción", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, sub: "Siendo producidas", accentIdx: 3, icon: <Icons.Package /> },
@@ -1328,8 +1319,30 @@ export default function PageDesigner() {
 
   };
 
+  const handleReturnToCashier = async (correctionNote) => {
+    if (!returningToCashier) return;
+    setReturningToCashierLoading(true);
+    const { error } = await supabase.rpc("return_order_to_cashier", {
+      p_handoff_id: returningToCashier.id,
+      p_correction_note: correctionNote,
+    });
+    setReturningToCashierLoading(false);
+    if (error) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al regresar",
+        orderTitle: selectedOrder?.client_name || "Orden",
+        message: error.message || "No se pudo regresar la orden a Caja.",
+      });
+      return;
+    }
+    const orderId = returningToCashier.order_id;
+    setReturningToCashier(null);
+    await Promise.all([refreshOrderFromDB(orderId), orderReturns.refresh(), fetchOrders()]);
+  };
+
   const pageTitle = activeTab === "dashboard"
-    ? "Dashboard Diseñador"
+    ? "Panel Principal"
     : activeTab === "profile"
       ? "Mi Perfil"
       : activeTab === "notifications"
@@ -1430,8 +1443,8 @@ export default function PageDesigner() {
                 </div>
                 <div className="pd-greeting-actions">
                   <button type="button" className="pd-greeting-btn primary" onClick={() => setActiveTab("orders")}>
-                    <Icons.Orders />
-                    Ver mis Órdenes
+                    <Icons.Clipboard />
+                    Gestión de Órdenes
                   </button>
                 </div>
               </div>
@@ -1484,7 +1497,6 @@ export default function PageDesigner() {
                                 <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
                                 <span>
                                   <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
-                                  <small>#{order.id?.slice(0, 8).toUpperCase()}</small>
                                 </span>
                               </div>
                             </td>
@@ -1504,7 +1516,7 @@ export default function PageDesigner() {
                             <td className="td-pad">
                               <div className="pd-status-stack">
                                 {isReturnedOrder(order) && <ReturnedBadge compact />}
-                                {isNewOrder(order) && <span className="acm-badge pd-new-order-badge">Nuevo</span>}
+                                {isNewOrder(order) && <NewOrderBadge compact />}
                                 <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                                 {getEditLabel(order) && <span className="acm-badge warning">{getEditLabel(order)}</span>}
                                 <StatusBadge status={order.status} className="acm-badge" showDot={false} bordered />
@@ -1720,7 +1732,7 @@ export default function PageDesigner() {
                                     <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                                     <span className="ps-client-cell-badges">
                                       {isReturnedOrder(order) && <ReturnedBadge compact />}
-                                      {isNewOrder(order) && <span className="acm-badge pd-new-order-badge">Nuevo</span>}
+                                      {isNewOrder(order) && <NewOrderBadge compact />}
                                       <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                                       {getEditLabel(order) && <span className="acm-badge warning">{getEditLabel(order)}</span>}
                                     </span>
@@ -1779,7 +1791,7 @@ export default function PageDesigner() {
                             <span className="ps-order-card-client-badges">
                               <span className="ps-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
                               {isReturnedOrder(order) && <ReturnedBadge compact />}
-                              {isNewOrder(order) && <span className="acm-badge pd-new-order-badge">Nuevo</span>}
+                              {isNewOrder(order) && <NewOrderBadge compact />}
                               <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                               {getEditLabel(order) && <span className="acm-badge warning">{getEditLabel(order)}</span>}
                             </span>
@@ -1875,6 +1887,17 @@ export default function PageDesigner() {
         onAcknowledgeReview={pendingReviewForDesigner ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
         reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
         reviewError={orderReviews.acknowledgeError}
+        returnHandoff={selectedOrder ? orderReturns.incomingByOrder[selectedOrder.id] : null}
+        returnHistory={selectedOrder ? orderReturns.historyByOrder[selectedOrder.id] || [] : []}
+        onReturnToCashier={setReturningToCashier}
+      />
+      <ReturnToCashierModal
+        open={!!returningToCashier}
+        handoff={returningToCashier}
+        order={selectedOrder}
+        onClose={() => setReturningToCashier(null)}
+        onConfirm={handleReturnToCashier}
+        loading={returningToCashierLoading}
       />
       <AssignModal
         open={!!sendingToQuotation}

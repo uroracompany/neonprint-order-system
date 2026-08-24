@@ -1,0 +1,70 @@
+
+> neonprint-order-system@0.0.0 build
+> npm run security:check && vite build
+
+
+> neonprint-order-system@0.0.0 security:check
+> node scripts/security-check.mjs
+
+security:check OK
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 918 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                    0.65 kB │ gzip:   0.37 kB
+dist/assets/logo-neonprint-CAQoRwP0.jpg           75.28 kB
+dist/assets/useNewOrderAssignments-D7hkHqtP.css    0.15 kB │ gzip:   0.12 kB
+dist/assets/PaginatedProgressList-a4FjANGT.css     1.43 kB │ gzip:   0.51 kB
+dist/assets/OrderReturnHandoff-DBv1tcCW.css        2.58 kB │ gzip:   0.80 kB
+dist/assets/CreateClientModal-3zM_sXgm.css         3.14 kB │ gzip:   1.11 kB
+dist/assets/production-BpZoTM4x.css                3.22 kB │ gzip:   1.11 kB
+dist/assets/lobby-YdL5FSjG.css                     6.26 kB │ gzip:   1.98 kB
+dist/assets/SalesFilterToolbar-Bg84lRzD.css        7.93 kB │ gzip:   2.02 kB
+dist/assets/page-production-CGdlbHTO.css          10.43 kB │ gzip:   2.30 kB
+dist/assets/page-quote-DQYX1ZTL.css               11.74 kB │ gzip:   2.68 kB
+dist/assets/page-tracking-7GYEGxxg.css            16.72 kB │ gzip:   3.68 kB
+dist/assets/AdminClientsModule-vBljIng0.css       19.66 kB │ gzip:   4.15 kB
+dist/assets/page-delivery-Blc2f4Ee.css            25.89 kB │ gzip:   5.39 kB
+dist/assets/index-hpnQUKUR.css                    27.41 kB │ gzip:   4.75 kB
+dist/assets/page-production-mFXaW66z.css          30.10 kB │ gzip:   5.86 kB
+dist/assets/dashboard-C9lm-fNR.css                39.04 kB │ gzip:   6.81 kB
+dist/assets/page-designer-Buo1zhK8.css            39.84 kB │ gzip:   8.16 kB
+dist/assets/ProfilePeriodControl-CGs9Xv_e.css     41.80 kB │ gzip:   8.07 kB
+dist/assets/page-quote-BNsPwd7R.css               55.77 kB │ gzip:  10.29 kB
+dist/assets/page-seller-BBbsAdOt.css              61.77 kB │ gzip:  11.14 kB
+dist/assets/page-admin-sNo0t2Hc.css              121.02 kB │ gzip:  19.53 kB
+dist/assets/KPIModule-aUhN-xlD.css               207.71 kB │ gzip:  31.01 kB
+dist/assets/logo-neonprint-BQj7KY-Y.js             0.06 kB │ gzip:   0.08 kB
+dist/assets/OrderReviewBadge-CA_x2vyg.js           0.28 kB │ gzip:   0.24 kB
+dist/assets/BarChart-BbciU_n6.js                   0.32 kB │ gzip:   0.23 kB
+dist/assets/orderRealtime-Xniuof1C.js              0.76 kB │ gzip:   0.42 kB
+dist/assets/PaginatedProgressList-BgbCmGlo.js      1.53 kB │ gzip:   0.71 kB
+dist/assets/page-quote-DIJAeU8e.js                 1.59 kB │ gzip:   0.80 kB
+dist/assets/ReturnToCashierModal-DBbG-eHA.js       1.63 kB │ gzip:   0.76 kB
+dist/assets/useNewOrderAssignments-BdUiEDcr.js     1.90 kB │ gzip:   0.97 kB
+dist/assets/fileValidation-C4cwllZZ.js             2.41 kB │ gzip:   1.11 kB
+dist/assets/AssignModal-hucCWk2N.js                5.77 kB │ gzip:   2.21 kB
+dist/assets/OrderReturnHandoff-De4R840K.js         6.15 kB │ gzip:   2.84 kB
+dist/assets/lobby-DYFvgKnA.js                      9.20 kB │ gzip:   3.54 kB
+dist/assets/production-BzzWLCyM.js                 9.61 kB │ gzip:   3.66 kB
+dist/assets/CreateClientModal-Wbtvg6Uq.js         11.98 kB │ gzip:   4.52 kB
+dist/assets/page-admin-C05YF427.js                12.67 kB │ gzip:   3.90 kB
+dist/assets/page-tracking-Dg365WRb.js             18.52 kB │ gzip:   4.26 kB
+dist/assets/PieChart-CJRzMCPT.js                  26.06 kB │ gzip:   7.09 kB
+dist/assets/page-delivery-CAZzKHep.js             28.63 kB │ gzip:   8.15 kB
+dist/assets/pages-seller-DmC0gNmB.js              45.79 kB │ gzip:  12.38 kB
+dist/assets/page-production-sl5MQK_H.js           46.02 kB │ gzip:  11.36 kB
+dist/assets/SalesFilterToolbar-CI6lB5ge.js        57.60 kB │ gzip:  15.36 kB
+dist/assets/page-designer-BzTh8GL2.js             57.90 kB │ gzip:  16.10 kB
+dist/assets/page-quote-DcC99JGZ.js                90.65 kB │ gzip:  23.40 kB
+dist/assets/dashboard-BIQRf4K3.js                206.13 kB │ gzip:  51.70 kB
+dist/assets/ProfilePeriodControl-Bv4pCZ2A.js     458.72 kB │ gzip: 125.34 kB
+dist/assets/KPIModule-DseITQOa.js                477.68 kB │ gzip: 107.25 kB
+dist/assets/index-2Eh0-vBe.js                    502.66 kB │ gzip: 147.98 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 58.31s

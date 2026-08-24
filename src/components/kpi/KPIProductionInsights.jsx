@@ -19,6 +19,7 @@ import { Pagination } from '../ui/Pagination'
 import OrderDetailModal from '../orders/OrderDetailModal'
 import { Icons } from '../../utils/icons'
 import { formatDays, formatNumber } from '../../utils/kpiHelpers'
+import { TERMINATION_COLOR } from '../../utils/constants'
 import '../clients/AdminClientsModule.css'
 
 const AREA_LABELS = {
@@ -52,7 +53,7 @@ const AREA_ICONS = {
 const STATUS_META = {
   pending: { label: 'Pendientes', centerLabel: 'Pendiente', color: '#F59E0B' },
   in_production: { label: 'En Produccion', centerLabel: 'En Produccion', color: '#F97316' },
-  in_termination: { label: 'En Terminacion', centerLabel: 'En Terminacion', color: '#0EA5E9' },
+  in_termination: { label: 'En Terminacion', centerLabel: 'En Terminacion', color: TERMINATION_COLOR },
   completed: { label: 'Completados', centerLabel: 'Completado', color: '#10B981' },
 }
 
@@ -326,7 +327,7 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
   const timingRows = [
     { label: 'Entrada a inicio', value: stageTiming.quote_to_production, color: '#F59E0B' },
     { label: 'Produccion a terminacion', value: stageTiming.production_to_termination, color: '#F97316' },
-    { label: 'Terminacion a cierre', value: stageTiming.termination_to_completion, color: '#0EA5E9' },
+    { label: 'Terminacion a cierre', value: stageTiming.termination_to_completion, color: TERMINATION_COLOR },
     { label: 'Ciclo total', value: stageTiming.total_cycle_time, color: '#10B981' },
   ]
 
@@ -572,7 +573,7 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
                         <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                         <Bar dataKey="Pendientes" stackId="a" fill="#F59E0B" />
                         <Bar dataKey="Produccion" stackId="a" fill="#F97316" />
-                        <Bar dataKey="Terminacion" stackId="a" fill="#0EA5E9" />
+                        <Bar dataKey="Terminacion" stackId="a" fill={TERMINATION_COLOR} />
                         <Bar dataKey="Completados" stackId="a" fill="#10B981" radius={[6, 6, 0, 0]} />
                       </BarChart>
                     ) : (
@@ -583,7 +584,7 @@ export default function KPIProductionInsights({ data, onAreaClick }) {
                         <Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                         <Area type="monotone" dataKey="Pendientes" stackId="a" stroke="#F59E0B" fill="#F59E0B" fillOpacity={0.24} />
                         <Area type="monotone" dataKey="Produccion" stackId="a" stroke="#F97316" fill="#F97316" fillOpacity={0.24} />
-                        <Area type="monotone" dataKey="Terminacion" stackId="a" stroke="#0EA5E9" fill="#0EA5E9" fillOpacity={0.24} />
+                        <Area type="monotone" dataKey="Terminacion" stackId="a" stroke={TERMINATION_COLOR} fill={TERMINATION_COLOR} fillOpacity={0.24} />
                         <Area type="monotone" dataKey="Completados" stackId="a" stroke="#10B981" fill="#10B981" fillOpacity={0.24} />
                       </AreaChart>
                     )}

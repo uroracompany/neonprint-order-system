@@ -40,7 +40,8 @@ const getOrderTone = (status) => {
   const s = String(status || "").toLowerCase();
   if (["in_completed", "in_delivered"].includes(s)) return "success";
   if (s === "cancelled") return "danger";
-  if (["in_production", "in_termination"].includes(s)) return "warning";
+  if (s === "in_termination") return "termination";
+  if (s === "in_production") return "warning";
   return "info";
 };
 

@@ -1,6 +1,48 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../supabaseClient";
 
+const reviewRealtimeGroups = new Map();
+let reviewChannelSequence = 0;
+
+const subscribeToOrderEventReviewChanges = (userId, onChange) => {
+  let group = reviewRealtimeGroups.get(userId);
+
+  if (!group) {
+    const listeners = new Set();
+    const channel = supabase
+      .channel(`order-event-reviews-${userId}-${++reviewChannelSequence}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_event_reviews",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          listeners.forEach((listener) => listener());
+        }
+      )
+      .subscribe();
+
+    group = { channel, listeners };
+    reviewRealtimeGroups.set(userId, group);
+  }
+
+  group.listeners.add(onChange);
+
+  return () => {
+    const currentGroup = reviewRealtimeGroups.get(userId);
+    if (!currentGroup) return;
+
+    currentGroup.listeners.delete(onChange);
+    if (currentGroup.listeners.size > 0) return;
+
+    reviewRealtimeGroups.delete(userId);
+    void supabase.removeChannel(currentGroup.channel);
+  };
+};
+
 export const groupOrderEventReviews = (reviews = [], actorNames = {}) => {
   const grouped = {};
 
@@ -106,23 +148,7 @@ export default function useOrderEventReviews(userId) {
   useEffect(() => {
     if (!userId) return undefined;
 
-    const channel = supabase
-      .channel(`order-event-reviews-${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_event_reviews",
-          filter: `user_id=eq.${userId}`,
-        },
-        refresh
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return subscribeToOrderEventReviewChanges(userId, refresh);
   }, [refresh, userId]);
 
   const acknowledgeOrder = useCallback(async (orderId) => {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../supabaseClient";
+import { getAvatarInitials } from "../../utils/avatar-initials";
 import { PRODUCTION_AREAS } from "../../utils/constants";
 import { getParticipatingProductionAreaCodes, getProductionFiles, hasUnclassifiedProductionFiles } from "../../utils/production";
 import { Icons } from "../../utils/icons";
@@ -46,9 +47,13 @@ export default function ProductionAssignmentModal({ open, onClose, onConfirm, or
         <header className="pam-header">
           <span className="pam-icon"><Icons.Users /></span>
           <div><span>{title ? "" : "Último paso"}</span><h2 id="pam-title">{title || "Asignar Producción"}</h2><p>Selecciona un responsable por cada área participante.</p></div>
+          <span className="pam-header-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
           <button type="button" onClick={onClose} aria-label="Cerrar"><Icons.Close /></button>
         </header>
-        <div className="pam-order"><span>#{order.id?.slice(0, 8).toUpperCase()}</span><strong>{order.client_name || order.description || "Orden sin título"}</strong></div>
+        <div className="pam-order">
+          <span className="pam-client-avatar" aria-hidden="true">{getAvatarInitials(order.client_name)}</span>
+          <strong>{order.client_name || order.description || "Orden sin título"}</strong>
+        </div>
         <div className="pam-body">
           {loadingOptions ? <div className="pam-empty">Cargando responsables…</div> : areas.map((area) => {
             const options = usersByRole[area.role] || [];

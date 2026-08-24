@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import "../../css-components/page-admin.css";
+import { TERMINATION_COLOR } from "../../utils/constants";
 
 const SLIDES = [
   {
@@ -172,7 +173,7 @@ export default function AdminOverviewCarousel({
     { label: "Caja", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_QUOTE)).length, color: "#06B6D4", icon: ICONS.file },
     { label: "Diseño", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_DESIGN)).length, color: "#8B5CF6", icon: ICONS.file },
     { label: "Producción", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_PRODUCTION)).length, color: "#EF4444", icon: ICONS.brush },
-    { label: "Terminación", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_TERMINATION)).length, color: "#EC4899", icon: ICONS.brush },
+    { label: "Terminación", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_TERMINATION)).length, color: TERMINATION_COLOR, icon: ICONS.brush },
     { label: "Entrega", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_DELIVERED)).length, color: "#6366F1", icon: ICONS.truck },
     { label: "Completadas", value: orders.filter(order => isOrderStatus?.(order.status, ORDER_STATUS?.IN_COMPLETED)).length, color: "#10B981", icon: ICONS.check },
   ];

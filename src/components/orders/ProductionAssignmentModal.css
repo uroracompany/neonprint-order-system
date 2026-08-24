@@ -25,12 +25,7 @@
 }
 
 .pam-modal::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 2;
-  height: 3px;
-  background: var(--gradient);
+  content: none;
 }
 
 .pam-header {
@@ -49,7 +44,7 @@
 .pam-header > div > span {
   display: block;
   margin-bottom: 3px;
-  color: #4f46e5;
+  color: #2563EB;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -83,7 +78,7 @@
   height: 48px;
   border-radius: 14px;
   background: #eef2ff;
-  color: #4f46e5;
+  color: #2563EB;
 }
 
 .pam-header > button {
@@ -114,10 +109,9 @@
 }
 
 .pam-order {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin: 24px 30px 0;
   padding: 15px 16px;
   border: 1px solid #dbe5f2;
@@ -125,13 +119,35 @@
   background: linear-gradient(135deg, #f8fbff 0%, #ffffff 100%);
 }
 
-.pam-order span {
-  padding: 6px 9px;
-  border-radius: 8px;
-  background: #eef2ff;
-  color: #4f46e5;
+.pam-header-order-id {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1E40AF;
   font-size: 10px;
   font-weight: 800;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  flex: none;
+}
+
+.pam-client-avatar {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid transparent;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -.03em;
 }
 
 .pam-order strong {
@@ -200,7 +216,7 @@
 }
 
 .pam-select select:focus {
-  border-color: #4f46e5;
+  border-color: #2563EB;
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 

@@ -22,6 +22,12 @@ beforeEach(() => {
 });
 
 describe("Supabase hybrid auth storage", () => {
+  it("leaves token refresh scheduling to authManager", async () => {
+    await loadClient();
+
+    expect(createClientMock.mock.calls[0][2].auth.autoRefreshToken).toBe(false);
+  });
+
   it("stores sessions in sessionStorage by default", async () => {
     const client = await loadClient();
     const storage = createClientMock.mock.calls[0][2].auth.storage;

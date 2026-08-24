@@ -371,6 +371,7 @@
 .acm-badge.warning { border-color: #fde68a; color: #92400e; background: #fffbeb; }
 .acm-badge.danger { border-color: #fecaca; color: #991b1b; background: #fef2f2; }
 .acm-badge.info { border-color: #bfdbfe; color: #1e40af; background: #eff6ff; }
+.acm-badge.termination { border-color: #bfdbfe; color: #0284c7; background: #eff6ff; }
 .acm-badge.cyan { border-color: #a5f3fc; color: #0e7490; background: #ecfeff; }
 .acm-badge.violet { border-color: #ddd6fe; color: #6d28d9; background: #f5f3ff; }
 .acm-badge.neutral { border-color: var(--border); color: var(--text-sub); background: var(--surface-alt); }

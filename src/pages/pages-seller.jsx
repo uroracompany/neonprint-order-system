@@ -105,7 +105,7 @@ const isSellerVisibleNotification = (notification) => {
 const PHONE_PLACEHOLDER = "Seleccionar Cliente";
 
 const CARD_ACCENTS = [
-  { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
+  { color: "#0f1e40", bg: "#F1F5F9", glow: "#F1F5F9" },
   { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
   { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
   { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
@@ -759,7 +759,7 @@ export default function PageSeller() {
     { icon: <Icons.Edit />, label: "En diseño", value: sellerSummary.inDesign, sub: "En proceso de diseño", accentIdx: 2 },
     { icon: <Icons.Package />, label: "En caja", value: sellerSummary.inQuote, sub: "Esperando aprobación", accentIdx: 5 },
     { icon: <Icons.Package />, label: "En producción", value: sellerSummary.inProduction, sub: "Siendo impresas", accentIdx: 3 },
-    { icon: <Icons.Package />, label: "Terminación", value: sellerSummary.inTermination, sub: "En proceso final", accentIdx: 2 },
+    { icon: <Icons.Package />, label: "Terminación", value: sellerSummary.inTermination, sub: "En proceso final", accentIdx: 0 },
     { icon: <Icons.Truck />, label: "Completadas", value: sellerSummary.completed, sub: "Entregadas al cliente", accentIdx: 4 },
     { icon: <Icons.ArrowLeft />, label: "Devueltas", value: sellerSummary.returned, sub: "Pendientes de corrección", accentIdx: 6 },
   ];

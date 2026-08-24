@@ -238,8 +238,8 @@ function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
 
   return (
     <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-      <div className="pq-dialog">
-        <div className="pq-dialog-icon return">
+      <div className="pq-dialog pq-dialog--return-designer">
+        <div className="pq-dialog-icon return pq-dialog-icon--return-designer">
           <Icons.ArrowLeft />
         </div>
         <h3 className="pq-dialog-title">{`Devolver al ${targetLabel}`}</h3>
@@ -247,11 +247,11 @@ function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
           {`¿Estás seguro de que deseas devolver esta orden al ${targetLabel.toLowerCase()} para correcciones?`}
           {` El estado cambiará a "${nextStatusLabel}".`}
         </p>
-        <div className="pq-dialog-order">
+        <div className="pq-dialog-order pq-dialog-order--return-designer">
           <span className="pq-dialog-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
           <span className="pq-dialog-order-name">{order.client_name || order.description || "Orden sin título"}</span>
         </div>
-        <div className="pq-form-group">
+        <div className="pq-form-group pq-form-group--return-designer">
           <label className="pq-input-label">Razón de la devolución</label>
           <textarea
             className="pq-input pq-textarea"
@@ -262,7 +262,7 @@ function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
             rows={3}
           />
         </div>
-        <div className="pq-dialog-actions">
+        <div className="pq-dialog-actions pq-dialog-actions--return-designer">
           <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
           <button className="pq-btn pq-btn-return" onClick={handleConfirm} disabled={loading || !reason.trim()}>
             {loading ? "Devolviendo..." : `Devolver al ${targetLabel}`}
@@ -502,38 +502,70 @@ function QuoteOrderDetailModal({
           />
 
           <div className="pq-detail-grid">
-            <div className="pq-panel">
-              <div className="pq-panel-title"><Icons.FileText /> Información de la orden</div>
+            <div className="pq-panel pq-info-panel">
+              <div className="pq-panel-title pq-panel-title--accent"><Icons.Clipboard /> Información de la orden</div>
               <div className="pq-info-list">
-                <div className="pq-info-row"><span><Icons.User /> Cliente</span><strong>{order.client_name || "No definido"}</strong></div>
-                <div className="pq-info-row"><span><Icons.User /> Vendedor</span><strong>{resolveSellerName(order, sellerDirectory)}</strong></div>
-                <div className="pq-info-row"><span><Icons.Phone /> Teléfono</span><span className="pq-info-badge pq-info-badge--phone">{order.client_contact || order.client_phone || "No definido"}</span></div>
-                <div className="pq-info-row"><span><Icons.FileText /> Núm. Facturación</span><strong>{order.invoice_number || "No definido"}</strong></div>
-                <div className="pq-info-row"><span><Icons.Package /> Tipo</span>
-                  {order.order_type === "orden 911" ? (
-                    <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B", border: "1px solid #EF444420" }}>911</span>
-                  ) : (
-                    <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>Normal</span>
-                  )}
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.User /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Cliente</span>
+                    <strong className="pq-info-value">{order.client_name || "No definido"}</strong>
+                  </div>
                 </div>
+
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.User /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Vendedor</span>
+                    <strong className="pq-info-value">{resolveSellerName(order, sellerDirectory)}</strong>
+                  </div>
+                </div>
+
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.Phone /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Teléfono</span>
+                    <strong className="pq-info-value">{order.client_contact || order.client_phone || "No definido"}</strong>
+                  </div>
+                </div>
+
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.FileText /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Núm. Facturación</span>
+                    <strong className="pq-info-value">{order.invoice_number || "No definido"}</strong>
+                  </div>
+                </div>
+
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.Clipboard /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Tipo</span>
+                    <strong className="pq-info-value">{order.order_type === "orden 911" ? "911" : "Normal"}</strong>
+                  </div>
+                </div>
+
                 {/* Materiales de la orden */}
-                <div className="pq-info-row"><span><Icons.Package /> Material</span>
-                  <div className="pq-info-materials">
-                    {(order.material || "").split(",").map((m, i) => m.trim() ? (
-                      <span key={i} className="pq-material-badge">{m.trim()}</span>
-                    ) : null)}
-                    {!order.material && <span className="pq-material-badge">No definido</span>}
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.Package /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Material</span>
+                    <strong className="pq-info-value">
+                      {order.material
+                        ? order.material.split(",").map(m => m.trim()).filter(Boolean).join(", ")
+                        : "No definido"}
+                    </strong>
                   </div>
                 </div>
               </div>
               <div className="pq-description-box">
                 <span className="pq-description-label"><Icons.Clipboard /> Descripción</span>
-                <p>{order.description || "Sin descripción"}</p>
+                <p className="pq-description-text">{order.description || "Sin descripción"}</p>
               </div>
             </div>
 
             <div className="pq-panel">
-              <div className="pq-panel-title"><Icons.File /> Archivos Adjuntos</div>
+              <div className="pq-panel-title pq-panel-title--accent"><Icons.Paperclip /> Archivos Adjuntos</div>
               {orderFiles.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {orderFiles.map((fileUrl, index) => (
@@ -550,7 +582,7 @@ function QuoteOrderDetailModal({
               )}
 
               <div className="pq-preview-block pq-preview-block--bare">
-                <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                <span className="pq-description-label pq-description-label--soft" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
                   <Icons.Eye /> Orden de Trabajo
                 </span>
                 {order.preview_image ? (
@@ -566,7 +598,7 @@ function QuoteOrderDetailModal({
 
               {referenceImageUrls.length > 0 && (
                 <div className="pq-preview-block pq-preview-block--dashed" style={{ marginTop: 16 }}>
-                  <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                  <span className="pq-description-label pq-description-label--soft" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
                     <Icons.Image /> Imágenes de referencia
                   </span>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
@@ -582,10 +614,10 @@ function QuoteOrderDetailModal({
                             borderRadius: "var(--pq-radius-md)",
                             border: "1px solid var(--pq-border)",
                             cursor: "pointer",
-                            transition: "transform 0.2s, box-shadow 0.2s",
+                            transition: "transform 0.2s",
                           }}
-                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
-                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; }}
+                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; }}
                         />
                       </a>
                     ))}
@@ -648,8 +680,8 @@ function QuoteOrderDetailModal({
             </div>
           )}
 
-          <div className="pq-panel pq-payment-panel">
-            <div className="pq-panel-title">Confirmación de pago</div>
+            <div className="pq-panel pq-payment-panel">
+              <div className="pq-panel-title pq-panel-title--accent">Confirmación de pago</div>
 
             {!canConfirmPayment && (
               <div className={`pq-readonly-note ${isPaymentPaid(order.payment_status) ? "success" : ""}`}>
@@ -660,7 +692,7 @@ function QuoteOrderDetailModal({
 
             <div className="pq-payment-grid">
               <div className="pq-payment-field">
-                <label>Estado del pago</label>
+                <label><Icons.CheckCircle /> Estado del pago</label>
                 <select
                   className="pq-input"
                   value={paymentStatus}
@@ -675,7 +707,7 @@ function QuoteOrderDetailModal({
               </div>
 
               <div className="pq-payment-field">
-                <label>Recibo o factura</label>
+                <label><Icons.Receipt /> Recibo de factura</label>
                 {paymentStatus === PAYMENT_STATUS.PAID ? (
                   receiptFile ? (
                     <div className="pq-receipt-preview-card">
@@ -764,18 +796,18 @@ function QuoteOrderDetailModal({
                   <img
                     src={receiptUrl}
                     alt="Comprobante de pago"
-                    style={{
-                      width: "100%",
-                      maxHeight: 200,
-                      objectFit: "contain",
-                      background: "var(--pq-surface-alt, #f5f7fb)",
-                      borderRadius: "var(--pq-radius-md)",
-                      border: "1px solid var(--pq-border)",
-                      cursor: "pointer",
-                      transition: "transform 0.2s, box-shadow 0.2s",
-                    }}
-                    onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
-                    onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                      style={{
+                        width: "100%",
+                        maxHeight: 200,
+                        objectFit: "contain",
+                        background: "var(--pq-surface-alt, #f5f7fb)",
+                        borderRadius: "var(--pq-radius-md)",
+                        border: "1px solid var(--pq-border)",
+                        cursor: "pointer",
+                        transition: "transform 0.2s",
+                      }}
+                    onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; }}
+                    onMouseLeave={e => { e.target.style.transform = "scale(1)"; }}
                   />
                 </a>
               </div>
@@ -2524,22 +2556,22 @@ export default function PageQuote() {
   }).length;
 
   const CARD_ACCENTS = [
-    { color: "#0f1e40", bg: "#E8EDF8", glow: "#E8EDF8" },
+    { color: "#0284C7", bg: "#E0F2FE", glow: "#E0F2FE" },
     { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
     { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
     { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
-    { color: "#06B6D4", bg: "#CFFAFE", glow: "#CFFAFE" },
+    { color: "#F5A215", bg: "#FEF3C7", glow: "#FEF3C7" },
   ];
 
   const metrics = [
-    { label: "Órdenes asignadas", value: orders.length, icon: <Icons.Orders />, accentIdx: 0, sub: "Activas en caja" },
+    { label: "Órdenes asignadas", value: orders.length, icon: <Icons.Orders />, accentIdx: 0, sub: "Activas en caja", subColor: "#1E40AF" },
     { label: "Pendientes de pago", value: orders.filter(order => order.payment_status !== "pagado" && !order.is_archived_quote).length, icon: <Icons.Money />, accentIdx: 1, sub: "Requieren seguimiento" },
     { label: "Pagadas", value: orders.filter(order => order.payment_status === "pagado").length, icon: <Icons.Check />, accentIdx: 2, sub: "Completadas" },
     { label: "Crédito pendiente", value: accountsReceivableLoading ? "..." : creditPendingInvoicesCount, icon: <Icons.Receipt />, accentIdx: 3, sub: "Por cobrar" },
     { label: "Archivadas", value: orders.filter(order => order.is_archived_quote).length, icon: <Icons.Archive />, accentIdx: 4, sub: "Solo consulta" },
   ];
 
-  function MetricCard({ icon, label, value, sub, accentIdx = 0 }) {
+  function MetricCard({ icon, label, value, sub, subColor, accentIdx = 0 }) {
     const acc = CARD_ACCENTS[accentIdx];
     return (
       <article className="pq-metric-card">
@@ -2547,7 +2579,7 @@ export default function PageQuote() {
         <div className="pq-metric-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
         <div className="pq-metric-value">{value}</div>
         <div className="pq-metric-label">{label}</div>
-        {sub && <div className="pq-metric-sub" style={{ color: acc.color }}>{sub}</div>}
+        {sub && <div className="pq-metric-sub" style={{ color: subColor || acc.color }}>{sub}</div>}
       </article>
     );
   }
@@ -2587,7 +2619,7 @@ export default function PageQuote() {
             <div>
               {/* Nombre del apartado de la pantalla */}
               <div className="pq-header-title">
-                {activeTab === "dashboard" ? "Panel de Caja" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "notifications" ? "Notificaciones" : activeTab === "profile" ? "Mi Perfil" : "Mis órdenes de caja"}
+                {activeTab === "dashboard" ? "Panel Principal" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "notifications" ? "Notificaciones" : activeTab === "profile" ? "Mi Perfil" : "Mis órdenes de caja"}
               </div>
               <div className="pq-page-date">
                 {new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
@@ -2601,6 +2633,9 @@ export default function PageQuote() {
             </button>
             <button className="pq-header-client-btn" onClick={() => setShowNewClientModal(true)} title="Agregar nuevo cliente">
               <Icons.Plus /> Nuevo Cliente
+            </button>
+            <button className="pq-header-client-btn" onClick={() => setActiveTab("orders")} title="Gestionar órdenes">
+              <Icons.Orders /> Gestionar Órdenes
             </button>
             <NotificationCenter
               notifications={notif.notifications}
@@ -2646,7 +2681,7 @@ export default function PageQuote() {
                 </div>
               </div>
               <div className="pq-greeting-actions">
-                <button type="button" className="pq-greeting-btn primary" onClick={() => setShowNewClientModal(true)}>
+                <button type="button" className="pq-header-client-btn" onClick={() => setShowNewClientModal(true)}>
                   <Icons.Plus />
                   Nuevo Cliente
                 </button>

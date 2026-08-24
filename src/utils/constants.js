@@ -53,6 +53,8 @@ export const PRODUCTION_FILE_STATUS_LABELS = {
   [PRODUCTION_FILE_STATUS.COMPLETED]: "Completado",
 };
 
+export const TERMINATION_COLOR = "#0284C7";
+
 export const getProductionAreaForRole = (role) => PRODUCTION_AREA_ROLES[String(role || "").trim()] || null;
 export const isProductionRole = (role) => Boolean(getProductionAreaForRole(role));
 export const getProductionAreaLabel = (code) => PRODUCTION_AREA_LABELS[code] || "Sin clasificar";
@@ -307,7 +309,7 @@ export const STATUS_COLORS = {
   [ORDER_STATUS.IN_DESIGN]: { label: "Diseño", color: "#5B21B6", bg: "#EDE9FE", dot: "#8B5CF6" },
   [ORDER_STATUS.IN_QUOTE]: { label: UI_TERMS.cotizacion, color: "#0369A1", bg: "#E0F2FE", dot: "#0EA5E9" },
   [ORDER_STATUS.IN_PRODUCTION]: { label: "Producción", color: "#9A3412", bg: "#FFF7ED", dot: "#F97316" },
-  [ORDER_STATUS.IN_TERMINATION]: { label: "Terminación", color: "#0369A1", bg: "#E0F2FE", dot: "#0284C7" },
+  [ORDER_STATUS.IN_TERMINATION]: { label: "Terminación", color: "#0284C7", bg: "#E0F2FE", dot: "#0284C7" },
   [ORDER_STATUS.IN_DELIVERED]: { label: "Entregado", color: "#065F46", bg: "#ECFDF5", dot: "#10B981" },
   [ORDER_STATUS.IN_COMPLETED]: { label: "Completada", color: "#14532D", bg: "#DCFCE7", dot: "#22C55E" },
   [ORDER_STATUS.CANCELLED]: { label: "Cancelada", color: "#991B1B", bg: "#FEF2F2", dot: "#EF4444" },

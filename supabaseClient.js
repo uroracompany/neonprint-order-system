@@ -108,7 +108,10 @@ export function clearAuthSessionStorage() {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    autoRefreshToken: true,
+    // authManager owns refresh timing and serializes refreshes across the app.
+    // Leaving the Supabase scheduler enabled creates a second contender for
+    // Navigator LockManager's session lock when the tab regains focus.
+    autoRefreshToken: false,
     detectSessionInUrl: false,
     persistSession: true,
     storage: authSessionStorage,

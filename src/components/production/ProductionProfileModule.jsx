@@ -8,6 +8,7 @@ import { adminApiFetch } from "../../utils/adminApi";
 import useOrdersRealtimeSync from "../../hooks/useOrdersRealtimeSync";
 import ProfilePeriodControl from "../profile/ProfilePeriodControl";
 import PaginatedProgressList from "../profile/PaginatedProgressList";
+import { TERMINATION_COLOR } from "../../utils/constants";
 
 const EMPTY_METRICS = {
   orders_completed: 0,
@@ -42,13 +43,14 @@ const ORDER_TYPE_COLORS = ["#1d4ed8", "#dc2626"];
 const FILE_STATUS_COLORS = {
   pending: "#f59e0b",
   in_production: "#06b6d4",
-  in_termination: "#8b5cf6",
+  in_termination: TERMINATION_COLOR,
   completed: "#10b981",
 };
 const STATUS_TONE_COLORS = {
   info: "#2563eb",
   warning: "#f59e0b",
   cyan: "#0284c7",
+  termination: TERMINATION_COLOR,
   success: "#16a34a",
   danger: "#dc2626",
 };
@@ -181,7 +183,7 @@ export default function ProductionProfileModule({ authUser, fallbackProfile }) {
 
   const statusCards = useMemo(() => [
     { key: "in_production", label: "En produccion", icon: <Icons.Package />, tone: "info" },
-    { key: "in_termination", label: "En terminacion", icon: <Icons.Clock />, tone: "warning" },
+    { key: "in_termination", label: "En terminacion", icon: <Icons.Clock />, tone: "termination" },
     { key: "delivered", label: "Entregadas", icon: <Icons.Truck />, tone: "cyan" },
     { key: "completed", label: "Completadas", icon: <Icons.Check />, tone: "success" },
     { key: "cancelled", label: "Canceladas", icon: <Icons.AlertCircle />, tone: "danger" },

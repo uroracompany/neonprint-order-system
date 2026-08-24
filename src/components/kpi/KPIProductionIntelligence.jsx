@@ -4,13 +4,14 @@ import OrderDetailModal from '../orders/OrderDetailModal'
 import { Icons } from '../../utils/icons'
 import { formatNumber, formatDays } from '../../utils/kpiHelpers'
 import { adminApiFetch } from '../../utils/adminApi'
+import { TERMINATION_COLOR } from '../../utils/constants'
 import '../clients/AdminClientsModule.css'
 
 const AREA_COLORS = { digital: '#06B6D4', dtf: '#F43F5E', ploteo: '#F59E0B' }
 const AREA_ICONS = { digital: Icons.Image, dtf: Icons.Package, ploteo: Icons.Clipboard }
 const AREA_FULL_LABELS = { digital: 'Producción Digital', dtf: 'Producción DTF', ploteo: 'Producción Ploteo' }
 const LINE_COLORS = ['#06B6D4', '#F43F5E', '#F59E0B', '#10B981', '#8B5CF6', '#F97316']
-const STATUS_COLORS = { pending: '#F59E0B', in_production: '#F97316', in_termination: '#0EA5E9', completed: '#10B981' }
+const STATUS_COLORS = { pending: '#F59E0B', in_production: '#F97316', in_termination: TERMINATION_COLOR, completed: '#10B981' }
 const STATUS_LABELS = { pending: 'Pendiente', in_production: 'En Produccion', in_termination: 'En Terminacion', completed: 'Completado' }
 const COLORS = { area: '#091127', positive: '#10B981', warning: '#F59E0B', negative: '#EF4444', muted: '#64748b', accent: '#8B5CF6', info: '#0EA5E9' }
 const CHART_PERIODS = [
@@ -46,7 +47,7 @@ function getStageLabel(status) {
 function getStageTone(status) {
   const normalized = String(status || '').toLowerCase()
   if (normalized === 'completed') return 'success'
-  if (normalized === 'in_termination') return 'cyan'
+  if (normalized === 'in_termination') return 'termination'
   if (['pending', 'in_production'].includes(normalized)) return 'warning'
   return 'neutral'
 }
@@ -528,7 +529,7 @@ function AreaFlowCard({ chartDates, areaTrend, formatXAxis, chartControls }) {
               <Tooltip />
               <Area type="monotone" dataKey="Completados" stroke="#10B981" fill="#10B981" fillOpacity={0.15} strokeWidth={2} />
               <Area type="monotone" dataKey="Produccion" stroke="#F97316" fill="#F97316" fillOpacity={0.12} strokeWidth={2} />
-              <Area type="monotone" dataKey="Terminacion" stroke="#0EA5E9" fill="#0EA5E9" fillOpacity={0.12} strokeWidth={2} />
+              <Area type="monotone" dataKey="Terminacion" stroke={TERMINATION_COLOR} fill={TERMINATION_COLOR} fillOpacity={0.12} strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -1499,7 +1500,7 @@ export function ProductionEmployeeDetailView({ employeeId, areaCode, onBack, per
               {[
                 { label: 'Pendiente', value: pending, color: '#F59E0B' },
                 { label: 'Produccion', value: in_production, color: '#F97316' },
-                { label: 'Terminacion', value: in_termination, color: '#0EA5E9' },
+                { label: 'Terminacion', value: in_termination, color: TERMINATION_COLOR },
                 { label: 'Completado', value: completed, color: '#10B981' },
               ].filter(s => s.value > 0).map((s, i) => (
                 <div key={i} style={{ width: `${(s.value / pieTotalVal) * 100}%`, background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: s.value > 0 ? 20 : 0 }}>
@@ -1511,7 +1512,7 @@ export function ProductionEmployeeDetailView({ employeeId, areaCode, onBack, per
               {[
                 { label: 'Pendiente', value: pending, color: '#F59E0B' },
                 { label: 'Produccion', value: in_production, color: '#F97316' },
-                { label: 'Terminacion', value: in_termination, color: '#0EA5E9' },
+                { label: 'Terminacion', value: in_termination, color: TERMINATION_COLOR },
                 { label: 'Completado', value: completed, color: '#10B981' },
               ].filter(s => s.value > 0).map((s, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>

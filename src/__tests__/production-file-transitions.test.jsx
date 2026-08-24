@@ -96,6 +96,7 @@ describe("production file state transitions", () => {
       expect(supabase.rpc).toHaveBeenCalledWith("update_production_file_status", {
         p_file_id: "file-1",
         p_next_status: PRODUCTION_FILE_STATUS.IN_PRODUCTION,
+        p_delivery_id: null,
       });
     });
   });
@@ -112,6 +113,7 @@ describe("production file state transitions", () => {
       expect(supabase.rpc).toHaveBeenCalledWith("update_production_file_status", {
         p_file_id: "file-1",
         p_next_status: PRODUCTION_FILE_STATUS.COMPLETED,
+        p_delivery_id: null,
       });
     });
   });
@@ -128,6 +130,7 @@ describe("production file state transitions", () => {
       expect(supabase.rpc).toHaveBeenCalledWith("update_production_file_status", {
         p_file_id: "file-1",
         p_next_status: PRODUCTION_FILE_STATUS.IN_TERMINATION,
+        p_delivery_id: null,
       });
     });
   });

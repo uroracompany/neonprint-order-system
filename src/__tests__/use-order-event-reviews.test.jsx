@@ -77,4 +77,23 @@ describe("useOrderEventReviews", () => {
     expect(result.current.pendingCount).toBe(0);
     expect(result.current.pendingByOrder).toEqual({});
   });
+
+  it("shares one realtime subscription when multiple views review the same user orders", async () => {
+    order.mockResolvedValue({ data: [], error: null });
+
+    const { unmount } = renderHook(() => ({
+      sellerReviews: useOrderEventReviews("seller-1"),
+      alertReviews: useOrderEventReviews("seller-1"),
+    }));
+
+    await waitFor(() => expect(order).toHaveBeenCalledTimes(2));
+
+    expect(channel).toHaveBeenCalledTimes(1);
+    const realtimeChannel = channel.mock.results[0].value;
+    expect(realtimeChannel.on).toHaveBeenCalledTimes(1);
+    expect(realtimeChannel.subscribe).toHaveBeenCalledTimes(1);
+
+    unmount();
+    expect(removeChannel).toHaveBeenCalledWith(realtimeChannel);
+  });
 });

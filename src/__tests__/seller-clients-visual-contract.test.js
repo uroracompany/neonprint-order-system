@@ -141,7 +141,7 @@ describe("Seller visual contract with Admin clients", () => {
     expect(avatar).toContain("display: inline-grid;");
     expect(avatar).toContain("border-radius: 50%;");
     expect(avatar).toContain("background: var(--primary);");
-    expect(avatar).toContain("border: 2px solid var(--green);");
+    expect(avatar).toContain("border: 2px solid transparent;");
     expect(avatar).toContain("letter-spacing: -.03em;");
     expect(avatarSmall).toContain("width: 34px;");
     expect(avatarSmall).toContain("height: 34px;");
@@ -149,8 +149,8 @@ describe("Seller visual contract with Admin clients", () => {
     expect(clientCell).toContain("display: flex;");
     expect(clientCell).toContain("gap: 10px;");
     expect(clientCellMain).toContain("flex-direction: column;");
-    expect(sellerPage).toContain("const getInitials = (name)");
-    expect(sellerPage).toContain("{getInitials(o.client_name)}");
+    expect(sellerPage).toContain('import { getAvatarInitials } from "../utils/avatar-initials";');
+    expect(sellerPage).toContain("{getAvatarInitials(o.client_name)}");
     expect(avatarUsages.length).toBeGreaterThanOrEqual(3);
   });
 
@@ -261,6 +261,17 @@ describe("Seller visual contract with Admin clients", () => {
 
     expect(orderDetailModal).toContain("{order.description}");
     expect(orderDetailModal).toContain('{ label: "Material", value: order.material');
+  });
+
+  it("uses the shared returned-order indicator in recent seller orders", () => {
+    const dashboardRecentTable = getSourceSlice(
+      sellerPage,
+      '<thead><tr>{["Cliente", "Facturacion", "Estado", ""].map',
+      '{activeTab === "orders" && ('
+    );
+
+    expect(dashboardRecentTable).toContain("recentOrders.map(o =>");
+    expect(dashboardRecentTable).toContain("{isReturnedOrder(o) && <ReturnedBadge compact />}");
   });
 
   it("adds a private seller profile tab and visual profile module", () => {

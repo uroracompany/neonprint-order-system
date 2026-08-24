@@ -46,7 +46,8 @@ const getOrderTone = (status) => {
   const normalized = String(status || "").toLowerCase();
   if (["in_completed", "in_delivered"].includes(normalized)) return "success";
   if (normalized === "cancelled") return "danger";
-  if (["in_production", "in_termination"].includes(normalized)) return "warning";
+  if (normalized === "in_termination") return "termination";
+  if (normalized === "in_production") return "warning";
   return "info";
 };
 

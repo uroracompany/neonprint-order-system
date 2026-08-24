@@ -88,6 +88,7 @@ describe("Production last pending file confirmation", () => {
       expect(supabase.rpc).toHaveBeenCalledWith("update_production_file_status", {
         p_file_id: "file-ploteo",
         p_next_status: PRODUCTION_FILE_STATUS.COMPLETED,
+        p_delivery_id: null,
       });
     });
 
@@ -132,6 +133,7 @@ describe("Production last pending file confirmation", () => {
       expect(supabase.rpc).toHaveBeenCalledWith("update_production_file_status", {
         p_file_id: "file-1",
         p_next_status: PRODUCTION_FILE_STATUS.COMPLETED,
+        p_delivery_id: "delivery-user-1",
       });
     });
   });
@@ -166,6 +168,7 @@ describe("Production last pending file confirmation", () => {
       expect(supabase.rpc).toHaveBeenCalledWith("update_production_file_status", {
         p_file_id: "file-4",
         p_next_status: PRODUCTION_FILE_STATUS.COMPLETED,
+        p_delivery_id: null,
       });
     });
 
@@ -212,6 +215,7 @@ describe("Production last pending file confirmation", () => {
       expect(supabase.rpc).toHaveBeenCalledWith("update_production_file_status", {
         p_file_id: "file-5",
         p_next_status: PRODUCTION_FILE_STATUS.COMPLETED,
+        p_delivery_id: "delivery-user-1",
       });
     });
   });

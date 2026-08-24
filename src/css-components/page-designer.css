@@ -147,7 +147,6 @@
   z-index: 15;
   background: #ffffff;
   border-bottom: var(--pd-banner-border);
-  box-shadow: 0 1px 0 rgba(15, 30, 64, 0.04);
   padding: 0 26px;
   height: 62px;
   display: flex;
@@ -222,7 +221,8 @@
 
 .pd-page-date {
   font-size: 11px;
-  color: var(--pd-text-muted);
+  color: #1E40AF;
+  font-weight: 600;
   margin-top: 1px;
 }
 
@@ -386,7 +386,8 @@
   z-index: 1;
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--pd-text-sub);
+  color: #1E40AF;
+  font-weight: 600;
   line-height: 1.5;
 }
 .pd-greeting-copy,
@@ -492,11 +493,11 @@
   right: 0;
   bottom: 0;
   left: 0;
-  height: 3px;
+  height: 0;
   background: var(--pd-gradient);
 }
 .pd-greeting-btn.primary:hover {
-  background: var(--pd-primary-mid);
+  opacity: 0.87;
 }
 .pd-greeting-btn svg {
   flex: 0 0 auto;
@@ -563,10 +564,7 @@
 }
 
 .pd-metric-glow {
-  position: absolute; top: -28px; right: -28px;
-  width: 90px; height: 90px;
-  border-radius: 50%; opacity: 0.35;
-  pointer-events: none;
+  display: none;
 }
 
 .pd-metric-icon {
@@ -590,8 +588,8 @@
 
 .pd-metric-label {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--pd-text-sub);
+  font-weight: 700;
+  color: var(--pd-text);
   margin-top: 6px;
 }
 
@@ -672,6 +670,8 @@
 .pd-root .pa-panel-head .acm-panel-description {
   margin: 2px 0 0;
   font-size: 11px;
+  color: #1E40AF;
+  font-weight: 600;
 }
 
 .pd-root .pa-results-count {
@@ -1083,13 +1083,7 @@
 }
 
 .pd-btn-quotation::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #06B6D4, #0EA5E9);
+  content: none;
 }
 
 .pd-btn-quotation:hover {
@@ -1177,8 +1171,12 @@
 }
 
 .pd-modal-stripe {
-  height: 3px;
-  background: var(--pd-gradient);
+  height: 0;
+}
+
+.pd-modal .file-upload-zone__hint {
+  color: #1E40AF;
+  font-weight: 600;
 }
 
 .pd-modal-inner-header {
@@ -1205,8 +1203,7 @@
 }
 
 .pd-modal-stripe {
-  height: 3px;
-  background: var(--pd-gradient);
+  height: 0;
 }
 
 .pd-modal-title {
@@ -1223,7 +1220,8 @@
 
 .pd-modal-subtitle {
   font-size: 13px;
-  color: var(--pd-text-muted);
+  font-weight: 600;
+  color: #1E40AF;
 }
 
 .pd-modal-close,
@@ -1264,18 +1262,25 @@
   border: 1px solid #dbe3ef;
   border-radius: 14px;
   background: #ffffff;
-  box-shadow: 0 1px 2px rgba(15, 30, 64, 0.04);
 }
 
 .pd-modal-summary-item > span {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   margin-bottom: 4px;
-  color: #64748b;
+  color: #1E40AF;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1.2;
   text-transform: uppercase;
+}
+
+.pd-modal-summary-item > span svg {
+  width: 13px;
+  height: 13px;
+  color: #1E40AF;
 }
 
 .pd-modal-summary-item strong {
@@ -1434,7 +1439,6 @@
   background: #ffffff;
   border: var(--pd-banner-border);
   border-radius: var(--pd-banner-radius);
-  box-shadow: 0 8px 22px rgba(15, 30, 64, 0.055);
 }
 
 .pd-modal-body > .order-review-card {
@@ -1455,26 +1459,16 @@
 .pd-modal-card-title > svg {
   width: 18px;
   height: 18px;
-  color: #1d4ed8;
+  color: #1E40AF;
   flex: 0 0 auto;
 }
 
 .pd-modal-card-title h4 {
   margin: 0;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--pd-text-sub);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.pd-modal-card-title h4 {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--pd-text-sub);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1E40AF;
+  letter-spacing: 0.05em;
 }
 
 .pd-modal-grid {
@@ -1488,7 +1482,7 @@
   flex-direction: column;
   gap: 4px;
   padding: 14px 16px;
-  background: #f8fafc;
+  background: #ffffff;
   border: var(--pd-banner-border);
   border-radius: 12px;
 }
@@ -1499,17 +1493,25 @@
 
 .pd-modal-label,
 .pd-files-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--pd-text-muted);
-  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #F43F5E;
   letter-spacing: 0.08em;
+}
+
+.pd-modal-label svg {
+  width: 14px;
+  height: 14px;
+  color: #F43F5E;
 }
 
 .pd-modal-value {
   font-size: 14px;
-  font-weight: 500;
-  color: var(--pd-text);
+  font-weight: 600;
+  color: #000000;
   line-height: 1.5;
 }
 
@@ -1526,7 +1528,7 @@
   border: 1px solid #dbe3ef;
   border-radius: 8px;
   background: #f8fafc;
-  color: #334155;
+  color: #000000;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.35;
@@ -1538,7 +1540,8 @@
   border: none;
   background: transparent;
   font-size: 14px;
-  color: #334155;
+  font-weight: 600;
+  color: #000000;
   line-height: 1.65;
 }
 
@@ -1793,6 +1796,8 @@ label.pd-upload-btn {
 
 .pd-file-name-badge{
   font-size: 13px;
+  color: #000000;
+  font-weight: 600;
 }
 
 .pd-reference-grid {
@@ -1864,13 +1869,21 @@ label.pd-upload-btn {
 
 .pd-modal-footer-note {
   margin-right: auto;
-  color: #64748b;
+  color: #1E40AF;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
   max-width: 360px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
+.pd-modal-footer-note--accent {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: none;
+}
 
 .pd-status-bar {
   display: flex;
