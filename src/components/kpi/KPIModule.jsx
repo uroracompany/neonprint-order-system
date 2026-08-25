@@ -14,7 +14,6 @@ import KPIClientAnalytics from './KPIClientAnalytics'
 import KPIMaterialsAnalytics from './KPIMaterialsAnalytics'
 import KPIUserAnalytics from './KPIUserAnalytics'
 import KPIProductionInsights from './KPIProductionInsights'
-import KPIAlertsPanel from './KPIAlertsPanel'
 import { SellerDetailView } from './KPISellerIntelligence'
 import { DesignerDetailView } from './KPIDesignIntelligence'
 import { QuoteDetailView } from './KPIQuoteIntelligence'
@@ -30,43 +29,7 @@ const TABS = [
   { id: 'materials', label: 'Materiales', icon: <Icons.Package /> },
   { id: 'users', label: 'Empleados', icon: <Icons.Users /> },
   { id: 'production', label: 'Producción', icon: <Icons.Brush /> },
-  { id: 'alerts', label: 'Alertas', icon: <Icons.AlertCircle /> },
 ]
-
-function CriticalAlertsInline({ alerts }) {
-  if (!alerts || alerts.length === 0) return null
-
-  const highAlerts = alerts.filter(a => ['critical', 'high'].includes(a.severity))
-  if (highAlerts.length === 0) return null
-
-  return (
-    <div className="kpi-section">
-      <div className="kpi-section-header">
-        <div>
-          <span className="kpi-section-kicker">Panel de Alertas</span>
-          <h2 className="kpi-section-title">Alertas Críticas</h2>
-          <p className="kpi-section-subtitle">{highAlerts.length} alerta{highAlerts.length !== 1 ? 's' : ''} que requiere{highAlerts.length === 1 ? '' : 'n'} acción inmediata</p>
-        </div>
-      </div>
-      <div className="kpi-alerts-inline">
-        {highAlerts.slice(0, 3).map((alert, idx) => (
-          <div key={idx} className="kpi-alert-inline high">
-            <div className="kpi-alert-inline-icon">
-              <Icons.AlertCircle />
-            </div>
-            <div className="kpi-alert-inline-content">
-              <h4 className="kpi-alert-inline-title">{alert.title}</h4>
-              <p className="kpi-alert-inline-message">{alert.description || alert.message}</p>
-            </div>
-            {(alert.recommended_action || alert.action) && (
-              <span className="kpi-alert-inline-action">{alert.recommended_action || alert.action}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 export default function KPIModule({ userId }) {
   const location = useLocation()
@@ -222,22 +185,6 @@ export default function KPIModule({ userId }) {
   const handleProductionEmployeeBack = useCallback(() => { setProductionEmployeeDetail(null) }, [])
   const handleDeliveryUserClick = useCallback((userId) => { setDeliveryUserId(userId) }, [])
   const handleDeliveryUserBack = useCallback(() => { setDeliveryUserId(null) }, [])
-  const handleAlertTarget = useCallback((target = {}) => {
-    const module = String(target.module || '').toLowerCase()
-    const tabMap = {
-      orders: 'orders',
-      clients: 'clients',
-      materials: 'materials',
-      users: 'users',
-      production: 'production',
-      delivery: 'overview',
-      credits: 'overview',
-      sales: 'orders',
-      overview: 'overview',
-    }
-    selectKpiTab(tabMap[module] || 'overview')
-  }, [selectKpiTab])
-
   if (loading && !data) {
     return (
       <section className="pa-section" style={{ minHeight: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -295,12 +242,6 @@ export default function KPIModule({ userId }) {
       ) : (
         <>
           <KPIHeader
-            onRefresh={refresh}
-            loading={loading}
-            period={period}
-            onPeriodChange={setPeriod}
-            customDateFrom={customDateFrom}
-            customDateTo={customDateTo}
             meta={data?.executive_summary?.meta}
           />
 
@@ -325,7 +266,6 @@ export default function KPIModule({ userId }) {
               <KPIStatusTrend data={data} />
               <KPICreditsSummary data={data} />
               <KPIQualityMetrics data={data} />
-              <CriticalAlertsInline alerts={data?.alerts_center?.alerts || data?.smart_alerts} />
             </div>
           )}
 
@@ -334,7 +274,6 @@ export default function KPIModule({ userId }) {
           {activeTab === 'materials' && <div className="kpi-tab-content" key="materials"><KPIMaterialsAnalytics data={data} userId={userId} /></div>}
           {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={handleSellerClick} onDesignerClick={handleDesignerClick} onQuoteClick={handleQuoteClick} onProductionAreaClick={handleProductionAreaClick} onProductionEmployeeClick={handleProductionEmployeeClick} onDeliveryUserClick={handleDeliveryUserClick} /></div>}
           {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} onAreaClick={handleProductionAreaClick} /></div>}
-          {activeTab === 'alerts' && <div className="kpi-tab-content" key="alerts"><KPIAlertsPanel data={data} onNavigateTarget={handleAlertTarget} /></div>}
         </>
       )}
     </section>

@@ -60,10 +60,20 @@ describe('KPI Materiales: controles y comparación', () => {
     const source = component()
     const css = styles()
 
-    expect(source).toContain("cyan: '#2454D9'")
-    expect(css).toContain('--kpi-materials-accent: #2454d9;')
+    expect(source).toContain("cyan: '#1E40AF'")
+    expect(css).toContain('--kpi-materials-accent: #1E40AF;')
+    expect(css).toContain('.kpi-materials-chart-toolbar {\n  display: flex;\n  align-items: end;\n  justify-content: flex-end;')
     expect(css).toContain('.kpi-materials-comparison-chart { padding: 14px; }')
     expect(css).toContain('.kpi-materials-compare-date-grid.is-equivalent')
+  })
+
+  it('usa el azul corporativo en los acentos de Materiales y el texto actualizado del banner', () => {
+    const css = styles()
+    const comparisonColors = readProjectFile('src/utils/materialsComparisonColors.js')
+
+    expect(css).toContain('.kpi-banner-meta-badge.is-updated { border-color: #bfdbfe; background: #eff6ff; color: #1E40AF; }')
+    expect(css).toContain('.kpi-materials-ranking-usage-normal { color: #1E40AF; }')
+    expect(comparisonColors).toContain("flat: '#1E40AF'")
   })
 
   it('mantiene el ranking como única vista de detalle de materiales', () => {

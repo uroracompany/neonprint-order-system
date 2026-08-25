@@ -3623,8 +3623,12 @@ export async function handleKpiData(body, env) {
       case 'all': {
         const now = new Date()
         const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000)
+        const safeQuery = (fn) => fn().catch(err => {
+          console.error('client_kpi query error:', err.message)
+          return { data: [], error: err }
+        })
 
-        const [executiveSummary, bs, oa, ca, ui, pi, sa, ot, sv, materialAnalytics, empCount, empCountAll, clientCount, credito, parcial, pendingPayment, pendingAged, materialsResult] = await Promise.all([
+        const [executiveSummary, bs, oa, ca, ui, pi, sa, ot, sv, materialAnalytics, empCount, empCountAll, clientCount, credito, parcial, pendingPayment, pendingAged, materialsResult, clientsWithoutOrdersResult, newClientActivationResult, inactiveByThresholdResult, frequencyDistResult, clientWorkspaceResult, clientActivityTimelineResult] = await Promise.all([
           supabase.rpc('kpi_executive_summary', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
           supabase.rpc('kpi_business_summary', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
           supabase.rpc('kpi_orders_analytics', { p_date_from: date_from, p_date_to: date_to, p_compare_from: compare_from, p_compare_to: compare_to }),
@@ -3664,6 +3668,164 @@ export async function handleKpiData(body, env) {
               return { data: Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 3) }
             })
           })(),
+          supabase.rpc('count_clients_without_orders'),
+          supabase.rpc('kpi_new_client_activation', { p_date_from: date_from, p_date_to: date_to }),
+          supabase.rpc('kpi_inactive_by_threshold'),
+          safeQuery(async () => {
+            let q = supabase.from('orders').select('client_id').not('client_id', 'is', null).neq('status', 'cancelled')
+            if (date_from) q = q.gte('created_at', date_from)
+            if (date_to) q = q.lt('created_at', date_to)
+            const { data } = await q
+            const counts = {}
+            ;(data || []).forEach(o => { counts[o.client_id] = (counts[o.client_id] || 0) + 1 })
+            const distribution = { zero: 0, one_time: 0, low: 0, medium: 0, high: 0 }
+            Object.values(counts).forEach(cnt => {
+              if (cnt === 1) distribution.one_time++
+              else if (cnt <= 2) distribution.low++
+              else if (cnt <= 10) distribution.medium++
+              else distribution.high++
+            })
+            return { data: distribution, error: null }
+          }),
+          // A single complete client dataset feeds the condensed Clients KPI workspace.
+          // It deliberately has no display limit: the UI owns search, filters and ranking.
+          safeQuery(async () => {
+            const [clientsResult, ordersResult] = await Promise.all([
+              supabase.from('clients').select('id, name'),
+              supabase.from('orders').select('client_id, client_name, material, status, payment_status, order_type, order_design_type, created_at, delivery_date, status_changed_at').range(0, 4999),
+            ])
+            if (ordersResult.error) {
+              console.error('[KPI] client_workspace orders query failed:', ordersResult.error.message)
+              throw ordersResult.error
+            }
+
+            const clients = new Map()
+            if (clientsResult.error) console.error('client_workspace clients catalog:', clientsResult.error.message)
+            ;(clientsResult.data || []).forEach(c => {
+              if (!c.id) return
+              clients.set(String(c.id), {
+                client_id: String(c.id), client_name: c.name || 'Cliente sin nombre', total_orders: 0,
+                cancelled_orders: 0, normal_orders: 0, urgent_911_orders: 0,
+                internal_design_orders: 0, external_design_orders: 0, payment: {
+                  credit_active: 0, partial_active: 0, pending_active: 0,
+                }, materials: {}, months: {}, on_time: 0, late: 0, total_delivered: 0,
+              })
+            })
+
+            ;(ordersResult.data || []).forEach(order => {
+              const key = String(order.client_id || `name:${order.client_name || 'sin-nombre'}`)
+              if (!clients.has(key)) {
+                clients.set(key, {
+                  client_id: order.client_id ? String(order.client_id) : key,
+                  client_name: order.client_name || 'Cliente sin nombre', total_orders: 0,
+                  cancelled_orders: 0, normal_orders: 0, urgent_911_orders: 0,
+                  internal_design_orders: 0, external_design_orders: 0, payment: {
+                    credit_active: 0, partial_active: 0, pending_active: 0,
+                  }, materials: {}, months: {}, on_time: 0, late: 0, total_delivered: 0,
+                })
+              }
+              const entry = clients.get(key)
+              entry.client_name = entry.client_name || order.client_name || 'Cliente sin nombre'
+              entry.total_orders++
+              const status = String(order.status || '').toLowerCase()
+              if (status === 'cancelled') entry.cancelled_orders++
+              if (String(order.order_type || '').toLowerCase().includes('911')) entry.urgent_911_orders++
+              else entry.normal_orders++
+
+              const designType = String(order.order_design_type || '').toLowerCase()
+              if (['internal_desing', 'internal_design'].includes(designType)) entry.internal_design_orders++
+              if (['external_desing', 'external_design'].includes(designType)) entry.external_design_orders++
+
+              String(order.material || '').split(',').map(m => m.trim()).filter(Boolean).forEach(material => {
+                entry.materials[material] = (entry.materials[material] || 0) + 1
+              })
+              if (order.created_at) {
+                const month = new Date(order.created_at).toISOString().slice(0, 7)
+                entry.months[month] = (entry.months[month] || 0) + 1
+              }
+
+              const isOpen = !['cancelled', 'in_completed', 'in_delivered'].includes(status)
+              const paymentStatus = String(order.payment_status || '').trim().toLowerCase()
+              if (isOpen && paymentStatus === 'credito') entry.payment.credit_active++
+              if (isOpen && paymentStatus === 'parcial') entry.payment.partial_active++
+              if (isOpen && ['pending_payment', 'pendiente'].includes(paymentStatus)) entry.payment.pending_active++
+
+              if (order.delivery_date && order.status_changed_at) {
+                entry.total_delivered++
+                if (new Date(order.status_changed_at) <= new Date(order.delivery_date)) entry.on_time++
+                else entry.late++
+              }
+            })
+
+            return {
+              data: [...clients.values()].map(entry => {
+                const activeMonths = Object.keys(entry.months).length
+                const cancel_rate = entry.total_orders
+                  ? Math.round((entry.cancelled_orders / entry.total_orders) * 1000) / 10
+                  : 0
+                const favorite_material = Object.entries(entry.materials)
+                  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))[0]?.[0] || 'Sin material'
+                const avg_orders_per_month = activeMonths
+                  ? Math.round((entry.total_orders / activeMonths) * 10) / 10
+                  : 0
+                const activity = avg_orders_per_month >= 4 ? 'Alta' : avg_orders_per_month >= 1 ? 'Media' : 'Baja'
+                const deliveryScore = entry.total_delivered ? (entry.on_time / entry.total_delivered) * 100 : 50
+                const health_score = Math.round(Math.min(100, avg_orders_per_month * 10) * 0.4 + (100 - cancel_rate) * 0.3 + deliveryScore * 0.3)
+                return {
+                  ...entry, favorite_material, avg_orders_per_month, cancel_rate, activity,
+                  health_score, health: health_score >= 80 ? 'Excelente' : health_score >= 60 ? 'Buena' : health_score >= 40 ? 'Media' : 'Riesgo',
+                  monthly_activity: Object.entries(entry.months)
+                    .sort((a, b) => a[0].localeCompare(b[0]))
+                    .map(([month, orders]) => ({ month, orders })),
+                }
+              }),
+              error: null,
+            }
+          }),
+          // The general Client chart is aggregated by PostgreSQL. It is not
+          // affected by the unbounded client-detail query or missing dates.
+          safeQuery(async () => {
+            const { data, error } = await supabase.rpc('kpi_client_monthly_activity', { p_months: 3 })
+            if (!error) return { data: data || [], error: null }
+            if (error.code !== 'PGRST202') throw error
+
+            // Rolling deployments apply the migration after the server bundle.
+            // Keep a deterministic three-month series during that short window.
+            const currentMonth = new Date()
+            currentMonth.setUTCDate(1)
+            currentMonth.setUTCHours(0, 0, 0, 0)
+            const firstMonth = new Date(currentMonth)
+            firstMonth.setUTCMonth(firstMonth.getUTCMonth() - 2)
+            const { data: orders, error: ordersError } = await supabase
+              .from('orders')
+              .select('client_id, created_at')
+              .not('created_at', 'is', null)
+              .gte('created_at', firstMonth.toISOString())
+              .order('created_at', { ascending: true })
+            if (ordersError) throw ordersError
+
+            const months = new Map()
+            for (let offset = 0; offset < 3; offset++) {
+              const month = new Date(firstMonth)
+              month.setUTCMonth(firstMonth.getUTCMonth() + offset)
+              months.set(month.toISOString().slice(0, 7), { month: month.toISOString().slice(0, 7), orders: 0, clients: new Set() })
+            }
+            ;(orders || []).forEach(order => {
+              const monthKey = getMonthKey(order.created_at)
+              const row = months.get(monthKey)
+              if (!row) return
+              row.orders++
+              if (order.client_id) row.clients.add(String(order.client_id))
+            })
+            return {
+              data: [...months.values()].map(row => ({
+                month: row.month,
+                orders: row.orders,
+                active_clients: row.clients.size,
+              })),
+              error: null,
+            }
+          }),
         ])
 
         if (executiveSummary.error) console.error('kpi_executive_summary:', executiveSummary.error.message)
@@ -3679,8 +3841,22 @@ export async function handleKpiData(body, env) {
         if (empCount.error) console.error('total_employees:', empCount.error.message)
         if (empCountAll.error) console.error('total_employees_all:', empCountAll.error.message)
         if (clientCount.error) console.error('total_clients:', clientCount.error.message)
+        if (clientsWithoutOrdersResult?.error) console.error('count_clients_without_orders:', clientsWithoutOrdersResult.error.message)
+        if (newClientActivationResult?.error) console.error('kpi_new_client_activation:', newClientActivationResult.error.message)
+        if (inactiveByThresholdResult?.error) console.error('kpi_inactive_by_threshold:', inactiveByThresholdResult.error.message)
+        if (frequencyDistResult?.error) console.error('frequency_distribution:', frequencyDistResult.error.message)
+        if (clientWorkspaceResult?.error) console.error('[KPI] client_workspace query failed:', clientWorkspaceResult.error.message, clientWorkspaceResult.error)
+        if (clientActivityTimelineResult?.error) console.error('[KPI] client activity timeline query failed:', clientActivityTimelineResult.error.message)
+        if (!clientWorkspaceResult?.data?.length) console.warn('[KPI] client_workspace returned empty — chart may not render')
 
-        const safeQuery = (fn) => fn().catch(err => { console.error('client_kpi query error:', err.message); return { data: [] } })
+        const frequencyDistribution = {
+          one_time: 0,
+          low: 0,
+          medium: 0,
+          high: 0,
+          ...(frequencyDistResult?.data || {}),
+          zero: clientsWithoutOrdersResult?.data?.count || 0,
+        }
 
         const [
           cancelByClientResult,
@@ -3690,7 +3866,7 @@ export async function handleKpiData(body, env) {
           frequencyByClientResult,
           materialAnalyticsResult,
         ] = await Promise.all([
-          safeQuery(() => supabase.from('orders').select('client_id, client_name, status').then(({ data, error }) => {
+          safeQuery(() => supabase.from('orders').select('client_id, client_name, status').range(0, 4999).then(({ data, error }) => {
             if (error) throw error
             const byClient = {}
             ;(data || []).forEach(o => {
@@ -3710,7 +3886,7 @@ export async function handleKpiData(body, env) {
               .sort((a, b) => b.cancel_rate - a.cancel_rate)
               .slice(0, 10) }
           })),
-          safeQuery(() => supabase.from('orders').select('client_id, client_name, material').not('material', 'is', null).then(({ data, error }) => {
+          safeQuery(() => supabase.from('orders').select('client_id, client_name, material').not('material', 'is', null).range(0, 4999).then(({ data, error }) => {
             if (error) throw error
             const byClient = {}
             ;(data || []).forEach(o => {
@@ -3735,7 +3911,7 @@ export async function handleKpiData(body, env) {
                   .slice(0, 5),
               })) }
           })),
-          safeQuery(() => supabase.from('orders').select('client_id, client_name, order_type').then(({ data, error }) => {
+          safeQuery(() => supabase.from('orders').select('client_id, client_name, order_type').range(0, 4999).then(({ data, error }) => {
             if (error) throw error
             const byClient = {}
             ;(data || []).forEach(o => {
@@ -3758,7 +3934,7 @@ export async function handleKpiData(body, env) {
               .sort((a, b) => b.total - a.total)
               .slice(0, 10) }
           })),
-          safeQuery(() => supabase.from('orders').select('client_id, client_name, delivery_date, completed_at, status').then(({ data, error }) => {
+          safeQuery(() => supabase.from('orders').select('client_id, client_name, delivery_date, completed_at, status').range(0, 4999).then(({ data, error }) => {
             if (error) throw error
             const byClient = {}
             ;(data || []).forEach(o => {
@@ -3789,7 +3965,7 @@ export async function handleKpiData(body, env) {
               .sort((a, b) => b.total_delivered - a.total_delivered)
               .slice(0, 10) }
           })),
-          safeQuery(() => supabase.from('orders').select('client_id, client_name, created_at').then(({ data, error }) => {
+          safeQuery(() => supabase.from('orders').select('client_id, client_name, created_at').range(0, 4999).then(({ data, error }) => {
             if (error) throw error
             const byClient = {}
             ;(data || []).forEach(o => {
@@ -4135,6 +4311,12 @@ export async function handleKpiData(body, env) {
             material_analytics: materialAnalyticsResult?.data || {},
             material_comparison: materialComparison,
             retention_new_clients: { rate: ca.data?.retention_rate?.rate || 0 },
+            clients_without_orders: clientsWithoutOrdersResult?.data?.count || 0,
+            new_client_activation: newClientActivationResult?.data || null,
+            inactive_by_threshold: inactiveByThresholdResult?.data || { d90: 0, d180: 0, d365: 0 },
+            frequency_distribution: frequencyDistribution,
+            client_workspace: clientWorkspaceResult?.data || [],
+            client_activity_timeline: clientActivityTimelineResult?.data || [],
           },
           materials_analytics: materialAnalytics.data || null,
           order_counts_by_date: {

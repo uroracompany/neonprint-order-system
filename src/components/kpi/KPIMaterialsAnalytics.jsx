@@ -14,7 +14,7 @@ import MaterialsComparisonPanel from './MaterialsComparisonPanel'
 import { useKPISingle } from '../../hooks/useKPI'
 
 const PALETTE = {
-  cyan: '#2454D9', green: '#10B981', rose: '#F43F5E', amber: '#F59E0B',
+  cyan: '#1E40AF', green: '#10B981', rose: '#F43F5E', amber: '#F59E0B',
   violet: '#8B5CF6', orange: '#F97316', pink: '#EC4899', teal: '#14B8A6',
   indigo: '#6366F1', red: '#EF4444',
   pie: KPI_CHART_COLORS,
@@ -132,7 +132,7 @@ function ChartTooltip({ active, payload, label }) {
 const SEMANTIC = {
   positive: { iconBg: '#DCFCE7', iconColor: '#16A34A', trendBg: '#DCFCE7', trendColor: '#16A34A' },
   negative: { iconBg: '#FEE2E2', iconColor: '#DC2626', trendBg: '#FEE2E2', trendColor: '#DC2626' },
-  neutral:  { iconBg: '#E0F2FE', iconColor: '#0284C7', trendBg: '#E0F2FE', trendColor: '#0284C7' },
+  neutral:  { iconBg: '#DBEAFE', iconColor: '#1E40AF', trendBg: '#DBEAFE', trendColor: '#1E40AF' },
   warning:  { iconBg: '#FEF3C7', iconColor: '#D97706', trendBg: '#FEF3C7', trendColor: '#D97706' },
 }
 

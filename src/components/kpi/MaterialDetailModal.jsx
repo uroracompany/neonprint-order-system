@@ -352,16 +352,16 @@ export default function MaterialDetailModal({ material, previousMaterial, totalR
                       <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#71809a' }} tickLine={false} axisLine={false} minTickGap={26} tickFormatter={formatTrendDay} />
                       <YAxis allowDecimals={false} width={28} tick={{ fontSize: 10, fill: '#71809a' }} tickLine={false} axisLine={false} />
                       <Tooltip contentStyle={{ border: '1px solid #dbe3ef', borderRadius: 8, boxShadow: '0 8px 20px rgba(15, 30, 64, .10)', color: '#0f1e40', fontSize: 12, fontWeight: 600 }} labelStyle={{ color: '#64748b', fontSize: 11 }} formatter={value => [formatNumber(value), 'Referencias']} labelFormatter={formatTrendDay} />
-                      <Bar dataKey="count" name="Referencias" fill="#2454D9" radius={[5, 5, 0, 0]} maxBarSize={36} />
+                      <Bar dataKey="count" name="Referencias" fill="#1E40AF" radius={[5, 5, 0, 0]} maxBarSize={36} />
                     </BarChart>
                   ) : (
                     <AreaChart data={trendData} margin={{ top: 14, right: 12, left: 0, bottom: 0 }}>
-                      <defs><linearGradient id="material-detail-trend" x1="0" x2="0" y1="0" y2="1"><stop offset="5%" stopColor="#2454D9" stopOpacity={0.16} /><stop offset="95%" stopColor="#2454D9" stopOpacity={0} /></linearGradient></defs>
+                      <defs><linearGradient id="material-detail-trend" x1="0" x2="0" y1="0" y2="1"><stop offset="5%" stopColor="#1E40AF" stopOpacity={0.16} /><stop offset="95%" stopColor="#1E40AF" stopOpacity={0} /></linearGradient></defs>
                       <CartesianGrid vertical={false} stroke="#e7eef8" strokeDasharray="3 4" />
                       <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#71809a' }} tickLine={false} axisLine={false} minTickGap={26} tickFormatter={formatTrendDay} />
                       <YAxis allowDecimals={false} width={28} tick={{ fontSize: 10, fill: '#71809a' }} tickLine={false} axisLine={false} />
                       <Tooltip contentStyle={{ border: '1px solid #dbe3ef', borderRadius: 8, boxShadow: '0 8px 20px rgba(15, 30, 64, .10)', color: '#0f1e40', fontSize: 12, fontWeight: 600 }} labelStyle={{ color: '#64748b', fontSize: 11 }} formatter={value => [formatNumber(value), 'Referencias']} labelFormatter={formatTrendDay} />
-                      <Area type="monotone" dataKey="count" stroke="#2454D9" strokeWidth={2.25} fill="url(#material-detail-trend)" dot={{ r: 3.5, fill: '#fff', stroke: '#2454D9', strokeWidth: 2 }} activeDot={{ r: 5, fill: '#2454D9', stroke: '#fff', strokeWidth: 2 }} />
+                      <Area type="monotone" dataKey="count" stroke="#1E40AF" strokeWidth={2.25} fill="url(#material-detail-trend)" dot={{ r: 3.5, fill: '#fff', stroke: '#1E40AF', strokeWidth: 2 }} activeDot={{ r: 5, fill: '#1E40AF', stroke: '#fff', strokeWidth: 2 }} />
                     </AreaChart>
                   )}
                 </ResponsiveContainer>

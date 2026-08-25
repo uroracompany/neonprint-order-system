@@ -1,4 +1,4 @@
-export const COMPARISON_COLORS = Object.freeze({ up: '#16a34a', down: '#dc2626', flat: '#2454d9', previous: '#94a3b8' })
+export const COMPARISON_COLORS = Object.freeze({ up: '#16a34a', down: '#dc2626', flat: '#1E40AF', previous: '#94a3b8' })
 
 const NEGATIVE_COMPARISON_SCALE = Object.freeze([
   { value: -40, color: COMPARISON_COLORS.down },

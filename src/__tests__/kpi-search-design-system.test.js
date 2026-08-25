@@ -28,6 +28,15 @@ describe("KPI search design-system contract", () => {
     expect(css).toContain("min-width: 220px;");
   });
 
+  it("prevents the Clientes KPI search input from rendering a second focus border", () => {
+    const css = readProjectFile("src/css-components/page-kpi.css");
+
+    expect(css).toContain(".kpi-client-filter-row .kpi-search-control input:focus {");
+    expect(css).toContain(".kpi-client-filter-row .kpi-search-box:focus-within .kpi-search-control {");
+    expect(css).toContain("-webkit-appearance: none;");
+    expect(css).toContain("box-shadow: none;");
+  });
+
   it("uses normalized KPI search in client and material analytics", () => {
     const clientAnalytics = readProjectFile("src/components/kpi/KPIClientAnalytics.jsx");
     const materialAnalytics = readProjectFile("src/components/kpi/KPIMaterialsAnalytics.jsx");

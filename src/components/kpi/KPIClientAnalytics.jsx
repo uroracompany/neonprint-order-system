@@ -5,15 +5,16 @@ import { formatNumber, getTrendConfig, KPI_CHART_COLORS } from '../../utils/kpiH
 import { Pagination } from '../ui/Pagination'
 import KPISearchBox from './KPISearchBox'
 import { matchesKpiSearch } from '../../utils/kpiSearch'
+import KPIClientWorkspace from './KPIClientWorkspace'
 
 const SEMANTIC = {
   positive: { iconBg: '#DCFCE7', iconColor: '#16A34A', trendBg: '#DCFCE7', trendColor: '#16A34A' },
   negative: { iconBg: '#FEE2E2', iconColor: '#DC2626', trendBg: '#FEE2E2', trendColor: '#DC2626' },
-  neutral:  { iconBg: '#E0F2FE', iconColor: '#0284C7', trendBg: '#E0F2FE', trendColor: '#0284C7' },
+  neutral:  { iconBg: '#DBEAFE', iconColor: '#1E40AF', trendBg: '#DBEAFE', trendColor: '#1E40AF' },
 }
 
 const PALETTE = {
-  cyan: '#06B6D4', green: '#10B981', rose: '#F43F5E', amber: '#F59E0B',
+  cyan: '#1E40AF', green: '#10B981', rose: '#F43F5E', amber: '#F59E0B',
   violet: '#8B5CF6', orange: '#F97316', pink: '#EC4899', teal: '#14B8A6',
   indigo: '#6366F1', red: '#EF4444',
   pie: KPI_CHART_COLORS,
@@ -55,6 +56,53 @@ function ChartTooltip({ active, payload, label }) {
       {payload.map((e, i) => (
         <p key={i} style={{ margin: '2px 0', color: e.color || e.payload?.color, fontWeight: 500 }}>{e.name}: {e.value}</p>
       ))}
+    </div>
+  )
+}
+
+function EvoTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  const meta = payload[0]?.payload?._meta
+  const iconStyle = { width: 11, height: 11, color: '#94A3B8', flexShrink: 0 }
+  return (
+    <div style={{
+      background: '#fff', border: '1px solid #DDE3EF',
+      borderRadius: 10, padding: '10px 14px',
+      boxShadow: '0 4px 16px rgba(15,30,64,0.1)',
+      fontFamily: "'Poppins', sans-serif", fontSize: 11,
+      minWidth: 180,
+    }}>
+      <div style={{ fontWeight: 700, color: '#091127', fontSize: 12, marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {meta && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, color: '#475569' }}>
+              <Icons.User {...iconStyle} /> Registrados
+            </span>
+            <span style={{ fontWeight: 700, color: '#0f1e40' }}>{meta.totalRegistrados}</span>
+          </div>
+        )}
+        {payload[0] && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, color: '#475569' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: payload[0].color, flexShrink: 0 }} />
+              {payload[0].name}
+            </span>
+            <span style={{ fontWeight: 700, color: '#0f1e40' }}>{payload[0].value}</span>
+          </div>
+        )}
+        {payload[1] && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, color: '#475569' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: payload[1].color, flexShrink: 0 }} />
+              {payload[1].name}
+            </span>
+            <span style={{ fontWeight: 700, color: '#0f1e40' }}>{payload[1].value}</span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -114,7 +162,7 @@ export default function KPIClientAnalytics({ data }) {
   const [healthKey, setHealthKey] = useState(ALL_KEY)
   const [healthSearch, setHealthSearch] = useState('')
   const deferredHealthSearch = useDeferredValue(healthSearch)
-  const [evoMonths, setEvoMonths] = useState(6)
+  const [evoMonths, setEvoMonths] = useState(1)
   const [evoKey, setEvoKey] = useState(ALL_KEY)
   const [evoSearch, setEvoSearch] = useState('')
   const deferredEvoSearch = useDeferredValue(evoSearch)
@@ -126,6 +174,10 @@ export default function KPIClientAnalytics({ data }) {
   const deferredPaySearch = useDeferredValue(paySearch)
   const [payPage, setPayPage] = useState(1)
   const [now] = useState(() => Date.now())
+  const [totalFilter, setTotalFilter] = useState('all')
+  const [newFilter, setNewFilter] = useState('all')
+  const [recurringFilter, setRecurringFilter] = useState('all')
+  const [inactiveFilter, setInactiveFilter] = useState('all')
 
   if (!data) return null
 
@@ -143,6 +195,76 @@ export default function KPIClientAnalytics({ data }) {
   const deliveryData = kpis.delivery_time_by_client || []
   const frequencyData = kpis.frequency_by_client || []
   const retentionRate = kpis.retention_new_clients?.rate || 0
+  const clientsWithoutOrders = kpis.clients_without_orders || 0
+  const newClientActivation = {
+    total: newCount,
+    with_first_order: 0,
+    pending_first_order: newCount,
+    ...(kpis.new_client_activation || {}),
+  }
+  const inactiveByThreshold = kpis.inactive_by_threshold || { d90: 0, d180: 0, d365: 0 }
+  const frequencyDistribution = kpis.frequency_distribution || { zero: 0, one_time: 0, low: 0, medium: 0, high: 0 }
+
+  const TOTAL_FILTER_OPTIONS = [
+    { value: 'all', label: 'General' },
+    { value: 'without_orders', label: 'Sin órdenes' },
+    { value: 'with_orders', label: '+1 orden' },
+  ]
+
+  const NEW_FILTER_OPTIONS = [
+    { value: 'all', label: 'Registrados en período' },
+    { value: 'with_first_order', label: 'Con primer pedido' },
+    { value: 'pending_first_order', label: 'Sin pedido' },
+  ]
+
+  const RECURRING_FILTER_OPTIONS = [
+    { value: 'all', label: 'General' },
+    { value: 'high', label: 'Alta (>10 órdenes)' },
+    { value: 'medium', label: 'Media (3-10)' },
+    { value: 'low', label: 'Baja (1-2)' },
+    { value: 'zero', label: 'Sin recurrencia' },
+  ]
+
+  const INACTIVE_FILTER_OPTIONS = [
+    { value: 'all', label: 'General (>180d)' },
+    { value: 'd90', label: 'Inactivos >90 días' },
+    { value: 'd180', label: 'Inactivos >180 días' },
+    { value: 'd365', label: 'Inactivos >365 días' },
+  ]
+
+  let filteredTotalValue = totalCount
+  if (totalFilter === 'without_orders') {
+    filteredTotalValue = clientsWithoutOrders
+  } else if (totalFilter === 'with_orders') {
+    filteredTotalValue = totalCount - clientsWithoutOrders
+  }
+
+  let filteredNewCount = newClientActivation.total
+  if (newFilter === 'pending_first_order') {
+    filteredNewCount = newClientActivation.pending_first_order
+  } else if (newFilter === 'with_first_order') {
+    filteredNewCount = newClientActivation.with_first_order
+  }
+
+  let filteredRecurringCount = recurringCount
+  if (recurringFilter === 'high') {
+    filteredRecurringCount = frequencyDistribution.high || 0
+  } else if (recurringFilter === 'medium') {
+    filteredRecurringCount = frequencyDistribution.medium || 0
+  } else if (recurringFilter === 'low') {
+    filteredRecurringCount = frequencyDistribution.low || 0
+  } else if (recurringFilter === 'zero') {
+    filteredRecurringCount = frequencyDistribution.zero || 0
+  }
+
+  let filteredInactiveCount = inactiveCount
+  if (inactiveFilter === 'd90') {
+    filteredInactiveCount = inactiveByThreshold.d90 || 0
+  } else if (inactiveFilter === 'd180') {
+    filteredInactiveCount = inactiveByThreshold.d180 || 0
+  } else if (inactiveFilter === 'd365') {
+    filteredInactiveCount = inactiveByThreshold.d365 || 0
+  }
 
   const topClientsSorted = [...topClients].sort((a, b) => (b.completed_orders || 0) - (a.completed_orders || 0))
   const barData = topClientsSorted.slice(0, 5).map(c => ({
@@ -151,15 +273,6 @@ export default function KPIClientAnalytics({ data }) {
     Completadas: c.completed_orders || 0,
   }))
 
-  const totalRI = recurringCount + inactiveCount
-  const pctR = totalRI > 0 ? ((recurringCount / totalRI) * 100).toFixed(1) : '0.0'
-  const pctI = totalRI > 0 ? ((inactiveCount / totalRI) * 100).toFixed(1) : '0.0'
-
-  const compPie = [
-    { name: 'Recurrentes', value: recurringCount, color: PALETTE.green, pct: pctR },
-    { name: 'Inactivos', value: inactiveCount, color: PALETTE.red, pct: pctI },
-  ].filter(d => d.value > 0)
-
   const topPie = topClientsSorted.slice(0, 5).map((c, i) => ({
     name: c.name?.length > 16 ? c.name.slice(0, 16) + '...' : c.name,
     value: c.completed_orders || 0,
@@ -167,41 +280,77 @@ export default function KPIClientAnalytics({ data }) {
   }))
 
   const heroCards = [
-    { id: 'total', label: 'Total Clientes', value: totalCount, icon: <Icons.User size={16} />, sem: SEMANTIC.neutral, sub: 'Registrados en el sistema', trend: { color: '#0284C7', bg: '#E0F2FE', arrow: '→', change: '0.0' } },
-    { id: 'new', label: 'Clientes Nuevos', value: newCount, icon: <Icons.UserCheck size={16} />, sem: SEMANTIC.positive, sub: 'Últimos 3 días', trend: getTrendConfig(newCount, 0) },
-    { id: 'recurring', label: 'Recurrentes', value: recurringCount, icon: <Icons.Users size={16} />, sem: SEMANTIC.positive, sub: 'Repiten pedidos', trend: getTrendConfig(recurringCount, 0) },
+    { id: 'total', label: 'Total Clientes', value: filteredTotalValue, icon: <Icons.User size={16} />, sem: SEMANTIC.neutral, sub: TOTAL_FILTER_OPTIONS.find(o => o.value === totalFilter)?.label || 'General', trend: { color: '#1E40AF', bg: '#DBEAFE', arrow: '→', change: '0.0' }, filter: totalFilter, filterOptions: TOTAL_FILTER_OPTIONS, onFilterChange: setTotalFilter },
+    { id: 'new', label: 'Clientes Nuevos', value: filteredNewCount, icon: <Icons.UserCheck size={16} />, sem: SEMANTIC.positive, sub: NEW_FILTER_OPTIONS.find(o => o.value === newFilter)?.label || 'Período actual', trend: getTrendConfig(newCount, 0), filter: newFilter, filterOptions: NEW_FILTER_OPTIONS, onFilterChange: setNewFilter },
+    { id: 'recurring', label: 'Recurrentes', value: filteredRecurringCount, icon: <Icons.Users size={16} />, sem: SEMANTIC.positive, sub: RECURRING_FILTER_OPTIONS.find(o => o.value === recurringFilter)?.label || 'Repiten pedidos', trend: getTrendConfig(recurringCount, 0), filter: recurringFilter, filterOptions: RECURRING_FILTER_OPTIONS, onFilterChange: setRecurringFilter },
     { id: 'retention', label: 'Retención', value: retentionRate, icon: <Icons.TrendUp size={16} />, sem: SEMANTIC.positive, sub: 'Tasa de retorno', trend: getTrendConfig(retentionRate, 0), suffix: '%' },
-    { id: 'inactive', label: 'Inactivos', value: inactiveCount, icon: <Icons.UserMinus size={16} />, sem: SEMANTIC.negative, sub: 'Sin actividad >180 días', trend: getTrendConfig(inactiveCount, 0) },
+    { id: 'inactive', label: 'Inactivos', value: filteredInactiveCount, icon: <Icons.UserMinus size={16} />, sem: SEMANTIC.negative, sub: INACTIVE_FILTER_OPTIONS.find(o => o.value === inactiveFilter)?.label || 'Sin actividad reciente', trend: getTrendConfig(inactiveCount, 0), filter: inactiveFilter, filterOptions: INACTIVE_FILTER_OPTIONS, onFilterChange: setInactiveFilter },
   ]
+
+  // Keep the existing KPI cards exactly as they are. Everything below them now
+  // lives in the condensed client workspace instead of the former long stack.
+  // During a rolling deployment, retain the previous panels only until the
+  // handler includes the complete client workspace payload.
+  if (Array.isArray(kpis.client_workspace)) return (
+    <div className="kpi-section">
+      <section className="kpi-client-overview" aria-label="Métricas de clientes">
+        <div className="kpi-hero-grid kpi-hero-grid--6">
+          {heroCards.map(c => (
+            <article key={c.id} className="kpi-hero-card">
+              <div className="kpi-hero-icon" style={{ background: c.sem.iconBg, color: c.sem.iconColor }}>{c.icon}</div>
+              <div className="kpi-hero-content">
+                <div className="kpi-hero-label">{c.label}</div>
+                <div className="kpi-hero-value">{formatNumber(c.value)}{c.suffix || ''}</div>
+                {c.filterOptions && (
+                  <div className="kpi-hero-filter">
+                    <select className="kpi-hero-filter-select" aria-label={`Filtro de ${c.label}`} value={c.filter} onChange={e => c.onFilterChange(e.target.value)}>
+                      {c.filterOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+      <KPIClientWorkspace
+        clients={kpis.client_workspace || []}
+        activityTimeline={kpis.client_activity_timeline || []}
+        registeredClientCount={data.total_clients}
+        legacyData={{ client, kpis, paymentSummary: data.payment_summary || {} }}
+      />
+    </div>
+  )
 
   return (
     <div className="kpi-section">
-      <div className="kpi-section-header">
-        <div>
-          <span className="kpi-section-kicker">Panel de Clientes</span>
-          <h2 className="kpi-section-title">Análisis de Clientes</h2>
-          <p className="kpi-section-subtitle">Métricas, distribución y tendencias para comprender mejor la base de clientes.</p>
-        </div>
-      </div>
-
-      <div className="kpi-hero-grid kpi-hero-grid--5">
-        {heroCards.map(c => (
-          <div key={c.id} className="kpi-hero-card">
-            <div className="kpi-hero-header">
-              <div className="kpi-hero-label">{c.label}</div>
+      <section className="kpi-client-overview" aria-label="Métricas de clientes">
+        <div className="kpi-hero-grid kpi-hero-grid--6">
+          {heroCards.map(c => (
+            <article key={c.id} className="kpi-hero-card">
               <div className="kpi-hero-icon" style={{ background: c.sem.iconBg, color: c.sem.iconColor }}>{c.icon}</div>
-            </div>
-            <div className="kpi-hero-value">{formatNumber(c.value)}{c.suffix || ''}</div>
-            <div className="kpi-hero-footer">
-              <div className="kpi-hero-subtitle">{c.sub}</div>
-              <div className="kpi-hero-trend" style={{ background: c.sem.trendBg, color: c.sem.trendColor }}>
-                <span>{c.trend.arrow}</span>
-                {c.trend.change !== '0.0' && <span>{Math.abs(Number(c.trend.change))}%</span>}
+              <div className="kpi-hero-content">
+                <div className="kpi-hero-label">{c.label}</div>
+                <div className="kpi-hero-value">{formatNumber(c.value)}{c.suffix || ''}</div>
+                {c.filterOptions && (
+                  <div className="kpi-hero-filter">
+                    <select
+                      className="kpi-hero-filter-select"
+                      aria-label={`Filtro de ${c.label}`}
+                      value={c.filter}
+                      onChange={e => c.onFilterChange(e.target.value)}
+                    >
+                      {c.filterOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
-            </div>
-          </div>
-        ))}
-      </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
       {(() => {
         const newClientsList = client.new_clients?.clients || []
@@ -247,89 +396,6 @@ export default function KPIClientAnalytics({ data }) {
       })()}
 
       {(() => {
-        const vipAlert = (data.smart_alerts || []).find(a => a.type === 'vip_inactive')
-        return vipAlert ? (
-          <div className="kpi-section">
-            <div className="kpi-section-header">
-              <div>
-                <span className="kpi-section-kicker">Alerta</span>
-                <h2 className="kpi-section-title">Clientes VIP Inactivos</h2>
-                <p className="kpi-section-subtitle">Clientes importantes que requieren atención.</p>
-              </div>
-            </div>
-            <div className="kpi-card" style={{ padding: 20, borderLeft: '4px solid #DC2626', background: '#FEF2F2' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                <div style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 10, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#DC2626' }}>
-                  <Icons.AlertCircle size={18} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#991B1B', marginBottom: 4 }}>{vipAlert.title}</div>
-                  <div style={{ fontSize: 13, color: '#7F1D1D', lineHeight: 1.5, marginBottom: 8 }}>{vipAlert.message}</div>
-                  <Badge color="#991B1B" bg="#FEE2E2">{vipAlert.action}</Badge>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null
-      })()}
-
-      <div className="kpi-section">
-        <div className="kpi-section-header">
-          <div>
-            <span className="kpi-section-kicker">Distribución</span>
-            <h2 className="kpi-section-title">Recurrentes vs. Inactivos</h2>
-            <p className="kpi-section-subtitle">Proporción entre clientes que repiten y ceux sin actividad reciente.</p>
-          </div>
-          <Badge
-            color={retentionRate >= 30 ? '#16A34A' : retentionRate >= 15 ? '#D97706' : '#DC2626'}
-            bg={retentionRate >= 30 ? '#DCFCE7' : retentionRate >= 15 ? '#FFFBEB' : '#FEE2E2'}
-          >
-            Retención: {retentionRate}%
-          </Badge>
-        </div>
-        <div className="kpi-card" style={{ padding: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 40 }}>
-            <div style={{ flex: '0 0 240px', height: 220 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={compPie} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value">
-                    {compPie.map((e, i) => <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2} />)}
-                  </Pie>
-                  <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null
-                    const d = payload[0].payload
-                    return (
-                      <div style={{ background: '#fff', border: '1px solid #DDE3EF', borderRadius: 8, padding: '10px 14px', boxShadow: '0 4px 12px rgba(15,30,64,0.08)', fontSize: 13 }}>
-                        <p style={{ margin: 0, fontWeight: 600, color: d.color }}>{d.name}</p>
-                        <p style={{ margin: '4px 0 0', fontWeight: 500 }}>{formatNumber(d.value)} clientes — {d.pct}%</p>
-                      </div>
-                    )
-                  }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {compPie.map(item => (
-                <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e8edf8' }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#091127', marginBottom: 4 }}>{item.name}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ flex: 1, height: 5, background: '#e8edf8', borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ width: `${item.pct}%`, height: '100%', background: item.color, borderRadius: 3 }} />
-                      </div>
-                      <span style={{ fontSize: 18, fontWeight: 800, color: item.color, minWidth: 55, textAlign: 'right' }}>{item.pct}%</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{formatNumber(item.value)} clientes</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {(() => {
         const frequency = kpis.frequency_by_client || []
         if (frequency.length === 0) return null
         const filteredEvoClients = filterKpiClients(frequency, deferredEvoSearch)
@@ -370,6 +436,7 @@ export default function KPIClientAnalytics({ data }) {
               name: new Date(d + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }),
               Clientes: activeByDay[i],
               Órdenes: ordersByDay[i],
+              _meta: { totalRegistrados: frequency.length, participantes: activeByDay[i] },
             }))
             evoStats = [
               { label: useCustom ? 'Días en rango' : 'Días analizados', value: dayLabels.length, color: PALETTE.cyan },
@@ -467,6 +534,7 @@ export default function KPIClientAnalytics({ data }) {
               name: `Sem ${ws.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}`,
               Clientes: activeByWeek[i],
               Órdenes: ordersByWeek[i],
+              _meta: { totalRegistrados: frequency.length, participantes: activeByWeek[i] },
             }))
             evoStats = [
               { label: useCustom ? 'Semanas en rango' : 'Semanas analizadas', value: weekLabels.length, color: PALETTE.cyan },
@@ -541,6 +609,7 @@ export default function KPIClientAnalytics({ data }) {
               name: new Date(m + '-01').toLocaleDateString('es-MX', { month: 'short', year: '2-digit' }),
               Clientes: activeByMonth[i],
               Órdenes: ordersByMonth[i],
+              _meta: { totalRegistrados: frequency.length, participantes: activeByMonth[i] },
             }))
             evoStats = [
               { label: useCustom ? 'Meses en rango' : 'Meses analizados', value: monthLabels.length, color: PALETTE.cyan },
@@ -675,7 +744,7 @@ export default function KPIClientAnalytics({ data }) {
                     <CartesianGrid strokeDasharray="3 3" stroke="#E8EDF8" />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip content={<ChartTooltip />} wrapperStyle={{ zIndex: 9999 }} />
+                    <Tooltip content={<EvoTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                     <Area type="monotone" dataKey="Clientes" stroke={PALETTE.cyan} fill={`url(#gradCyan-${isAllEvo ? 'all' : evoKey})`} strokeWidth={2} hide={!isAllEvo} />
                     <Area type="monotone" dataKey="Órdenes" stroke={PALETTE.green} fill={`url(#gradGreen-${isAllEvo ? 'all' : evoKey})`} strokeWidth={2} />
                   </AreaChart>
@@ -740,7 +809,7 @@ export default function KPIClientAnalytics({ data }) {
                         <td className="kpi-table-rank">{i + 1}</td>
                         <td className="kpi-table-name">{c.name}</td>
                         <td style={{ textAlign: 'center', fontWeight: 600 }}>{tc}</td>
-                        <td style={{ textAlign: 'center', fontWeight: 600, color: c.active_orders > 0 ? '#06B6D4' : '#94A3B8' }}>{c.active_orders || 0}</td>
+                        <td style={{ textAlign: 'center', fontWeight: 600, color: c.active_orders > 0 ? '#1E40AF' : '#94A3B8' }}>{c.active_orders || 0}</td>
                         <td style={{ textAlign: 'right', fontSize: 13, color: '#64748b' }}>{lastDate}</td>
                         <td style={{ textAlign: 'right' }}><Badge color={level.color} bg={level.bg}>{level.text}</Badge></td>
                       </tr>
@@ -870,7 +939,7 @@ export default function KPIClientAnalytics({ data }) {
         const getSeverity = (days) => {
           if (days > 30) return { color: '#DC2626', bg: '#FEE2E2', text: `${Math.round(days)}d` }
           if (days > 15) return { color: '#D97706', bg: '#FFFBEB', text: `${Math.round(days)}d` }
-          return { color: '#06B6D4', bg: '#E0F2FE', text: `${Math.round(days)}d` }
+          return { color: '#1E40AF', bg: '#DBEAFE', text: `${Math.round(days)}d` }
         }
 
         return (
@@ -1377,7 +1446,7 @@ export default function KPIClientAnalytics({ data }) {
           {(() => {
             const ranges = [
               { name: '0-3 días', min: 0, max: 3, color: '#16A34A' },
-              { name: '4-7 días', min: 3.01, max: 7, color: '#06B6D4' },
+              { name: '4-7 días', min: 3.01, max: 7, color: '#1E40AF' },
               { name: '8-14 días', min: 7.01, max: 14, color: '#F97316' },
               { name: '15+ días', min: 14.01, max: Infinity, color: '#EF4444' },
             ]
@@ -1696,7 +1765,7 @@ export default function KPIClientAnalytics({ data }) {
                           <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 600, background: '#091127', color: '#fff', alignSelf: 'flex-start' }}>Normal</span>
                           <span style={{ fontSize: 24, fontWeight: 800, color: '#091127', lineHeight: 1, marginTop: 4 }}>{client.normal}</span>
                         </div>
-                        <span style={{ fontSize: 20, fontWeight: 800, color: '#06B6D4' }}>{pctNormal}%</span>
+                        <span style={{ fontSize: 20, fontWeight: 800, color: '#1E40AF' }}>{pctNormal}%</span>
                       </div>
                     </div>
 

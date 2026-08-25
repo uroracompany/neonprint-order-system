@@ -25,6 +25,11 @@ dist-ssr
 
 .vercel
 
+# Ephemeral OpenCode workflow evidence. Each task receives an isolated directory.
+.opencode/runs/
+output/playwright/
+
 # Environment variables
 .env
+.env.playwright.local
 

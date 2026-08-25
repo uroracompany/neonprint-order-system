@@ -147,11 +147,11 @@ describe('MaterialsComparisonPanel', () => {
     expect(orderSegments[0]).toHaveStyle({ width: '30%' })
     expect(orderSegments[1]).toHaveStyle({ width: '70%' })
     expect(orderSegments[0].style.getPropertyValue('--split-color')).toBe('#F43F5E')
-    expect(orderSegments[1].style.getPropertyValue('--split-color')).toBe('#2454D9')
-    expect(designSegments[0].style.getPropertyValue('--split-color')).toBe('#2454D9')
+    expect(orderSegments[1].style.getPropertyValue('--split-color')).toBe('#1E40AF')
+    expect(designSegments[0].style.getPropertyValue('--split-color')).toBe('#1E40AF')
     expect(designSegments[1].style.getPropertyValue('--split-color')).toBe('#F43F5E')
     expect(Array.from(dots, dot => dot.style.getPropertyValue('--split-color'))).toEqual([
-      '#F43F5E', '#2454D9', '#2454D9', '#F43F5E',
+      '#F43F5E', '#1E40AF', '#1E40AF', '#F43F5E',
     ])
   })
 
@@ -180,10 +180,10 @@ describe('MaterialsComparisonPanel', () => {
 
     expect(orderSegments[0]).toHaveStyle({ width: '0%' })
     expect(orderSegments[1]).toHaveStyle({ width: '100%' })
-    expect(orderSegments[1].style.getPropertyValue('--split-color')).toBe('#2454D9')
+    expect(orderSegments[1].style.getPropertyValue('--split-color')).toBe('#1E40AF')
     expect(designSegments[0]).toHaveStyle({ width: '100%' })
     expect(designSegments[1]).toHaveStyle({ width: '0%' })
-    expect(designSegments[0].style.getPropertyValue('--split-color')).toBe('#2454D9')
+    expect(designSegments[0].style.getPropertyValue('--split-color')).toBe('#1E40AF')
   })
 
   it('uses the comparison outcome to color the current period share', () => {
@@ -227,7 +227,7 @@ describe('MaterialsComparisonPanel', () => {
     expect(chart.rows[15]).toMatchObject({ periodA: null, periodB: 1 })
     expect(chart.currentGradientStops).toHaveLength(15)
     expect(chart.currentGradientStops[0]).toEqual({ offset: '0%', color: '#dc2626' })
-    expect(chart.currentGradientStops[14]).toEqual({ offset: `${(14 / 30) * 100}%`, color: '#2454d9' })
+    expect(chart.currentGradientStops[14]).toEqual({ offset: `${(14 / 30) * 100}%`, color: '#1E40AF' })
   })
 
   it('calculates variety shares from the complete unique-material metrics, not bucket sums', () => {
@@ -239,8 +239,8 @@ describe('MaterialsComparisonPanel', () => {
     expect(getComparisonDelta(60, 100)).toBe(-40)
     expect(getComparisonColor(60, 100)).toBe('#dc2626')
     expect(getComparisonColor(80, 100)).toBe('#eab308')
-    expect(getComparisonColor(100, 100)).toBe('#2454d9')
-    expect(getComparisonColor(105, 100)).not.toBe('#2454d9')
+    expect(getComparisonColor(100, 100)).toBe('#1E40AF')
+    expect(getComparisonColor(105, 100)).not.toBe('#1E40AF')
     expect(getComparisonColor(105, 100)).not.toBe('#16a34a')
     expect(getComparisonColor(110, 100)).toBe('#16a34a')
   })
@@ -261,20 +261,20 @@ describe('MaterialsComparisonPanel', () => {
 
     expect(chart.previousPeak).toBe(100)
     expect(chart.rows[0]).toMatchObject({ comparisonReference: 100, comparisonDelta: -50, comparisonColor: '#dc2626' })
-    expect(chart.rows[1]).toMatchObject({ comparisonReference: 100, comparisonDelta: -30, comparisonColor: '#2454d9' })
+    expect(chart.rows[1]).toMatchObject({ comparisonReference: 100, comparisonDelta: -30, comparisonColor: '#1E40AF' })
     expect(chart.currentGradientStops).toEqual([
       { offset: '0%', color: '#dc2626' },
-      { offset: '100%', color: '#2454d9' },
+      { offset: '100%', color: '#1E40AF' },
     ])
   })
 
   it('uses the exact thresholds and neutral zero-baseline behavior for peak comparison', () => {
     expect(getPeakComparisonColor(60, 100)).toBe('#dc2626')
-    expect(getPeakComparisonColor(61, 100)).toBe('#2454d9')
-    expect(getPeakComparisonColor(100, 100)).toBe('#2454d9')
-    expect(getPeakComparisonColor(109, 100)).toBe('#2454d9')
+    expect(getPeakComparisonColor(61, 100)).toBe('#1E40AF')
+    expect(getPeakComparisonColor(100, 100)).toBe('#1E40AF')
+    expect(getPeakComparisonColor(109, 100)).toBe('#1E40AF')
     expect(getPeakComparisonColor(110, 100)).toBe('#16a34a')
-    expect(getPeakComparisonColor(4, 0)).toBe('#2454d9')
+    expect(getPeakComparisonColor(4, 0)).toBe('#1E40AF')
   })
 
   it('keeps current bars neutral when the previous period has no peak', () => {
@@ -291,6 +291,6 @@ describe('MaterialsComparisonPanel', () => {
       { key: 'day', size: 1 },
     )
 
-    expect(chart.rows[0]).toMatchObject({ comparisonReference: 0, comparisonDelta: null, comparisonColor: '#2454d9' })
+    expect(chart.rows[0]).toMatchObject({ comparisonReference: 0, comparisonDelta: null, comparisonColor: '#1E40AF' })
   })
 })
