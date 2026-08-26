@@ -283,7 +283,7 @@ describe("handleSellerProfile", () => {
       completed: 1,
       pending: 2,
       cancelled: 1,
-      overdue: 2,
+      overdue: 3,
     });
     expect(JSON.stringify(result.body)).not.toContain("Bruno Seller");
     expect(JSON.stringify(result.body)).not.toContain("seller-2");
@@ -412,6 +412,6 @@ describe("handleSellerProfile", () => {
     const result = await handleSellerProfile({}, env);
 
     expect(result.status).toBe(200);
-    expect(result.body.analytics.status_summary).toMatchObject({ returned: 1, overdue: 1 });
+    expect(result.body.analytics.status_summary).toMatchObject({ returned: 1, overdue: 2 });
   });
 });

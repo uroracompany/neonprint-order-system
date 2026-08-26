@@ -8,6 +8,7 @@ import AdminInterventionAlert from './components/orders/AdminInterventionAlert'
 import { lazyWithRetry } from './utils/lazyWithRetry'
 import { queryClient } from './queryClient'
 import './App.css'
+import './css-components/order-deadline.css'
 
 const Lobby = lazyWithRetry(() => import('./pages/lobby'))
 const Dashboard = lazyWithRetry(() => import('./pages/dashboard'))

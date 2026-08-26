@@ -1,5 +1,6 @@
 import { requireAuthenticated } from "./auth-middleware.js";
 import { applyProfilePeriod, isInProfilePeriod, resolveProfilePeriod } from "./profile-period-utils.js";
+import { isOrderOverdue } from "../src/utils/orderDeadline.js";
 
 const COMPLETED_STATUSES = new Set(["in_completed", "in_delivered"]);
 const ACTIVE_STATUSES = new Set(["pending", "in_design", "in_quote", "in_production", "in_termination"]);
@@ -243,7 +244,6 @@ const createTopProductionAreas = (files, areaLabels) => {
 
 const createStatusSummary = (orders, nowValue) => {
   const now = nowValue ? new Date(nowValue) : new Date();
-  const todayStart = startOfUtcDay(Number.isNaN(now.getTime()) ? new Date() : now);
   const summary = { active: 0, completed: 0, pending: 0, cancelled: 0, overdue: 0 };
 
   orders.forEach((order) => {
@@ -253,8 +253,7 @@ const createStatusSummary = (orders, nowValue) => {
     if (PENDING_STATUSES.has(status)) summary.pending += 1;
     if (status === "cancelled") summary.cancelled += 1;
 
-    const deliveryDate = parseDate(order.delivery_date);
-    if (deliveryDate && deliveryDate < todayStart && !COMPLETED_STATUSES.has(status) && status !== "cancelled") {
+    if (isOrderOverdue(order, now)) {
       summary.overdue += 1;
     }
   });

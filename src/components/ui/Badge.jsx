@@ -1,8 +1,24 @@
 import { getOrderStatusConfig, PAYMENT_COLORS, UI_TERMS } from "../../utils/constants";
+import { getOrderDeadlineState } from "../../utils/orderDeadline";
 
-export function StatusBadge({ status, className = "badge", showDot = true, bordered = false }) {
-  const cfg = getOrderStatusConfig(status);
+export function OrderOverdueBadge({ order, compact = false }) {
+  const { daysOverdue, isOverdue } = getOrderDeadlineState(order);
+  if (!isOverdue) return null;
+
   return (
+    <span
+      className="np-overdue-badge"
+      title={`Fecha de entrega vencida hace ${daysOverdue} ${daysOverdue === 1 ? "día" : "días"}`}
+      aria-label={`Orden atrasada ${daysOverdue} ${daysOverdue === 1 ? "día" : "días"}`}
+    >
+      {compact ? `Atrasada · ${daysOverdue}d` : `Atrasada · ${daysOverdue} ${daysOverdue === 1 ? "día" : "días"}`}
+    </span>
+  );
+}
+
+export function StatusBadge({ status, className = "badge", showDot = true, bordered = false, order = null }) {
+  const cfg = getOrderStatusConfig(status);
+  return <>
     <span className={className} style={{
       background: cfg.bg,
       color: cfg.color,
@@ -11,7 +27,8 @@ export function StatusBadge({ status, className = "badge", showDot = true, borde
       {showDot && <span className={`${className}-dot`} style={{ background: cfg.dot }} />}
       {cfg.label}
     </span>
-  );
+    {order && <OrderOverdueBadge order={order} compact />}
+  </>;
 }
 
 export function PaymentBadge({ status, className = "badge", bordered = false }) {

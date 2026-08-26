@@ -7,6 +7,7 @@ import {
   isActiveNotification,
   isArchivedNotification,
 } from "../utils/notifications";
+import { playNotificationSound, unlockNotificationSound } from "../utils/notificationSound";
 
 // ============= HOOK USENOTIFICATIONS =============
 // Este hook gestiona todo el sistema de notificaciones de la aplicación
@@ -43,6 +44,8 @@ export default function useNotifications(userId) {
   const [archivedLoading, setArchivedLoading] = useState(true);
   const [loading, setLoading] = useState(true); // Indica si se están cargando notificaciones
   const [toasts, setToasts] = useState([]); // Toasts flotantes activos (últimas 3)
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
+  const [notificationSoundLoading, setNotificationSoundLoading] = useState(true);
   
   // Referencias para limpiar timeouts de toasts
   const notificationsRef = useRef([]);
@@ -51,6 +54,7 @@ export default function useNotifications(userId) {
   const localToastCounter = useRef(0);
   const fetchVersionRef = useRef(0);
   const archivedFetchVersionRef = useRef(0);
+  const notificationSoundEnabledRef = useRef(true);
   // Referencia al canal de Supabase para suscripción en tiempo real
   const channelRef = useRef(null);
 
@@ -75,7 +79,7 @@ export default function useNotifications(userId) {
 
   // ============= FUNCIÓN: CARGAR NOTIFICACIONES =============
   // Consulta las últimas 50 notificaciones del usuario desde BD
-  const enqueueToast = useCallback((notification) => {
+  const enqueueToast = useCallback((notification, { playSound = false } = {}) => {
     if (!isActiveNotification(notification)) return;
 
     const toastId = `${notification.id}-toast`;
@@ -89,7 +93,81 @@ export default function useNotifications(userId) {
     toastTimeouts.current[toastId] = setTimeout(() => {
       dismissToast(notification.id);
     }, NOTIFICATION_DURATION);
+
+    if (playSound && notificationSoundEnabledRef.current) {
+      playNotificationSound(notification);
+    }
   }, [dismissToast]);
+
+  useEffect(() => {
+    notificationSoundEnabledRef.current = notificationSoundEnabled;
+  }, [notificationSoundEnabled]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!userId) {
+      notificationSoundEnabledRef.current = true;
+      setNotificationSoundEnabled(true);
+      setNotificationSoundLoading(false);
+      return undefined;
+    }
+
+    notificationSoundEnabledRef.current = true;
+    setNotificationSoundEnabled(true);
+    setNotificationSoundLoading(true);
+
+    supabase
+      .from("profiles")
+      .select("notification_sound_enabled")
+      .eq("id", userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return;
+        const enabled = !error && data?.notification_sound_enabled === false ? false : true;
+        notificationSoundEnabledRef.current = enabled;
+        setNotificationSoundEnabled(enabled);
+        setNotificationSoundLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId || typeof window === "undefined") return undefined;
+    const unlock = () => unlockNotificationSound();
+    window.addEventListener("pointerdown", unlock, { once: true, passive: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [userId]);
+
+  const setNotificationSoundPreference = useCallback(async (enabled) => {
+    if (!userId) {
+      return { ok: false, message: "Tu sesión no está disponible. Inicia sesión nuevamente." };
+    }
+
+    const nextEnabled = Boolean(enabled);
+    const previousEnabled = notificationSoundEnabledRef.current;
+    notificationSoundEnabledRef.current = nextEnabled;
+    setNotificationSoundEnabled(nextEnabled);
+
+    const { data, error } = await supabase.rpc("set_notification_sound_enabled", {
+      p_enabled: nextEnabled,
+    });
+
+    if (error || data !== nextEnabled) {
+      notificationSoundEnabledRef.current = previousEnabled;
+      setNotificationSoundEnabled(previousEnabled);
+      return { ok: false, message: "No se pudo guardar la preferencia de sonido. Inténtalo nuevamente." };
+    }
+
+    return { ok: true };
+  }, [userId]);
 
   useEffect(() => {
     notificationsRef.current = notifications;
@@ -131,7 +209,7 @@ export default function useNotifications(userId) {
       notificationsRef.current = visibleNotifications;
       setNotifications(visibleNotifications);
 
-      [...newNotifications].reverse().forEach(enqueueToast);
+      [...newNotifications].reverse().forEach((notification) => enqueueToast(notification));
     }
     setLoading(false);
   }, [clearToastTimeouts, enqueueToast, userId]);
@@ -212,7 +290,7 @@ export default function useNotifications(userId) {
             return [newNotif, ...prev].slice(0, MAX_NOTIFICATION_ROWS);
           });
 
-          enqueueToast(newNotif);
+          enqueueToast(newNotif, { playSound: true });
         }
       )
       .on(
@@ -485,7 +563,7 @@ export default function useNotifications(userId) {
         deleted_at: null,
       };
 
-      enqueueToast(optimisticNotification);
+      enqueueToast(optimisticNotification, { playSound: true });
 
       const notification = await createNotification({
         type,
@@ -506,6 +584,9 @@ export default function useNotifications(userId) {
     unreadCount,
     loading,
     archivedLoading,
+    notificationSoundEnabled,
+    notificationSoundLoading,
+    setNotificationSoundEnabled: setNotificationSoundPreference,
     toasts,
     createNotification,
     markAsRead,

@@ -322,6 +322,9 @@ export default function DesignerNotificationsModule({
   onArchive,
   onDelete,
   onDeleteAll,
+  notificationSoundEnabled = true,
+  notificationSoundLoading = false,
+  onNotificationSoundChange,
   moduleLabel = DEFAULT_MODULE_LABEL,
   moduleIcon: ModuleIcon = DEFAULT_MODULE_ICON,
   moduleTone = DEFAULT_MODULE_TONE,
@@ -416,6 +419,11 @@ export default function DesignerNotificationsModule({
   );
   const markAsRead = (id) => runAction(onMarkAsRead, id, "No se pudo marcar la notificación como leída.");
   const archive = (id) => runAction(onArchive, id, "No se pudo archivar la notificación.");
+  const updateNotificationSound = () => runAction(
+    onNotificationSoundChange,
+    !notificationSoundEnabled,
+    "No se pudo guardar la preferencia de sonido."
+  );
   const confirmDelete = async () => {
     if (!confirmation) return;
     if (confirmation.scope === "notification") {
@@ -465,6 +473,28 @@ export default function DesignerNotificationsModule({
       </div>
 
       {actionError && <p className="dnm-action-error" role="alert">{actionError}</p>}
+
+      <section className="dnm-sound-setting" aria-label="Preferencia de sonido de notificaciones">
+        <div className="dnm-sound-copy">
+          <span className="dnm-sound-icon"><Icons.Bell /></span>
+          <div>
+            <strong>Sonido de notificaciones</strong>
+            <p>Reproduce un tono corto cuando recibes una notificación nueva.</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          className={`dnm-sound-switch ${notificationSoundEnabled ? "is-enabled" : ""}`}
+          role="switch"
+          aria-checked={notificationSoundEnabled}
+          aria-label={`Sonido de notificaciones ${notificationSoundEnabled ? "activado" : "desactivado"}`}
+          onClick={updateNotificationSound}
+          disabled={notificationSoundLoading}
+        >
+          <span aria-hidden="true" className="dnm-sound-switch-thumb" />
+          <span>{notificationSoundEnabled ? "Activado" : "Desactivado"}</span>
+        </button>
+      </section>
 
       <div className="dnm-summary-grid">
         <div className="dnm-summary-card">

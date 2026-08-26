@@ -40,6 +40,7 @@ import {
   canRestoreOrder,
   restoreOrder,
 } from "../utils/archive";
+import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
 
 const PAYMENT_DELIVERY_BLOCKED_MESSAGE = "No se puede entregar la orden hasta que esté totalmente pagada o aprobada a crédito.";
 const PER_PAGE = 15;
@@ -288,7 +289,7 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
           )}
 
           <div className="pd-detail-status-row">
-            <StatusBadge status={order.status} className="pd-badge" showDot={false} />
+            <StatusBadge status={order.status} className="pd-badge" showDot={false} order={order} />
             <PaymentBadge status={order.payment_status} className="pd-badge" />
             {order.order_type === "orden 911" ? (
               <span className="pd-badge-911">911</span>
@@ -563,7 +564,7 @@ export default function PageDelivery() {
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const paginatedOrders = sortOrdersByDeadlinePriority(filteredOrders).slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
   const activeOrders = orders.filter((order) => !order.is_archived_delivery);
 
   useEffect(() => {
@@ -738,7 +739,7 @@ export default function PageDelivery() {
           </div>
           <div className="pd-order-card-badges">
             {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
-            <StatusBadge status={order.status} className="pd-badge" showDot={false} />
+            <StatusBadge status={order.status} className="pd-badge" showDot={false} order={order} />
             <PaymentBadge status={order.payment_status} className="pd-badge" />
           </div>
         </header>
@@ -1016,9 +1017,12 @@ export default function PageDelivery() {
               onArchive={notif.archive}
               onDelete={notif.deleteNotification}
               onDeleteAll={notif.deleteNotificationsByScope}
+              notificationSoundEnabled={notif.notificationSoundEnabled}
+              notificationSoundLoading={notif.notificationSoundLoading}
               moduleLabel="Entrega"
               moduleIcon={Icons.Truck}
               moduleTone="delivery"
+              onNotificationSoundChange={notif.setNotificationSoundEnabled}
             />
           )}
 

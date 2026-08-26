@@ -24,6 +24,8 @@ import {
 } from "../utils/uploadOrderAsset";
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge, RoleBadge } from "../components/ui/Badge";
+import { isOrderOverdue, sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
+import { getMinimumDeliveryDate } from "../utils/deliveryDate";
 import { AssignModal } from "../components/ui/AssignModal";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import SettleCreditModal from "../components/ui/SettleCreditModal";
@@ -918,6 +920,7 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
                 <input
                   type="date"
                   value={orderForm.delivery_date}
+                  min={getMinimumDeliveryDate()}
                   onChange={(event) => setField("delivery_date", event.target.value)}
                   disabled={orderForm.indefinido}
                   style={{ opacity: orderForm.indefinido ? 0.5 : 1 }}
@@ -1165,7 +1168,7 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
         <div className="pa-panel">
           <div className="pa-panel-title">Diseños y caja</div>
           <div className="pa-detail-list">
-            <div><span>Estado</span><strong><StatusBadge status={order.status} className="ps-badge" showDot bordered /></strong></div>
+          <div><span>Estado</span><strong><StatusBadge status={order.status} className="ps-badge" showDot bordered order={order} /></strong></div>
             <div><span>Pago</span><strong><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></strong></div>
             <div><span>Facturacion</span><strong>{order.invoice_number || "No definido"}</strong></div>
             <div><span>Precio</span><strong>{order.price ? `RD$${Number(order.price).toLocaleString("es-DO")}` : "Precio pendiente"}</strong></div>
@@ -3468,7 +3471,7 @@ export default function Dashboard() {
     startOfWeek.setDate(startOfWeek.getDate() - 7);
     const selectedProfile = ownerFilter === "all" ? null : usersById[ownerFilter];
 
-    return orders.filter(order => {
+    return sortOrdersByDeadlinePriority(orders.filter(order => {
       const relatedUserNames = [...new Set(getOrderSearchUserIds(order))]
         .map((userId) => getUserDisplayName(usersById[userId]));
       const matchesSearch = !q || [order.client_name, order.description, order.material, order.invoice_number, order.id, ...relatedUserNames].some(value => normalizeText(value).includes(q));
@@ -3486,9 +3489,10 @@ export default function Dashboard() {
       const matchesOperational = operationalFilter === "all"
         || (operationalFilter === "blocked" && order.operational_status === "blocked")
         || (operationalFilter === "priority" && order.order_type === "orden 911")
-        || (operationalFilter === "commercial_review" && order.commercial_review_required);
+        || (operationalFilter === "commercial_review" && order.commercial_review_required)
+        || (operationalFilter === "overdue" && isOrderOverdue(order));
       return matchesSearch && matchesStatus && matchesOwner && matchesClient && matchesArchive && matchesDate && matchesIntervention && matchesOperational;
-    });
+    }));
   }, [orders, search, statusFilter, ownerFilter, clientFilter, archiveFilter, dateFilter, interventionFilter, operationalFilter, usersById]);
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
@@ -3939,6 +3943,9 @@ export default function Dashboard() {
             onArchive={notif.archive}
             onDelete={notif.deleteNotification}
             onDeleteAll={notif.deleteNotificationsByScope}
+            notificationSoundEnabled={notif.notificationSoundEnabled}
+            notificationSoundLoading={notif.notificationSoundLoading}
+            onNotificationSoundChange={notif.setNotificationSoundEnabled}
             moduleLabel="Administración"
             moduleIcon={Icons.Bell}
             moduleTone="admin"
@@ -4039,7 +4046,7 @@ export default function Dashboard() {
                               </span>
                             </div>
                           </td>
-                          <td className="td-pad"><StatusBadge status={order.status} className="ps-badge" showDot bordered /></td>
+                          <td className="td-pad"><StatusBadge status={order.status} className="ps-badge" showDot bordered order={order} /></td>
                           <td className="td-pad td-name">{getUserDisplayName(usersById[order.seller_id || order.created_by])}</td>
                           <td className="td-pad">
                             <span className={`pa-overview-delivery-badge${formatOverviewDeliveryDate(order.delivery_date) ? "" : " is-indefinite"}`}>
@@ -4093,7 +4100,7 @@ export default function Dashboard() {
                 { id: "client", label: "Cliente", icon: <Icons.User />, allowMultiline: true, value: clientFilter, onChange: (value) => { setClientFilter(value); setPage(1); }, isActive: clientFilter !== "all", options: [{ value: "all", label: "Todos los clientes" }, { value: NO_CLIENT_FILTER_VALUE, label: "Sin cliente registrado" }, ...clients.map((client) => ({ value: client.id, label: getClientDisplayName(client) }))] },
                 { id: "archive", label: "Archivo", icon: <Icons.Archive />, value: archiveFilter, onChange: (value) => { setArchiveFilter(value); setPage(1); }, isActive: archiveFilter !== "active", options: [{ value: "active", label: "Activas" }, { value: "all", label: "Todas" }, { value: "archived", label: "Archivadas" }] },
                 { id: "intervention", label: "Intervención", icon: <Icons.AlertCircle />, className: "pp-filter-select-wrap--wide", value: interventionFilter, onChange: (value) => { setInterventionFilter(value); setPage(1); }, isActive: interventionFilter !== "all", options: [{ value: "all", label: "Todas las intervenciones" }, { value: "intervened", label: "Intervenidas por Admin" }, { value: "not_intervened", label: "Sin intervención avanzada" }] },
-                { id: "operational", label: "Situación operativa", icon: <Icons.Orders />, className: "pp-filter-select-wrap--wide", value: operationalFilter, onChange: (value) => { setOperationalFilter(value); setPage(1); }, isActive: operationalFilter !== "all", options: [{ value: "all", label: "Toda la situación operativa" }, { value: "blocked", label: "Bloqueadas" }, { value: "priority", label: "Prioridad 911" }, { value: "commercial_review", label: "Revisión comercial pendiente" }] },
+                { id: "operational", label: "Situación operativa", icon: <Icons.Orders />, className: "pp-filter-select-wrap--wide", value: operationalFilter, onChange: (value) => { setOperationalFilter(value); setPage(1); }, isActive: operationalFilter !== "all", options: [{ value: "all", label: "Toda la situación operativa" }, { value: "overdue", label: "Atrasadas" }, { value: "blocked", label: "Bloqueadas" }, { value: "priority", label: "Prioridad 911" }, { value: "commercial_review", label: "Revisión comercial pendiente" }] },
               ]}
               resultCount={filteredOrders.length}
               resultLabel={`resultado${filteredOrders.length === 1 ? "" : "s"}`}
@@ -4152,7 +4159,7 @@ export default function Dashboard() {
                             </td>
                             <td className="td-pad">
                               <div className="acm-badge-stack">
-                                <StatusBadge status={order.status} className="ps-badge" showDot bordered />
+                                <StatusBadge status={order.status} className="ps-badge" showDot bordered order={order} />
                                 {order.operational_status === "blocked" && <span className="acm-badge danger">Bloqueada</span>}
                                 {order.commercial_review_required && <span className="acm-badge warning">Revisión</span>}
                                 {order.order_type === "orden 911" && <span className="acm-badge danger">911</span>}

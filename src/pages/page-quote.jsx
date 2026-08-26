@@ -33,6 +33,7 @@ import {
   formatDate,
 } from "../utils/constants";
 import { getReferenceImages } from "../utils/orderAssets";
+import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
 import { getProductionFiles } from "../utils/production";
 import { useAuth } from "../hooks/useAuth";
 import { showCreditActionFeedback } from "../utils/notifications";
@@ -488,7 +489,7 @@ function QuoteOrderDetailModal({
             acknowledging={returnAcknowledging}
           />
           <div className="pq-flow-summary">
-            <StatusBadge status={order.status} className="pq-badge" />
+            <StatusBadge status={order.status} className="pq-badge" order={order} />
             <PaymentBadge status={order.payment_status} className="pq-badge" />
             {isReturnedOrder(order) && <ReturnedBadge />}
             <span className="pq-flow-date"><Icons.Clock /> {createdAt}</span>
@@ -2536,7 +2537,7 @@ export default function PageQuote() {
   const effectivePerPage = viewMode === "cards" ? 10 : PER_PAGE;
   const totalPages = Math.ceil(filteredOrders.length / effectivePerPage) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = filteredOrders.slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
+  const paginatedOrders = sortOrdersByDeadlinePriority(filteredOrders).slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
   useEffect(() => { setPage(1); }, [viewMode]);
@@ -2756,7 +2757,7 @@ export default function PageQuote() {
                                 {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
                                 {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
                                 {isReturnedOrder(order) && <ReturnedBadge compact />}
-                                <StatusBadge status={order.status} className="pq-badge" />
+                                <StatusBadge status={order.status} className="pq-badge" order={order} />
                               </div>
                             </td>
                             <td className="td-pad">
@@ -3196,7 +3197,7 @@ export default function PageQuote() {
                               <span className="pq-order-type-badge pq-order-type-badge--normal">Normal</span>
                             )}
                           </td>
-                          <td className="td-pad"><StatusBadge status={order.status} className="pq-badge" /></td>
+                          <td className="td-pad"><StatusBadge status={order.status} className="pq-badge" order={order} /></td>
                           <td className="td-pad"><PaymentBadge status={order.payment_status} className="pq-badge" /></td>
                           <td className="td-pad td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "long", year: "numeric" })}</td>
                           <td className="td-pad td-actions" data-row-action>
@@ -3253,7 +3254,7 @@ export default function PageQuote() {
                         </div>
                         <div className="ps-order-card-field">
                           <span className="ps-order-card-field-label">Estado</span>
-                          <StatusBadge status={order.status} className="acm-badge" bordered />
+                          <StatusBadge status={order.status} className="acm-badge" bordered order={order} />
                         </div>
                       </div>
 
@@ -3313,6 +3314,9 @@ export default function PageQuote() {
               onArchive={notif.archive}
               onDelete={notif.deleteNotification}
               onDeleteAll={notif.deleteNotificationsByScope}
+              notificationSoundEnabled={notif.notificationSoundEnabled}
+              notificationSoundLoading={notif.notificationSoundLoading}
+              onNotificationSoundChange={notif.setNotificationSoundEnabled}
             />
           </section>
         )}

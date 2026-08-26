@@ -40,6 +40,7 @@ import DesignerProfileModule from "../components/designer/DesignerProfileModule"
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
 import ReturnToCashierModal from "../components/orders/ReturnToCashierModal";
 import { OrderReturnHandoffPanel } from "../components/orders/OrderReturnHandoff";
+import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const PER_PAGE = 15;
@@ -548,7 +549,7 @@ function OrderDetailModal({
           <div className="pd-modal-summary" aria-label="Resumen de la orden">
             <div className="pd-modal-summary-item">
               <span><Icons.CheckCircle /> Estado</span>
-              <StatusBadge status={order.status} className="pd-modal-summary-badge" showDot={false} bordered />
+              <StatusBadge status={order.status} className="pd-modal-summary-badge" showDot={false} bordered order={order} />
             </div>
             <div className="pd-modal-summary-item">
               <span><Icons.Paperclip /> Archivos</span>
@@ -856,7 +857,7 @@ function OrderDetailModal({
           {/* <div className="pd-status-bar">
             <div className="pd-status-item">
               <span className="pd-status-label">Estado</span>
-              <StatusBadge status={order.status} className="pd-badge" />
+              <StatusBadge status={order.status} className="pd-badge" order={order} />
             </div>
           </div> */}
         </div>
@@ -1192,7 +1193,7 @@ export default function PageDesigner() {
   const effectivePerPage = viewMode === "cards" ? 10 : PER_PAGE;
   const totalPages = Math.ceil(filteredOrders.length / effectivePerPage) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = filteredOrders.slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
+  const paginatedOrders = sortOrdersByDeadlinePriority(filteredOrders).slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
   useEffect(() => { setPage(1); }, [viewMode]);
@@ -1519,7 +1520,7 @@ export default function PageDesigner() {
                                 {isNewOrder(order) && <NewOrderBadge compact />}
                                 <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                                 {getEditLabel(order) && <span className="acm-badge warning">{getEditLabel(order)}</span>}
-                                <StatusBadge status={order.status} className="acm-badge" showDot={false} bordered />
+                                <StatusBadge status={order.status} className="acm-badge" showDot={false} bordered order={order} />
                               </div>
                             </td>
                             <td className="td-pad td-actions" data-row-action>
@@ -1742,7 +1743,7 @@ export default function PageDesigner() {
                               <td className="td-pad">
                                 {order.order_type === "orden 911" ? <span className="acm-badge danger">911</span> : <span className="acm-badge neutral">Normal</span>}
                               </td>
-                              <td className="td-pad"><StatusBadge status={order.status} className="acm-badge" showDot={false} bordered /></td>
+                              <td className="td-pad"><StatusBadge status={order.status} className="acm-badge" showDot={false} bordered order={order} /></td>
                               <td className="td-pad"><span className="ps-date-badge">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span></td>
                               <td className="td-pad">
                                 {fileCount > 0
@@ -1808,7 +1809,7 @@ export default function PageDesigner() {
                           </div>
                           <div className="ps-order-card-field">
                             <span className="ps-order-card-field-label">Estado</span>
-                            <StatusBadge status={order.status} className="acm-badge" bordered />
+                            <StatusBadge status={order.status} className="acm-badge" bordered order={order} />
                           </div>
                         </div>
 
@@ -1864,6 +1865,9 @@ export default function PageDesigner() {
               onArchive={notif.archive}
               onDelete={notif.deleteNotification}
               onDeleteAll={notif.deleteNotificationsByScope}
+              notificationSoundEnabled={notif.notificationSoundEnabled}
+              notificationSoundLoading={notif.notificationSoundLoading}
+              onNotificationSoundChange={notif.setNotificationSoundEnabled}
             />
           )}
         </main>

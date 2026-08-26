@@ -19,6 +19,7 @@ import {
   validateReferenceImages,
 } from "../../utils/imageValidation";
 import { formatDominicanPhone, getSelectedClientOrderFields } from "../../utils/clients";
+import { getMinimumDeliveryDate, isPastDeliveryDateChange } from "../../utils/deliveryDate";
 import { adminApiFetch } from "../../utils/adminApi";
 import { executeAdminOrderCommand } from "../../utils/adminOrderCommands";
 import {
@@ -154,6 +155,9 @@ export default function EditOrderModal({
     }
     if (!form.description.trim()) {
       errors.description = "La descripcion es requerida.";
+    }
+    if (isPastDeliveryDateChange(form.delivery_date, order?.delivery_date)) {
+      errors.delivery_date = "La fecha de entrega no puede ser anterior a hoy.";
     }
     if (newFiles.length > 0) {
       const missingAreas = newFileAreas
@@ -507,10 +511,10 @@ export default function EditOrderModal({
           </Field>
         </div>
         <div className="col-full">
-          <Field label="Fecha de entrega" optional>
+          <Field label="Fecha de entrega" optional error={fieldErrors.delivery_date}>
             <div className="ps-input-icon-wrap">
               <span className="ps-input-icon"><Icons.Calendar /></span>
-              <input className="ps-form-input with-icon" type="date" value={form.delivery_date} onChange={event => set("delivery_date", event.target.value)} />
+              <input className="ps-form-input with-icon" type="date" value={form.delivery_date} min={getMinimumDeliveryDate()} onChange={event => set("delivery_date", event.target.value)} />
             </div>
           </Field>
         </div>

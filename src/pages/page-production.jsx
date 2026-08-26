@@ -52,6 +52,7 @@ import {
   archiveOrder,
   restoreOrder,
 } from "../utils/archive";
+import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
 
 
 const METRIC_ACCENTS = [
@@ -420,7 +421,7 @@ export function OrderDetailModal({
                 <div className="pp-modal-status-grid">
                   <div className="pp-modal-status-section">
                     <span className="pp-modal-status-label"><Icons.Check /> Estado Actual</span>
-                    <StatusBadge status={order.status} className="pp-badge" bordered />
+                    <StatusBadge status={order.status} className="pp-badge" bordered order={order} />
                   </div>
                   {order.price && (
                     <div className="pp-price-box">
@@ -891,7 +892,7 @@ export default function PageProduction() {
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const paginatedOrders = sortOrdersByDeadlinePriority(filteredOrders).slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
@@ -1061,7 +1062,7 @@ export default function PageProduction() {
                                 ? <span className="acm-badge danger">911</span>
                                 : <span className="acm-badge neutral">Normal</span>}
                             </td>
-                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered /></td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered order={order} /></td>
                             <td className="td-pad td-actions" data-row-action>
                               <div className="table-actions acm-row-actions" data-row-action>
                                 <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
@@ -1206,7 +1207,7 @@ export default function PageProduction() {
                                 </span>
                               </div>
                             </td>
-                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered /></td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered order={order} /></td>
                             <td className="td-pad">
                               {order.order_type === "orden 911" ? (
                                 <span className="acm-badge danger">911</span>
@@ -1272,7 +1273,7 @@ export default function PageProduction() {
                             </span>
                           </div>
                           <div className="pp-order-card-badges">
-                            <StatusBadge status={order.status} className="pp-badge" bordered />
+                    <StatusBadge status={order.status} className="pp-badge" bordered order={order} />
                           </div>
                         </div>
                         <div className="pp-order-card-meta">
@@ -1343,6 +1344,9 @@ export default function PageProduction() {
               onArchive={notif.archive}
               onDelete={notif.deleteNotification}
               onDeleteAll={notif.deleteNotificationsByScope}
+              notificationSoundEnabled={notif.notificationSoundEnabled}
+              notificationSoundLoading={notif.notificationSoundLoading}
+              onNotificationSoundChange={notif.setNotificationSoundEnabled}
             />
           )}
 

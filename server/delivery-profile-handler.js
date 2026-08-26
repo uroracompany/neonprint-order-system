@@ -1,5 +1,6 @@
 import { requireAuthenticated } from "./auth-middleware.js";
 import { applyProfilePeriod, isInProfilePeriod, resolveProfilePeriod } from "./profile-period-utils.js";
+import { isOrderOverdue } from "../src/utils/orderDeadline.js";
 
 const DELIVERED = new Set(["in_delivered", "delivered"]);
 const PENDING_DELIVERY = new Set(["in_termination", "in_completed"]);
@@ -33,7 +34,6 @@ const addDays = (date, amount) => {
 
 const createStatusSummary = (orders, nowValue) => {
   const now = parseDate(nowValue) || new Date();
-  const today = startOfUtcDay(now);
   const summary = { assigned: orders.length, pending: 0, delivered: 0, overdue: 0, cancelled: 0 };
 
   orders.forEach((order) => {
@@ -43,8 +43,7 @@ const createStatusSummary = (orders, nowValue) => {
     if (CANCELLED.has(status)) summary.cancelled += 1;
     if (!archived && PENDING_DELIVERY.has(status)) summary.pending += 1;
 
-    const deliveryDate = parseDate(order.delivery_date);
-    if (!archived && deliveryDate && deliveryDate < today && !DELIVERED.has(status) && !CANCELLED.has(status)) {
+    if (!archived && isOrderOverdue(order, now)) {
       summary.overdue += 1;
     }
   });

@@ -45,6 +45,7 @@ import { loadClients, searchClients } from "../utils/clients";
 import { adminApiFetch } from "../utils/adminApi";
 import { getAvatarInitials } from "../utils/avatar-initials";
 import ReturnToCashierModal from "../components/orders/ReturnToCashierModal";
+import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
 
 export { default as OrderDetailModal } from "../components/orders/OrderDetailModal";
 
@@ -119,11 +120,11 @@ const CARD_ACCENTS = [
 
 
 
-function StatusBadge({ status, type = "status" }) {
+function StatusBadge({ status, type = "status", order = null }) {
   if (type === "payment") {
     return <PaymentBadge status={status} className="ps-badge" bordered />;
   }
-  return <SharedStatusBadge status={status} className="ps-badge" showDot bordered />;
+  return <SharedStatusBadge status={status} className="ps-badge" showDot bordered order={order} />;
 }
 
 // CARTA DE METRICA PARA DASHBOARD
@@ -720,7 +721,7 @@ export default function PageSeller() {
   const activeOrdersCount = sellerSummary.active;
   const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
   const editedOrdersCount = orders.filter(o => o?.metadata?.event_kind === "admin_edited_order").length;
-  const activeOrders = useMemo(() => orders.filter(o => !o.is_archived), [orders]);
+  const activeOrders = useMemo(() => sortOrdersByDeadlinePriority(orders.filter(o => !o.is_archived)), [orders]);
   const archivedOrders = useMemo(() => orders.filter(o => o.is_archived), [orders]);
   const returnedOrders = useMemo(() => orders.filter(o => isReturnedOrder(o)), [orders]);
 
@@ -900,7 +901,7 @@ export default function PageSeller() {
                               </div>
                             </td>
                             <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number ? <span className="td-invoice-badge">{o.invoice_number}</span> : "---"}</td>
-                            <td className="td-pad"><StatusBadge status={o.status} /></td>
+                            <td className="td-pad"><StatusBadge status={o.status} order={o} /></td>
                             <td className="td-pad td-actions" data-row-action>
                               <div className="table-actions" data-row-action>
                                 <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
@@ -1066,7 +1067,7 @@ export default function PageSeller() {
                                 </div>
                               </td>
                             <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number ? <span className="td-invoice-badge">{o.invoice_number}</span> : "---"}</td>
-                              <td className="td-pad"><StatusBadge status={o.status} /></td>
+                              <td className="td-pad"><StatusBadge status={o.status} order={o} /></td>
                               <td className="td-pad"><StatusBadge status={o.payment_status} type="payment" /></td>
                               <td className="td-pad">
                                 {o.order_type === "orden 911"
@@ -1165,7 +1166,7 @@ export default function PageSeller() {
                             </div>
                             <div className="ps-order-card-field">
                               <span className="ps-order-card-field-label">Estado</span>
-                              <StatusBadge status={o.status} />
+                              <StatusBadge status={o.status} order={o} />
                             </div>
                           </div>
 
@@ -1225,6 +1226,9 @@ export default function PageSeller() {
               onArchive={notif.archive}
               onDelete={notif.deleteNotification}
               onDeleteAll={notif.deleteNotificationsByScope}
+              notificationSoundEnabled={notif.notificationSoundEnabled}
+              notificationSoundLoading={notif.notificationSoundLoading}
+              onNotificationSoundChange={notif.setNotificationSoundEnabled}
             />
           )}
         </main>

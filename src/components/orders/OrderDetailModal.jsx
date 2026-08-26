@@ -36,11 +36,11 @@ const isReturnedOrder = (order) => {
   return isOrderStatusIn(order.status, validStatuses);
 };
 
-function StatusBadge({ status, type = "status" }) {
+function StatusBadge({ status, type = "status", order = null }) {
   if (type === "payment") {
     return <PaymentBadge status={status} className="ps-badge" bordered />;
   }
-  return <SharedStatusBadge status={status} className="ps-badge" showDot bordered />;
+  return <SharedStatusBadge status={status} className="ps-badge" showDot bordered order={order} />;
 }
 
 function ReturnedBadge({ compact = false }) {
@@ -377,7 +377,7 @@ export default function OrderDetailModal({
                   <Icons.Check /> ESTADO ACTUAL
                 </p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <StatusBadge status={order.status} />
+                  <StatusBadge status={order.status} order={order} />
                   {isReturnedOrder(order) && <ReturnedBadge />}
                 </div>
               </div>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Icons } from "../../utils/icons";
 import { ORDER_STATUS, PAYMENT_COLORS, PAYMENT_STATUS } from "../../utils/constants";
+import { getMinimumDeliveryDate, isPastDeliveryDateChange } from "../../utils/deliveryDate";
 import "./AdminAdvancedActionModal.css";
 
 const getUserDisplayName = (profile) => profile?.name || profile?.email || "Usuario";
@@ -146,6 +147,9 @@ export default function AdminAdvancedActionModal({
     if (["block_order", "update_block"].includes(actionKey) && !expectedResolutionAt) {
       return setError("Indica una fecha estimada de resolución.");
     }
+    if (actionKey === "update_requirements" && isPastDeliveryDateChange(requirementChanges.delivery_date, order?.delivery_date)) {
+      return setError("La fecha de entrega no puede ser anterior a hoy.");
+    }
 
     const payload = { target_user_id: targetUserId || null };
     if (["block_order", "update_block"].includes(actionKey)) {
@@ -274,7 +278,7 @@ export default function AdminAdvancedActionModal({
               <label className="aam-field"><span>Descripción</span><textarea rows={3} value={requirementChanges.description} onChange={(event) => setRequirementChanges((current) => ({ ...current, description: event.target.value }))} /></label>
               <label className="aam-field"><span>Material</span><input value={requirementChanges.material} onChange={(event) => setRequirementChanges((current) => ({ ...current, material: event.target.value }))} /></label>
               <label className="aam-field"><span>Terminación</span><input value={requirementChanges.termination_type} onChange={(event) => setRequirementChanges((current) => ({ ...current, termination_type: event.target.value }))} /></label>
-              <label className="aam-field"><span>Fecha de entrega</span><input type="date" value={requirementChanges.delivery_date} onChange={(event) => setRequirementChanges((current) => ({ ...current, delivery_date: event.target.value }))} /></label>
+              <label className="aam-field"><span>Fecha de entrega</span><input type="date" value={requirementChanges.delivery_date} min={getMinimumDeliveryDate()} onChange={(event) => setRequirementChanges((current) => ({ ...current, delivery_date: event.target.value }))} /></label>
             </div>
           )}
 

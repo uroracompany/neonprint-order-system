@@ -11,6 +11,7 @@ import { buildProductionFileRows } from "../../utils/production";
 import { buildStorageSafeFileName, formatFileSize, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../../utils/uploadOrderAsset";
 import { canDecodeAsImage, compressImage, REF_IMAGE_CONFIG, validateReferenceImages } from "../../utils/imageValidation";
 import { formatDominicanPhone, getSelectedClientOrderFields } from "../../utils/clients";
+import { getMinimumDeliveryDate, isDeliveryDateInPast } from "../../utils/deliveryDate";
 
 export const PHONE_PLACEHOLDER = "Seleccionar Cliente";
 
@@ -353,13 +354,6 @@ const isValidDominicanPhone = (value) => {
   return ["809", "829", "849"].includes(areaCode);
 };
 
-const withTimeout = (promise, ms) => {
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("timeout")), ms)
-  );
-  return Promise.race([promise, timeout]);
-};
-
 export default function CreateOrderModal({
   open,
   onClose,
@@ -480,6 +474,9 @@ export default function CreateOrderModal({
     if (!form.indefinido && !form.delivery_date) {
       errors.delivery_date = "Selecciona una fecha de entrega o marca 'Por definir'.";
     }
+    if (!form.indefinido && isDeliveryDateInPast(form.delivery_date)) {
+      errors.delivery_date = "La fecha de entrega no puede ser anterior a hoy.";
+    }
     if (form.design_type === "EXTERNAL_DESING" && form.design_files.length === 0) {
       errors.design_files = "Debe subir al menos un archivo de diseño.";
     }
@@ -531,7 +528,7 @@ export default function CreateOrderModal({
     setMissingAreaIndices([]);
 
     try {
-      await withTimeout((async () => {
+      await (async () => {
         const nextIndefinido = form.indefinido || !form.delivery_date;
         const orderId = crypto.randomUUID();
 
@@ -669,16 +666,12 @@ export default function CreateOrderModal({
             throw new Error("No se pudieron asociar los archivos a la orden.");
           }
         }
-      })(), 60000);
+      })();
 
       handleClose();
       onCreated?.();
     } catch (err) {
-      if (err.message === "timeout") {
-        setError("La orden está tardando más de lo normal. Verifica tu conexión a internet e intenta de nuevo.");
-      } else {
-        setError(err.message || "No se pudo crear la orden. Intenta nuevamente.");
-      }
+      setError(err.message || "No se pudo crear la orden. Intenta nuevamente.");
     } finally {
       setLoading(false);
     }
@@ -920,6 +913,7 @@ export default function CreateOrderModal({
                   className="ps-form-input with-icon"
                   type="date"
                   value={form.delivery_date}
+                  min={getMinimumDeliveryDate()}
                   disabled={form.indefinido}
                   onChange={event => set("delivery_date", event.target.value)}
                   style={{ opacity: form.indefinido ? 0.4 : 1 }}

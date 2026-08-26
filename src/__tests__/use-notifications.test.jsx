@@ -45,6 +45,7 @@ const setupSupabase = ({
   notificationRows = [],
   notificationResults = null,
   mutationResults = null,
+  profileSoundEnabled = true,
 } = {}) => {
   const subscriptions = {};
   const queuedNotificationResults = Array.isArray(notificationResults) ? [...notificationResults] : null;
@@ -84,6 +85,7 @@ const setupSupabase = ({
       order: vi.fn(() => builder),
       limit: vi.fn(resolveLimit),
       single: vi.fn(async () => ({ data: persistedNotification, error: null })),
+      maybeSingle: vi.fn(async () => ({ data: { notification_sound_enabled: profileSoundEnabled }, error: null })),
       then: (resolve, reject) => resolveMutation().then(resolve, reject),
     };
     return builder;
@@ -175,6 +177,26 @@ describe("useNotifications", () => {
     expect(result.current.archivedNotifications[0].id).toBe("archived-notification");
     expect(result.current.archivedCount).toBe(1);
     expect(result.current.unreadCount).toBe(1);
+  });
+
+  it("defaults sound to enabled when a profile has no stored preference and persists changes", async () => {
+    setupSupabase({ profileSoundEnabled: null });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notificationSoundLoading).toBe(false);
+    });
+    expect(result.current.notificationSoundEnabled).toBe(true);
+
+    let actionResult;
+    await act(async () => {
+      supabase.rpc.mockResolvedValueOnce({ data: false, error: null });
+      actionResult = await result.current.setNotificationSoundEnabled(false);
+    });
+
+    expect(actionResult).toEqual({ ok: true });
+    expect(result.current.notificationSoundEnabled).toBe(false);
+    expect(supabase.rpc).toHaveBeenCalledWith("set_notification_sound_enabled", { p_enabled: false });
   });
 
   it("keeps an archived notification hidden after remounting the hook", async () => {

@@ -1,5 +1,6 @@
 import { requireAuthenticated } from "./auth-middleware.js";
 import { applyProfilePeriod, isInProfilePeriod, resolveProfilePeriod } from "./profile-period-utils.js";
+import { isOrderOverdue } from "../src/utils/orderDeadline.js";
 
 const COMPLETED_STATUSES = new Set(["completed", "in_completed"]);
 const DELIVERED_STATUSES = new Set(["delivered", "in_delivered"]);
@@ -187,7 +188,6 @@ const createTopDesigner = (orders, designerProfiles) => {
 
 const createStatusSummary = (orders, nowValue) => {
   const now = nowValue ? new Date(nowValue) : new Date();
-  const todayStart = startOfUtcDay(Number.isNaN(now.getTime()) ? new Date() : now);
   const summary = {
     active: 0,
     completed: 0,
@@ -205,8 +205,7 @@ const createStatusSummary = (orders, nowValue) => {
     if (CANCELLED_STATUSES.has(status)) summary.cancelled += 1;
     if (isReturnedOrder(order)) summary.returned += 1;
 
-    const deliveryDate = parseDate(order.delivery_date);
-    if (deliveryDate && deliveryDate < todayStart && !isReturnedOrder(order) && !COMPLETED_STATUSES.has(status) && !DELIVERED_STATUSES.has(status) && !CANCELLED_STATUSES.has(status)) {
+    if (isOrderOverdue(order, now)) {
       summary.overdue += 1;
     }
   });

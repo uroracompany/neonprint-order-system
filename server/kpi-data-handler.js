@@ -1,6 +1,7 @@
 import { requireAdmin } from './auth-middleware.js'
 import { createClient } from '@supabase/supabase-js'
 import { createHash } from 'node:crypto'
+import { isOrderOverdue } from '../src/utils/orderDeadline.js'
 
 const PRODUCTION_STATUSES = ['pending', 'in_production', 'in_termination', 'completed']
 const ACTIVE_PRODUCTION_STATUSES = ['pending', 'in_production', 'in_termination']
@@ -554,10 +555,7 @@ async function buildSmartAlertsCenter(supabase, { date_from = null, date_to = nu
   }
 
   const deliveryOrders = activeOrders.filter(order => order.delivery_date)
-  const overdueDeliveries = deliveryOrders.filter(order => {
-    const dueDate = getDeliveryDueDate(order.delivery_date)
-    return dueDate && dueDate < now
-  })
+  const overdueDeliveries = deliveryOrders.filter(order => isOrderOverdue(order, now))
   const upcomingDeliveries = deliveryOrders.filter(order => {
     const date = getDeliveryDueDate(order.delivery_date)
     if (!date) return false
