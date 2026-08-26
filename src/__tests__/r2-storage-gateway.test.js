@@ -6,6 +6,7 @@ import {
   buildR2Url,
   getR2Config,
   parseR2Url,
+  presignR2Url,
   shouldUseR2,
 } from "../../server/storage-gateway.js";
 
@@ -67,6 +68,34 @@ describe("Cloudflare R2 hybrid storage", () => {
     });
   });
 
+  it("builds a browser-compatible PUT signature with unsigned payload and content type", () => {
+    const url = new URL(presignR2Url({
+      method: "PUT",
+      bucket: r2Env.R2_BUCKET,
+      key: "orders/order-1/files/design.pdf",
+      contentType: "Application/PDF",
+      expiresIn: 600,
+      env: r2Env,
+    }));
+
+    expect(url.pathname).toBe("/neonprint-order-files-dev/orders/order-1/files/design.pdf");
+    expect(url.searchParams.get("X-Amz-Content-Sha256")).toBe("UNSIGNED-PAYLOAD");
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe("content-type;host");
+    expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("keeps unsigned-payload signing valid for downloads without a content type header", () => {
+    const url = new URL(presignR2Url({
+      method: "GET",
+      bucket: r2Env.R2_BUCKET,
+      key: "orders/order-1/files/design.pdf",
+      env: r2Env,
+    }));
+
+    expect(url.searchParams.get("X-Amz-Content-Sha256")).toBe("UNSIGNED-PAYLOAD");
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe("host");
+  });
+
   it("forces signed R2 downloads to be attachments instead of browser-rendered content", () => {
     const gateway = readProjectFile("server/storage-gateway.js");
 
@@ -76,11 +105,14 @@ describe("Cloudflare R2 hybrid storage", () => {
 
   it("keeps frontend upload completion and failure paths compatible with pre-order R2 uploads", () => {
     const uploadUtil = readProjectFile("src/utils/uploadOrderAsset.js");
+    const gateway = readProjectFile("server/storage-gateway.js");
 
     expect(uploadUtil).toContain("const markR2UploadFailed = async");
     expect(uploadUtil).toContain("result.shouldRegister === false || !result.file?.id");
     expect(uploadUtil).toContain('provider: "r2"');
     expect(uploadUtil).toContain('status: "failed"');
+    expect(gateway).toContain('contentType,');
+    expect(gateway).toContain('headers: contentType ? { "Content-Type": String(contentType).trim().toLowerCase() } : {},');
   });
 
   it("blocks seller file writes while an order is in quote", () => {

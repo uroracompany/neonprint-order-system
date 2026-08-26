@@ -193,7 +193,15 @@ export const parseR2Url = (url = "") => {
 
 export const buildR2Url = ({ bucket, key }) => `${R2_SCHEME}${bucket}/${encodeURI(key)}`;
 
-const presignR2Url = ({ method, key, bucket, expiresIn = DEFAULT_SIGNED_URL_TTL, downloadName = "archivo", env = process.env }) => {
+export const presignR2Url = ({
+  method,
+  key,
+  bucket,
+  expiresIn = DEFAULT_SIGNED_URL_TTL,
+  downloadName = "archivo",
+  contentType = "",
+  env = process.env,
+}) => {
   const r2 = getR2Config(env);
   if (!r2.configured) {
     throw new Error("Cloudflare R2 no esta configurado en el servidor.");
@@ -205,12 +213,14 @@ const presignR2Url = ({ method, key, bucket, expiresIn = DEFAULT_SIGNED_URL_TTL,
   const credentialScope = `${dateStamp}/${r2.region}/${r2.service}/aws4_request`;
   const credential = `${r2.accessKeyId}/${credentialScope}`;
   const canonicalUri = `/${normalizePath(targetBucket)}/${normalizePath(key)}`;
+  const normalizedContentType = String(contentType || "").trim().toLowerCase();
   const params = {
     "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
     "X-Amz-Credential": credential,
     "X-Amz-Date": amzDate,
     "X-Amz-Expires": String(Math.max(1, Math.min(Number(expiresIn) || DEFAULT_SIGNED_URL_TTL, 604800))),
-    "X-Amz-SignedHeaders": "host",
+    "X-Amz-SignedHeaders": normalizedContentType ? "content-type;host" : "host",
   };
 
   if (method.toUpperCase() === "GET") {
@@ -219,16 +229,22 @@ const presignR2Url = ({ method, key, bucket, expiresIn = DEFAULT_SIGNED_URL_TTL,
   }
 
   const canonicalQueryString = Object.entries(params)
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([keyName, value]) => `${encodeRfc3986(keyName)}=${encodeRfc3986(value)}`)
     .join("&");
+
+  const canonicalHeaders = [
+    ...(normalizedContentType ? [`content-type:${normalizedContentType}`] : []),
+    `host:${host}`,
+    "",
+  ].join("\n");
 
   const canonicalRequest = [
     method.toUpperCase(),
     canonicalUri,
     canonicalQueryString,
-    `host:${host}\n`,
-    "host",
+    canonicalHeaders,
+    params["X-Amz-SignedHeaders"],
     "UNSIGNED-PAYLOAD",
   ].join("\n");
 
@@ -534,8 +550,15 @@ const buildR2UploadResponse = ({ bucket, key, contentType, fileRecord = null, sh
   shouldRegister,
   upload: {
     method: "PUT",
-    url: presignR2Url({ method: "PUT", bucket, key, expiresIn: DEFAULT_SIGNED_URL_TTL, env }),
-    headers: contentType ? { "Content-Type": contentType } : {},
+    url: presignR2Url({
+      method: "PUT",
+      bucket,
+      key,
+      contentType,
+      expiresIn: DEFAULT_SIGNED_URL_TTL,
+      env,
+    }),
+    headers: contentType ? { "Content-Type": String(contentType).trim().toLowerCase() } : {},
   },
   storedUrl: buildR2Url({ bucket, key }),
   file: fileRecord,
