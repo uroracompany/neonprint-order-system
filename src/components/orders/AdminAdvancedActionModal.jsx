@@ -2,58 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Icons } from "../../utils/icons";
 import { ORDER_STATUS, PAYMENT_COLORS, PAYMENT_STATUS } from "../../utils/constants";
 import { getMinimumDeliveryDate, isPastDeliveryDateChange } from "../../utils/deliveryDate";
+import { getAdminActionPresentation, getAdminReasonOptions, getAdminTargetSelector } from "../../utils/adminActionPresentation";
 import "./AdminAdvancedActionModal.css";
 
 const getUserDisplayName = (profile) => profile?.name || profile?.email || "Usuario";
 
-const REASONS = [
-  ["client_request", "Solicitud del cliente"],
-  ["assignment_correction", "Corrección de responsable"],
-  ["workflow_correction", "Corrección de flujo"],
-  ["quality_rework", "Retrabajo o calidad"],
-  ["operational_priority", "Prioridad operativa"],
-  ["other", "Otro"],
-];
-
-const ACTION_COPY = {
-  route_quote: ["Enviar a Caja", "Mover la orden al flujo de caja", Icons.Money],
-  set_quote_assignee: ["Gestionar usuario de Caja", "Asignar, cambiar o quitar responsable", Icons.Users],
-  route_sales: ["Regresar orden a Ventas", "Elegir vendedor responsable", Icons.ArrowLeft],
-  register_payment: ["Registrar pago", "Registrar o actualizar el pago de la orden", Icons.Receipt],
-  route_production: ["Enviar a Producción", "Asignar responsables por área", Icons.Package],
-  return_to_quote: ["Regresar a Caja", "Regresar la orden de Producción a Caja", Icons.ArrowLeft],
-  reassign_production: ["Reasignar Producción", "Cambiar responsables de áreas de producción", Icons.Users],
-  mark_delivered: ["Marcar como entregado", "Pasar la orden a estado Entregado", Icons.CheckCircle],
-  return_to_completed: ["Volver a Completado", "Regresar la orden de Entregado a Completado", Icons.ArrowLeft],
-  route_design: ["Enviar a Diseño", "Mover la orden al flujo de diseño", Icons.Brush],
-  set_designer_assignee: ["Gestionar diseñador", "Asignar, cambiar o quitar responsable de diseño", Icons.Users],
-  return_to_design: ["Regresar a Diseño", "Regresar la orden de Caja a Diseño", Icons.ArrowLeft],
-  assign_seller: ["Reasignar vendedor", "Cambiar el vendedor responsable", Icons.Users],
-  block_order: ["Bloquear temporalmente", "Detener avances mientras se resuelve una incidencia", Icons.AlertCircle],
-  update_block: ["Actualizar bloqueo", "Cambiar responsable o fecha estimada", Icons.Clock],
-  resume_order: ["Reanudar orden", "Retirar el bloqueo operativo sin cambiar la etapa", Icons.CheckCircle],
-  set_priority: ["Cambiar prioridad", "Alternar entre orden Normal y 911", Icons.AlertCircle],
-  reclassify_design: ["Reclasificar diseño", "Corregir el tipo y decidir su impacto en el flujo", Icons.Brush],
-  update_requirements: ["Cambiar requisitos", "Registrar una revisión versionada del cliente", Icons.File],
-  cancel_order: ["Cancelar orden", "Cancelar con motivo y conservar la etapa de origen", Icons.Trash],
-  reopen_cancelled: ["Reabrir orden", "Restaurar la última etapa que continúe siendo segura", Icons.ArrowLeft],
-  approve_commercial_review: ["Aprobar revisión comercial", "Confirmar la revisión de Caja antes de continuar", Icons.CheckCircle],
-};
-
-const USER_SELECTOR_CONFIG = {
-  route_quote: { label: "Usuario de Caja (opcional)", users: "quote", hint: "Sin asignar, la orden queda bajo control de Administración.", optional: true },
-  set_quote_assignee: { label: "Responsable de Caja", users: "quote", hint: "Puedes quitar la asignación sin sacar la orden de Caja." },
-  route_sales: { label: "Usuario de Ventas", users: "seller" },
-  route_design: { label: "Diseñador (opcional)", users: "designer", hint: "Sin asignar, la orden queda bajo control de Administración.", optional: true },
-  set_designer_assignee: { label: "Responsable de Diseño", users: "designer", hint: "Puedes quitar la asignación sin sacar la orden de Diseño." },
-  assign_seller: { label: "Nuevo vendedor", users: "seller" },
-};
-
-const NO_REASON_ACTIONS = new Set(["manage_files"]);
-
 export default function AdminAdvancedActionModal({
   open,
   actionKey,
+  action = null,
   order,
   profiles = [],
   currentUserId = null,
@@ -73,31 +30,17 @@ export default function AdminAdvancedActionModal({
   const [impactMode, setImpactMode] = useState("preserve_stage");
   const [requirementChanges, setRequirementChanges] = useState({ description: "", material: "", termination_type: "", delivery_date: "" });
 
-  const profilesById = useMemo(() => new Map(profiles.map((p) => [p.id, p])), [profiles]);
   const quoteUsers = useMemo(() => profiles.filter((p) => p.role === "quote" && p.employment_status !== false && !p.deleted_at), [profiles]);
   const sellerUsers = useMemo(() => profiles.filter((p) => p.role === "seller" && p.employment_status !== false && !p.deleted_at), [profiles]);
   const designUsers = useMemo(() => profiles.filter((p) => p.role === "designer" && p.employment_status !== false && !p.deleted_at), [profiles]);
-  const currentUserProfile = useMemo(() => currentUserId ? profilesById.get(currentUserId) : null, [currentUserId, profilesById]);
-
-  const extendedSellerUsers = useMemo(() => {
-    if (!currentUserProfile) return sellerUsers;
-    if (sellerUsers.some((u) => u.id === currentUserId)) return sellerUsers;
-    return [...sellerUsers, currentUserProfile];
-  }, [sellerUsers, currentUserProfile, currentUserId]);
-
-  const extendedDesignUsers = useMemo(() => {
-    if (!currentUserProfile) return designUsers;
-    if (designUsers.some((u) => u.id === currentUserId)) return designUsers;
-    return [...designUsers, currentUserProfile];
-  }, [designUsers, currentUserProfile, currentUserId]);
 
   useEffect(() => {
     if (!open || !order) return;
     if (actionKey === "set_quote_assignee") setTargetUserId(order.quote_id || "");
-    else if (actionKey === "route_sales") setTargetUserId(order.seller_id || order.created_by || "");
+    else if (actionKey === "route_sales") setTargetUserId(order.seller_id || "");
     else if (actionKey === "route_design") setTargetUserId(order.designer_id || "");
     else if (actionKey === "set_designer_assignee") setTargetUserId(order.designer_id || "");
-    else if (actionKey === "assign_seller") setTargetUserId(order.seller_id || order.created_by || "");
+    else if (actionKey === "assign_seller") setTargetUserId(order.seller_id || "");
     else setTargetUserId("");
     setReasonCategory("workflow_correction");
     setReasonDetail("");
@@ -118,11 +61,13 @@ export default function AdminAdvancedActionModal({
 
   if (!open || !actionKey) return null;
 
-  const copy = ACTION_COPY[actionKey];
-  const [title, description, Icon] = copy || [actionKey, "", Icons.Settings];
-  const selectorConfig = USER_SELECTOR_CONFIG[actionKey];
-  const showReason = !NO_REASON_ACTIONS.has(actionKey);
-  const needsReason = true;
+  const { title, description, Icon } = getAdminActionPresentation(action || { key: actionKey });
+  const selectorConfig = getAdminTargetSelector(action || { key: actionKey });
+  const showReason = action?.requires_reason !== false;
+  const needsReason = action?.requires_reason !== false;
+  const reasonMinLength = action?.reason_min_length || 10;
+  const reasonOptions = getAdminReasonOptions(action || { key: actionKey });
+  const impactModes = action?.requirements?.impact_modes || ["preserve_stage", "restart_flow"];
   const activeProfiles = profiles.filter((profile) => profile.employment_status !== false && !profile.deleted_at);
 
   const handleSubmit = async () => {
@@ -139,7 +84,7 @@ export default function AdminAdvancedActionModal({
     }
     if (showReason && needsReason) {
       if (!reasonCategory) return setError("Selecciona una categoría del motivo.");
-      if (reasonDetail.trim().length < 10) return setError("Explica el motivo con al menos 10 caracteres.");
+      if (reasonDetail.trim().length < reasonMinLength) return setError(`Explica el motivo con al menos ${reasonMinLength} caracteres.`);
     }
     if (["block_order", "update_block"].includes(actionKey) && !ownerId) {
       return setError("Selecciona un responsable para resolver el bloqueo.");
@@ -188,8 +133,8 @@ export default function AdminAdvancedActionModal({
     if (!selectorConfig) return [];
     switch (selectorConfig.users) {
       case "quote": return quoteUsers;
-      case "seller": return extendedSellerUsers;
-      case "designer": return extendedDesignUsers;
+      case "seller": return sellerUsers;
+      case "designer": return designUsers;
       default: return [];
     }
   };
@@ -263,8 +208,8 @@ export default function AdminAdvancedActionModal({
                 <span>Impacto en el flujo</span>
                 <div className="aam-select-wrap">
                   <select value={impactMode} onChange={(event) => setImpactMode(event.target.value)} disabled={submitting}>
-                    <option value="preserve_stage">Conservar etapa actual</option>
-                    <option value="restart_flow">Reiniciar en Diseño/Caja</option>
+                    {impactModes.includes("preserve_stage") && <option value="preserve_stage">Conservar etapa actual</option>}
+                    {impactModes.includes("restart_flow") && <option value="restart_flow">Reiniciar en Diseño/Caja</option>}
                   </select>
                   <Icons.ChevronDown aria-hidden="true" />
                 </div>
@@ -321,7 +266,7 @@ export default function AdminAdvancedActionModal({
                     onChange={(e) => setReasonCategory(e.target.value)}
                     disabled={submitting}
                   >
-                    {REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    {reasonOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                   <Icons.ChevronDown aria-hidden="true" />
                 </div>
@@ -331,7 +276,7 @@ export default function AdminAdvancedActionModal({
                 <textarea
                   value={reasonDetail}
                   onChange={(e) => setReasonDetail(e.target.value.slice(0, 500))}
-                  placeholder="Explica brevemente por qué se realiza este cambio."
+                  placeholder={`Explica brevemente por qué se realiza este cambio (mínimo ${reasonMinLength} caracteres).`}
                   rows={4}
                   disabled={submitting}
                 />

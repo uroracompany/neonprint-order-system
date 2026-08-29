@@ -6,6 +6,7 @@ import { ORDER_STATUS, PAYMENT_STATUS, PAYMENT_COLORS } from "../../utils/consta
 import { buildPaymentReceiptPath, uploadOrderAsset } from "../../utils/uploadOrderAsset";
 import { validateReceiptFile } from "../../utils/receiptValidation";
 import { executeAdminOrderCommand } from "../../utils/adminOrderCommands";
+import { getAdminActionPresentation, hasAdminCapability } from "../../utils/adminActionPresentation";
 import PaymentFormModal from "../ui/PaymentFormModal";
 import AdminAdvancedActionModal from "./AdminAdvancedActionModal";
 import AdminManageFilesModal from "./AdminManageFilesModal";
@@ -16,32 +17,6 @@ const getUserDisplayName = (profile) => profile?.name || profile?.email || "Usua
 const getCompactPaymentLabel = (status) => {
   const label = (PAYMENT_COLORS[status] || PAYMENT_COLORS[PAYMENT_STATUS.PENDING]).label;
   return label.replace(/^Pago\s+/i, "");
-};
-
-const ACTION_COPY = {
-  route_quote: ["Enviar a Caja", "Mover la orden al flujo de caja", Icons.Money],
-  set_quote_assignee: ["Gestionar usuario de Caja", "Asignar, cambiar o quitar responsable", Icons.Users],
-  route_sales: ["Regresar orden a Ventas", "Elegir vendedor responsable", Icons.ArrowLeft],
-  register_payment: ["Registrar pago", "Registrar o actualizar el pago de la orden", Icons.Receipt],
-  route_production: ["Enviar a Producción", "Asignar responsables por área", Icons.Package],
-  return_to_quote: ["Regresar a Caja", "Regresar la orden de Producción a Caja", Icons.ArrowLeft],
-  reassign_production: ["Reasignar Producción", "Cambiar responsables de áreas de producción", Icons.Users],
-  manage_files: ["Gestionar archivos", "Editar el estado de archivos de producción", Icons.File],
-  mark_delivered: ["Marcar como entregado", "Pasar la orden a estado Entregado", Icons.CheckCircle],
-  return_to_completed: ["Volver a Completado", "Regresar la orden de Entregado a Completado", Icons.ArrowLeft],
-  route_design: ["Enviar a Diseño", "Mover la orden al flujo de diseño", Icons.Brush],
-  set_designer_assignee: ["Gestionar diseñador", "Asignar, cambiar o quitar responsable de diseño", Icons.Users],
-  return_to_design: ["Regresar a Diseño", "Regresar la orden de Caja a Diseño", Icons.ArrowLeft],
-  assign_seller: ["Reasignar vendedor", "Cambiar el vendedor responsable", Icons.Users],
-  block_order: ["Bloquear temporalmente", "Detener avances mientras se resuelve una incidencia", Icons.AlertCircle],
-  update_block: ["Actualizar bloqueo", "Cambiar responsable o fecha estimada", Icons.Clock],
-  resume_order: ["Reanudar orden", "Retirar el bloqueo sin cambiar la etapa", Icons.CheckCircle],
-  set_priority: ["Cambiar prioridad", "Alternar entre orden Normal y 911", Icons.AlertCircle],
-  reclassify_design: ["Reclasificar diseño", "Corregir el tipo y decidir el impacto", Icons.Brush],
-  update_requirements: ["Cambiar requisitos", "Crear una revisión versionada del cliente", Icons.File],
-  cancel_order: ["Cancelar orden", "Cancelar con motivo y conservar la etapa anterior", Icons.Trash],
-  reopen_cancelled: ["Reabrir orden", "Restaurar la última etapa segura", Icons.ArrowLeft],
-  approve_commercial_review: ["Aprobar revisión comercial", "Confirmar que Caja revisó los cambios del cliente", Icons.CheckCircle],
 };
 
 export default function AdminAdvancedSettings({
@@ -59,25 +34,28 @@ export default function AdminAdvancedSettings({
   const [paymentOrder, setPaymentOrder] = useState(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [error, setError] = useState("");
+  const orderId = order?.id;
 
   const fetchActions = useCallback(async () => {
-    if (!order?.id) return;
+    if (!orderId) return;
     setLoadingActions(true);
     setError("");
-    const { data, error: requestError } = await supabase.rpc("admin_get_order_command_catalog", { p_order_id: order.id });
+    const { data, error: requestError } = await supabase.rpc("admin_get_order_command_catalog", { p_order_id: orderId });
     setAvailability(requestError ? null : data);
     if (requestError) setError(requestError.message);
     setLoadingActions(false);
-  }, [order?.id]);
+  }, [orderId]);
 
   useEffect(() => {
-    if (!order?.id) return;
+    if (!orderId) return;
     setActiveModal(null);
     setError("");
     fetchActions();
-  }, [order?.id, order?.updated_at, fetchActions]);
+  }, [orderId, order?.updated_at, fetchActions]);
 
   const actionItems = availability?.actions || [];
+  const unavailableActionItems = availability?.unavailable_actions || [];
+  const prerequisiteItems = unavailableActionItems.filter((item) => item.next_safe_step);
   const orderNumber = order?.order_number || order?.order_code || order?.id?.slice(0, 8).toUpperCase();
   const profilesById = useMemo(() => new Map(profiles.map((p) => [p.id, p])), [profiles]);
   const quoteAssigneeName = order?.quote_id
@@ -86,17 +64,17 @@ export default function AdminAdvancedSettings({
 
   if (!order) return null;
 
-  const handleActionClick = (key) => {
+  const handleActionClick = (item) => {
     setError("");
-    if (key === "register_payment") {
+    if (item.key === "register_payment") {
       setPaymentOrder(order);
       return;
     }
-    if (key === "manage_files") {
-      setActiveModal("manage_files");
+    if (item.key === "manage_files" || ["manage_design_assets", "manage_production_files", "reassign_production_file_area"].some((capability) => hasAdminCapability(item, capability))) {
+      setActiveModal(item);
       return;
     }
-    setActiveModal(key);
+    setActiveModal(item);
   };
 
   const handleSimpleActionConfirm = async (actionData) => {
@@ -119,10 +97,11 @@ export default function AdminAdvancedSettings({
 
     if (paymentStatus === PAYMENT_STATUS.CREDIT) {
       setPaymentLoading(true);
-      const { error: creditError } = await supabase.rpc("mark_order_as_credit", {
-        p_order_id: order.id,
-        p_due_date: null,
-      });
+        const { error: creditError } = await supabase.rpc("mark_order_as_credit", {
+          p_order_id: order.id,
+          p_due_date: null,
+          p_expected_updated_at: order.updated_at,
+        });
       setPaymentLoading(false);
       if (creditError) throw new Error(creditError.message || "No se pudo aprobar el crédito.");
       setPaymentOrder(null);
@@ -242,7 +221,7 @@ export default function AdminAdvancedSettings({
 
         <div className="aas-body">
           <div className="aas-section-heading">
-            <h3>Acciones disponibles</h3>
+            <h3>{actionItems.length === 0 && prerequisiteItems.length > 0 ? "Antes de continuar" : "Acciones disponibles"}</h3>
           </div>
           {loadingActions ? (
             <div className="aas-skeleton" aria-hidden="true">
@@ -271,14 +250,14 @@ export default function AdminAdvancedSettings({
           ) : actionItems.length === 0 ? (
             <div className="aas-empty">
               <Icons.Settings className="aas-empty-icon" />
-              <span>No hay ajustes avanzados disponibles en esta etapa.</span>
+              <span>{prerequisiteItems.length > 0 ? "Hay pasos previos que debes completar antes de continuar." : "No hay ajustes avanzados disponibles en esta etapa."}</span>
             </div>
           ) : (
             <div className="aas-action-list">
               {actionItems.map((item) => {
-                const [title, description, Icon] = ACTION_COPY[item.key] || [item.label, "", Icons.Settings];
+                const { title, description, Icon } = getAdminActionPresentation(item);
                 return (
-                  <button key={item.key} type="button" className={`aas-action is-${item.key}`} onClick={() => handleActionClick(item.key)}>
+                  <button key={item.key} type="button" className={`aas-action is-${item.key}`} onClick={() => handleActionClick(item)}>
                     <span className={`aas-action-icon is-${item.key}`}><Icon /></span>
                     <span className="aas-action-copy"><strong>{title}</strong><small>{description}</small></span>
                     {item.key === "register_payment" && (
@@ -292,6 +271,28 @@ export default function AdminAdvancedSettings({
               })}
             </div>
           )}
+          {prerequisiteItems.length > 0 && (
+            <section className="aas-prerequisite-section" aria-labelledby="aas-prerequisite-title">
+              <div className="aas-prerequisite-heading">
+                <span aria-hidden="true"><Icons.AlertCircle /></span>
+                <div>
+                  <h4 id="aas-prerequisite-title">Requieren un paso previo</h4>
+                  <p>Estas opciones todavía no están disponibles para esta orden.</p>
+                </div>
+              </div>
+              <div className="aas-action-list aas-action-list-unavailable" aria-label="Acciones que requieren un paso previo">
+              {prerequisiteItems.map((item) => {
+                const { title, description, Icon } = getAdminActionPresentation(item);
+                return (
+                  <div key={item.key} className={`aas-action is-${item.key} is-unavailable`} aria-disabled="true" aria-describedby={`aas-prerequisite-copy-${item.key}`}>
+                    <span className={`aas-action-icon is-${item.key}`}><Icon /></span>
+                    <span className="aas-action-copy"><strong>{title}</strong><small id={`aas-prerequisite-copy-${item.key}`}>{item.next_safe_step || description}</small></span>
+                  </div>
+                );
+              })}
+              </div>
+            </section>
+          )}
           {error && <div className="aas-error"><Icons.AlertCircle />{error}</div>}
         </div>
 
@@ -303,10 +304,11 @@ export default function AdminAdvancedSettings({
         </footer>
       </section>
 
-      {activeModal && activeModal !== "manage_files" && activeModal !== "register_payment" && (
+      {activeModal && activeModal.key !== "manage_files" && !["manage_design_assets", "manage_production_files", "reassign_production_file_area"].some((capability) => hasAdminCapability(activeModal, capability)) && (
         <AdminAdvancedActionModal
           open={true}
-          actionKey={activeModal}
+          actionKey={activeModal.key}
+          action={activeModal}
           order={order}
           profiles={profiles}
           currentUserId={currentUserId}
@@ -315,13 +317,15 @@ export default function AdminAdvancedSettings({
         />
       )}
 
-      {activeModal === "manage_files" && (
+      {activeModal && (activeModal.key === "manage_files" || ["manage_design_assets", "manage_production_files", "reassign_production_file_area"].some((capability) => hasAdminCapability(activeModal, capability))) && (
         <AdminManageFilesModal
           open={true}
           order={order}
           profiles={profiles}
           onClose={handleManageFilesClose}
           onRefreshActions={fetchActions}
+          capabilities={activeModal.requirements?.capabilities || [activeModal.requirements?.capability].filter(Boolean)}
+          nextSafeStep={activeModal.next_safe_step || ""}
         />
       )}
 

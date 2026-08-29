@@ -19,12 +19,11 @@ import {
   buildPaymentReceiptPath,
   buildStorageSafeFileName,
   createSignedOrderAssetUrlFromStoredUrl,
-  removeOrderAssetByPublicUrl,
   uploadOrderAsset,
 } from "../utils/uploadOrderAsset";
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge, RoleBadge } from "../components/ui/Badge";
-import { isOrderOverdue, sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
+import { isOrderOverdue } from "../utils/orderDeadline";
 import { getMinimumDeliveryDate } from "../utils/deliveryDate";
 import { AssignModal } from "../components/ui/AssignModal";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
@@ -430,8 +429,8 @@ function OrderDetailInfo({ order, usersById, assignmentAction = null }) {
   }, [order?.invoice_payment]);
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
-  const sellerId = resolveSellerId(order);
-  const userName = getUserDisplayName(usersById[sellerId]);
+  const sellerId = order?.seller_id || null;
+  const userName = sellerId ? getUserDisplayName(usersById[sellerId]) : "Sin asignar — Administración";
   const designerName = order?.designer_id ? getUserDisplayName(usersById[order.designer_id]) : "";
   const quoteAssignedId = resolveQuoteAssignmentId(order);
   const quoteUserName = quoteAssignedId ? getUserDisplayName(usersById[quoteAssignedId]) : "";
@@ -1158,7 +1157,7 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
           <div className="pa-detail-list">
             <div><span>Cliente</span><strong>{order.client_name || "No definido"}</strong></div>
             <div><span>Contacto</span><strong>{order.client_contact || "No definido"}</strong></div>
-            <div><span>Responsable</span><strong>{getUserDisplayName(usersById[order.seller_id || order.created_by])}</strong></div>
+            <div><span>Responsable</span><strong>{order.seller_id ? getUserDisplayName(usersById[order.seller_id]) : "Sin asignar — Administración"}</strong></div>
             <div><span>Tipo</span><strong>{order.order_type || "No definido"}</strong></div>
             <div><span>Material</span><strong>{order.material || "No definido"}</strong></div>
             <div><span>Fecha</span><strong>{formatDate(order.created_at)}</strong></div>
@@ -2340,25 +2339,14 @@ export default function Dashboard() {
     const isCreate = orderModalMode === "create";
     const orderId = orderForm.id;
 
-    let error;
-    if (isCreate) {
-      const { error: insertError } = await supabase.from("orders").insert([payload]).select().single();
-      error = insertError;
-    } else {
-      const { error: updateError } = await supabase.from("orders").update(payload).eq("id", orderId);
-      error = updateError;
-    }
+    // This legacy handler is no longer wired by the dashboard (creation and
+    // editing use CreateOrderModal/SharedEditOrderModal). Keep it fail-closed
+    // until it can be deleted, rather than retaining a direct table writer.
+    const error = new Error("El formulario heredado no admite guardar ordenes directamente.");
 
     setSavingOrder(false);
 
     if (error) return showFeedback("error", isTimeoutError(error) ? FRIENDLY_TIMEOUT_MESSAGE : `No se pudo guardar la orden: ${error.message}`);
-
-    await Promise.all([
-      ...orderForm.removedFiles.map((url) => removeOrderAssetByPublicUrl({ bucket: "order-docs", url })),
-      orderForm.removePreview && orderForm.existingPreview
-        ? removeOrderAssetByPublicUrl({ bucket: "order-previews", url: orderForm.existingPreview })
-        : Promise.resolve({ removed: false, error: null }),
-    ]);
 
     setOrderModalOpen(false);
     setSelectedOrder(null);
@@ -2501,10 +2489,11 @@ export default function Dashboard() {
 
     if (paymentStatus === PAYMENT_STATUS.CREDIT) {
       setPaymentModalLoading(true);
-      const { error } = await supabase.rpc("mark_order_as_credit", {
-        p_order_id: currentOrder.id,
-        p_due_date: null,
-      });
+        const { error } = await supabase.rpc("mark_order_as_credit", {
+          p_order_id: currentOrder.id,
+          p_due_date: null,
+          p_expected_updated_at: currentOrder.updated_at,
+        });
       setPaymentModalLoading(false);
 
       if (error) {
@@ -3471,7 +3460,7 @@ export default function Dashboard() {
     startOfWeek.setDate(startOfWeek.getDate() - 7);
     const selectedProfile = ownerFilter === "all" ? null : usersById[ownerFilter];
 
-    return sortOrdersByDeadlinePriority(orders.filter(order => {
+    return orders.filter(order => {
       const relatedUserNames = [...new Set(getOrderSearchUserIds(order))]
         .map((userId) => getUserDisplayName(usersById[userId]));
       const matchesSearch = !q || [order.client_name, order.description, order.material, order.invoice_number, order.id, ...relatedUserNames].some(value => normalizeText(value).includes(q));
@@ -3492,7 +3481,7 @@ export default function Dashboard() {
         || (operationalFilter === "commercial_review" && order.commercial_review_required)
         || (operationalFilter === "overdue" && isOrderOverdue(order));
       return matchesSearch && matchesStatus && matchesOwner && matchesClient && matchesArchive && matchesDate && matchesIntervention && matchesOperational;
-    }));
+    });
   }, [orders, search, statusFilter, ownerFilter, clientFilter, archiveFilter, dateFilter, interventionFilter, operationalFilter, usersById]);
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
@@ -4047,7 +4036,7 @@ export default function Dashboard() {
                             </div>
                           </td>
                           <td className="td-pad"><StatusBadge status={order.status} className="ps-badge" showDot bordered order={order} /></td>
-                          <td className="td-pad td-name">{getUserDisplayName(usersById[order.seller_id || order.created_by])}</td>
+                          <td className="td-pad td-name">{order.seller_id ? getUserDisplayName(usersById[order.seller_id]) : "Sin asignar — Administración"}</td>
                           <td className="td-pad">
                             <span className={`pa-overview-delivery-badge${formatOverviewDeliveryDate(order.delivery_date) ? "" : " is-indefinite"}`}>
                               {formatOverviewDeliveryDate(order.delivery_date) || "Indefinida"}
@@ -5008,7 +4997,7 @@ export default function Dashboard() {
           open={!!selectedOrder}
           order={selectedOrder}
           onClose={() => setSelectedOrder(null)}
-          responsibleName={selectedOrder ? getUserDisplayName(usersById[resolveSellerId(selectedOrder)]) : "---"}
+          responsibleName={selectedOrder ? (selectedOrder.seller_id ? getUserDisplayName(usersById[selectedOrder.seller_id]) : "Sin asignar — Administración") : "---"}
           designerName={selectedOrder?.designer_id ? getUserDisplayName(usersById[selectedOrder.designer_id]) : ""}
           primaryActionLabel="Asignar Orden"
           showPrimaryAction={false}

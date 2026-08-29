@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../supabaseClient";
 import { Icons } from "../../utils/icons";
 import { ORDER_STATUS, PAYMENT_STATUS, PRODUCTION_AREA_LABELS, PRODUCTION_FILE_STATUS, PRODUCTION_FILE_STATUS_LABELS } from "../../utils/constants";
-import { buildStorageSafeFileName, formatFileSize, getOrderAssetLimit, removeOrderAssetByPublicUrl, uploadOrderAsset, validateOrderAssetSize } from "../../utils/uploadOrderAsset";
+import { buildStorageSafeFileName, formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../../utils/uploadOrderAsset";
 import { compressImage, REF_IMAGE_CONFIG } from "../../utils/imageValidation";
 import { getReferenceImages } from "../../utils/orderAssets";
 import FileUploadZone from "../ui/FileUploadZone";
@@ -14,12 +14,16 @@ const getUserDisplayName = (profile) => {
   return profile.deleted_at || profile.employment_status === false ? `${label} — dado de baja` : label;
 };
 
-const getAllFileStatuses = () => [
-  { value: PRODUCTION_FILE_STATUS.PENDING, label: PRODUCTION_FILE_STATUS_LABELS[PRODUCTION_FILE_STATUS.PENDING] },
-  { value: PRODUCTION_FILE_STATUS.IN_PRODUCTION, label: PRODUCTION_FILE_STATUS_LABELS[PRODUCTION_FILE_STATUS.IN_PRODUCTION] },
-  { value: PRODUCTION_FILE_STATUS.IN_TERMINATION, label: PRODUCTION_FILE_STATUS_LABELS[PRODUCTION_FILE_STATUS.IN_TERMINATION] },
-  { value: PRODUCTION_FILE_STATUS.COMPLETED, label: PRODUCTION_FILE_STATUS_LABELS[PRODUCTION_FILE_STATUS.COMPLETED] },
-];
+const FILE_STATUS_TRANSITIONS = {
+  [PRODUCTION_FILE_STATUS.PENDING]: [PRODUCTION_FILE_STATUS.IN_PRODUCTION],
+  [PRODUCTION_FILE_STATUS.IN_PRODUCTION]: [PRODUCTION_FILE_STATUS.IN_TERMINATION],
+  [PRODUCTION_FILE_STATUS.IN_TERMINATION]: [PRODUCTION_FILE_STATUS.IN_PRODUCTION, PRODUCTION_FILE_STATUS.COMPLETED],
+  [PRODUCTION_FILE_STATUS.COMPLETED]: [PRODUCTION_FILE_STATUS.IN_TERMINATION],
+};
+
+const getAllowedFileStatuses = (currentStatus) => [currentStatus, ...(FILE_STATUS_TRANSITIONS[currentStatus] || [])]
+  .filter((status, index, statuses) => status && statuses.indexOf(status) === index)
+  .map((value) => ({ value, label: PRODUCTION_FILE_STATUS_LABELS[value] || value }));
 
 const PAYMENT_LOCKED_STATUS = ORDER_STATUS.IN_QUOTE;
 
@@ -29,6 +33,8 @@ export default function AdminManageFilesModal({
   profiles = [],
   onClose,
   onRefreshActions,
+  capabilities = null,
+  nextSafeStep = "",
 }) {
   const [productionFiles, setProductionFiles] = useState([]);
   const [allProductionAreas, setAllProductionAreas] = useState([]);
@@ -37,6 +43,7 @@ export default function AdminManageFilesModal({
   const [fileDeliveryIds, setFileDeliveryIds] = useState({});
   const [savingFileStatus, setSavingFileStatus] = useState(false);
   const [fileAreaChanges, setFileAreaChanges] = useState({});
+  const [fileAreaReasons, setFileAreaReasons] = useState({});
   const [savingFileArea, setSavingFileArea] = useState(false);
   const [newFile, setNewFile] = useState(null);
   const [newFileLabel, setNewFileLabel] = useState("");
@@ -52,11 +59,28 @@ export default function AdminManageFilesModal({
   const [refsSaved, setRefsSaved] = useState(false);
   const [error, setError] = useState("");
   const [orderUpdatedAt, setOrderUpdatedAt] = useState(order?.updated_at || null);
+  const [assetMetadata, setAssetMetadata] = useState(() => ({
+    preview_image: order?.preview_image || null,
+    reference_images: order?.reference_images || [],
+  }));
+  const hydratedAssetVersionRef = useRef(null);
 
   useEffect(() => {
-    if (!open || !order?.id) return;
+    if (!open || !order?.id) {
+      hydratedAssetVersionRef.current = null;
+      return;
+    }
+
+    const sourceVersion = `${order.id}:${order.updated_at || ""}`;
     setError("");
-    setOrderUpdatedAt(order.updated_at || null);
+    if (hydratedAssetVersionRef.current !== sourceVersion) {
+      hydratedAssetVersionRef.current = sourceVersion;
+      setOrderUpdatedAt(order.updated_at || null);
+      setAssetMetadata({
+        preview_image: order.preview_image || null,
+        reference_images: order.reference_images || [],
+      });
+    }
     let active = true;
     (async () => {
       const { data, error: fetchError } = await supabase
@@ -88,17 +112,33 @@ export default function AdminManageFilesModal({
       setProductionUsers(userData || []);
     })();
     return () => { active = false; };
-  }, [open, order?.id, order?.updated_at]);
+  }, [open, order?.id, order?.updated_at, order?.preview_image, order?.reference_images]);
 
   const isPaymentLocked = order?.status === PAYMENT_LOCKED_STATUS && order?.payment_status === PAYMENT_STATUS.PAID;
   const isInQuoteOrLater = order?.status && !["Pending", "in_Design", "cancelled"].includes(order.status);
-  const existingRefUrls = useMemo(() => getReferenceImages(order), [order]);
+  const orderDesignType = order?.order_design_type || order?.design_type;
+  const supportsCapability = (capability) => !Array.isArray(capabilities) || capabilities.includes(capability);
+  const canManageOrderAssets = supportsCapability("manage_design_assets") && (
+    (orderDesignType === "INTERNAL_DESING" && order?.status === ORDER_STATUS.IN_DESIGN)
+    || (orderDesignType === "EXTERNAL_DESING" && order?.status === ORDER_STATUS.PENDING)
+  );
+  const canManageProductionFiles = supportsCapability("manage_production_files")
+    && [ORDER_STATUS.IN_PRODUCTION, ORDER_STATUS.IN_TERMINATION].includes(order?.status);
+  const canReassignProductionFileArea = supportsCapability("reassign_production_file_area")
+    && [ORDER_STATUS.PENDING, ORDER_STATUS.IN_DESIGN, ORDER_STATUS.IN_QUOTE, ORDER_STATUS.IN_PRODUCTION, ORDER_STATUS.IN_TERMINATION].includes(order?.status);
+  const assetWorkflowMessage = orderDesignType === "INTERNAL_DESING"
+    ? "Para modificar archivos, devuelve la orden a Caja y luego a Diseño desde Configuración avanzada."
+    : "Para modificar archivos, devuelve la orden a Caja y luego a Ventas desde Configuración avanzada.";
+  const existingRefUrls = useMemo(
+    () => getReferenceImages({ reference_images: assetMetadata.reference_images }),
+    [assetMetadata.reference_images],
+  );
   const currentPreviewUrl = useMemo(() => {
     if (previewFile) return URL.createObjectURL(previewFile);
-    return order?.preview_image || null;
-  }, [previewFile, order?.preview_image]);
+    return assetMetadata.preview_image || null;
+  }, [previewFile, assetMetadata.preview_image]);
   const hasPreviewChanges = previewFile !== null;
-  const deliveryUsers = useMemo(() => profiles.filter((p) => p.role === "delivery" && p.employment_status !== false && !p.deleted_at), [profiles]);
+  const deliveryUsers = useMemo(() => profiles.filter((p) => p.role === "delivery" && p.employment_status === true && !p.deleted_at), [profiles]);
   const productionUsersByRole = useMemo(
     () => productionUsers.filter((u) => u.employment_status !== false && !u.deleted_at).reduce((acc, u) => { (acc[u.role] = acc[u.role] || []).push(u); return acc; }, {}),
     [productionUsers],
@@ -116,9 +156,9 @@ export default function AdminManageFilesModal({
     try {
       const file = productionFiles.find((f) => f.id === fileId);
       if (!file) throw new Error("Archivo no encontrado.");
-      const { data: updatedFile, error: rpcError } = await supabase.rpc("admin_force_file_status", {
+      const { data: updatedFile, error: rpcError } = await supabase.rpc("admin_update_production_file_status", {
         p_file_id: fileId,
-        p_new_status: newStatus,
+        p_next_status: newStatus,
         p_reason_category: "workflow_correction",
         p_reason_detail: "Cambio de estado por administrador desde Configuracion avanzada.",
         p_expected_updated_at: file.updated_at,
@@ -144,19 +184,22 @@ export default function AdminManageFilesModal({
     try {
       const file = productionFiles.find((f) => f.id === fileId);
       if (!file) throw new Error("Archivo no encontrado.");
-      if (file.assigned_to && !change.assignedUserId) {
-        throw new Error("El archivo tiene un responsable asignado. Debes seleccionar un nuevo responsable.");
-      }
+      if (!change.assignedUserId) throw new Error("Selecciona un nuevo responsable activo para el área destino.");
+      const reasonDetail = (fileAreaReasons[fileId] || "").trim();
+      if (reasonDetail.length < 10) throw new Error("Explica el motivo del cambio de área con al menos 10 caracteres.");
       const { data: updatedFile, error: rpcError } = await supabase.rpc("admin_reassign_file_production_area", {
         p_file_id: fileId,
         p_new_area_code: change.areaCode,
-        p_new_assigned_user_id: change.assignedUserId || null,
+        p_new_assigned_user_id: change.assignedUserId,
         p_expected_updated_at: file.updated_at,
+        p_reason_category: "assignment_correction",
+        p_reason_detail: reasonDetail,
       });
       if (rpcError) throw new Error(rpcError.message);
       if (!updatedFile) throw new Error("No se recibio el archivo actualizado.");
       setProductionFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, ...updatedFile } : f));
       setFileAreaChanges((prev) => { const next = { ...prev }; delete next[fileId]; return next; });
+      setFileAreaReasons((prev) => { const next = { ...prev }; delete next[fileId]; return next; });
     } catch (err) {
       setError(err.message || "Error al cambiar el area del archivo.");
     } finally {
@@ -165,6 +208,7 @@ export default function AdminManageFilesModal({
   };
 
   const handleAddFile = async () => {
+    if (!canManageOrderAssets) return setError(assetWorkflowMessage);
     if (!newFile) return setError("Selecciona un archivo.");
     if (!newFileLabel.trim()) return setError("Ingresa una etiqueta para el archivo.");
     if (!newFileAreaCode) return setError("Selecciona un area de produccion.");
@@ -184,8 +228,10 @@ export default function AdminManageFilesModal({
         p_area_code: newFileAreaCode,
         p_expected_updated_at: orderUpdatedAt,
       });
+      // The object was uploaded but could not be attached.  Do not give the
+      // browser deletion authority: the server-side reconciler will queue an
+      // unreferenced managed object after its grace period.
       if (insertError) {
-        await removeOrderAssetByPublicUrl({ bucket: "order-docs", url: publicUrl });
         throw new Error(insertError.message);
       }
       if (attached?.order_updated_at) setOrderUpdatedAt(attached.order_updated_at);
@@ -209,6 +255,7 @@ export default function AdminManageFilesModal({
   };
 
   const handleDeleteFile = async (file) => {
+    if (!canManageOrderAssets) return setError(assetWorkflowMessage);
     const reason = window.prompt(`Motivo para retirar "${file.public_label || file.filename || "sin nombre"}" (mínimo 10 caracteres):`);
     if (reason === null) return;
     if (reason.trim().length < 10) return setError("Explica el motivo con al menos 10 caracteres.");
@@ -227,6 +274,7 @@ export default function AdminManageFilesModal({
   };
 
   const handlePreviewSelect = (files) => {
+    if (!canManageOrderAssets) return setError(assetWorkflowMessage);
     const file = Array.from(files)[0];
     if (!file) return;
     const sizeError = validateOrderAssetSize({ bucket: "order-previews", file });
@@ -237,10 +285,12 @@ export default function AdminManageFilesModal({
   };
 
   const handleRemovePreview = () => {
+    if (!canManageOrderAssets) return setError(assetWorkflowMessage);
     setPreviewFile(null);
   };
 
   const handleSavePreview = async () => {
+    if (!canManageOrderAssets) return setError(assetWorkflowMessage);
     if (!previewFile) return setError("Selecciona un archivo.");
     setSavingPreview(true);
     setError("");
@@ -250,11 +300,18 @@ export default function AdminManageFilesModal({
       const path = `orders/${order.id}/preview/${fileName}`;
       const publicUrl = await uploadOrderAsset({ bucket: "order-previews", path, file: previewFile });
       if (!publicUrl) throw new Error("Error al subir la imagen.");
-      const { error: updateError } = await supabase
-        .from("orders")
-        .update({ preview_image: publicUrl })
-        .eq("id", order.id);
+      const { data: updatedOrder, error: updateError } = await supabase.rpc("admin_update_order_asset_metadata", {
+        p_order_id: order.id,
+        p_expected_updated_at: orderUpdatedAt,
+        p_changes: { preview_image: publicUrl },
+      });
       if (updateError) throw new Error(updateError.message);
+      if (!updatedOrder) throw new Error("No se recibio la orden actualizada.");
+      setOrderUpdatedAt(updatedOrder.updated_at);
+      setAssetMetadata({
+        preview_image: updatedOrder.preview_image || null,
+        reference_images: updatedOrder.reference_images || [],
+      });
       setPreviewFile(null);
       setPreviewSaved(true);
       if (onRefreshActions) onRefreshActions();
@@ -266,6 +323,7 @@ export default function AdminManageFilesModal({
   };
 
   const handleRefFilesAccepted = (files) => {
+    if (!canManageOrderAssets) return setError(assetWorkflowMessage);
     const remainingExisting = existingRefUrls.length - refUrlsToRemove.length;
     const maxNew = REF_IMAGE_CONFIG.MAX_COUNT - remainingExisting;
     if (files.length > maxNew) {
@@ -278,6 +336,7 @@ export default function AdminManageFilesModal({
   };
 
   const handleRemoveRefUrl = (url) => {
+    if (!canManageOrderAssets) return setError(assetWorkflowMessage);
     setRefUrlsToRemove((prev) => [...prev, url]);
   };
 
@@ -290,6 +349,7 @@ export default function AdminManageFilesModal({
   };
 
   const handleSaveRefImages = async () => {
+    if (!canManageOrderAssets) return setError(assetWorkflowMessage);
     if (refFilesToAdd.length === 0 && refUrlsToRemove.length === 0) return;
     setSavingRefs(true);
     setError("");
@@ -305,11 +365,18 @@ export default function AdminManageFilesModal({
       }
       const remaining = existingRefUrls.filter((url) => !refUrlsToRemove.includes(url));
       const allUrls = [...remaining, ...uploadedUrls];
-      const { error: updateError } = await supabase
-        .from("orders")
-        .update({ reference_images: allUrls })
-        .eq("id", order.id);
+      const { data: updatedOrder, error: updateError } = await supabase.rpc("admin_update_order_asset_metadata", {
+        p_order_id: order.id,
+        p_expected_updated_at: orderUpdatedAt,
+        p_changes: { reference_images: allUrls },
+      });
       if (updateError) throw new Error(updateError.message);
+      if (!updatedOrder) throw new Error("No se recibio la orden actualizada.");
+      setOrderUpdatedAt(updatedOrder.updated_at);
+      setAssetMetadata({
+        preview_image: updatedOrder.preview_image || null,
+        reference_images: updatedOrder.reference_images || [],
+      });
       setRefFilesToAdd([]);
       setRefUrlsToRemove([]);
       setRefsSaved(true);
@@ -319,8 +386,6 @@ export default function AdminManageFilesModal({
       setSavingRefs(false);
     }
   };
-
-  const allStatuses = getAllFileStatuses();
 
   return (
     <div className="amfm-overlay" role="presentation" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -339,6 +404,9 @@ export default function AdminManageFilesModal({
           {isPaymentLocked && (
             <div className="amfm-notice">No se pueden modificar archivos porque el pago esta completo.</div>
           )}
+          {!canManageOrderAssets && !canManageProductionFiles && !canReassignProductionFileArea && (
+            <div className="amfm-notice">{nextSafeStep || assetWorkflowMessage}</div>
+          )}
           {previewSaved && (
             <div className="amfm-success">Imagen de orden de trabajo guardada correctamente.</div>
           )}
@@ -346,13 +414,13 @@ export default function AdminManageFilesModal({
             <div className="amfm-success">Imagenes de referencia guardadas correctamente.</div>
           )}
 
-          {!isPaymentLocked && !showAddFileForm && (
+          {!isPaymentLocked && canManageOrderAssets && !showAddFileForm && (
             <button type="button" className="amfm-button primary amfm-add-file-btn" onClick={() => setShowAddFileForm(true)}>
               <Icons.Plus /> Anadir archivo
             </button>
           )}
 
-          {showAddFileForm && (
+          {canManageOrderAssets && showAddFileForm && (
             <div className="amfm-add-file-form">
               <label className="amfm-field">
                 <span>Archivo</span>
@@ -399,8 +467,8 @@ export default function AdminManageFilesModal({
                 const selectedArea = allProductionAreas.find((a) => a.code === selectedAreaCode);
                 const newAreaRole = selectedArea?.producer_role;
                 const availableUsers = newAreaRole ? productionUsersByRole[newAreaRole] || [] : [];
-                const needsReassign = file.assigned_to && selectedAreaCode && selectedAreaCode !== file.production_area_code;
-                const canSaveArea = selectedAreaCode && selectedAreaCode !== file.production_area_code && (!needsReassign || areaChange.assignedUserId);
+                const needsReassign = selectedAreaCode && selectedAreaCode !== file.production_area_code;
+                const canSaveArea = needsReassign && areaChange.assignedUserId && (fileAreaReasons[file.id] || "").trim().length >= 10;
                 return (
                   <div key={file.id} className="amfm-file-card">
                     <div className="amfm-file-card-header">
@@ -409,13 +477,13 @@ export default function AdminManageFilesModal({
                         <small>{PRODUCTION_AREA_LABELS[file.production_area_code] || file.production_area_code}</small>
                         <small className="amfm-file-status-badge">{PRODUCTION_FILE_STATUS_LABELS[file.status]}</small>
                       </span>
-                      {!isPaymentLocked && !(productionFiles.length <= 1 && isInQuoteOrLater) && (
+                      {!isPaymentLocked && canManageOrderAssets && !(productionFiles.length <= 1 && isInQuoteOrLater) && (
                         <button type="button" className="amfm-delete-file-btn" onClick={() => handleDeleteFile(file)} title="Eliminar archivo">
                           <Icons.Trash />
                         </button>
                       )}
                     </div>
-                    <div className="amfm-file-change-area">
+                    {canReassignProductionFileArea && file.status !== PRODUCTION_FILE_STATUS.COMPLETED && <div className="amfm-file-change-area">
                       <label className="amfm-field">
                         <span>Nueva area</span>
                         <div className="amfm-select-wrap">
@@ -444,28 +512,34 @@ export default function AdminManageFilesModal({
                         </div>
                       </label>
                       {needsReassign && (
-                        <label className="amfm-field">
-                          <span>Nuevo responsable (obligatorio)</span>
-                          <div className="amfm-select-wrap">
-                            <select
-                              value={areaChange.assignedUserId || ""}
-                              onChange={(e) => setFileAreaChanges((prev) => ({ ...prev, [file.id]: { ...prev[file.id], assignedUserId: e.target.value } }))}
-                              disabled={savingFileArea}
-                            >
-                              <option value="">Seleccionar responsable del area</option>
-                              {availableUsers.map((u) => <option key={u.id} value={u.id}>{getUserDisplayName(u)}</option>)}
-                            </select>
-                            <Icons.ChevronDown />
-                          </div>
-                        </label>
+                        <>
+                          <label className="amfm-field">
+                            <span>Nuevo responsable (obligatorio)</span>
+                            <div className="amfm-select-wrap">
+                              <select
+                                value={areaChange.assignedUserId || ""}
+                                onChange={(e) => setFileAreaChanges((prev) => ({ ...prev, [file.id]: { ...prev[file.id], assignedUserId: e.target.value } }))}
+                                disabled={savingFileArea}
+                              >
+                                <option value="">Seleccionar responsable del area</option>
+                                {availableUsers.map((u) => <option key={u.id} value={u.id}>{getUserDisplayName(u)}</option>)}
+                              </select>
+                              <Icons.ChevronDown />
+                            </div>
+                          </label>
+                          <label className="amfm-field">
+                            <span>Motivo del cambio de área</span>
+                            <textarea rows={2} value={fileAreaReasons[file.id] || ""} onChange={(e) => setFileAreaReasons((prev) => ({ ...prev, [file.id]: e.target.value.slice(0, 500) }))} placeholder="Explica el cambio (mínimo 10 caracteres)" disabled={savingFileArea} />
+                          </label>
+                        </>
                       )}
                       {canSaveArea && (
                         <button type="button" className="amfm-button primary amfm-file-save-btn" disabled={savingFileArea} onClick={() => handleSaveFileArea(file.id)}>
                           {savingFileArea ? "Guardando..." : "Guardar cambio de area"}
                         </button>
                       )}
-                    </div>
-                    <div className="amfm-file-change-status">
+                    </div>}
+                    {canManageProductionFiles && <div className="amfm-file-change-status">
                       <label className="amfm-field">
                         <span>Cambiar estado</span>
                         <div className="amfm-select-wrap">
@@ -484,7 +558,7 @@ export default function AdminManageFilesModal({
                             }}
                             disabled={savingFileStatus}
                           >
-                            {allStatuses.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                            {getAllowedFileStatuses(file.status).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                           </select>
                           <Icons.ChevronDown />
                         </div>
@@ -515,7 +589,7 @@ export default function AdminManageFilesModal({
                           {savingFileStatus ? "Guardando..." : "Guardar estado"}
                         </button>
                       )}
-                    </div>
+                    </div>}
                   </div>
                 );
               })}
@@ -532,13 +606,13 @@ export default function AdminManageFilesModal({
                   <a href={currentPreviewUrl} target="_blank" rel="noopener noreferrer" className="amfm-preview-action" title="Ver imagen">
                     <Icons.Eye />
                   </a>
-                  {!isPaymentLocked && (
+                  {!isPaymentLocked && canManageOrderAssets && (
                     <>
                       <FileUploadZone mode="image" replaceMode className="file-upload-zone--hidden-picker" buttonLabel="Cambiar" onFilesAccepted={handlePreviewSelect} />
                       <button type="button" className="amfm-preview-action" onClick={() => { const input = document.querySelector('.file-upload-zone--hidden-picker input[type="file"]'); if (input) input.click(); }} title="Cambiar imagen">
                         <Icons.Edit />
                       </button>
-                      {!(order?.preview_image && isInQuoteOrLater) && (
+                      {!(assetMetadata.preview_image && isInQuoteOrLater) && (
                         <button type="button" className="amfm-preview-action remove" onClick={handleRemovePreview} title="Quitar imagen">
                           <Icons.Trash />
                         </button>
@@ -546,13 +620,13 @@ export default function AdminManageFilesModal({
                     </>
                   )}
                 </div>
-                {!isPaymentLocked && hasPreviewChanges && (
+                {!isPaymentLocked && canManageOrderAssets && hasPreviewChanges && (
                   <button type="button" className="amfm-button primary amfm-preview-save-btn" disabled={savingPreview} onClick={handleSavePreview}>
                     {savingPreview ? "Guardando..." : "Guardar imagen de trabajo"}
                   </button>
                 )}
               </div>
-            ) : !isPaymentLocked ? (
+            ) : !isPaymentLocked && canManageOrderAssets ? (
               <FileUploadZone mode="image" replaceMode buttonLabel="Subir orden de trabajo" hint={`Max. ${formatFileSize(getOrderAssetLimit("order-previews"))}`} onFilesAccepted={handlePreviewSelect} />
             ) : (
               <div className="amfm-preview-empty">
@@ -569,7 +643,7 @@ export default function AdminManageFilesModal({
                 {existingRefUrls.filter((url) => !refUrlsToRemove.includes(url)).map((url, i) => (
                   <div key={i} className="amfm-ref-thumb">
                     <img src={url} alt={`Ref ${i + 1}`} />
-                    {!isPaymentLocked && (
+                    {!isPaymentLocked && canManageOrderAssets && (
                       <button type="button" className="amfm-ref-thumb-remove" onClick={() => handleRemoveRefUrl(url)} title="Quitar imagen">
                         <Icons.X />
                       </button>
@@ -598,10 +672,10 @@ export default function AdminManageFilesModal({
                 })}
               </div>
             )}
-            {!isPaymentLocked && (
+            {!isPaymentLocked && canManageOrderAssets && (
               <FileUploadZone mode="image" multiple maxFiles={REF_IMAGE_CONFIG.MAX_COUNT} existingCount={existingRefUrls.length - refUrlsToRemove.length} buttonLabel="Agregar imagenes de referencia" hint={`Maximo ${REF_IMAGE_CONFIG.MAX_COUNT} imagenes`} onFilesAccepted={handleRefFilesAccepted} />
             )}
-            {(refFilesToAdd.length > 0 || refUrlsToRemove.length > 0) && (
+            {canManageOrderAssets && (refFilesToAdd.length > 0 || refUrlsToRemove.length > 0) && (
               <button type="button" className="amfm-button primary amfm-ref-save-btn" disabled={savingRefs} onClick={handleSaveRefImages}>
                 {savingRefs ? "Guardando..." : "Guardar imagenes de referencia"}
               </button>

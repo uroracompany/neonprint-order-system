@@ -9,7 +9,6 @@ import { buildProductionFileRows } from "../../utils/production";
 import {
   buildStorageSafeFileName,
   formatFileSize,
-  removeOrderAssetByPublicUrl,
   uploadOrderAsset,
 } from "../../utils/uploadOrderAsset";
 import {
@@ -21,7 +20,6 @@ import {
 import { formatDominicanPhone, getSelectedClientOrderFields } from "../../utils/clients";
 import { getMinimumDeliveryDate, isPastDeliveryDateChange } from "../../utils/deliveryDate";
 import { adminApiFetch } from "../../utils/adminApi";
-import { executeAdminOrderCommand } from "../../utils/adminOrderCommands";
 import {
   Field,
   Modal,
@@ -81,7 +79,14 @@ export default function EditOrderModal({
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
   const isSellerEdit = editMode === "seller";
-  const isSellerEditBlocked = isSellerEdit && order?.status === "in_Quote";
+  const isSellerEditBlocked = isSellerEdit && ["in_Quote", "cancelled", "in_Delivered"].includes(order?.status);
+  const canEditAssets = !isSellerEditBlocked && (isSellerEdit || (
+    (order?.order_design_type === "INTERNAL_DESING" && order?.status === "in_Design")
+    || (order?.order_design_type === "EXTERNAL_DESING" && order?.status === "Pending")
+  ));
+  const assetWorkflowMessage = order?.order_design_type === "INTERNAL_DESING"
+    ? "Para modificar archivos, devuelve esta orden a Diseño desde Configuración avanzada."
+    : "Para modificar archivos, devuelve esta orden a Ventas desde Configuración avanzada.";
 
   useEffect(() => {
     if (!order) return;
@@ -188,11 +193,19 @@ export default function EditOrderModal({
   };
 
   const handleRemoveExistingFile = (url) => {
+    if (!canEditAssets) {
+      setError(assetWorkflowMessage);
+      return;
+    }
     setRemovedFileUrls(previous => [...previous, url]);
     setExistingFiles(previous => previous.filter(file => file !== url));
   };
 
   const handleAddNewFiles = (filesOrEvent) => {
+    if (!canEditAssets) {
+      setError(assetWorkflowMessage);
+      return;
+    }
     const files = Array.from(filesOrEvent?.target?.files || filesOrEvent || []);
     if (!files.length) return;
 
@@ -209,6 +222,10 @@ export default function EditOrderModal({
   };
 
   const handleRemoveExistingPreview = () => {
+    if (!canEditAssets) {
+      setError(assetWorkflowMessage);
+      return;
+    }
     if (existingPreview) {
       setRemovedFileUrls(previous => [...previous, existingPreview]);
     }
@@ -216,6 +233,10 @@ export default function EditOrderModal({
   };
 
   const handleAddNewPreview = (filesOrEvent) => {
+    if (!canEditAssets) {
+      setError(assetWorkflowMessage);
+      return;
+    }
     const file = Array.from(filesOrEvent?.target?.files || filesOrEvent || [])[0];
     if (!file) return;
 
@@ -232,7 +253,9 @@ export default function EditOrderModal({
 
   const handleSubmit = async () => {
     if (isSellerEditBlocked) {
-      setError("No se puede editar una orden en cotizacion.");
+      setError(order?.status === "in_Quote"
+        ? "No se puede editar una orden en cotización."
+        : "No se puede editar una orden cancelada o entregada.");
       return;
     }
 
@@ -288,18 +311,6 @@ export default function EditOrderModal({
         userId: order.seller_id || order.created_by,
       })
       : [];
-
-    if (!isSellerEdit && productionRows.length > 0) {
-      const { error: productionFilesError } = await supabase
-        .from("order_production_files")
-        .insert(productionRows);
-
-      if (productionFilesError) {
-        setLoading(false);
-        setError("No se pudo guardar la clasificacion de produccion de los archivos.");
-        return;
-      }
-    }
 
     let previewUrl = existingPreview;
     if (newPreview) {
@@ -381,30 +392,39 @@ export default function EditOrderModal({
           throw new Error(result?.error || "No se pudo actualizar la orden.");
         }
       } else {
-      await executeAdminOrderCommand(supabase, {
-        orderId: order.id,
-        action: "update_requirements",
-        reasonCategory: "client_request",
-        reasonDetail: "Requisitos actualizados por Administración desde la edición de la orden.",
-        expectedUpdatedAt: order.updated_at,
-        payload: {
-          design_type: order.order_design_type,
-          impact_mode: "preserve_stage",
-          changes: {
-        client_id: form.client_id,
-        client_name: form.client_name.trim(),
-        client_contact: form.client_contact.trim() || null,
-        invoice_number: form.invoice_number.trim(),
-        description: form.description.trim(),
-        material: form.materials.join(", "),
-        termination_type: form.termination_type.trim() || null,
-        delivery_date: form.delivery_date || null,
-        order_file_url: JSON.stringify(fileUrls),
-        preview_image: previewUrl,
-        reference_images: refImageUrls.length > 0 ? serializeReferenceImages(refImageUrls) : [],
-          },
-        },
-      });
+        const idempotencyKey = globalThis.crypto?.randomUUID?.()
+          || `admin-edit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const adminChanges = {
+          client_id: form.client_id,
+          client_name: form.client_name.trim(),
+          client_contact: form.client_contact.trim() || null,
+          invoice_number: form.invoice_number.trim(),
+          description: form.description.trim(),
+          material: form.materials.join(", "),
+          termination_type: form.termination_type.trim() || null,
+          delivery_date: form.delivery_date || null,
+        };
+        if (canEditAssets) {
+          adminChanges.preview_image = previewUrl;
+          adminChanges.reference_images = refImageUrls.length > 0 ? serializeReferenceImages(refImageUrls) : [];
+        }
+        const { data: adminEditResult, error: adminEditError } = await supabase.rpc("admin_edit_order_with_assets", {
+          p_order_id: order.id,
+          p_expected_updated_at: order.updated_at,
+          p_changes: adminChanges,
+          p_new_production_files: productionRows,
+          p_removed_file_urls: removedFileUrls,
+          p_idempotency_key: idempotencyKey,
+        });
+        if (adminEditError) {
+          if (adminEditError.code === "PGRST202" || /could not find the function|schema cache/i.test(adminEditError.message || "")) {
+            throw new Error("La configuración segura de edición aún no está aplicada. Aplica las migraciones pendientes antes de editar órdenes desde Administración.");
+          }
+          throw adminEditError;
+        }
+        if (!adminEditResult?.success || !adminEditResult?.order) {
+          throw new Error("La edición administrativa no confirmó la actualización de la orden.");
+        }
       }
     } catch (commandError) {
       updateError = commandError;
@@ -415,33 +435,6 @@ export default function EditOrderModal({
       setError(`Error al actualizar: ${updateError.message}`);
       return;
     }
-
-    if (!isSellerEdit && removedFileUrls.length > 0) {
-      const { error: removeProductionFilesError } = await supabase
-        .from("order_production_files")
-        .delete()
-        .eq("order_id", order.id)
-        .in("url", removedFileUrls);
-
-      if (removeProductionFilesError) {
-        setLoading(false);
-        setError("La orden se actualizo, pero no se pudieron retirar archivos de produccion.");
-        return;
-      }
-    }
-
-    await Promise.all([
-      ...removedFileUrls.flatMap((url) => [
-        removeOrderAssetByPublicUrl({ bucket: "order-docs", url }),
-        removeOrderAssetByPublicUrl({ bucket: "order-previews", url }),
-      ]),
-      ...removedRefImageUrls.map((url) =>
-        removeOrderAssetByPublicUrl({ bucket: "order-docs", url })
-      ),
-      !previewUrl && existingPreview
-        ? removeOrderAssetByPublicUrl({ bucket: "order-previews", url: existingPreview })
-        : Promise.resolve({ removed: false, error: null }),
-    ]);
 
     setLoading(false);
     onUpdated?.();
@@ -520,10 +513,12 @@ export default function EditOrderModal({
         </div>
       </div>
 
-      <div className="ps-form-section-title" style={{ marginTop: 20 }}>
-        <span className="ps-form-section-num">3</span> Archivos y Preview
-      </div>
-      <div className="ps-form-grid">
+      {canEditAssets ? (
+        <>
+          <div className="ps-form-section-title" style={{ marginTop: 20 }}>
+            <span className="ps-form-section-num">3</span> Archivos y Preview
+          </div>
+          <div className="ps-form-grid">
         <div className="col-full">
           <Field label="Archivos adjuntos" hint="Archivos de diseno existentes y nuevos" error={fieldErrors.order_files}>
             {existingFiles.length > 0 && (
@@ -646,6 +641,10 @@ export default function EditOrderModal({
                     <img src={url} alt={parseFileName(url)} className="ps-ref-thumb" />
                     <span className="ps-file-name">{parseFileName(url)}</span>
                     <button className="ps-file-remove" onClick={() => {
+                      if (!canEditAssets) {
+                        setError(assetWorkflowMessage);
+                        return;
+                      }
                       setExistingRefImages(existingRefImages.filter((_, currentIndex) => currentIndex !== index));
                       setRemovedRefImageUrls([...removedRefImageUrls, url]);
                     }}>
@@ -677,6 +676,10 @@ export default function EditOrderModal({
               buttonLabel="Subir imagenes"
               hint="Imagenes de referencia (Max 3, 20MB c/u. Soporta JPG, PNG, WebP, GIF, HEIC y HEIF)"
               onFilesAccepted={async (rawFiles, { showError }) => {
+                if (!canEditAssets) {
+                  setError(assetWorkflowMessage);
+                  return;
+                }
                 const validFiles = [];
                 const errors = [];
                 for (const file of rawFiles) {
@@ -697,7 +700,11 @@ export default function EditOrderModal({
             />
           </Field>
         </div>
-      </div>
+          </div>
+        </>
+      ) : (
+        <div className="ps-form-error" role="status">{assetWorkflowMessage}</div>
+      )}
 
       <div className="ps-form-actions">
         <button className="ps-btn-cancel" onClick={onClose}>Cancelar</button>

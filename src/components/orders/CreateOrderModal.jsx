@@ -8,7 +8,7 @@ import FileCard from "../FileCard";
 import { ORDER_STATUS, PRODUCTION_AREAS } from "../../utils/constants";
 import { serializeReferenceImages } from "../../utils/orderAssets";
 import { buildProductionFileRows } from "../../utils/production";
-import { buildStorageSafeFileName, formatFileSize, removeOrderAssetByPublicUrl, uploadOrderAsset } from "../../utils/uploadOrderAsset";
+import { buildStorageSafeFileName, formatFileSize, uploadOrderAsset } from "../../utils/uploadOrderAsset";
 import { canDecodeAsImage, compressImage, REF_IMAGE_CONFIG, validateReferenceImages } from "../../utils/imageValidation";
 import { formatDominicanPhone, getSelectedClientOrderFields } from "../../utils/clients";
 import { getMinimumDeliveryDate, isDeliveryDateInPast } from "../../utils/deliveryDate";
@@ -39,36 +39,6 @@ const ORDER_DRAFT_STORAGE_PREFIX = "neonprint:create-order-draft:v1";
 const getOrderDraftStorageKey = (userId) => (
   userId ? `${ORDER_DRAFT_STORAGE_PREFIX}:${userId}` : null
 );
-
-const getSerializableOrderDraft = (form) => {
-  const nonSerializableFields = new Set(["design_files", "design_preview", "reference_images"]);
-  return Object.fromEntries(
-    Object.entries(form).filter(([field]) => !nonSerializableFields.has(field))
-  );
-};
-
-const readOrderDraft = (userId) => {
-  const key = getOrderDraftStorageKey(userId);
-  if (!key) return null;
-
-  try {
-    const draft = JSON.parse(window.sessionStorage.getItem(key) || "null");
-    return draft && typeof draft === "object" ? draft : null;
-  } catch {
-    return null;
-  }
-};
-
-const writeOrderDraft = (userId, form) => {
-  const key = getOrderDraftStorageKey(userId);
-  if (!key) return;
-
-  try {
-    window.sessionStorage.setItem(key, JSON.stringify(getSerializableOrderDraft(form)));
-  } catch {
-    // A draft is an enhancement; never block order creation if browser storage fails.
-  }
-};
 
 const clearOrderDraft = (userId) => {
   const key = getOrderDraftStorageKey(userId);
@@ -378,33 +348,22 @@ export default function CreateOrderModal({
   const [fieldErrors, setFieldErrors] = useState({});
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
-  const restoredDraftForOpenRef = useRef(false);
-  const draftReadyForOpenRef = useRef(false);
+  // A retry after an uncertain network response must address the same command.
+  const createRequestIdRef = useRef(null);
+
+  const resetForm = useCallback(() => {
+    clearOrderDraft(userId);
+    createRequestIdRef.current = null;
+    setForm(EMPTY_FORM);
+    setError("");
+    setFieldErrors({});
+    setMissingLabelIndices([]);
+    setMissingAreaIndices([]);
+  }, [userId]);
 
   useEffect(() => {
-    if (!open) {
-      restoredDraftForOpenRef.current = false;
-      draftReadyForOpenRef.current = false;
-      return;
-    }
-    if (restoredDraftForOpenRef.current) {
-      draftReadyForOpenRef.current = true;
-      return;
-    }
-
-    restoredDraftForOpenRef.current = true;
-    const draft = readOrderDraft(userId);
-    if (draft) {
-      setForm({ ...EMPTY_FORM, ...draft });
-      return;
-    }
-    draftReadyForOpenRef.current = true;
-  }, [open, userId]);
-
-  useEffect(() => {
-    if (!open || loading || !draftReadyForOpenRef.current) return;
-    writeOrderDraft(userId, form);
-  }, [form, loading, open, userId]);
+    if (!open) resetForm();
+  }, [open, resetForm]);
 
   const set = (key, value) => {
     setForm(previous => ({ ...previous, [key]: value }));
@@ -530,34 +489,37 @@ export default function CreateOrderModal({
     try {
       await (async () => {
         const nextIndefinido = form.indefinido || !form.delivery_date;
-        const orderId = crypto.randomUUID();
+        const orderId = createRequestIdRef.current || crypto.randomUUID();
+        createRequestIdRef.current = orderId;
 
         let fileUrls = [];
         let previewUrl = null;
         let refImageUrls = [];
+        const preorderAssets = [];
         const uploadedUrls = [];
-        const cleanupUploadedUrls = () => Promise.all(
-          uploadedUrls.map(({ bucket, url }) => removeOrderAssetByPublicUrl({ bucket, url }))
-        );
+        const leaveUploadedUrlsForReconciliation = () => Promise.resolve();
 
         if (form.design_files.length > 0 || form.design_preview || form.reference_images.length > 0) {
           try {
             for (let i = 0; i < form.design_files.length; i += 1) {
               const file = form.design_files[i];
               const fileName = buildStorageSafeFileName(file, `${i}-`);
-              const publicUrl = await uploadOrderAsset({
+              const uploadedAsset = await uploadOrderAsset({
                 bucket: "order-docs",
                 path: `orders/${orderId}/files/${fileName}`,
                 file,
+                deferR2Binding: true,
               });
 
-              if (publicUrl) {
-                fileUrls.push(publicUrl);
-                uploadedUrls.push({ bucket: "order-docs", url: publicUrl });
+              if (typeof uploadedAsset === "string" && uploadedAsset) {
+                fileUrls[i] = uploadedAsset;
+                uploadedUrls.push({ bucket: "order-docs", url: uploadedAsset });
+              } else if (uploadedAsset?.preorder) {
+                preorderAssets.push({ target: "design", index: i, descriptor: uploadedAsset });
               }
             }
           } catch {
-            await cleanupUploadedUrls();
+            await leaveUploadedUrlsForReconciliation();
             throw new Error("Error al subir los archivos. Verifica que no sean demasiado grandes y que tu conexión esté estable.");
           }
 
@@ -572,7 +534,7 @@ export default function CreateOrderModal({
               if (previewUrl) uploadedUrls.push({ bucket: "order-previews", url: previewUrl });
             } catch (err) {
               console.error("Preview upload failed:", err);
-              await cleanupUploadedUrls();
+              await leaveUploadedUrlsForReconciliation();
               const message = err?.message || "";
               if (/mime type/i.test(message)) {
                 throw new Error("Formato de imagen no soportado para la previsualización. Usa JPG, PNG, WebP, SVG o PDF.");
@@ -593,18 +555,21 @@ export default function CreateOrderModal({
               for (let i = 0; i < form.reference_images.length; i += 1) {
                 const file = await compressImage(form.reference_images[i]);
                 const fileName = buildStorageSafeFileName(file, `ref-${i}-`);
-                const publicUrl = await uploadOrderAsset({
+                const uploadedAsset = await uploadOrderAsset({
                   bucket: "order-docs",
                   path: `orders/${orderId}/ref-images/${fileName}`,
                   file,
+                  deferR2Binding: true,
                 });
-                if (publicUrl) {
-                  refImageUrls.push(publicUrl);
-                  uploadedUrls.push({ bucket: "order-docs", url: publicUrl });
+                if (typeof uploadedAsset === "string" && uploadedAsset) {
+                  refImageUrls[i] = uploadedAsset;
+                  uploadedUrls.push({ bucket: "order-docs", url: uploadedAsset });
+                } else if (uploadedAsset?.preorder) {
+                  preorderAssets.push({ target: "reference", index: i, descriptor: uploadedAsset });
                 }
               }
             } catch {
-              await cleanupUploadedUrls();
+              await leaveUploadedUrlsForReconciliation();
               throw new Error("Error al subir las imágenes de referencia. Verifica que no sean demasiado grandes.");
             }
           }
@@ -631,40 +596,41 @@ export default function CreateOrderModal({
         if (previewUrl) payload.preview_image = previewUrl;
         if (refImageUrls.length > 0) payload.reference_images = serializeReferenceImages(refImageUrls);
 
-        const { error: insertError } = await supabase.from("orders").insert([payload]).select().single();
-        if (insertError) {
-          await cleanupUploadedUrls();
-          throw new Error("No se pudo crear la orden. Intenta nuevamente.");
+        // R2 preorder records are intentionally bound only after the command
+        // returns an order id. The SQL command keeps order + file metadata atomic;
+        // a failed/uncertain bind is retained for reconciliation rather than deleted.
+        const productionRows = buildProductionFileRows({
+          orderId,
+          urls: fileUrls.filter(Boolean),
+          files: form.design_files.filter((_, index) => Boolean(fileUrls[index])),
+          areaCodes: form.design_file_areas.filter((_, index) => Boolean(fileUrls[index])),
+          publicLabels: form.design_file_labels.filter((_, index) => Boolean(fileUrls[index])),
+          userId,
+        });
+        payload.order_file_url = fileUrls.length > 0 ? JSON.stringify(fileUrls.filter(Boolean)) : null;
+        const { data: createdOrder, error: createError } = await supabase.rpc("create_seller_order_with_assets", {
+          p_idempotency_key: orderId,
+          p_order: payload,
+          p_production_files: productionRows,
+          p_asset_refs: preorderAssets.map((asset) => ({
+            ...(asset.descriptor?.preorder || asset.descriptor),
+            target: asset.target,
+          })),
+        });
+        if (createError || !createdOrder) {
+          await leaveUploadedUrlsForReconciliation();
+          throw new Error(createError?.message || "No se pudo crear la orden. Intenta nuevamente.");
         }
 
-        if (fileUrls.length > 0) {
-          const productionRows = buildProductionFileRows({
-            orderId,
-            urls: fileUrls,
-            files: form.design_files,
-            areaCodes: form.design_file_areas,
-            publicLabels: form.design_file_labels,
-            userId,
+        if (preorderAssets.length > 0) {
+          preorderAssets.forEach((asset) => {
+            const descriptor = asset.descriptor?.preorder || asset.descriptor;
+            const url = descriptor?.bucket && descriptor?.objectKey
+              ? `r2://${descriptor.bucket}/${descriptor.objectKey}`
+              : null;
+            if (asset.target === "design") fileUrls[asset.index] = url;
+            if (asset.target === "reference") refImageUrls[asset.index] = url;
           });
-
-          const { error: productionFilesError } = await supabase
-            .from("order_production_files")
-            .insert(productionRows);
-
-          if (productionFilesError) {
-            await cleanupUploadedUrls();
-            throw new Error("No se pudo guardar la clasificacion de produccion de los archivos.");
-          }
-
-          const { error: updateLegacyError } = await supabase
-            .from("orders")
-            .update({ order_file_url: JSON.stringify(fileUrls) })
-            .eq("id", orderId);
-
-          if (updateLegacyError) {
-            await cleanupUploadedUrls();
-            throw new Error("No se pudieron asociar los archivos a la orden.");
-          }
         }
       })();
 
@@ -678,15 +644,12 @@ export default function CreateOrderModal({
   };
 
   const handleClose = () => {
-    clearOrderDraft(userId);
-    setForm(EMPTY_FORM);
-    setError("");
-    setFieldErrors({});
+    resetForm();
     onClose();
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="Nueva Orden" stickyHeader>
+    <Modal open={open} onClose={handleClose} title="Nueva Orden" stickyHeader hideStripe>
       {error && <div className="ps-form-error">{error}</div>}
 
       <div className="ps-form-section-title">

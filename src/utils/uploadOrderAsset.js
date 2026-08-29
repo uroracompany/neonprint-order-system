@@ -117,7 +117,7 @@ const markR2UploadFailed = async ({ orderId, fileId }) => {
   }
 };
 
-export const uploadOrderAsset = async ({ bucket, path, file }) => {
+export const uploadOrderAsset = async ({ bucket, path, file, deferR2Binding = false }) => {
   if (!bucket || !path || !file) {
     throw new Error("Faltan parametros requeridos: bucket, path, file");
   }
@@ -158,6 +158,9 @@ export const uploadOrderAsset = async ({ bucket, path, file }) => {
         }
 
         if (result.shouldRegister === false || !result.file?.id) {
+          if (deferR2Binding && result.preorder) {
+            return { preorder: result.preorder, bucket, path };
+          }
           return result.storedUrl || null;
         }
 
@@ -200,6 +203,29 @@ export const uploadOrderAsset = async ({ bucket, path, file }) => {
   }
 };
 
+export const bindPreorderOrderAssets = async ({ orderId, descriptors = [] }) => {
+  const boundUrls = [];
+  for (const descriptor of descriptors) {
+    if (!descriptor?.preorder) continue;
+    const { response, result } = await adminApiFetch("/api/files", {
+      action: "bind-preorder-upload",
+      orderId,
+      provider: "r2",
+      bucket: descriptor.preorder.bucket,
+      objectKey: descriptor.preorder.objectKey,
+      fileName: descriptor.preorder.originalFilename,
+      contentType: descriptor.preorder.contentType,
+      sizeBytes: descriptor.preorder.sizeBytes,
+      category: descriptor.preorder.category,
+    });
+    if (!response.ok || !result?.storedUrl) {
+      throw new Error(result?.error || "No se pudo asociar el archivo grande a la orden.");
+    }
+    boundUrls.push(result.storedUrl);
+  }
+  return boundUrls;
+};
+
 export const getStoragePathFromPublicUrl = ({ bucket, url }) => {
   if (!bucket || !url || isR2OrderAssetUrl(url)) return null;
 
@@ -217,26 +243,6 @@ export const getStoragePathFromPublicUrl = ({ bucket, url }) => {
   } catch {
     return null;
   }
-};
-
-export const removeOrderAsset = async ({ bucket, path }) => {
-  if (!bucket || !path) return { removed: false, error: null };
-
-  const { error } = await supabase.storage.from(bucket).remove([path]);
-  if (error) {
-    console.error(`Error removing from bucket '${bucket}':`, error);
-    return { removed: false, error };
-  }
-
-  return { removed: true, error: null };
-};
-
-export const removeOrderAssetByPublicUrl = async ({ bucket, url }) => {
-  if (isR2OrderAssetUrl(url)) return { removed: false, error: null };
-
-  const path = getStoragePathFromPublicUrl({ bucket, url });
-  if (!path) return { removed: false, error: null };
-  return removeOrderAsset({ bucket, path });
 };
 
 export const createSignedOrderAssetUrl = async ({ bucket, path, expiresIn = DEFAULT_SIGNED_URL_TTL }) => {
@@ -263,44 +269,6 @@ export const createSignedOrderAssetUrlFromStoredUrl = async ({ bucket, url, expi
   return createSignedOrderAssetUrl({ bucket, path, expiresIn });
 };
 
-const listAndRemoveOrderAssets = async ({ bucket, prefix }) => {
-  const { data, error } = await supabase.storage.from(bucket).list(prefix, { limit: 1000 });
-  if (error) {
-    console.error(`Error listing '${prefix}' in bucket '${bucket}':`, error);
-    return { removed: 0, error };
-  }
-
-  const paths = (data || [])
-    .filter((item) => item?.name && item.name !== ".emptyFolderPlaceholder")
-    .map((item) => `${prefix}/${item.name}`);
-
-  if (!paths.length) return { removed: 0, error: null };
-
-  const { error: removeError } = await supabase.storage.from(bucket).remove(paths);
-  if (removeError) {
-    console.error(`Error removing files from bucket '${bucket}':`, removeError);
-    return { removed: 0, error: removeError };
-  }
-
-  return { removed: paths.length, error: null };
-};
-
-export const removeOrderAssetsForOrder = async (orderId) => {
-  if (!orderId) return { removed: 0, errors: [] };
-
-  const tasks = [
-    { bucket: "order-docs", prefix: `orders/${orderId}/files` },
-    { bucket: "order-docs", prefix: `orders/${orderId}/ref-images` },
-    { bucket: "order-previews", prefix: `orders/${orderId}/preview` },
-    { bucket: "payment-invoice", prefix: orderId },
-  ];
-
-  const results = await Promise.all(tasks.map(listAndRemoveOrderAssets));
-  return {
-    removed: results.reduce((total, result) => total + result.removed, 0),
-    errors: results.map((result) => result.error).filter(Boolean),
-  };
-};
 
 export const buildPaymentReceiptPath = (orderId, fileName) => {
   const timestamp = Date.now();

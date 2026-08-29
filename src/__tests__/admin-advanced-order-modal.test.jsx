@@ -18,6 +18,7 @@ const sampleOrder = {
 };
 
 const productionOrder = { ...sampleOrder, status: "in_Production" };
+const editableExternalDesignOrder = { ...sampleOrder, status: "Pending" };
 
 const defaultProps = {
   order: null,
@@ -44,7 +45,11 @@ const mockDataSources = ({ files = [], areas = [], productionUsers = [] } = {}) 
     if (table === "profiles") {
       return {
         select: () => ({
-          in: () => ({ eq: () => Promise.resolve({ data: productionUsers, error: null }) }),
+          in: () => ({
+            eq: () => ({
+              is: () => Promise.resolve({ data: productionUsers, error: null }),
+            }),
+          }),
         }),
       };
     }
@@ -138,6 +143,16 @@ describe("AdminAdvancedSettings", () => {
 
     await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
   });
+
+  it("guides administration to the valid stage instead of offering asset edits in production", async () => {
+    mockDataSources({ files: [{ id: "f1", public_label: "File", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "ts" }] });
+
+    render(<AdminManageFilesModal open order={productionOrder} profiles={[]} onClose={vi.fn()} capabilities={[]} nextSafeStep="Devuelve la orden a Caja y luego a Ventas." />);
+
+    expect(await screen.findByText(/devuelve la orden a Caja y luego a Ventas/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Anadir archivo/i })).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Eliminar archivo")).not.toBeInTheDocument();
+  });
 });
 
 describe("AdminManageFilesModal", () => {
@@ -165,9 +180,9 @@ describe("AdminManageFilesModal", () => {
       profiles: [{ id: "delivery-1", name: "Delivery Uno", role: "delivery", employment_status: true }],
     });
     rpc.mockImplementation((name, params) => {
-      if (name !== "admin_force_file_status") return Promise.resolve({ data: null, error: null });
+      if (name !== "admin_update_production_file_status") return Promise.resolve({ data: null, error: null });
       return Promise.resolve({
-        data: { ...file, status: params.p_new_status, updated_at: params.p_new_status === "completed" ? "file-server-2" : "file-server-3" },
+        data: { ...file, status: params.p_next_status, updated_at: params.p_next_status === "completed" ? "file-server-2" : "file-server-3" },
         error: null,
       });
     });
@@ -182,9 +197,9 @@ describe("AdminManageFilesModal", () => {
     await user.selectOptions(screen.getByLabelText("Delivery para completar la orden (obligatorio)"), "delivery-1");
     await user.click(saveButton);
 
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith("admin_force_file_status", expect.objectContaining({
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith("admin_update_production_file_status", expect.objectContaining({
       p_file_id: "file-1",
-      p_new_status: "completed",
+      p_next_status: "completed",
       p_delivery_id: "delivery-1",
       p_expected_updated_at: "file-server-1",
       p_reason_category: "workflow_correction",
@@ -193,13 +208,28 @@ describe("AdminManageFilesModal", () => {
 
     await user.selectOptions(screen.getByLabelText("Cambiar estado"), "in_termination");
     await user.click(screen.getByRole("button", { name: "Guardar estado" }));
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith("admin_force_file_status", expect.objectContaining({
-      p_new_status: "in_termination",
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith("admin_update_production_file_status", expect.objectContaining({
+      p_next_status: "in_termination",
       p_expected_updated_at: "file-server-2",
       p_reason_category: "workflow_correction",
       p_reason_detail: "Cambio de estado por administrador desde Configuracion avanzada.",
     })));
   }, 15000);
+
+  it("offers only the next authorized production-file state", async () => {
+    mockDataSources({
+      files: [{ id: "file-1", public_label: "Frente", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "file-server-1" }],
+    });
+
+    render(<AdminManageFilesModal open order={productionOrder} profiles={[]} onClose={vi.fn()} />);
+
+    const statusSelect = await screen.findByLabelText("Cambiar estado");
+    expect(screen.getByRole("option", { name: "Pendiente" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "En produccion" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "En terminacion" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Completado" })).not.toBeInTheDocument();
+    expect(statusSelect).toHaveValue("pending");
+  });
 
   it("uses the file returned by the area reassignment RPC", async () => {
     const file = { id: "file-1", public_label: "Frente", status: "pending", production_area_code: "digital", assigned_to: "producer-1", updated_at: "file-server-1" };
@@ -221,6 +251,7 @@ describe("AdminManageFilesModal", () => {
     await waitFor(() => expect(screen.getByLabelText("Nueva area")).toBeInTheDocument());
     await user.selectOptions(screen.getByLabelText("Nueva area"), "dtf");
     await user.selectOptions(screen.getByLabelText("Nuevo responsable (obligatorio)"), "producer-2");
+    await user.type(screen.getByLabelText("Motivo del cambio de área"), "Corrección de asignación de producción.");
     await user.click(screen.getByRole("button", { name: "Guardar cambio de area" }));
 
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("admin_reassign_file_production_area", {
@@ -228,6 +259,8 @@ describe("AdminManageFilesModal", () => {
       p_new_area_code: "dtf",
       p_new_assigned_user_id: "producer-2",
       p_expected_updated_at: "file-server-1",
+      p_reason_category: "assignment_correction",
+      p_reason_detail: "Corrección de asignación de producción.",
     }));
     expect(await screen.findByText("DTF")).toBeInTheDocument();
   }, 15000);
@@ -237,7 +270,7 @@ describe("AdminManageFilesModal", () => {
       files: [{ id: "file-1", public_label: "Frente", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "file-server-1" }],
       areas: [{ code: "digital", label: "Digital", producer_role: "production" }],
     });
-    render(<AdminManageFilesModal open order={productionOrder} profiles={[]} onClose={vi.fn()} />);
+    render(<AdminManageFilesModal open order={editableExternalDesignOrder} profiles={[]} onClose={vi.fn()} />);
 
     const addBtn = await screen.findByRole("button", { name: /Anadir archivo/i });
     expect(addBtn).toBeInTheDocument();
@@ -257,7 +290,7 @@ describe("AdminManageFilesModal", () => {
         { id: "file-2", public_label: "Dorso", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "file-server-2" },
       ],
     });
-    render(<AdminManageFilesModal open order={productionOrder} profiles={[]} onClose={vi.fn()} />);
+    render(<AdminManageFilesModal open order={editableExternalDesignOrder} profiles={[]} onClose={vi.fn()} />);
 
     await waitFor(() => {
       const deleteButtons = screen.getAllByTitle("Eliminar archivo");
@@ -289,7 +322,7 @@ describe("AdminManageFilesModal", () => {
   });
 
   it("shows delete button on the last file when status is before in_Quote", async () => {
-    const designOrder = { ...sampleOrder, status: "in_Design", id: "design-order-1" };
+    const designOrder = { ...editableExternalDesignOrder, id: "design-order-1" };
     mockDataSources({ files: [{ id: "f1", public_label: "Unico", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "ts" }] });
 
     render(<AdminManageFilesModal open order={designOrder} profiles={[]} onClose={vi.fn()} />);
@@ -310,7 +343,7 @@ describe("AdminManageFilesModal", () => {
   });
 
   it("shows preview trash button when status is before in_Quote even with saved preview", async () => {
-    const designOrder = { ...sampleOrder, status: "in_Design", preview_image: "https://example.com/preview.jpg", id: "design-preview-1" };
+    const designOrder = { ...editableExternalDesignOrder, preview_image: "https://example.com/preview.jpg", id: "design-preview-1" };
     mockDataSources({ files: [{ id: "f1", public_label: "File", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "ts" }] });
 
     render(<AdminManageFilesModal open order={designOrder} profiles={[]} onClose={vi.fn()} />);

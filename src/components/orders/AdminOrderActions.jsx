@@ -1,5 +1,5 @@
 import { Icons } from "../../utils/icons";
-import { ORDER_STATUS, isOrderStatus, isOrderStatusIn } from "../../utils/constants";
+import { getAdminOrderActionVisibility } from "../../utils/adminActionPresentation";
 
 const ADMIN_DESIGN_TYPES = ["EXTERNAL_DESING", "INTERNAL_DESING"];
 
@@ -10,11 +10,12 @@ export default function AdminOrderActions({
   onEdit,
   onCancel,
   variant = "table",
+  commandCatalog = null,
 }) {
   if (!order) return null;
 
   const isModal = variant === "modal";
-  const isCancelled = isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED]);
+  const availability = getAdminOrderActionVisibility({ order, catalog: commandCatalog });
   const supportsAdvancedSettings = ADMIN_DESIGN_TYPES.includes(order.order_design_type);
   const buttonClass = (action) => isModal
     ? `pa-order-action pa-order-action-${action}`
@@ -26,28 +27,28 @@ export default function AdminOrderActions({
       label: "Editar orden",
       icon: <Icons.Edit />,
       onClick: onEdit,
-      visible: true,
+      visible: availability.edit,
     },
     {
       key: "advanced",
       label: "Configuración avanzada",
       icon: <Icons.Settings />,
       onClick: onAdvanced,
-      visible: supportsAdvancedSettings,
+      visible: supportsAdvancedSettings && availability.advanced,
     },
     {
       key: "cash",
       label: "Pago",
       icon: <Icons.Money />,
       onClick: onPayment,
-      visible: !isCancelled,
+      visible: availability.payment,
     },
     {
       key: "cancel",
       label: "Cancelar orden",
       icon: <Icons.Trash />,
       onClick: onCancel,
-      visible: !isOrderStatus(order.status, ORDER_STATUS.CANCELLED),
+      visible: availability.cancel,
     },
   ];
 
