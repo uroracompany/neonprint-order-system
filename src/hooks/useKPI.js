@@ -1,11 +1,13 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApiFetch } from '../utils/adminApi'
 import { getPeriodBounds, getComparePeriodBounds } from '../utils/kpiHelpers'
 import { queryKeys } from '../utils/queryKeys'
 import useOrdersRealtimeSync from './useOrdersRealtimeSync'
 
-const KPI_REALTIME_TABLES = ['orders', 'order_events', 'order_production_files', 'profiles', 'clients']
+// Files and profile changes do not alter the executive aggregates.  Keeping
+// them out avoids an expensive full KPI fan-out for ordinary work updates.
+const KPI_REALTIME_TABLES = ['orders', 'order_events', 'clients']
 
 async function fetchKpi(action, params) {
   const { response, result } = await adminApiFetch('/api/kpi-data', { action, ...params })
@@ -56,6 +58,7 @@ export function useKPI(initialState = {}, userId) {
   const [customDateFrom, setCustomDateFrom] = useState(() => initialState.customDateFrom || '')
   const [customDateTo, setCustomDateTo] = useState(() => initialState.customDateTo || '')
   const queryClient = useQueryClient()
+  const realtimeTimerRef = useRef(null)
 
   const bounds = useMemo(
     () => getKpiBounds(period, customDateFrom, customDateTo),
@@ -74,11 +77,24 @@ export function useKPI(initialState = {}, userId) {
     [queryClient, queryKey],
   )
 
+  const refreshFromRealtime = useCallback(() => {
+    if (typeof document !== 'undefined' && document.hidden) return
+    if (realtimeTimerRef.current !== null) window.clearTimeout(realtimeTimerRef.current)
+    realtimeTimerRef.current = window.setTimeout(() => {
+      realtimeTimerRef.current = null
+      void refresh()
+    }, 900)
+  }, [refresh])
+
+  useEffect(() => () => {
+    if (realtimeTimerRef.current !== null) window.clearTimeout(realtimeTimerRef.current)
+  }, [])
+
   useOrdersRealtimeSync({
     userId,
     scope: 'kpi-executive',
     tables: KPI_REALTIME_TABLES,
-    refreshOrders: refresh,
+    refreshOrders: refreshFromRealtime,
   })
 
   const setPeriodAndDates = useCallback((newPeriod, from = '', to = '') => {

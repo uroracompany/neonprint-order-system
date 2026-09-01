@@ -11,6 +11,8 @@ const DEFAULT_R2_THRESHOLD_MB = 25;
 const DEFAULT_SIGNED_URL_TTL = 60 * 10;
 const MAX_IMPORTED_URL_BYTES = 4 * MB;
 const R2_SCHEME = "r2://";
+const SUPABASE_SCHEME = "supabase://";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const ORDER_ASSIGNMENT_FIELDS = [
   "created_by",
@@ -28,7 +30,12 @@ const PRODUCER_AREA_BY_ROLE = {
 };
 
 const PREORDER_R2_ROLES = new Set(["admin", "seller", "designer"]);
+// Preserve the established explicit Sales safeguard while the more precise
+// category/stage policy below is rolled out.  It gives callers the same clear
+// response instead of silently broadening the historical quote restriction.
 const SELLER_FILE_WRITE_BLOCKED_STATUSES = new Set(["in_Quote"]);
+const ORDER_ASSET_BUCKETS = new Set(["order-docs", "order-previews", "payment-invoice"]);
+const TERMINAL_ORDER_STATUSES = new Set(["in_Completed", "in_Delivered", "cancelled"]);
 
 const ORDER_FILE_BUCKET_LIMITS = {
   "order-docs": 200 * MB,
@@ -179,15 +186,32 @@ const getStoragePathFromSupabaseUrl = ({ bucket, url }) => {
 };
 
 export const isR2Url = (url = "") => String(url || "").startsWith(R2_SCHEME);
+export const isSupabaseAssetRef = (value = "") => String(value || "").startsWith(SUPABASE_SCHEME);
 
-export const parseR2Url = (url = "") => {
+export const buildSupabaseAssetRef = ({ bucket, key }) => `${SUPABASE_SCHEME}${bucket}/${encodeURI(key)}`;
+
+export const parseSupabaseAssetRef = (value = "") => {
+  if (!isSupabaseAssetRef(value)) return null;
+  const rest = String(value).slice(SUPABASE_SCHEME.length);
+  const slashIndex = rest.indexOf("/");
+  if (slashIndex <= 0) return null;
+  const bucket = rest.slice(0, slashIndex);
+  const key = decodeURIComponent(rest.slice(slashIndex + 1));
+  if (!ORDER_ASSET_BUCKETS.has(bucket) || !key) return null;
+  return { bucket, key };
+};
+
+export const parseR2Url = (url = "", { allowedBucket } = {}) => {
   if (!isR2Url(url)) return null;
   const rest = String(url).slice(R2_SCHEME.length);
   const slashIndex = rest.indexOf("/");
   if (slashIndex <= 0) return null;
+  const bucket = rest.slice(0, slashIndex);
+  const key = decodeURIComponent(rest.slice(slashIndex + 1));
+  if (!key || (allowedBucket && bucket !== allowedBucket)) return null;
   return {
-    bucket: rest.slice(0, slashIndex),
-    key: decodeURIComponent(rest.slice(slashIndex + 1)),
+    bucket,
+    key,
   };
 };
 
@@ -260,7 +284,22 @@ export const presignR2Url = ({
   return `${r2.endpoint}${canonicalUri}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
 };
 
-const signedR2Fetch = async ({ method, key, bucket, env = process.env }) => {
+const buildCanonicalQueryString = (params = {}) => Object.entries(params)
+  .filter(([, value]) => value !== undefined && value !== null && value !== "")
+  .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+  .map(([name, value]) => `${encodeRfc3986(name)}=${encodeRfc3986(value)}`)
+  .join("&");
+
+const decodeXmlValue = (value = "") => String(value)
+  .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+  .replace(/&#([0-9]+);/g, (_, code) => String.fromCodePoint(Number.parseInt(code, 10)))
+  .replace(/&amp;/g, "&")
+  .replace(/&lt;/g, "<")
+  .replace(/&gt;/g, ">")
+  .replace(/&quot;/g, '"')
+  .replace(/&apos;/g, "'");
+
+const signedR2Fetch = async ({ method, key = "", bucket, query = {}, env = process.env }) => {
   const r2 = getR2Config(env);
   if (!r2.configured) {
     throw new Error("Cloudflare R2 no esta configurado en el servidor.");
@@ -269,7 +308,11 @@ const signedR2Fetch = async ({ method, key, bucket, env = process.env }) => {
   const targetBucket = bucket || r2.bucket;
   const { amzDate, dateStamp } = formatAmzDate();
   const host = `${r2.accountId}.r2.cloudflarestorage.com`;
-  const canonicalUri = `/${normalizePath(targetBucket)}/${normalizePath(key)}`;
+  const normalizedKey = normalizePath(key);
+  const canonicalUri = normalizedKey
+    ? `/${normalizePath(targetBucket)}/${normalizedKey}`
+    : `/${normalizePath(targetBucket)}`;
+  const canonicalQueryString = buildCanonicalQueryString(query);
   const payloadHash = sha256Hex("");
   const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
   const canonicalHeaders = [
@@ -282,7 +325,7 @@ const signedR2Fetch = async ({ method, key, bucket, env = process.env }) => {
   const canonicalRequest = [
     method.toUpperCase(),
     canonicalUri,
-    "",
+    canonicalQueryString,
     canonicalHeaders,
     signedHeaders,
     payloadHash,
@@ -301,7 +344,7 @@ const signedR2Fetch = async ({ method, key, bucket, env = process.env }) => {
     `Signature=${signature}`,
   ].join(", ");
 
-  const response = await fetch(`${r2.endpoint}${canonicalUri}`, {
+  const response = await fetch(`${r2.endpoint}${canonicalUri}${canonicalQueryString ? `?${canonicalQueryString}` : ""}`, {
     method,
     headers: {
       Authorization: authorization,
@@ -316,6 +359,34 @@ const signedR2Fetch = async ({ method, key, bucket, env = process.env }) => {
   }
 
   return response;
+};
+
+export const listR2OrderObjects = async ({
+  bucket,
+  prefix = "orders/",
+  continuationToken = "",
+  maxKeys = 250,
+  env = process.env,
+} = {}) => {
+  const response = await signedR2Fetch({
+    method: "GET",
+    bucket,
+    query: {
+      "list-type": "2",
+      "max-keys": String(Math.max(1, Math.min(Number(maxKeys) || 250, 1000))),
+      prefix,
+      "continuation-token": continuationToken,
+    },
+    env,
+  });
+  const xml = await response.text();
+  const objects = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)].map(([, contents]) => ({
+    key: decodeXmlValue(contents.match(/<Key>([\s\S]*?)<\/Key>/)?.[1] || ""),
+    lastModified: decodeXmlValue(contents.match(/<LastModified>([\s\S]*?)<\/LastModified>/)?.[1] || ""),
+  })).filter((item) => item.key);
+  const nextContinuationToken = decodeXmlValue(xml.match(/<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/)?.[1] || "");
+
+  return { objects, nextContinuationToken: nextContinuationToken || null };
 };
 
 const requireAuthenticated = async (authHeader = "", env = process.env) => {
@@ -338,12 +409,15 @@ const requireAuthenticated = async (authHeader = "", env = process.env) => {
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
-    .select("id,name,email,role,employment_status")
+    .select("id,name,email,role,employment_status,deleted_at")
     .eq("id", user.id)
     .single();
 
   if (profileError || !profile) {
     return { authorized: false, response: jsonResponse(403, { error: "No se encontro el perfil del usuario." }) };
+  }
+  if (profile.employment_status === false || profile.deleted_at) {
+    return { authorized: false, response: jsonResponse(403, { error: "Tu perfil ya no tiene acceso al sistema." }) };
   }
 
   return { authorized: true, supabaseAdmin, user, profile };
@@ -387,11 +461,111 @@ const loadOrderForAccess = async ({ supabaseAdmin, orderId, userId, role }) => {
   return { order };
 };
 
-const validateOrderFileWriteAccess = ({ order, role }) => {
+const validateOrderAssetAction = ({ order, role, category, action }) => {
+  if (!order || !role) return jsonResponse(403, { error: "No se pudo validar el acceso al archivo." });
+  if (action === "read") return null;
+  if (TERMINAL_ORDER_STATUSES.has(order.status) || order.is_archived_admin) {
+    return jsonResponse(409, { error: "No se pueden modificar archivos de una orden cerrada o archivada." });
+  }
   if (role === "seller" && SELLER_FILE_WRITE_BLOCKED_STATUSES.has(order?.status)) {
     return jsonResponse(409, { error: "No se pueden modificar archivos de una orden en cotizacion." });
   }
-  return null;
+  if (order.operational_status === "blocked") {
+    return jsonResponse(409, { error: "La orden esta bloqueada. Resuelve el bloqueo antes de modificar archivos." });
+  }
+  if (role === "admin") return null;
+  if (role === "quote") {
+    return category === "payment" && order.status === "in_Quote"
+      ? null
+      : jsonResponse(403, { error: "Caja solo puede administrar comprobantes durante la cotizacion." });
+  }
+  if (role === "designer") {
+    return category !== "payment" && order.status === "in_Design" && order.order_design_type === "INTERNAL_DESING"
+      ? null
+      : jsonResponse(403, { error: "Diseño solo puede modificar archivos de diseño interno en su etapa." });
+  }
+  if (role === "seller") {
+    const sellerStage = order.status === "Pending" && order.order_design_type === "EXTERNAL_DESING";
+    return category !== "payment" && sellerStage
+      ? null
+      : jsonResponse(403, { error: "Ventas solo puede modificar archivos de diseño externo mientras la orden esta en Ventas." });
+  }
+  return jsonResponse(403, { error: "Tu rol solo tiene acceso de lectura a los archivos de esta orden." });
+};
+
+const buildAssetReference = ({ provider, bucket, objectKey }) => (
+  provider === "r2" ? buildR2Url({ bucket, key: objectKey }) : buildSupabaseAssetRef({ bucket, key: objectKey })
+);
+
+const reserveOrderAsset = async ({ supabaseAdmin, orderId, provider, bucket, objectKey, fileName, contentType, sizeBytes, category, userId }) => {
+  const record = {
+    order_id: orderId,
+    provider,
+    bucket,
+    object_key: objectKey,
+    original_filename: fileName,
+    content_type: contentType,
+    size_bytes: Number.isFinite(sizeBytes) ? sizeBytes : null,
+    category,
+    status: "uploading",
+    uploaded_by: userId,
+  };
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("order_files")
+    .select("*")
+    .eq("provider", provider)
+    .eq("bucket", bucket)
+    .eq("object_key", objectKey)
+    .maybeSingle();
+  if (existingError) return { error: existingError };
+  if (existing) {
+    if (existing.order_id !== orderId || existing.uploaded_by !== userId || existing.status === "uploaded") {
+      return { conflict: true };
+    }
+    return { fileRecord: existing };
+  }
+  const { data: fileRecord, error } = await supabaseAdmin.from("order_files").insert(record).select("*").single();
+  return { fileRecord, error };
+};
+
+// A pre-order object has no order_files row yet.  Reserve it in its own
+// server-only table before issuing a signed URL so it remains bound to both
+// the authenticated actor and the creation idempotency key.
+const reservePreorderAsset = async ({ supabaseAdmin, orderId, idempotencyKey, provider, bucket, objectKey, fileName, contentType, sizeBytes, category, userId }) => {
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("order_asset_preupload_reservations")
+    .select("*")
+    .eq("provider", provider)
+    .eq("bucket", bucket)
+    .eq("object_key", objectKey)
+    .maybeSingle();
+  if (existingError) return { error: existingError };
+  if (existing) {
+    const stillValid = existing.status === "reserved" && new Date(existing.expires_at).getTime() > Date.now();
+    if (!stillValid || existing.actor_id !== userId || existing.order_id !== orderId || existing.idempotency_key !== idempotencyKey) {
+      return { conflict: true };
+    }
+    return { reservation: existing };
+  }
+  const { data: reservation, error } = await supabaseAdmin
+    .from("order_asset_preupload_reservations")
+    .insert({
+      order_id: orderId,
+      actor_id: userId,
+      idempotency_key: idempotencyKey,
+      provider,
+      bucket,
+      object_key: objectKey,
+      original_filename: fileName,
+      content_type: contentType,
+      size_bytes: Number.isFinite(sizeBytes) ? sizeBytes : null,
+      category,
+      status: "reserved",
+      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    })
+    .select("*")
+    .single();
+  return { reservation, error };
 };
 
 const collectLegacySupabaseTargets = (order) => {
@@ -421,7 +595,7 @@ const collectLegacyR2Targets = (order) => {
   return urls.map(parseR2Url).filter(Boolean);
 };
 
-const removeSupabaseTargets = async ({ supabaseAdmin, targets }) => {
+export const removeSupabaseTargets = async ({ supabaseAdmin, targets }) => {
   let removed = 0;
   const errors = [];
   const grouped = new Map();
@@ -453,9 +627,8 @@ const storagePrefixesForOrder = (orderId) => [
   { bucket: "payment-invoice", prefix: orderId },
 ];
 
-const removeSupabasePrefix = async ({ supabaseAdmin, bucket, prefix }) => {
+export const removeSupabasePrefix = async ({ supabaseAdmin, bucket, prefix }) => {
   const limit = 1000;
-  let offset = 0;
   let removed = 0;
   const errors = [];
 
@@ -464,7 +637,7 @@ const removeSupabasePrefix = async ({ supabaseAdmin, bucket, prefix }) => {
       .from(bucket)
       .list(prefix, {
         limit,
-        offset,
+        offset: 0,
         sortBy: { column: "name", order: "asc" },
       });
 
@@ -488,7 +661,6 @@ const removeSupabasePrefix = async ({ supabaseAdmin, bucket, prefix }) => {
     }
 
     if (items.length < limit) break;
-    offset += limit;
   }
 
   return { removed, errors };
@@ -507,7 +679,7 @@ const removeSupabasePrefixesForOrder = async ({ supabaseAdmin, orderId }) => {
   return { removed, errors };
 };
 
-const removeR2Targets = async ({ targets, env = process.env }) => {
+export const removeR2Targets = async ({ targets, env = process.env }) => {
   let removed = 0;
   const errors = [];
   const r2 = getR2Config(env);
@@ -545,7 +717,7 @@ const removeR2Targets = async ({ targets, env = process.env }) => {
   return { removed, errors };
 };
 
-const buildR2UploadResponse = ({ bucket, key, contentType, fileRecord = null, shouldRegister = true, env = process.env }) => ({
+const buildR2UploadResponse = ({ bucket, key, contentType, fileRecord = null, shouldRegister = true, preorder = null, env = process.env }) => ({
   provider: "r2",
   shouldRegister,
   upload: {
@@ -562,6 +734,7 @@ const buildR2UploadResponse = ({ bucket, key, contentType, fileRecord = null, sh
   },
   storedUrl: buildR2Url({ bucket, key }),
   file: fileRecord,
+  ...(preorder ? { preorder } : {}),
 });
 
 const isPrivateAddress = (address = "") => {
@@ -679,8 +852,9 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
   const sizeBytes = Number(payload?.sizeBytes || payload?.size || 0);
   const contentType = String(payload?.contentType || "application/octet-stream").trim();
   const category = inferCategory({ bucket, path, category: payload?.category });
+  const idempotencyKey = String(payload?.idempotencyKey || "").trim();
 
-  if (!orderId || !bucket || !path || !fileName) {
+  if (!orderId || !ORDER_ASSET_BUCKETS.has(bucket) || !path || !fileName || !isOrderScopedPath({ orderId, path })) {
     return jsonResponse(400, { error: "Faltan datos requeridos para iniciar la subida." });
   }
 
@@ -696,63 +870,124 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
   if (access.error) {
     if (access.error.status === 404) {
       if (
-        shouldUseR2({ bucket, sizeBytes, env }) &&
         PREORDER_R2_ROLES.has(profile.role) &&
+        UUID_PATTERN.test(orderId) &&
+        UUID_PATTERN.test(idempotencyKey) &&
+        idempotencyKey === orderId &&
         isOrderScopedPath({ orderId, path })
       ) {
+        const provider = shouldUseR2({ bucket, sizeBytes, env }) ? "r2" : "supabase";
         const r2 = getR2Config(env);
-        return jsonResponse(200, buildR2UploadResponse({
-          bucket: r2.bucket,
-          key: path,
+        const targetBucket = provider === "r2" ? r2.bucket : bucket;
+        const reservation = await reservePreorderAsset({
+          supabaseAdmin,
+          orderId,
+          idempotencyKey,
+          provider,
+          bucket: targetBucket,
+          objectKey: path,
+          fileName: payload?.fileName || fileName,
           contentType,
-          shouldRegister: false,
-          env,
-        }));
-      }
+          sizeBytes,
+          category,
+          userId: user.id,
+        });
+        if (reservation.conflict) return jsonResponse(409, { error: "La ruta de este archivo previo ya está reservada." });
+        if (reservation.error || !reservation.reservation) return internalError("No se pudo reservar el archivo previo.", "PREORDER_RESERVATION_FAILED");
+        if (shouldUseR2({ bucket, sizeBytes, env })) {
+          return jsonResponse(200, buildR2UploadResponse({
+            bucket: r2.bucket,
+            key: path,
+            contentType,
+            shouldRegister: false,
+            preorder: {
+              provider: "r2",
+              bucket: r2.bucket,
+              objectKey: path,
+              category,
+              originalFilename: payload?.fileName || fileName,
+              contentType,
+              sizeBytes: Number.isFinite(sizeBytes) ? sizeBytes : null,
+              reservationId: reservation.reservation.id,
+            },
+            env,
+          }));
+        }
 
-      return jsonResponse(200, {
-        provider: "supabase",
-        bucket,
-        path,
-        shouldRegister: false,
-      });
+        const { data: signedUpload, error: signedUploadError } = await supabaseAdmin.storage
+          .from(bucket)
+          .createSignedUploadUrl(path);
+        if (signedUploadError || !signedUpload?.token) {
+          return internalError("No se pudo autorizar la subida segura.", "SIGNED_UPLOAD_CREATE_FAILED");
+        }
+        return jsonResponse(200, {
+          provider: "supabase",
+          bucket,
+          objectKey: path,
+          assetRef: buildSupabaseAssetRef({ bucket, key: path }),
+          shouldRegister: false,
+          upload: { path, token: signedUpload.token },
+          preorder: {
+            provider: "supabase",
+            bucket,
+            objectKey: path,
+            category,
+            originalFilename: payload?.fileName || fileName,
+            contentType,
+            sizeBytes: Number.isFinite(sizeBytes) ? sizeBytes : null,
+            reservationId: reservation.reservation.id,
+          },
+        });
+      }
+      return jsonResponse(404, { error: "La orden aun no existe o no admite archivos previos." });
     }
     return access.error;
   }
 
-  const writeAccessError = validateOrderFileWriteAccess({ order: access.order, role: profile.role });
+  const writeAccessError = validateOrderAssetAction({ order: access.order, role: profile.role, category, action: "initiate" });
   if (writeAccessError) return writeAccessError;
 
   if (!shouldUseR2({ bucket, sizeBytes, env })) {
+    const reservation = await reserveOrderAsset({
+      supabaseAdmin,
+      orderId,
+      provider: "supabase",
+      bucket,
+      objectKey: path,
+      fileName: payload?.fileName || fileName,
+      contentType,
+      sizeBytes,
+      category,
+      userId: user.id,
+    });
+    if (reservation.conflict) return jsonResponse(409, { error: "Ya existe un archivo con esta ruta. Selecciona nuevamente el archivo." });
+    if (reservation.error || !reservation.fileRecord) return internalError("No se pudo reservar el archivo.", "FILE_RESERVATION_FAILED");
+    const { data: signedUpload, error: signedUploadError } = await supabaseAdmin.storage
+      .from(bucket)
+      .createSignedUploadUrl(path);
+    if (signedUploadError || !signedUpload?.token) {
+      return internalError("No se pudo autorizar la subida segura.", "SIGNED_UPLOAD_CREATE_FAILED");
+    }
     return jsonResponse(200, {
       provider: "supabase",
       bucket,
-      path,
+      objectKey: path,
+      assetRef: buildSupabaseAssetRef({ bucket, key: path }),
       shouldRegister: true,
+      file: reservation.fileRecord,
+      upload: { path, token: signedUpload.token },
     });
   }
 
   const r2 = getR2Config(env);
   const objectKey = `orders/${orderId}/${category}/${Date.now()}-${fileName}`;
 
-  const { data: fileRecord, error: insertError } = await supabaseAdmin
-    .from("order_files")
-    .insert({
-      order_id: orderId,
-      provider: "r2",
-      bucket: r2.bucket,
-      object_key: objectKey,
-      original_filename: payload?.fileName || fileName,
-      content_type: contentType,
-      size_bytes: Number.isFinite(sizeBytes) ? sizeBytes : null,
-      category,
-      status: "uploading",
-      uploaded_by: user.id,
-    })
-    .select("*")
-    .single();
-
-  if (insertError) {
+  const reservation = await reserveOrderAsset({
+    supabaseAdmin, orderId, provider: "r2", bucket: r2.bucket, objectKey,
+    fileName: payload?.fileName || fileName, contentType, sizeBytes, category, userId: user.id,
+  });
+  if (reservation.conflict) return jsonResponse(409, { error: "Ya existe un archivo con esta ruta. Intenta nuevamente." });
+  if (reservation.error || !reservation.fileRecord) {
     return internalError("No se pudo registrar el archivo.", "FILE_RECORD_CREATE_FAILED");
   }
 
@@ -760,9 +995,66 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
     bucket: r2.bucket,
     key: objectKey,
     contentType,
-    fileRecord,
+    fileRecord: reservation.fileRecord,
     env,
   }));
+}
+
+export async function handleBindPreorderFileUpload(payload = {}, env = process.env) {
+  const auth = await requireAuthenticated(env.authHeader, env);
+  if (!auth.authorized) return auth.response;
+  const { supabaseAdmin, user, profile } = auth;
+
+  const orderId = String(payload?.orderId || "").trim();
+  const provider = String(payload?.provider || "").trim();
+  const bucket = String(payload?.bucket || "").trim();
+  const objectKey = String(payload?.objectKey || "").trim();
+  const fileName = safeFileName(payload?.fileName || objectKey.split("/").pop());
+  const contentType = String(payload?.contentType || "application/octet-stream").trim();
+  const sizeBytes = Number(payload?.sizeBytes || 0);
+  const category = inferCategory({ bucket, path: objectKey, category: payload?.category });
+
+  if (!orderId || !["r2", "supabase"].includes(provider) || !ORDER_ASSET_BUCKETS.has(bucket) || !objectKey || !fileName) {
+    return jsonResponse(400, { error: "Los datos del archivo previo no son validos." });
+  }
+  if (!isOrderScopedPath({ orderId, path: objectKey })) {
+    return jsonResponse(400, { error: "El archivo no pertenece a la orden indicada." });
+  }
+
+  const policyError = validateUploadRequestPolicy({ bucket, category, fileName, contentType });
+  if (policyError) return policyError;
+  const r2 = getR2Config(env);
+  if (provider === "r2" && (!r2.configured || bucket !== r2.bucket)) {
+    return jsonResponse(400, { error: "El bucket R2 indicado no es valido." });
+  }
+
+  const access = await loadOrderForAccess({ supabaseAdmin, orderId, userId: user.id, role: profile.role });
+  if (access.error) return access.error;
+  const writeAccessError = validateOrderAssetAction({ order: access.order, role: profile.role, category, action: "complete" });
+  if (writeAccessError) return writeAccessError;
+
+  const reservation = await reserveOrderAsset({
+    supabaseAdmin, orderId, provider, bucket, objectKey,
+    fileName: payload?.fileName || fileName, contentType, sizeBytes, category, userId: user.id,
+  });
+  if (reservation.conflict || reservation.error || !reservation.fileRecord) {
+    return reservation.conflict
+      ? jsonResponse(409, { error: "Este archivo ya fue asociado a una orden." })
+      : internalError("No se pudo asociar el archivo previo a la orden.", "PREORDER_FILE_BIND_FAILED");
+  }
+  const { data: fileRecord, error } = await supabaseAdmin
+    .from("order_files")
+    .update({ status: "uploaded", updated_at: new Date().toISOString() })
+    .eq("id", reservation.fileRecord.id)
+    .eq("uploaded_by", user.id)
+    .select("*")
+    .single();
+  if (error || !fileRecord) return internalError("No se pudo completar el archivo previo.", "PREORDER_FILE_BIND_FAILED");
+
+  return jsonResponse(200, {
+    file: fileRecord,
+    storedUrl: buildAssetReference({ provider: fileRecord.provider, bucket: fileRecord.bucket, objectKey: fileRecord.object_key }),
+  });
 }
 
 export async function handleCompleteFileUpload(payload = {}, env = process.env) {
@@ -776,7 +1068,8 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
 
   const access = await loadOrderForAccess({ supabaseAdmin, orderId, userId: user.id, role: profile.role });
   if (access.error) return access.error;
-  const writeAccessError = validateOrderFileWriteAccess({ order: access.order, role: profile.role });
+  const category = inferCategory({ bucket: payload?.bucket, path: payload?.path || payload?.objectKey, category: payload?.category });
+  const writeAccessError = validateOrderAssetAction({ order: access.order, role: profile.role, category, action: "complete" });
   if (writeAccessError) return writeAccessError;
 
   if (provider === "r2") {
@@ -789,6 +1082,7 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
       .update({ status: nextStatus, updated_at: new Date().toISOString() })
       .eq("id", fileId)
       .eq("order_id", orderId)
+      .eq("uploaded_by", user.id)
       .select("*")
       .single();
 
@@ -798,8 +1092,8 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
 
   const bucket = String(payload?.bucket || "").trim();
   const path = String(payload?.path || "").trim();
-  if (!bucket || !path) return jsonResponse(400, { error: "Faltan bucket y path." });
-  const category = inferCategory({ bucket, path, category: payload?.category });
+  const fileId = String(payload?.fileId || payload?.file?.id || "").trim();
+  if (!ORDER_ASSET_BUCKETS.has(bucket) || !path || !fileId) return jsonResponse(400, { error: "Faltan datos de la reserva del archivo." });
   const fileName = payload?.fileName || path.split("/").pop();
   const contentType = payload?.contentType || null;
   const policyError = validateUploadRequestPolicy({ bucket, category, fileName, contentType });
@@ -807,24 +1101,18 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
 
   const { data, error } = await supabaseAdmin
     .from("order_files")
-    .upsert({
-      order_id: orderId,
-      provider: "supabase",
-      bucket,
-      object_key: path,
-      original_filename: fileName,
-      content_type: contentType,
-      size_bytes: Number.isFinite(Number(payload?.sizeBytes)) ? Number(payload?.sizeBytes) : null,
-      category,
-      status: "uploaded",
-      uploaded_by: user.id,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "provider,bucket,object_key" })
+    .update({ status: payload?.status === "failed" ? "failed" : "uploaded", updated_at: new Date().toISOString() })
+    .eq("id", fileId)
+    .eq("order_id", orderId)
+    .eq("provider", "supabase")
+    .eq("bucket", bucket)
+    .eq("object_key", path)
+    .eq("uploaded_by", user.id)
     .select("*")
     .single();
 
   if (error) return internalError("No se pudo registrar el archivo.", "FILE_RECORD_CREATE_FAILED");
-  return jsonResponse(200, { file: data });
+  return jsonResponse(200, { file: data, storedUrl: buildSupabaseAssetRef({ bucket: data.bucket, key: data.object_key }) });
 }
 
 export async function handleImportRemoteFile(payload = {}, env = process.env) {
@@ -839,7 +1127,7 @@ export async function handleImportRemoteFile(payload = {}, env = process.env) {
   try {
     const imported = await fetchRemoteImage(payload?.url);
     return jsonResponse(200, imported);
-  } catch (error) {
+  } catch {
     return jsonResponse(400, {
       error: "No se pudo importar el archivo remoto.",
       code: "REMOTE_FILE_IMPORT_FAILED",
@@ -847,40 +1135,110 @@ export async function handleImportRemoteFile(payload = {}, env = process.env) {
   }
 }
 
-export async function handleFileDownloadUrl(payload = {}, env = process.env) {
+const findCanonicalAssetRecord = async ({ supabaseAdmin, assetRef, bucket: requestedBucket, env = process.env }) => {
+  const r2Bucket = getR2Config(env).bucket;
+  const r2Ref = parseR2Url(assetRef, { allowedBucket: r2Bucket });
+  const supabaseRef = parseSupabaseAssetRef(assetRef);
+  if (r2Ref || supabaseRef) {
+    const ref = r2Ref || supabaseRef;
+    const provider = r2Ref ? "r2" : "supabase";
+    const { data, error } = await supabaseAdmin
+      .from("order_files")
+      .select("*")
+      .eq("provider", provider)
+      .eq("bucket", ref.bucket)
+      .eq("object_key", ref.key)
+      .eq("status", "uploaded")
+      .is("deleted_at", null);
+    return { records: data, error };
+  }
+
+  const candidateBuckets = requestedBucket && ORDER_ASSET_BUCKETS.has(requestedBucket)
+    ? [requestedBucket]
+    : [...ORDER_ASSET_BUCKETS];
+  const candidates = candidateBuckets
+    .map((bucket) => ({ bucket, path: getStoragePathFromSupabaseUrl({ bucket, url: assetRef }) }))
+    .filter((candidate) => candidate.path);
+  if (candidates.length !== 1) return { records: [], error: null };
+  const candidate = candidates[0];
+  const { data, error } = await supabaseAdmin
+    .from("order_files")
+    .select("*")
+    .eq("provider", "supabase")
+    .eq("bucket", candidate.bucket)
+    .eq("object_key", candidate.path)
+    .eq("status", "uploaded")
+    .is("deleted_at", null);
+  return { records: data, error };
+};
+
+export async function handleResolveOrderAssetDownload(payload = {}, env = process.env) {
   const auth = await requireAuthenticated(env.authHeader, env);
   if (!auth.authorized) return auth.response;
   const { supabaseAdmin, user, profile } = auth;
 
-  const url = String(payload?.url || "").trim();
-  const r2Ref = parseR2Url(url);
-  if (!r2Ref) return jsonResponse(200, { url });
+  const assetRef = String(payload?.assetRef || payload?.url || "").trim();
+  const assetId = String(payload?.assetId || "").trim();
+  if (!assetRef && !assetId) return jsonResponse(400, { error: "Falta la referencia segura del archivo." });
 
-  const { data: fileRecord, error } = await supabaseAdmin
-    .from("order_files")
-    .select("*")
-    .eq("provider", "r2")
-    .eq("object_key", r2Ref.key)
-    .maybeSingle();
+  let fileRecords;
+  let error;
+  if (assetId) {
+    ({ data: fileRecords, error } = await supabaseAdmin
+      .from("order_files")
+      .select("*")
+      .eq("id", assetId)
+      .eq("status", "uploaded")
+      .is("deleted_at", null));
+  } else {
+    ({ records: fileRecords, error } = await findCanonicalAssetRecord({
+      supabaseAdmin,
+      assetRef,
+      bucket: String(payload?.bucket || "").trim(),
+      env,
+    }));
+  }
 
   if (error) return internalError("No se pudo consultar el archivo.", "FILE_LOOKUP_FAILED");
-  const orderId = fileRecord?.order_id || getOrderIdFromPath(r2Ref.key);
-  if (!orderId) return jsonResponse(404, { error: "No se encontro el archivo." });
+  if (!Array.isArray(fileRecords) || fileRecords.length !== 1) {
+    return jsonResponse(404, { error: "No se encontro el archivo." });
+  }
+  const fileRecord = fileRecords[0];
+  const orderId = fileRecord.order_id;
 
   const access = await loadOrderForAccess({ supabaseAdmin, orderId, userId: user.id, role: profile.role });
   if (access.error) return access.error;
 
+  const readAccessError = validateOrderAssetAction({ order: access.order, role: profile.role, category: fileRecord.category, action: "read" });
+  if (readAccessError) return readAccessError;
+
+  const expiresIn = Math.max(60, Math.min(Number(payload?.expiresIn) || DEFAULT_SIGNED_URL_TTL, DEFAULT_SIGNED_URL_TTL));
+  if (fileRecord.provider === "supabase") {
+    const { data: signed, error: signedError } = await supabaseAdmin.storage
+      .from(fileRecord.bucket)
+      .createSignedUrl(fileRecord.object_key, expiresIn, { download: payload?.download === true });
+    if (signedError || !signed?.signedUrl) return internalError("No se pudo generar el enlace temporal.", "SIGNED_DOWNLOAD_CREATE_FAILED");
+    return jsonResponse(200, { url: signed.signedUrl, expiresIn, assetRef: buildSupabaseAssetRef({ bucket: fileRecord.bucket, key: fileRecord.object_key }) });
+  }
+
   return jsonResponse(200, {
     url: presignR2Url({
       method: "GET",
-      bucket: fileRecord?.bucket || r2Ref.bucket,
-      key: fileRecord?.object_key || r2Ref.key,
-      expiresIn: Number(payload?.expiresIn) || DEFAULT_SIGNED_URL_TTL,
-      downloadName: fileRecord?.original_filename || r2Ref.key.split("/").pop() || "archivo",
+      bucket: fileRecord.bucket,
+      key: fileRecord.object_key,
+      expiresIn,
+      downloadName: fileRecord.original_filename || fileRecord.object_key.split("/").pop() || "archivo",
       env,
     }),
-    expiresIn: Number(payload?.expiresIn) || DEFAULT_SIGNED_URL_TTL,
+    expiresIn,
+    assetRef: buildR2Url({ bucket: fileRecord.bucket, key: fileRecord.object_key }),
   });
+}
+
+// Kept during the release window for callers which still send a legacy URL.
+// Unlike the old implementation it never returns caller-controlled URLs.
+export async function handleFileDownloadUrl(payload = {}, env = process.env) {
+  return handleResolveOrderAssetDownload(payload, env);
 }
 
 export async function handleAdminDeleteOrderWithFiles(payload = {}, env = process.env) {

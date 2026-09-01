@@ -98,7 +98,7 @@ export default function useOrderEventReviews(userId) {
       .from("order_event_reviews")
       .select("id, order_event_id, order_id, label, event_key, source_module, changed_fields, summary, metadata, created_at")
       .eq("user_id", userId)
-      .in("event_key", ["admin_edited_order", "admin_intervention"])
+      .in("event_key", ["admin_edited_order", "admin_intervention", "admin_intervention_notice"])
       .is("reviewed_at", null)
       .order("created_at", { ascending: true });
 
@@ -171,10 +171,40 @@ export default function useOrderEventReviews(userId) {
     return true;
   }, [acknowledgingOrderId]);
 
+  const acknowledgeReview = useCallback(async (reviewId) => {
+    if (!reviewId || acknowledgingOrderId) return false;
+    setAcknowledgingOrderId(reviewId);
+    setAcknowledgeError("");
+
+    const { data, error } = await supabase.rpc("acknowledge_order_event_review", {
+      p_review_id: reviewId,
+    });
+
+    if (error || data !== 1) {
+      setAcknowledgeError("No se pudo confirmar este aviso. Intenta nuevamente.");
+      setAcknowledgingOrderId(null);
+      return false;
+    }
+
+    setReviews((current) => current.filter((review) => review.id !== reviewId));
+    setAcknowledgingOrderId(null);
+    return true;
+  }, [acknowledgingOrderId]);
+
   const pendingByOrder = useMemo(
-    () => groupOrderEventReviews(reviews, actorNames),
+    () => groupOrderEventReviews(reviews.filter((review) => review.event_key !== "admin_intervention_notice"), actorNames),
     [actorNames, reviews]
   );
+
+  const pendingNotices = useMemo(() => {
+    const priority = { action_required: 3, important: 2, info: 1 };
+    return reviews
+      .filter((review) => review.event_key === "admin_intervention_notice" && review.metadata?.requires_ack === true)
+      .toSorted((left, right) => {
+        const priorityDifference = (priority[right.metadata?.priority] || 0) - (priority[left.metadata?.priority] || 0);
+        return priorityDifference || new Date(left.created_at) - new Date(right.created_at);
+      });
+  }, [reviews]);
 
   return {
     pendingByOrder,
@@ -183,6 +213,8 @@ export default function useOrderEventReviews(userId) {
     acknowledgingOrderId,
     acknowledgeError,
     acknowledgeOrder,
+    acknowledgeReview,
+    pendingNotices,
     refresh,
   };
 }

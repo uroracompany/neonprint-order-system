@@ -55,11 +55,11 @@ export const archiveOrder = async (order, module) => {
   }
 
   if (!config.dbField) return { error: new Error("No dbField configured") };
-
-  return supabase
-    .from("orders")
-    .update({ [config.dbField]: true })
-    .eq("id", order.id);
+  return supabase.rpc("set_order_archive_state", {
+    p_order_id: order.id,
+    p_module: module,
+    p_archived: true,
+  });
 };
 
 export const restoreOrder = async (order, module) => {
@@ -71,11 +71,11 @@ export const restoreOrder = async (order, module) => {
   }
 
   if (!config.dbField) return { error: new Error("No dbField configured") };
-
-  return supabase
-    .from("orders")
-    .update({ [config.dbField]: false })
-    .eq("id", order.id);
+  return supabase.rpc("set_order_archive_state", {
+    p_order_id: order.id,
+    p_module: module,
+    p_archived: false,
+  });
 };
 
 export { ARCHIVE_MODULES };

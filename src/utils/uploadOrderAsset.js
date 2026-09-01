@@ -4,6 +4,7 @@ import { adminApiFetch } from "./adminApi";
 const MB = 1024 * 1024;
 const DEFAULT_SIGNED_URL_TTL = 60 * 30;
 const R2_SCHEME = "r2://";
+const SUPABASE_SCHEME = "supabase://";
 
 export const ORDER_ASSET_BUCKET_LIMITS = {
   "order-docs": 200 * MB,
@@ -19,6 +20,7 @@ export const formatFileSize = (bytes = 0) => {
 
 export const getOrderAssetLimit = (bucket) => ORDER_ASSET_BUCKET_LIMITS[bucket] || null;
 export const isR2OrderAssetUrl = (url = "") => String(url || "").startsWith(R2_SCHEME);
+export const isSupabaseOrderAssetRef = (url = "") => String(url || "").startsWith(SUPABASE_SCHEME);
 
 export const buildStorageSafeFileName = (file, prefix = "") => {
   const safeName = String(file?.name || "archivo")
@@ -76,7 +78,18 @@ const putFileToSignedUrl = async ({ upload, file }) => {
   }
 };
 
-const registerCompletedUpload = async ({ provider, bucket, path, file, storedUrl, fileId }) => {
+const putFileToSupabaseSignedUrl = async ({ bucket, upload, file }) => {
+  if (!upload?.path || !upload?.token) throw new Error("La autorización de subida segura no es válida.");
+  const { error } = await supabase.storage
+    .from(bucket)
+    .uploadToSignedUrl(upload.path, upload.token, file, {
+      contentType: file?.type || undefined,
+      cacheControl: "3600",
+    });
+  if (error) throw buildStorageUploadError({ bucket, file, error });
+};
+
+const registerCompletedUpload = async ({ provider, bucket, path, file, storedUrl, fileId, status = "uploaded" }) => {
   const orderId = getOrderIdFromStoragePath(path);
   if (!orderId || orderId === "new") return null;
 
@@ -88,6 +101,7 @@ const registerCompletedUpload = async ({ provider, bucket, path, file, storedUrl
     path,
     fileId,
     storedUrl,
+    status,
     fileName: file?.name || path.split("/").pop(),
     contentType: file?.type || null,
     sizeBytes: file?.size || null,
@@ -132,6 +146,7 @@ export const uploadOrderAsset = async ({ bucket, path, file, deferR2Binding = fa
       const { response, result } = await adminApiFetch("/api/files", {
         action: "initiate-upload",
         orderId,
+        idempotencyKey: orderId,
         bucket,
         path,
         fileName: file?.name || path.split("/").pop(),
@@ -144,12 +159,28 @@ export const uploadOrderAsset = async ({ bucket, path, file, deferR2Binding = fa
         throw new Error(result?.error || "No se pudo iniciar la subida del archivo.");
       }
 
-      if (response.ok && result?.provider === "supabase") {
-        const fallbackSizeError = validateOrderAssetSize({ bucket, file });
-        if (fallbackSizeError) throw new Error(fallbackSizeError);
+      if (result?.provider === "supabase") {
+        try {
+          await putFileToSupabaseSignedUrl({ bucket: result.bucket || bucket, upload: result.upload, file });
+        } catch (uploadError) {
+          if (result.file?.id) await registerCompletedUpload({ provider: "supabase", bucket, path, file, fileId: result.file.id, status: "failed" }).catch(() => null);
+          throw uploadError;
+        }
+        if (result.shouldRegister === false || !result.file?.id) {
+          if (deferR2Binding && result.preorder) return { preorder: result.preorder, bucket, path };
+          return result.assetRef || null;
+        }
+        const completed = await registerCompletedUpload({
+          provider: "supabase",
+          bucket: result.bucket || bucket,
+          path: result.objectKey || path,
+          file,
+          fileId: result.file.id,
+        });
+        return completed?.storedUrl || result.assetRef || null;
       }
 
-      if (response.ok && result?.provider === "r2") {
+      if (result?.provider === "r2") {
         try {
           await putFileToSignedUrl({ upload: result.upload, file });
         } catch (uploadError) {
@@ -177,53 +208,11 @@ export const uploadOrderAsset = async ({ bucket, path, file, deferR2Binding = fa
       }
     }
 
-    const fallbackSizeError = validateOrderAssetSize({ bucket, file });
-    if (fallbackSizeError) throw new Error(fallbackSizeError);
-
-    const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
-    if (error) throw buildStorageUploadError({ bucket, file, error });
-
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-    const publicUrl = data?.publicUrl || null;
-
-    registerCompletedUpload({
-      provider: "supabase",
-      bucket,
-      path,
-      file,
-      storedUrl: publicUrl,
-    }).catch((registerError) => {
-      console.warn("No se pudo registrar metadata del archivo:", registerError);
-    });
-
-    return publicUrl;
+    throw new Error("No se pudo determinar la orden asociada al archivo.");
   } catch (err) {
     console.error(`Error uploading to bucket '${bucket}':`, err);
     throw err;
   }
-};
-
-export const bindPreorderOrderAssets = async ({ orderId, descriptors = [] }) => {
-  const boundUrls = [];
-  for (const descriptor of descriptors) {
-    if (!descriptor?.preorder) continue;
-    const { response, result } = await adminApiFetch("/api/files", {
-      action: "bind-preorder-upload",
-      orderId,
-      provider: "r2",
-      bucket: descriptor.preorder.bucket,
-      objectKey: descriptor.preorder.objectKey,
-      fileName: descriptor.preorder.originalFilename,
-      contentType: descriptor.preorder.contentType,
-      sizeBytes: descriptor.preorder.sizeBytes,
-      category: descriptor.preorder.category,
-    });
-    if (!response.ok || !result?.storedUrl) {
-      throw new Error(result?.error || "No se pudo asociar el archivo grande a la orden.");
-    }
-    boundUrls.push(result.storedUrl);
-  }
-  return boundUrls;
 };
 
 export const getStoragePathFromPublicUrl = ({ bucket, url }) => {
@@ -247,30 +236,27 @@ export const getStoragePathFromPublicUrl = ({ bucket, url }) => {
 
 export const createSignedOrderAssetUrl = async ({ bucket, path, expiresIn = DEFAULT_SIGNED_URL_TTL }) => {
   if (!bucket || !path) return null;
-
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
-  if (error) {
-    console.error(`Error creating signed URL for '${bucket}/${path}':`, error);
-    return null;
-  }
-
-  return data?.signedUrl || null;
+  const { response, result } = await adminApiFetch("/api/files", {
+    action: "resolve-download",
+    assetRef: `${SUPABASE_SCHEME}${bucket}/${encodeURI(path)}`,
+    expiresIn,
+  });
+  return response.ok ? result?.url || null : null;
 };
 
 export const createSignedOrderAssetUrlFromStoredUrl = async ({ bucket, url, expiresIn = DEFAULT_SIGNED_URL_TTL }) => {
-  if (isR2OrderAssetUrl(url)) {
-    const { response, result } = await adminApiFetch("/api/files", { action: "download-url", url, expiresIn });
-    if (!response.ok) return null;
-    return result?.url || null;
-  }
-
-  const path = getStoragePathFromPublicUrl({ bucket, url });
-  if (!path) return null;
-  return createSignedOrderAssetUrl({ bucket, path, expiresIn });
+  if (!url) return null;
+  const { response, result } = await adminApiFetch("/api/files", {
+    action: "resolve-download",
+    assetRef: url,
+    bucket,
+    expiresIn,
+  });
+  return response.ok ? result?.url || null : null;
 };
 
 
 export const buildPaymentReceiptPath = (orderId, fileName) => {
   const timestamp = Date.now();
-  return `${orderId}/payment-${timestamp}-${fileName}`;
+  return `orders/${orderId}/payment-${timestamp}-${fileName}`;
 };

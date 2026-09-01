@@ -67,11 +67,14 @@ describe("Seller visual contract with Admin clients", () => {
     expect(greeting).toContain("background: #ffffff;");
     expect(greeting).toContain("box-shadow: var(--seller-client-shadow);");
 
-    for (const block of [card, panel, filters, orderCard]) {
+    for (const block of [card, panel, filters]) {
       expect(block).toContain("border: 1px solid var(--seller-client-border);");
       expect(block).toContain("border-radius: var(--seller-client-radius);");
       expect(block).toContain("box-shadow: var(--seller-client-shadow);");
     }
+    expect(orderCard).toContain("border: var(--banner-border);");
+    expect(orderCard).toContain("border-radius: var(--banner-radius);");
+    expect(orderCard).toContain("box-shadow: var(--banner-shadow);");
 
     expect(getCssBlock(sellerCss, ".ps-panel-stripe")).toContain("display: none;");
     expect(sellerPage).not.toContain("onMouseEnter={e => e.currentTarget.style.borderColor");
@@ -87,7 +90,7 @@ describe("Seller visual contract with Admin clients", () => {
     expect(sellerPage).not.toContain("👋");
     expect(sellerPage).toContain("Bienvenido,");
     expect(sellerPage).toContain("Crear Ordenes");
-    expect(sellerPage).toContain("Crear Usuarios");
+    expect(sellerPage).toContain("Nuevo Cliente");
     expect(sellerPage).toContain("activeOrdersCount");
     expect(sellerPage).toContain("Ordenes activas");
 
@@ -122,13 +125,11 @@ describe("Seller visual contract with Admin clients", () => {
   });
 
   it("uses the client-management action colors for table and card order actions", () => {
-    expect(sellerCss).toContain(".table-action-btn.view {\n  color: #1d4ed8;\n  border-color: #bfdbfe;\n  background: #eff6ff;");
-    expect(sellerCss).toContain(".table-action-btn.edit {\n  color: #d97706;\n  border-color: #fde68a;\n  background: #fffbeb;");
-    expect(sellerCss).toContain(".table-action-btn.cancel {\n  color: #dc2626;\n  border-color: #fecaca;\n  background: #fef2f2;");
-
-    expect(sellerCss).toContain(".card-action-btn.view {\n  color: #1d4ed8;\n  border-color: #bfdbfe;\n  background: #eff6ff;");
-    expect(sellerCss).toContain(".card-action-btn.edit {\n  color: #d97706;\n  border-color: #fde68a;\n  background: #fffbeb;");
-    expect(sellerCss).toContain(".card-action-btn.cancel {\n  color: #dc2626;\n  border-color: #fecaca;\n  background: #fef2f2;");
+    for (const selector of [".table-action-btn", ".card-action-btn"]) {
+      expect(getCssBlock(sellerCss, `${selector}.view`)).toContain("color: #1d4ed8;");
+      expect(getCssBlock(sellerCss, `${selector}.edit`)).toContain("color: #d97706;");
+      expect(getCssBlock(sellerCss, `${selector}.cancel`)).toContain("color: #dc2626;");
+    }
   });
 
   it("uses the order-management avatar pattern for seller client rows and cards", () => {
@@ -187,13 +188,16 @@ describe("Seller visual contract with Admin clients", () => {
     expect(sellerPage).toContain("const [ordersTotal, setOrdersTotal] = useState(0);");
     expect(sellerPage).toContain("const [recentOrders, setRecentOrders] = useState([]);");
     expect(sellerPage).toContain("const [sellerSummary, setSellerSummary] = useState(EMPTY_SELLER_SUMMARY);");
-    expect(sellerPage).toContain("pageSize: SELLER_ORDER_PAGE_SIZE");
+    expect(sellerPage).toContain("pageSize: isReturnedFilter ? 500 : (viewMode === \"cards\" ? SELLER_CARD_PAGE_SIZE : SELLER_ORDER_PAGE_SIZE)");
     expect(sellerPage).toContain("search: debouncedSearch");
     expect(sellerPage).toContain("orders.map(o =>");
     expect(sellerPage).toContain("recentOrders.map(o =>");
-    expect(sellerPage).toContain("ordersTotal} resultado");
+    expect(sellerPage).toContain("resultCount={!ordersLoaded || ordersError ? undefined : ordersTotal}");
+    expect(sellerPage).toContain("resultLabel={`resultado${ordersTotal !== 1 ? \"s\" : \"\"}`}");
     expect(sellerOrderActionsHandler).toContain("list: handleList");
-    expect(sellerOrderActionsHandler).toContain(".select(\"*\", { count: \"exact\" })");
+    expect(sellerOrderActionsHandler).toContain("const SELLER_LIST_COLUMNS = [");
+    expect(sellerOrderActionsHandler).toContain(".select(SELLER_LIST_COLUMNS, { count: \"exact\" })");
+    expect(sellerOrderActionsHandler).not.toContain(".select(\"*\", { count: \"exact\" })");
     expect(sellerOrderActionsHandler).toContain("applySellerListFilters");
     expect(sellerOrderActionsHandler).toContain("recent_orders");
     expect(sellerOrderActionsHandler).toContain("summary: buildSummary");
@@ -237,7 +241,7 @@ describe("Seller visual contract with Admin clients", () => {
     );
     const ordersTable = getSourceSlice(
       sellerPage,
-      '<thead><tr>{["Cliente", "Facturacion", "Estado", "Pago", "Tipo", "Fecha", ""].map',
+      '<thead><tr>{["Cliente", "Facturacion", "Estado", "Pago", "Tipo", "Fecha", "Acciones"].map',
       '<Pagination currentPage={safePage}'
     );
 
@@ -323,7 +327,7 @@ describe("Seller visual contract with Admin clients", () => {
     expect(profileSurfaces).toContain("border-radius: var(--seller-client-radius);");
     expect(profileSurfaces).toContain("box-shadow: var(--seller-client-shadow);");
     expect(rankingPanel).toContain("display: grid;");
-    expect(sellerCss).toContain(".ps-profile-metric-card {\n  display: flex;");
+    expect(getCssBlock(sellerCss, ".ps-profile-metric-card")).toContain("display: flex;");
     expect(avatarLarge).toContain("width: 88px;");
     expect(avatarLarge).toContain("height: 88px;");
     expect(avatarLarge).toContain("border: 3px solid var(--green);");

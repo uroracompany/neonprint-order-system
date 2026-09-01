@@ -28,7 +28,7 @@ describe("notificaciones administrativas de crédito", () => {
     expect(dashboard).toContain("DesignerNotificationsModule");
     expect(dashboard).toContain("handleOpenCreditNotification");
     expect(dashboard).toContain("AdminProfileModule");
-    expect(profile).toContain("Cuenta administrativa");
-    expect(profile).toContain("Este perfil es solo de consulta");
+    expect(profile).toContain("Actividad administrativa reciente");
+    expect(profile).toContain("Cambios auditados en órdenes");
   });
 });

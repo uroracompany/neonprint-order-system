@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "r
 import { Icons } from "../../utils/icons";
 import {
   filterClientsByQuery,
-  formatDominicanPhone,
+  formatPhone,
   getClientDisplayName,
   NO_CLIENT_FILTER_VALUE,
 } from "../../utils/clients";
@@ -97,7 +97,7 @@ function ClientSuggestionList({
     >
       <span className="client-lookup-option-copy">
         <strong>{client.name}</strong>
-        <small>{formatDominicanPhone(client.phone) || "Sin telefono"}</small>
+        <small>{formatPhone(client.phone) || "Sin telefono"}</small>
       </span>
     </button>
   ));
@@ -200,7 +200,7 @@ export function ClientSelect({
       >
         <span className="client-select-trigger-copy">
           <strong>{selectedClient ? selectedClient.name : placeholder}</strong>
-          <small>{formatDominicanPhone(selectedClient?.phone) || "Cliente registrado"}</small>
+          <small>{formatPhone(selectedClient?.phone) || "Cliente registrado"}</small>
         </span>
         <span className="client-select-arrow" aria-hidden="true"><Icons.ChevronDown /></span>
       </button>

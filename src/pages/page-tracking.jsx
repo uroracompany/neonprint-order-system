@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { supabase } from "../../supabaseClient";
 import { FlowTrackClient } from "../components/FlowTrackClient";
 import NeonLogo from "../assets/images/logo-neonprint.jpg";
 import {
@@ -18,35 +17,55 @@ export default function PageTracking() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const inFlightRef = useRef(false);
+  const hasLoadedRef = useRef(false);
+  const retryDelayRef = useRef(60_000);
 
   const fetchData = useCallback(async () => {
+    if (!token || inFlightRef.current) return;
+    inFlightRef.current = true;
     try {
-      setLoading(true);
+      if (!hasLoadedRef.current) setLoading(true);
       setError(null);
-
-      const { data: orderData, error: orderErr } = await supabase.rpc(
-        "get_order_tracking",
-        { p_token: token }
-      );
-      if (orderErr) throw orderErr;
-      const orderItem = Array.isArray(orderData) ? orderData[0] : orderData;
+      const response = await fetch("/api/tracking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 404) {
+          setError("ORDEN_NO_ENCONTRADA");
+          return;
+        }
+        throw new Error(body?.error || "No se pudo obtener el seguimiento.");
+      }
+      const orderItem = body?.order;
       if (!orderItem) {
         setError("ORDEN_NO_ENCONTRADA");
         return;
       }
       setOrder(orderItem);
-
-      const { data: eventData, error: eventErr } = await supabase.rpc(
-        "get_order_tracking_events",
-        { p_token: token }
-      );
-      if (!eventErr && eventData) setEvents(eventData);
+      setEvents(Array.isArray(body?.events) ? body.events : []);
+      retryDelayRef.current = 60_000;
     } catch (err) {
       console.error("FlowTrack error:", err);
       setError("ERROR");
+      retryDelayRef.current = Math.min(retryDelayRef.current * 2, 5 * 60_000);
     } finally {
       setLoading(false);
+      hasLoadedRef.current = true;
+      inFlightRef.current = false;
     }
+  }, [token]);
+
+  useEffect(() => {
+    hasLoadedRef.current = false;
+    retryDelayRef.current = 60_000;
+    setOrder(null);
+    setEvents([]);
+    setError(null);
+    setLoading(true);
   }, [token]);
 
   useEffect(() => {
@@ -54,16 +73,26 @@ export default function PageTracking() {
   }, [fetchData]);
 
   useEffect(() => {
-    document.title = order
-      ? `FlowTrack - ${order.client_name}`
-      : PAGE_TITLE;
+    document.title = order ? "FlowTrack - Tu pedido" : PAGE_TITLE;
   }, [order]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (!document.hidden) fetchData();
-    }, 10000);
-    return () => clearInterval(interval);
+    let timeout;
+    const schedule = () => {
+      timeout = window.setTimeout(async () => {
+        if (!document.hidden) await fetchData();
+        schedule();
+      }, retryDelayRef.current);
+    };
+    const onVisibilityChange = () => {
+      if (!document.hidden) void fetchData();
+    };
+    schedule();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearTimeout(timeout);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [fetchData]);
 
   if (loading && !order) {
@@ -185,11 +214,11 @@ export default function PageTracking() {
 
             <div className="ft-order-client">
               <div className="ft-client-avatar">
-                {(order.client_name || "C")[0].toUpperCase()}
+                P
               </div>
               <div>
-                <span className="ft-client-name">{order.client_name || "Cliente"}</span>
-                <span className="ft-client-label">Cliente</span>
+                <span className="ft-client-name">Tu pedido</span>
+                <span className="ft-client-label">Seguimiento privado</span>
               </div>
             </div>
           </div>
@@ -204,7 +233,7 @@ export default function PageTracking() {
               events={events}
               order={order}
               designType={order.order_design_type}
-              productionFiles={order.production_files}
+              productionFiles={[]}
             />
           </div>
 

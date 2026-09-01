@@ -109,7 +109,7 @@ export async function handleAdminUserRetirementPreflight(payload = {}, env = pro
       responsibilities,
       canRetire: responsibilities.length === 0,
     });
-  } catch (queryError) {
+  } catch {
     return jsonResponse(500, { error: "No se pudieron revisar las responsabilidades activas.", code: "ACTIVE_RESPONSIBILITIES_LOOKUP_FAILED" });
   }
 }
@@ -129,7 +129,7 @@ export async function handleAdminRetireUser(payload = {}, env = process.env) {
   let responsibilities;
   try {
     responsibilities = await findOpenResponsibilities(context.supabaseAdmin, userId);
-  } catch (queryError) {
+  } catch {
     return jsonResponse(500, { error: "No se pudieron revisar las responsabilidades activas.", code: "ACTIVE_RESPONSIBILITIES_LOOKUP_FAILED" });
   }
   if (responsibilities.length) {

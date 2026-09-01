@@ -2,7 +2,7 @@ import { Icons } from "../../utils/icons";
 import "./CreditReminderModals.css";
 
 const defaultFormatCreditDate = (value) => value || "---";
-const defaultIsOpenCreditReceivable = (item) => ["open", "partial"].includes(item?.status);
+const defaultIsOpenCreditReceivable = (item) => item?.status === "open";
 
 function getVariantClass(variant) {
   return variant === "quote" ? "credit-reminder--quote" : "credit-reminder--admin";
@@ -17,7 +17,6 @@ export function CreditReminderCreateModal({
   visibilityScope,
   onVisibilityScopeChange,
   onFormChange,
-  onToggleOrder,
   onClose,
   onSubmit,
   saving,
@@ -28,18 +27,14 @@ export function CreditReminderCreateModal({
   if (!open) return null;
 
   const invoices = target?.invoices || [];
-  const selectedOrderIds = new Set(form.orderIds || []);
-  const hasSelectedCreditOrder = invoices.some(item => (
-    item?.order_id
-    && selectedOrderIds.has(item.order_id)
-    && isOpenCreditReceivable(item)
-  ));
+  const openInvoices = invoices.filter(isOpenCreditReceivable);
+  const hasOpenCreditOrders = openInvoices.length > 0;
   const hasReminderNote = Boolean((form.note || "").trim());
   const hasReminderAt = Boolean((form.remind_at || "").trim());
   const activeVisibilityScope = visibilityScope || form.visibilityScope || "creator";
   const hasValidVisibilityScope = visibilityOptions.length === 0
     || visibilityOptions.some(option => option.value === activeVisibilityScope);
-  const canSubmitReminder = hasSelectedCreditOrder && hasReminderNote && hasReminderAt && hasValidVisibilityScope;
+  const canSubmitReminder = hasOpenCreditOrders && hasReminderNote && hasReminderAt && hasValidVisibilityScope;
 
   const handleReminderAtChange = (event) => {
     const selectedValue = event.target.value;
@@ -86,28 +81,25 @@ export function CreditReminderCreateModal({
           </label>
 
           <div className="credit-reminder-section">
-            <span className="credit-reminder-section-title">Órdenes asociadas</span>
+            <span className="credit-reminder-section-title">Órdenes pendientes actuales</span>
             <div className="credit-reminder-invoices">
-              {invoices.map((item) => (
-                <label key={item.id || item.order_id} className="credit-reminder-invoice">
-                  <input
-                    type="checkbox"
-                    checked={selectedOrderIds.has(item.order_id)}
-                    onChange={() => onToggleOrder?.(item.order_id)}
-                    disabled={!item.order_id || !isOpenCreditReceivable(item)}
-                  />
+              {openInvoices.map((item) => (
+                <div key={item.id || item.order_id} className="credit-reminder-invoice">
                   <div>
                     <strong>{item.invoiceNumber || "---"}</strong>
                     <span>Orden {item.order_id?.slice(0, 8) || "---"} - {formatCreditDate(item.creditIssuedAt)}</span>
                   </div>
-                </label>
+                </div>
               ))}
-              {invoices.length === 0 && (
+              {openInvoices.length === 0 && (
                 <div className="credit-reminder-empty">No hay órdenes disponibles para este recordatorio.</div>
               )}
             </div>
-            {!hasSelectedCreditOrder && (
-              <small className="credit-reminder-help">Los recordatorios personalizados solo pueden crearse para ordenes a credito.</small>
+            {!hasOpenCreditOrders && (
+              <small className="credit-reminder-help">El cliente ya no tiene órdenes a crédito pendientes.</small>
+            )}
+            {hasOpenCreditOrders && (
+              <small className="credit-reminder-help">El seguimiento pertenece al cliente y siempre usa sus órdenes pendientes actuales.</small>
             )}
           </div>
 
@@ -159,6 +151,60 @@ export function CreditReminderCreateModal({
             </button>
             <button className="credit-reminder-btn credit-reminder-btn--primary" onClick={onSubmit} disabled={saving || !canSubmitReminder}>
               {saving ? "Guardando..." : "Guardar recordatorio"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function CreditPendingAlertModal({ open, invoiceCount, clientCount, clients = [], saving, onClose, onReview }) {
+  if (!open) return null;
+
+  return (
+    <div className="credit-reminder-overlay credit-reminder--quote" onClick={event => event.target === event.currentTarget && onClose?.()}>
+      <div className="credit-reminder-modal" role="dialog" aria-modal="true" aria-labelledby="credit-pending-alert-title">
+        <div className="credit-reminder-header">
+          <div>
+            <span className="credit-reminder-kicker">Seguimiento de Caja</span>
+            <h2 id="credit-pending-alert-title">Créditos pendientes</h2>
+          </div>
+          <button className="credit-reminder-close" onClick={onClose} aria-label="Cerrar resumen de créditos">
+            <Icons.Close />
+          </button>
+        </div>
+        <div className="credit-reminder-body">
+          <div className="credit-reminder-hero credit-reminder-hero--due">
+            <span className="credit-reminder-icon"><Icons.Receipt /></span>
+            <div>
+              <strong>{invoiceCount} orden{invoiceCount === 1 ? "" : "es"} pendiente{invoiceCount === 1 ? "" : "s"}</strong>
+              <p>{clientCount} cliente{clientCount === 1 ? "" : "s"} tiene{clientCount === 1 ? "" : "n"} crédito abierto.</p>
+            </div>
+          </div>
+          <div className="credit-reminder-section">
+            <span className="credit-reminder-section-title">Clientes por revisar</span>
+            <div className="credit-reminder-due-list">
+              {clients.map(group => (
+                <article key={group.client?.id || group.client?.name} className="credit-reminder-due-card">
+                  <div className="credit-reminder-due-head">
+                    <div>
+                      <strong>{group.client?.name || "Cliente sin nombre"}</strong>
+                      <span>{group.client?.phone || "Sin teléfono"}</span>
+                    </div>
+                    <span className="credit-reminder-status">{group.pendingCount} pendiente{group.pendingCount === 1 ? "" : "s"}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+          <p className="credit-reminder-help">Este resumen se mostrará nuevamente dentro de 30 días mientras existan órdenes pendientes.</p>
+          <div className="credit-reminder-actions">
+            <button className="credit-reminder-btn credit-reminder-btn--secondary" onClick={onClose} disabled={saving}>
+              {saving ? "Guardando..." : "Entendido"}
+            </button>
+            <button className="credit-reminder-btn credit-reminder-btn--primary" onClick={onReview} disabled={saving}>
+              Revisar pendientes
             </button>
           </div>
         </div>

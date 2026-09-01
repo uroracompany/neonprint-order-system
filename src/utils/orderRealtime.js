@@ -6,16 +6,22 @@ export const applyOrdersSnapshot = ({
   openOrderSetters = [],
   openOrderContainers = [],
   preserveMissingOpenOrders = false,
+  preserveOpenOrderState = true,
 }) => {
   const nextOrders = Array.isArray(orders) ? orders : [];
   const selectableOrders = [...nextOrders, ...(Array.isArray(additionalOrders) ? additionalOrders : [])];
   const resolveFreshOrder = (currentOrder) => {
     if (!currentOrder?.id) return currentOrder;
+    // Realtime snapshots update the collection in the background. Keep the
+    // detail object stable while it is open so forms using it as hydration
+    // input cannot be reset by an unrelated remote change.
+    if (preserveOpenOrderState) return currentOrder;
     const freshOrder = selectableOrders.find((order) => order.id === currentOrder.id);
     // A silent background reconciliation can briefly omit a record (for example,
     // while permissions or pagination are settling). It must not dismiss a modal
     // the user is actively reading or completing solely because of that transient
-    // snapshot. Explicit actions still use the default, authoritative behaviour.
+    // snapshot. Callers can opt into an authoritative reconciliation when they
+    // intentionally need to replace or close the open detail.
     if (!freshOrder) return preserveMissingOpenOrders ? currentOrder : null;
     const mergedOrder = { ...currentOrder, ...freshOrder };
     [

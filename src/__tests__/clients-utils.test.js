@@ -53,14 +53,14 @@ describe("client utilities", () => {
     });
   });
 
-  it("formatea telefonos para guardar sin conservar prefijo pais", () => {
-    expect(formatClientPhoneForStorage("+1 (809) 555-1234")).toBe("809-555-1234");
+  it("conserva los códigos de país al preparar teléfonos para guardar", () => {
+    expect(formatClientPhoneForStorage(" +44 20 7946 0958 ")).toBe("+44 20 7946 0958");
   });
 
   it("construye payload de cliente limpio y valida campos requeridos", () => {
     const { payload, errors } = validateClientForm({
       name: "  Cliente Nuevo  ",
-      phone: "+1 (809) 555-9999",
+      phone: "+44 20 7946 0958",
       email: " cliente@example.com ",
       address: "  Santo Domingo  ",
       notes: "  VIP  ",
@@ -69,7 +69,7 @@ describe("client utilities", () => {
     expect(errors).toEqual({});
     expect(payload).toEqual({
       name: "Cliente Nuevo",
-      phone: "809-555-9999",
+      phone: "+44 20 7946 0958",
       email: "cliente@example.com",
       address: "Santo Domingo",
       notes: "VIP",
@@ -91,12 +91,12 @@ describe("client utilities", () => {
   });
 
   it("incluye created_by solo cuando el flujo lo solicita", () => {
-    expect(buildClientPayload({ name: "Cliente", phone: "8095550000" }, {
+    expect(buildClientPayload({ name: "Cliente", phone: "+52 55 1234 5678" }, {
       includeCreatedBy: true,
       userId: "user-1",
     })).toMatchObject({
       created_by: "user-1",
-      phone: "809-555-0000",
+      phone: "+52 55 1234 5678",
     });
   });
 });

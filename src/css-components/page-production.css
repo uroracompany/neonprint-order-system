@@ -1343,6 +1343,22 @@
   color: #1E40AF;
 }
 
+.pp-delivery-rework-notice {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #f5b66d;
+  border-left: 4px solid #d97706;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #7c2d12;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pp-delivery-rework-notice strong { display: block; color: #9a3412; font-size: 12px; }
+.pp-delivery-rework-notice p { margin: 5px 0; white-space: pre-wrap; }
+.pp-delivery-rework-notice time { color: #9a3412; font-size: 11px; font-weight: 600; }
+
 .pp-files-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -2026,4 +2042,93 @@
 }
 .pp-confirm-text strong {
   font-weight: 700;
+}
+
+/* Persistent, order-level marker for an unresolved Delivery rework cycle. */
+.pp-rework-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  margin: 4px 0 0 6px;
+  padding: 3px 8px;
+  border: 1px solid #c2410c;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.pp-delivery-rework-context {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid #fdba74;
+  border-radius: var(--pp-radius-md);
+  background: #fff7ed;
+  color: #7c2d12;
+}
+
+.pp-delivery-rework-context-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.pp-delivery-rework-context-heading > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #c2410c;
+}
+
+.pp-delivery-rework-context h4,
+.pp-delivery-rework-context p {
+  margin: 0;
+}
+
+.pp-delivery-rework-context h4 {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.pp-delivery-rework-context-heading p {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pp-delivery-rework-reasons {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #fed7aa;
+  font-size: 12px;
+}
+
+.pp-delivery-rework-reasons ul {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.pp-delivery-rework-reasons li::marker {
+  color: #c2410c;
+}
+
+.pp-delivery-rework-reasons li span {
+  display: block;
+  font-weight: 700;
+}
+
+.pp-delivery-rework-reasons li p {
+  margin-top: 2px;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .pp-rework-badge {
+    margin-left: 0;
+    white-space: normal;
+  }
 }

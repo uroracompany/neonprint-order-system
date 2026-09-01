@@ -169,7 +169,7 @@ export async function handleAdminProfile(payload = {}, env = process.env) {
         },
       },
     };
-  } catch (error) {
+  } catch {
     return { status: 500, body: { error: "No se pudo cargar la actividad administrativa.", code: "ADMIN_ACTIVITY_LOOKUP_FAILED" } };
   }
 }

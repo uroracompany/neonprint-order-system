@@ -5,6 +5,8 @@ import { supabase } from "../../supabaseClient"
 import { setAuthSessionPersistence, signOutAuth } from "../utils/authManager";
 import { normalizeEmailForAuth } from "../utils/fileValidation";
 import { AUTH_NOTICE, createAuthError, getAuthFeedbackMessage, getLoginErrorCode } from "../utils/authFeedback";
+import { getAuthProfile } from "../utils/authProfile";
+import { getAuthMfaState } from "../utils/authMfa";
 
 // Styles & Assets
 import "../css-components/lobby.css"
@@ -49,17 +51,32 @@ const getCaptchaConfig = () => {
 };
 
 const captchaConfig = getCaptchaConfig();
+const CAPTCHA_TIMEOUT_MS = Math.min(Math.max(Number(import.meta.env.VITE_CAPTCHA_TIMEOUT_MS) || 8000, 1000), 15000);
 
-const loadExternalScript = (id, src) => new Promise((resolve, reject) => {
+const loadExternalScript = (id, src, timeoutMs = CAPTCHA_TIMEOUT_MS) => new Promise((resolve, reject) => {
   if (typeof document === "undefined") {
     resolve();
     return;
   }
 
+  let settled = false;
+  let timer;
+  const finish = (callback, value) => {
+    if (settled) return;
+    settled = true;
+    if (timer) window.clearTimeout(timer);
+    callback(value);
+  };
+  const fail = () => finish(reject, new Error("CAPTCHA_TIMEOUT"));
   const existing = document.getElementById(id);
   if (existing) {
-    if (existing.dataset.loaded === "1") resolve();
-    else existing.addEventListener("load", resolve, { once: true });
+    if (existing.dataset.loaded === "1") {
+      resolve();
+      return;
+    }
+    existing.addEventListener("load", () => finish(resolve), { once: true });
+    existing.addEventListener("error", fail, { once: true });
+    timer = window.setTimeout(fail, timeoutMs);
     return;
   }
 
@@ -71,9 +88,10 @@ const loadExternalScript = (id, src) => new Promise((resolve, reject) => {
   script.dataset.loaded = "0";
   script.addEventListener("load", () => {
     script.dataset.loaded = "1";
-    resolve();
+    finish(resolve);
   }, { once: true });
-  script.addEventListener("error", reject, { once: true });
+  script.addEventListener("error", fail, { once: true });
+  timer = window.setTimeout(fail, timeoutMs);
   document.head.appendChild(script);
 });
 
@@ -152,54 +170,66 @@ export default function Lobby() {
   const getCaptchaToken = async () => {
     if (!captchaConfig || !captchaNodeRef.current) return "";
 
-    await loadExternalScript(captchaConfig.scriptId, captchaConfig.scriptSrc);
+    try {
+      await loadExternalScript(captchaConfig.scriptId, captchaConfig.scriptSrc);
+    } catch {
+      return "";
+    }
     const api = window[captchaConfig.provider];
     if (!api?.render) return "";
 
     return new Promise((resolve) => {
+      let settled = false;
+      let timeoutId;
+      const finish = (token = "") => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) window.clearTimeout(timeoutId);
+        resolve(token || "");
+      };
       const options = {
         sitekey: captchaConfig.siteKey,
         size: "invisible",
-        callback: (token) => resolve(token || ""),
-        "error-callback": () => resolve(""),
-        "expired-callback": () => resolve(""),
+        callback: (token) => finish(token),
+        "error-callback": () => finish(),
+        "expired-callback": () => finish(),
       };
 
-      if (!captchaWidgetIdRef.current) {
-        captchaWidgetIdRef.current = api.render(captchaNodeRef.current, options);
-      } else if (api.reset) {
-        api.reset(captchaWidgetIdRef.current);
-      }
+      timeoutId = window.setTimeout(() => finish(), CAPTCHA_TIMEOUT_MS);
+      try {
+        if (!captchaWidgetIdRef.current) {
+          captchaWidgetIdRef.current = api.render(captchaNodeRef.current, options);
+        } else if (api.reset) {
+          api.reset(captchaWidgetIdRef.current);
+        }
 
-      const execution = api.execute?.(captchaWidgetIdRef.current, { async: true });
-      if (execution?.then) {
-        execution.then((token) => resolve(token || "")).catch(() => resolve(""));
+        const execution = api.execute?.(captchaWidgetIdRef.current, { async: true });
+        if (execution?.then) {
+          execution.then((token) => finish(token)).catch(() => finish());
+        }
+      } catch {
+        finish();
       }
     });
   };
 
   const loadUserProfile = async (userId) => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("role, employment_status")
-      .eq("id", userId)
-      .single();
-
-    if (error || !data?.role) throw createAuthError(AUTH_NOTICE.PROFILE_UNAVAILABLE);
-    return data;
+    try {
+      const data = await getAuthProfile(userId);
+      if (!data?.role) throw new Error("profile unavailable");
+      return data;
+    } catch {
+      throw createAuthError(AUTH_NOTICE.PROFILE_UNAVAILABLE);
+    }
   };
 
-  const requireAdminMfa = async (profile) => {
+  const requireAdminMfa = async (profile, userId) => {
     if (profile.role !== "admin") return;
 
-    const { data: aalData, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aalError) throw aalError;
-    if (aalData?.currentLevel === "aal2") return;
+    const { currentLevel, factors } = await getAuthMfaState(userId);
+    if (currentLevel === "aal2") return;
 
-    const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
-    if (factorsError) throw factorsError;
-
-    const verifiedTotp = factorsData?.totp?.find((factor) => factor.status === "verified");
+    const verifiedTotp = factors?.totp?.find((factor) => factor.status === "verified");
     if (!verifiedTotp?.id) {
       return;
     }
@@ -212,6 +242,11 @@ export default function Lobby() {
       code,
     });
     if (error) throw createAuthError(AUTH_NOTICE.MFA_REQUIRED, MFA_GENERIC_ERROR);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("neonprint:mfa-verified", {
+        detail: { userId },
+      }));
+    }
   };
 
   const handleLogin = async (e) => {
@@ -252,7 +287,7 @@ export default function Lobby() {
         return;
       }
 
-      await requireAdminMfa(profiles);
+      await requireAdminMfa(profiles, data.user.id);
 
       setMessage({
         type: "success",

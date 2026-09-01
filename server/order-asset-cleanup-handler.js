@@ -31,13 +31,19 @@ const cleanupQueuedAsset = async ({ job, supabaseAdmin, env, cleanup }) => {
   throw new Error("El destino de limpieza no es valido.");
 };
 
-const updateQueuedAsset = async ({ supabaseAdmin, id, values }) => {
-  const { error } = await supabaseAdmin
+const updateQueuedAsset = async ({ supabaseAdmin, id, claimToken, values }) => {
+  if (!claimToken) throw new Error("La limpieza no tiene un lease válido.");
+  const { data, error } = await supabaseAdmin
     .from("order_asset_deletion_outbox")
     .update(values)
-    .eq("id", id);
+    .eq("id", id)
+    .eq("claim_token", claimToken)
+    .eq("status", "processing")
+    .select("id")
+    .maybeSingle();
 
   if (error) throw error;
+  if (!data) throw new Error("El lease de limpieza venció antes de registrar el resultado.");
 };
 
 export async function processOrderAssetDeletionOutbox({
@@ -71,6 +77,12 @@ export async function processOrderAssetDeletionOutbox({
   let failed = 0;
 
   for (const job of jobs || []) {
+    const claimExpiresAt = new Date(job.claim_expires_at || "").getTime();
+    if (!job.claim_token || !Number.isFinite(claimExpiresAt) || claimExpiresAt <= now().getTime()) {
+      console.warn("[order-asset-cleanup] Se omitió un trabajo sin lease activo", { jobId: job.id });
+      failed += 1;
+      continue;
+    }
     try {
       const result = await cleanupQueuedAsset({ job, supabaseAdmin, env, cleanup });
       if (result.errors?.length) {
@@ -80,10 +92,13 @@ export async function processOrderAssetDeletionOutbox({
       await updateQueuedAsset({
         supabaseAdmin,
         id: job.id,
+        claimToken: job.claim_token,
         values: {
           status: "completed",
           completed_at: now().toISOString(),
           locked_at: null,
+          claim_token: null,
+          claim_expires_at: null,
           last_error: null,
         },
       });
@@ -94,9 +109,12 @@ export async function processOrderAssetDeletionOutbox({
         await updateQueuedAsset({
           supabaseAdmin,
           id: job.id,
+          claimToken: job.claim_token,
           values: {
             status: "pending",
             locked_at: null,
+            claim_token: null,
+            claim_expires_at: null,
             last_error: message,
             next_attempt_at: nextOrderAssetCleanupAttemptAt(job.attempts, now()),
           },

@@ -60,6 +60,8 @@ describe("NotificationCenter", () => {
 
     const successToast = screen.getByText("Exito").closest(".nc-toast");
     expect(successToast).toHaveClass("completed");
+    expect(successToast.querySelector(".nc-toast-icon polyline")).toBeInTheDocument();
+    expect(successToast.querySelector(".nc-toast-icon path")).not.toBeInTheDocument();
     expect(getComputedStyle(successToast).fontFamily).toContain("Poppins");
     expect(screen.getByText("Error").closest(".nc-toast")).toHaveClass("cancelled");
     expect(screen.getByText("Advertencia").closest(".nc-toast")).toHaveClass("updated");
@@ -250,5 +252,6 @@ describe("NotificationCenter", () => {
     expect(screen.getByText("Error variant").closest(".nc-toast")).toHaveClass("cancelled");
     expect(screen.getByText("Warning variant").closest(".nc-toast")).toHaveClass("returned");
     expect(screen.getByText("Info variant").closest(".nc-toast")).toHaveClass("info");
+    expect(screen.getByText("Success variant").closest(".nc-toast").querySelector(".nc-toast-icon polyline")).toBeInTheDocument();
   });
 });

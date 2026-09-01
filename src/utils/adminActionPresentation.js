@@ -14,7 +14,7 @@ const PRESENTATION = {
   route_design: ["Enviar a Diseño", "Mover la orden al flujo de Diseño", Icons.Brush],
   set_designer_assignee: ["Gestionar diseñador", "Asignar, cambiar o quitar responsable", Icons.Users],
   return_to_design: ["Regresar a Diseño", "Regresar la orden de Caja a Diseño", Icons.ArrowLeft],
-  assign_seller: ["Reasignar vendedor", "Cambiar el vendedor responsable", Icons.Users],
+  assign_seller: ["Asignar vendedor", "Asignar o cambiar el vendedor responsable", Icons.Users],
   block_order: ["Bloquear temporalmente", "Detener avances mientras se resuelve una incidencia", Icons.AlertCircle],
   update_block: ["Actualizar bloqueo", "Cambiar responsable o fecha estimada", Icons.Clock],
   resume_order: ["Reanudar orden", "Retirar el bloqueo operativo", Icons.CheckCircle],
@@ -32,8 +32,8 @@ const CANONICAL_TITLE_KEYS = new Set(["reassign_production"]);
 
 const ROLE_SELECTOR = {
   quote: { label: "Responsable de Caja", users: "quote", optional: true, hint: "Sin asignar, la orden queda bajo control de Administración." },
-  seller: { label: "Vendedor responsable", users: "seller", optional: false },
-  designer: { label: "Diseñador responsable", users: "designer", optional: true, hint: "Sin asignar, la orden queda bajo control de Administración." },
+  seller: { label: "Vendedor responsable", users: "seller", optional: true, hint: "Sin asignar, la orden queda bajo control de Administración." },
+  designer: { label: "Diseñador responsable", users: "designer", optional: false },
 };
 
 const DEFAULT_REASONS = [

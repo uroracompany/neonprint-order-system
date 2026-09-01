@@ -28,7 +28,7 @@ const defaultProps = {
   onRefreshOrder: vi.fn(),
 };
 
-const mockDataSources = ({ files = [], areas = [], productionUsers = [] } = {}) => {
+const mockDataSources = ({ files = [], areas = [], materials = [], terminations = [], productionUsers = [] } = {}) => {
   from.mockImplementation((table) => {
     if (table === "orders") {
       return {
@@ -41,6 +41,12 @@ const mockDataSources = ({ files = [], areas = [], productionUsers = [] } = {}) 
     }
     if (table === "production_areas") {
       return { select: () => ({ eq: () => Promise.resolve({ data: areas, error: null }) }) };
+    }
+    if (table === "materials") {
+      return { select: () => ({ not: () => Promise.resolve({ data: materials, error: null }) }) };
+    }
+    if (table === "production_terminations") {
+      return { select: () => Promise.resolve({ data: terminations, error: null }) };
     }
     if (table === "profiles") {
       return {
@@ -279,7 +285,7 @@ describe("AdminManageFilesModal", () => {
 
     expect(screen.getByLabelText("Archivo")).toBeInTheDocument();
     expect(screen.getByLabelText("Etiqueta")).toBeInTheDocument();
-    expect(screen.getByLabelText("Area de produccion")).toBeInTheDocument();
+    expect(screen.getByLabelText("Área de producción")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Anadir archivo$/i })).toBeInTheDocument();
   });
 

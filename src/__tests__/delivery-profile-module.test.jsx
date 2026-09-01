@@ -81,7 +81,8 @@ describe("DeliveryProfileModule", () => {
     expect(pageSource).toContain('{activeTab === "dashboard" && (\n            <div className="pd-summary-grid">');
     expect(pageSource).toContain('profile: "Mi Perfil"');
     expect(pageSource).toContain('.in("status", DELIVERY_STATUS_OPTIONS)\n      .eq("delivery_id", user.id)');
-    expect(pageSource).toContain('.eq("delivery_id", user.id)\n        .select("id")');
+    expect(pageSource).toContain('rpc("delivery_mark_order_delivered"');
+    expect(pageSource).toContain('.eq("delivery_id", user.id)\n        .order("created_at", { ascending: false })');
   });
 
   it("shows an error instead of treating an incomplete successful response as zero metrics", async () => {

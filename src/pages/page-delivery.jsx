@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import "../css-components/page-delivery.css";
@@ -40,7 +40,9 @@ import {
   canRestoreOrder,
   restoreOrder,
 } from "../utils/archive";
-import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
+import { isOrderOverdue } from "../utils/orderDeadline";
+import { SecureImageLink } from "../components/ui/SecureImage";
+import { getFileNameFromUrl } from "../utils/constants";
 
 const PAYMENT_DELIVERY_BLOCKED_MESSAGE = "No se puede entregar la orden hasta que esté totalmente pagada o aprobada a crédito.";
 const PER_PAGE = 15;
@@ -95,7 +97,7 @@ function SummaryCard({ icon, label, value, sub, accentIdx = 0 }) {
   );
 }
 
-function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, deliveryUserId }) {
+export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, deliveryUserId }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [sellerName, setSellerName] = useState("");
@@ -104,6 +106,21 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
   const [prodAssignments, setProdAssignments] = useState([]);
   const [deliveryMessage, setDeliveryMessage] = useState("");
   const [showMessage, setShowMessage] = useState(false);
+  const [reworkOpen, setReworkOpen] = useState(false);
+  const [reworkFiles, setReworkFiles] = useState([]);
+  const [reworkSelections, setReworkSelections] = useState({});
+  const [reworkLoading, setReworkLoading] = useState(false);
+  const [reworkError, setReworkError] = useState("");
+  const [reworkSuccess, setReworkSuccess] = useState("");
+  const [actionError, setActionError] = useState("");
+  const reworkDialogRef = useRef(null);
+  const reworkCloseRef = useRef(null);
+  const reworkTriggerRef = useRef(null);
+  const reworkLoadingRef = useRef(false);
+
+  useEffect(() => {
+    reworkLoadingRef.current = reworkLoading;
+  }, [reworkLoading]);
 
   useEffect(() => {
     if (order?.seller_name) {
@@ -189,6 +206,75 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
     };
   }, [order?.id]);
 
+  useEffect(() => {
+    setReworkOpen(false);
+    setReworkFiles([]);
+    setReworkSelections({});
+    setReworkError("");
+    setReworkSuccess("");
+    setActionError("");
+  }, [order?.id]);
+
+  useEffect(() => {
+    if (!reworkOpen || !order?.id) return undefined;
+    let active = true;
+    setReworkLoading(true);
+    setReworkError("");
+    setReworkSuccess("");
+    supabase.from("order_production_files")
+      .select("id, filename, url, production_area_code, assigned_to, status")
+      .eq("order_id", order.id)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setReworkFiles([]);
+          setReworkError("No se pudieron cargar los archivos de la orden.");
+          return;
+        }
+        setReworkFiles(Array.isArray(data) ? data : []);
+      })
+      .finally(() => { if (active) setReworkLoading(false); });
+    return () => { active = false; };
+  }, [reworkOpen, order?.id]);
+
+  useEffect(() => {
+    if (!reworkOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape" && !reworkLoadingRef.current) {
+        event.preventDefault();
+        setReworkOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = reworkDialogRef.current?.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    reworkCloseRef.current?.focus();
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      reworkTriggerRef.current?.focus();
+    };
+  }, [reworkOpen]);
+
+  const getReworkErrorMessage = (error) => {
+    const message = error?.message || "No se pudo devolver los archivos a producción.";
+    return message.includes("ORDER_STALE")
+      ? "La orden cambió en otro lugar. Actualiza la lista e inténtalo de nuevo."
+      : message;
+  };
+
   const handleUpdateStatus = async (newStatus) => {
     if (order.is_archived_delivery) return;
 
@@ -198,24 +284,25 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
     }
 
     setUpdating(true);
+    setActionError("");
     try {
-      const updateData = { status: newStatus };
-      if (newStatus === ORDER_STATUS.IN_DELIVERED && deliveryMessage.trim()) {
-        updateData.delivery_note = deliveryMessage.trim();
-      }
-
-      const { data: updatedOrder, error } = await supabase
-        .from("orders")
-        .update(updateData)
-        .eq("id", order.id)
-        .eq("delivery_id", deliveryUserId)
-        .select("id")
-        .maybeSingle();
+      const isDelivery = newStatus === ORDER_STATUS.IN_DELIVERED;
+      const isReversal = newStatus === ORDER_STATUS.IN_COMPLETED;
+      if (!isDelivery && !isReversal) throw new Error("Transición de Delivery no permitida.");
+      const { data: updatedOrder, error } = isDelivery
+        ? await supabase.rpc("delivery_mark_order_delivered", {
+          p_order_id: order.id,
+          p_delivery_note: deliveryMessage.trim() || null,
+        })
+        : await supabase.rpc("delivery_revert_order_to_completed", {
+          p_order_id: order.id,
+          p_expected_updated_at: order.updated_at,
+        });
 
       if (error) throw error;
       if (!updatedOrder) throw new Error("La orden ya no esta asignada a tu perfil de Delivery.");
 
-      if (newStatus === ORDER_STATUS.IN_DELIVERED && deliveryMessage.trim()) {
+      if (isDelivery && deliveryMessage.trim()) {
         await supabase.from("order_events").insert({
           order_id: order.id,
           user_id: deliveryUserId,
@@ -225,6 +312,11 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
       }
 
       setUpdateSuccess(true);
+      if (isReversal) {
+        await onUpdateStatus?.();
+        onClose();
+        return;
+      }
       setTimeout(() => {
         setUpdateSuccess(false);
         onUpdateStatus?.();
@@ -232,8 +324,68 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
       }, 1100);
     } catch (err) {
       console.error("Error updating status:", err);
+      setActionError(getReworkErrorMessage(err));
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const truncateFilename = (name) => {
+    if (!name || name.length <= 32) return name;
+    const dotIndex = name.lastIndexOf(".");
+    if (dotIndex > 0 && dotIndex < name.length - 1) {
+      const ext = name.slice(dotIndex);
+      const base = name.slice(0, dotIndex);
+      const maxBase = 24;
+      if (base.length > maxBase) return `${base.slice(0, maxBase)}…${ext}`;
+    }
+    return `${name.slice(0, 28)}…`;
+  };
+
+  const formatAreaLabel = (label) => {
+    const lower = String(label).toLowerCase();
+    if (lower.startsWith("área") || lower.startsWith("area")) return label;
+    return `Área ${label}`;
+  };
+
+  const toggleReworkFile = (fileId) => {
+    setReworkSelections((current) => {
+      const next = { ...current };
+      if (Object.prototype.hasOwnProperty.call(next, fileId)) delete next[fileId];
+      else next[fileId] = "";
+      return next;
+    });
+  };
+
+  const updateReworkNote = (fileId, note) => {
+    setReworkSelections((current) => ({ ...current, [fileId]: note }));
+  };
+
+  const selectedReworkItems = reworkFiles
+    .filter((file) => Object.prototype.hasOwnProperty.call(reworkSelections, file.id))
+    .map((file) => ({ file, correction_note: String(reworkSelections[file.id] || "").trim() }));
+  const hasInvalidReworkNote = selectedReworkItems.some(({ correction_note }) => correction_note.length < 1 || correction_note.length > 1000);
+
+  const handleReturnFilesToProduction = async () => {
+    if (selectedReworkItems.length === 0 || hasInvalidReworkNote || reworkLoading) return;
+    setReworkLoading(true);
+    setReworkError("");
+    try {
+      const { error } = await supabase.rpc("delivery_return_completed_files_to_production", {
+        p_order_id: order.id,
+        p_items: selectedReworkItems.map(({ file, correction_note }) => ({ file_id: file.id, correction_note })),
+        p_expected_updated_at: order.updated_at,
+      });
+      if (error) throw error;
+      setReworkOpen(false);
+      setReworkSelections({});
+      setReworkSuccess("La devolución fue enviada correctamente a Producción.");
+      await onUpdateStatus?.();
+    } catch (error) {
+      console.error("Error returning delivery files to production:", error);
+      setReworkError(getReworkErrorMessage(error));
+    } finally {
+      setReworkLoading(false);
     }
   };
 
@@ -246,7 +398,8 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
   const deliveryBlockedByPayment = !isPaymentDeliveryEligible(order.payment_status);
 
   return (
-    <div className="pd-modal-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
+    <>
+    <div className="pd-modal-overlay" onClick={(event) => event.target === event.currentTarget && onClose()} aria-hidden={reworkOpen || undefined} inert={reworkOpen}>
       <section className="pd-modal" role="dialog" aria-modal="true" aria-labelledby="pd-detail-title">
         <div className="pd-sheet-handle" />
         <header className="pd-modal-header">
@@ -263,8 +416,16 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
           {updateSuccess && (
             <div className="pd-alert success">
               <Icons.Check />
-              Orden marcada como entregada
+              Orden actualizada correctamente
             </div>
+          )}
+
+          {actionError && (
+            <div className="pd-alert warning" role="alert"><Icons.AlertCircle />{actionError}</div>
+          )}
+
+          {reworkSuccess && (
+            <div className="pd-alert success" role="status"><Icons.Check />{reworkSuccess}</div>
           )}
 
           {order.is_archived_delivery && (
@@ -371,10 +532,14 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
                 <Icons.Eye />
                 <h4>Orden de trabajo</h4>
               </div>
-              <a className="pd-preview-link" href={order.preview_image} target="_blank" rel="noreferrer">
+              <SecureImageLink
+                url={order.preview_image}
+                fileName={getFileNameFromUrl(order.preview_image)}
+                className="pd-preview-link"
+              >
                 Ver archivo de la orden
                 <Icons.ExternalLink />
-              </a>
+              </SecureImageLink>
             </section>
           )}
         </div>
@@ -424,6 +589,9 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
                   <Icons.Edit /> Agregar mensaje
                 </button>
               )}
+              <button className="pd-btn pd-btn-secondary" type="button" onClick={(event) => { reworkTriggerRef.current = event.currentTarget; setReworkOpen(true); }} disabled={updating || order.is_archived_delivery}>
+                <Icons.Refresh /> Devolver archivos a producción
+              </button>
               <button className="pd-btn pd-btn-secondary" type="button" onClick={onClose}>
                 Cerrar
               </button>
@@ -457,7 +625,57 @@ function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, del
           )}
         </footer>
       </section>
-    </div>
+      </div>
+      {reworkOpen && (
+      <div className="pd-modal-overlay pd-rework-overlay">
+        <section className="pd-rework-modal" ref={reworkDialogRef} role="dialog" aria-modal="true" aria-labelledby="pd-rework-title" aria-describedby="pd-rework-description">
+          <header className="pd-modal-header">
+            <div className="pd-modal-title"><span>{getOrderCode(order)}</span><h3 id="pd-rework-title">Devolver archivos a producción</h3></div>
+            <button className="pd-icon-btn" ref={reworkCloseRef} type="button" onClick={() => setReworkOpen(false)} disabled={reworkLoading} aria-label="Cerrar devolución de archivos"><Icons.Close /></button>
+          </header>
+          <div className="pd-rework-body">
+            <p id="pd-rework-description" className="pd-rework-intro">Selecciona solo los archivos con inconvenientes e indica qué debe corregirse en cada uno.</p>
+            {reworkError && <div className="pd-alert warning" role="alert"><Icons.AlertCircle />{reworkError}</div>}
+            {reworkLoading && reworkFiles.length === 0 ? <p role="status">Cargando archivos…</p> : (
+              <div className="pd-rework-list">
+                {reworkFiles.map((file) => {
+                  const selected = Object.prototype.hasOwnProperty.call(reworkSelections, file.id);
+                  const completed = file.status === "completed";
+                  const note = reworkSelections[file.id] || "";
+                  const noteInvalid = selected && (note.trim().length < 1 || note.trim().length > 1000);
+                  const rawName = file.filename || getFileNameFromUrl(file.url) || "Archivo sin nombre";
+                  const displayName = truncateFilename(rawName);
+                  const areaLabel = formatAreaLabel(PRODUCTION_AREA_LABELS[file.production_area_code] || file.production_area_code || "Área sin asignar");
+                  return (
+                    <article className="pd-rework-file" key={file.id}>
+                      <label className="pd-rework-file-toggle">
+                        <input type="checkbox" checked={selected} onChange={() => toggleReworkFile(file.id)} disabled={!completed || reworkLoading} />
+                        <span><strong className="pd-rework-filename" title={rawName}>{displayName}</strong><small className="pd-rework-area">{areaLabel}</small></span>
+                      </label>
+                      {!completed && <p className="pd-rework-correct">Este archivo no está completado y no puede devolverse.</p>}
+                      {completed && !selected && <p className="pd-rework-correct pd-rework-correct--warning">Correcto: permanecerá completado si no lo seleccionas.</p>}
+                      {selected && <div className="pd-rework-note">
+                        <label htmlFor={`rework-note-${file.id}`}>Motivo de devolución para <span className="pd-rework-filename-green">{file.filename || "este archivo"}</span></label>
+                        <textarea id={`rework-note-${file.id}`} value={note} onChange={(event) => updateReworkNote(file.id, event.target.value)} maxLength={1000} rows={3} disabled={reworkLoading} aria-invalid={noteInvalid || undefined} aria-describedby={noteInvalid ? `rework-note-error-${file.id}` : undefined} />
+                        <span>{note.trim().length}/1000</span>
+                        {noteInvalid && <p id={`rework-note-error-${file.id}`} className="pd-rework-note-error">Escribe una explicación de 1 a 1000 caracteres.</p>}
+                      </div>}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <footer className="pd-modal-footer"><div className="pd-modal-footer-actions">
+            <button className="pd-btn pd-btn-secondary" type="button" onClick={() => setReworkOpen(false)} disabled={reworkLoading}>Cancelar</button>
+            <button className="pd-btn pd-btn-primary pd-btn-rework" type="button" onClick={handleReturnFilesToProduction} disabled={reworkLoading || selectedReworkItems.length === 0 || hasInvalidReworkNote}>
+              {reworkLoading ? <span className="pd-btn-spinner" /> : <Icons.ArrowLeft />}Devolver {selectedReworkItems.length || ""} archivo{selectedReworkItems.length === 1 ? "" : "s"}
+            </button>
+          </div></footer>
+        </section>
+      </div>
+      )}
+    </>
   );
 }
 
@@ -473,6 +691,7 @@ export default function PageDelivery() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterClient, setFilterClient] = useState("all");
   const [filterArchive, setFilterArchive] = useState("active");
+  const [filterOverdue, setFilterOverdue] = useState("all");
   const [clients, setClients] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
@@ -480,6 +699,7 @@ export default function PageDelivery() {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [sellerDirectory, setSellerDirectory] = useState({});
+  const [returnedFromProduction, setReturnedFromProduction] = useState({});
   const notif = useNotifications(user?.id);
   const newOrderAssignments = useNewOrderAssignments(user?.id, "delivery");
   const pendingNewAssignments = newOrderAssignments.pendingByOrder;
@@ -496,9 +716,23 @@ export default function PageDelivery() {
 
     if (!error && data) {
       applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
+      const orderIds = data.map((order) => order.id).filter(Boolean);
+      if (orderIds.length === 0) {
+        setReturnedFromProduction({});
+      } else {
+        const { data: returnedBadges, error: returnedBadgesError } = await supabase
+          .rpc("get_pending_delivery_rework_return_badges", { p_order_ids: orderIds });
+        if (returnedBadgesError) {
+          console.error("Error loading returned production badges:", returnedBadgesError);
+        } else {
+          setReturnedFromProduction(Object.fromEntries(
+            (returnedBadges || []).map((handoff) => [handoff.order_id, handoff]),
+          ));
+        }
+      }
     }
     if (!silent) setLoading(false);
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
     setUser(authUser || null);
@@ -555,21 +789,22 @@ export default function PageDelivery() {
       || sellerName.includes(q);
     const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
     const matchesClient = orderMatchesClientFilter(order, filterClient);
+    const matchesOverdue = filterOverdue === "all" || isOrderOverdue(order);
     const matchesArchive =
       (filterArchive === "active" && !order.is_archived_delivery)
       || (filterArchive === "archived" && order.is_archived_delivery);
 
-    return matchesSearch && matchesStatus && matchesClient && matchesArchive;
+    return matchesSearch && matchesStatus && matchesClient && matchesArchive && matchesOverdue;
   });
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = sortOrdersByDeadlinePriority(filteredOrders).slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
   const activeOrders = orders.filter((order) => !order.is_archived_delivery);
 
   useEffect(() => {
     setPage(1);
-  }, [search, filterStatus, filterClient, filterArchive]);
+  }, [search, filterStatus, filterClient, filterArchive, filterOverdue]);
 
   const metrics = [
     {
@@ -633,13 +868,10 @@ export default function PageDelivery() {
 
     setUpdatingOrderId(orderId);
     try {
-      const { data: updatedOrder, error } = await supabase
-        .from("orders")
-        .update({ status: ORDER_STATUS.IN_DELIVERED })
-        .eq("id", orderId)
-        .eq("delivery_id", user.id)
-        .select("id")
-        .maybeSingle();
+      const { data: updatedOrder, error } = await supabase.rpc("delivery_mark_order_delivered", {
+        p_order_id: orderId,
+        p_delivery_note: null,
+      });
 
       if (error) throw error;
       if (!updatedOrder) throw new Error("La orden ya no esta asignada a tu perfil de Delivery.");
@@ -713,6 +945,23 @@ export default function PageDelivery() {
     if (pendingNewAssignments[order.id]) {
       void newOrderAssignments.acknowledgeOrder(order.id);
     }
+    if (returnedFromProduction[order.id]) {
+      void supabase
+        .rpc("acknowledge_delivery_rework_return", { p_order_id: order.id })
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("Error acknowledging returned production order:", error);
+            return;
+          }
+          if (data) {
+            setReturnedFromProduction((current) => {
+              const next = { ...current };
+              delete next[order.id];
+              return next;
+            });
+          }
+        });
+    }
   };
 
   const renderOrderCard = (order) => {
@@ -739,6 +988,9 @@ export default function PageDelivery() {
           </div>
           <div className="pd-order-card-badges">
             {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+            {returnedFromProduction[order.id] && (
+              <span className="pd-returned-production-badge" role="status">Regresada de Producción</span>
+            )}
             <StatusBadge status={order.status} className="pd-badge" showDot={false} order={order} />
             <PaymentBadge status={order.payment_status} className="pd-badge" />
           </div>
@@ -1086,6 +1338,16 @@ export default function PageDelivery() {
                     { value: "archived", label: "Archivadas" },
                   ]}
                   placeholder="Activas"
+                />
+                <FilterSelect
+                  icon={<Icons.AlertCircle />}
+                  value={filterOverdue}
+                  onChange={setFilterOverdue}
+                  options={[
+                    { value: "all", label: "Todas las fechas de entrega" },
+                    { value: "overdue", label: "Atrasadas" },
+                  ]}
+                  placeholder="Todas las fechas de entrega"
                 />
                 <span className="pp-filters-count"><Icons.Clipboard /> {filteredOrders.length} resultado{filteredOrders.length === 1 ? "" : "s"}</span>
               </div>

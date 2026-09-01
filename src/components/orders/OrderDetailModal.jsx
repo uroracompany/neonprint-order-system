@@ -4,10 +4,10 @@ import { Icons } from "../../utils/icons";
 import {
   ORDER_STATUS,
   getFileNameFromUrl,
-  getOrderStatusConfig,
   isOrderStatusIn,
 } from "../../utils/constants";
 import { getOrderFiles, getReferenceImages, hasAnyOrderAsset } from "../../utils/orderAssets";
+import { resolveOrderAssetUrl } from "../../utils/fileAccess";
 import { FlowTracker, FlowTrackerExternal } from "../FlowTracker";
 import FileCard from "../FileCard";
 import { PaymentBadge, StatusBadge as SharedStatusBadge } from "../ui/Badge";
@@ -35,6 +35,9 @@ const isReturnedOrder = (order) => {
     : [ORDER_STATUS.IN_DESIGN];
   return isOrderStatusIn(order.status, validStatuses);
 };
+
+const getPreviewAssetKey = (url) => `preview:${url}`;
+const getReferenceAssetKey = (url, index) => `reference:${index}:${url}`;
 
 function StatusBadge({ status, type = "status", order = null }) {
   if (type === "payment") {
@@ -174,11 +177,13 @@ export default function OrderDetailModal({
 }) {
   const hasOrder = Boolean(order);
   const created = hasOrder ? new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" }) : "";
-  const statusConfig = hasOrder ? getOrderStatusConfig(order.status) : getOrderStatusConfig(ORDER_STATUS.PENDING);
   const orderFileUrls = getOrderFiles(order);
   const referenceImageUrls = getReferenceImages(order);
   const hasAssets = hasAnyOrderAsset(order);
   const [designerName, setDesignerName] = useState("");
+  const [resolvedAssetUrls, setResolvedAssetUrls] = useState({});
+  const [assetResolutionErrors, setAssetResolutionErrors] = useState({});
+  const referenceImagesKey = referenceImageUrls.join("\u001f");
 
   useEffect(() => {
     if (designerNameProp) {
@@ -204,6 +209,42 @@ export default function OrderDetailModal({
         }
       });
   }, [designerNameProp, order?.designer_id]);
+
+  useEffect(() => {
+    if (!open || !order?.id) {
+      setResolvedAssetUrls({});
+      setAssetResolutionErrors({});
+      return undefined;
+    }
+
+    const assets = [
+      ...(order.preview_image ? [{ key: getPreviewAssetKey(order.preview_image), url: order.preview_image }] : []),
+      ...referenceImageUrls.map((url, index) => ({
+        key: getReferenceAssetKey(url, index),
+        url,
+      })),
+    ];
+    let active = true;
+
+    setResolvedAssetUrls({});
+    setAssetResolutionErrors({});
+
+    assets.forEach(({ key, url }) => {
+      resolveOrderAssetUrl(url)
+        .then((resolvedUrl) => {
+          if (!active) return;
+          setResolvedAssetUrls((current) => ({ ...current, [key]: resolvedUrl }));
+        })
+        .catch(() => {
+          if (!active) return;
+          setAssetResolutionErrors((current) => ({ ...current, [key]: true }));
+        });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [open, order?.id, order?.preview_image, referenceImagesKey]);
 
   if (!hasOrder) return null;
 
@@ -391,15 +432,15 @@ export default function OrderDetailModal({
 
               {isReturnedOrder(order) && (
                 <div style={{
-                  background: "#FEF2F2",
-                  border: "1px solid #FECACA",
+                  background: "rgba(245, 158, 11, 0.12)",
+                  border: "1px solid rgba(245, 158, 11, 0.18)",
                   borderRadius: "var(--radius-md)",
                   padding: 14,
                 }}>
-                  <p style={{ fontSize: 11, color: "#991B1B", margin: "0 0 6px 0", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  <p style={{ fontSize: 11, color: "#b45309", margin: "0 0 6px 0", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                     Orden devuelta
                   </p>
-                  <p style={{ fontSize: 13, color: "#7F1D1D", margin: 0, lineHeight: 1.55 }}>
+                  <p style={{ fontSize: 13, color: "#92400e", margin: 0, lineHeight: 1.55 }}>
                     {order.return_reason}
                   </p>
                 </div>
@@ -493,28 +534,41 @@ export default function OrderDetailModal({
           </p>
 
           <div style={{ display: "grid", gridTemplateColumns: order.preview_image && orderFileUrls.length > 0 ? "1fr 1fr" : "1fr", gap: 16 }}>
-            {order.preview_image && (
+            {order.preview_image && (() => {
+              const previewKey = getPreviewAssetKey(order.preview_image);
+              const previewUrl = resolvedAssetUrls[previewKey];
+              const previewUnavailable = assetResolutionErrors[previewKey];
+
+              return (
               <div>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pink)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                   <Icons.Eye /> Orden de Trabajo
                 </p>
-                <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                  <img
-                    src={order.preview_image}
-                    alt="preview"
-                    style={{
-                      width: "100%",
-                      borderRadius: "var(--radius-md)",
-                      border: "1px solid var(--border)",
-                      cursor: "pointer",
-                      transition: "transform 0.2s, box-shadow 0.2s",
-                    }}
-                    onMouseEnter={(event) => { event.target.style.transform = "scale(1.02)"; event.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
-                    onMouseLeave={(event) => { event.target.style.transform = "scale(1)"; event.target.style.boxShadow = "none"; }}
-                  />
-                </a>
+                {previewUrl ? (
+                  <a href={previewUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                    <img
+                      src={previewUrl}
+                      alt="preview"
+                      style={{
+                        width: "100%",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--border)",
+                        cursor: "pointer",
+                        transition: "transform 0.2s, box-shadow 0.2s",
+                      }}
+                      onMouseEnter={(event) => { event.target.style.transform = "scale(1.02)"; event.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                      onMouseLeave={(event) => { event.target.style.transform = "scale(1)"; event.target.style.boxShadow = "none"; }}
+                    />
+                  </a>
+                ) : (
+                  <div className="order-detail-img-loading" style={{ height: 120 }}>
+                    <span className="ps-btn-spinner" />
+                    {previewUnavailable ? "Imagen no disponible" : "Cargando imagen..."}
+                  </div>
+                )}
               </div>
-            )}
+              );
+            })()}
 
             {orderFileUrls.length > 0 && (
               <div>
@@ -527,6 +581,7 @@ export default function OrderDetailModal({
                       key={`${url}-${index}`}
                       name={getFileNameFromUrl(url)}
                       url={url}
+                      secondaryText={order.order_design_type === "INTERNAL_DESING" ? "Diseño interno" : order.order_design_type === "EXTERNAL_DESING" ? "Diseño externo" : ""}
                     />
                   ))}
                 </div>
@@ -539,25 +594,36 @@ export default function OrderDetailModal({
                 <Icons.Image /> Imágenes de referencia
               </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                {referenceImageUrls.map((url, index) => (
-                  <a key={`${url}-${index}`} href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
-                    <img
-                      src={url}
-                      alt={`Ref ${index + 1}`}
-                      style={{
-                        width: 120,
-                        height: 120,
-                        objectFit: "cover",
-                        borderRadius: "var(--radius-md)",
-                        border: "1px solid var(--border)",
-                        cursor: "pointer",
-                        transition: "transform 0.2s, box-shadow 0.2s",
-                      }}
-                      onMouseEnter={(event) => { event.target.style.transform = "scale(1.05)"; event.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
-                      onMouseLeave={(event) => { event.target.style.transform = "scale(1)"; event.target.style.boxShadow = "none"; }}
-                    />
-                  </a>
-                ))}
+                {referenceImageUrls.map((url, index) => {
+                  const referenceKey = getReferenceAssetKey(url, index);
+                  const referenceUrl = resolvedAssetUrls[referenceKey];
+                  const referenceUnavailable = assetResolutionErrors[referenceKey];
+
+                  return referenceUrl ? (
+                    <a key={referenceKey} href={referenceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
+                      <img
+                        src={referenceUrl}
+                        alt={`Ref ${index + 1}`}
+                        style={{
+                          width: 120,
+                          height: 120,
+                          objectFit: "cover",
+                          borderRadius: "var(--radius-md)",
+                          border: "1px solid var(--border)",
+                          cursor: "pointer",
+                          transition: "transform 0.2s, box-shadow 0.2s",
+                        }}
+                        onMouseEnter={(event) => { event.target.style.transform = "scale(1.05)"; event.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
+                        onMouseLeave={(event) => { event.target.style.transform = "scale(1)"; event.target.style.boxShadow = "none"; }}
+                      />
+                    </a>
+                  ) : (
+                    <div key={referenceKey} className="order-detail-img-loading" style={{ width: 120, height: 120 }}>
+                      <span className="ps-btn-spinner" />
+                      {referenceUnavailable ? "No disponible" : "Cargando..."}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

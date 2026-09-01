@@ -13,7 +13,6 @@ import "../components/ui/FilterSelect.css";
 import FileUploadZone from "../components/ui/FileUploadZone";
 import CreateClientModal from "../components/ui/CreateClientModal";
 import SettleCreditModal from "../components/ui/SettleCreditModal";
-import ImagePreviewModal from "../components/ui/ImagePreviewModal";
 import {
   ORDER_STATUS,
   PAYMENT_STATUS,
@@ -32,8 +31,9 @@ import {
   getFileNameFromUrl,
   formatDate,
 } from "../utils/constants";
+import { SecureImageLink, SecureImageGallery } from "../components/ui/SecureImage";
 import { getReferenceImages } from "../utils/orderAssets";
-import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
+import { isOrderOverdue } from "../utils/orderDeadline";
 import { getProductionFiles } from "../utils/production";
 import { useAuth } from "../hooks/useAuth";
 import { showCreditActionFeedback } from "../utils/notifications";
@@ -55,7 +55,7 @@ import NewOrderBadge from "../components/orders/NewOrderBadge";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import FileCard from "../components/FileCard";
 import { OrderReturnHandoffPanel, ReturnedToCashierBadge } from "../components/orders/OrderReturnHandoff";
-import { loadClients, orderMatchesClientFilter, searchClients, formatDominicanPhone, NO_CLIENT_FILTER_VALUE } from "../utils/clients";
+import { loadClients, orderMatchesClientFilter, searchClients, formatPhone, NO_CLIENT_FILTER_VALUE } from "../utils/clients";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import "../css-components/page-production.css";
 import "../css-components/page-quote.css";
@@ -66,6 +66,7 @@ import {
 } from "../utils/archive";
 import { getPaymentConfirmButtonLabel } from "../utils/paymentUi";
 import {
+  CreditPendingAlertModal,
   CreditCustomReminderDueModal,
   CreditReminderCreateModal,
 } from "../components/ui/CreditReminderModals";
@@ -93,7 +94,7 @@ const canArchiveQuoteOrder = (order, userId) => canArchiveOrder(order, ARCHIVE_M
 // Verifica si una orden fue devuelta (tiene estado de diseño/pendiente Y razón de devolución)
 const isReturnedOrder = (order) => isOrderStatusIn(order?.status, [ORDER_STATUS.IN_DESIGN, ORDER_STATUS.PENDING]) && Boolean(String(order?.return_reason || "").trim());
 const getInitials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
-const isOpenCreditReceivable = (item) => ["open", "partial"].includes(item?.status);
+const isOpenCreditReceivable = (item) => item?.status === "open";
 const formatCreditDate = (value) => (value ? formatDate(value) : "---");
 const getCreditIssuedAt = (item) => item?.issued_at || item?.created_at || item?.order?.created_at || null;
 const CREDIT_REMINDER_FALLBACK_CHECK_MS = 30000;
@@ -179,14 +180,13 @@ const getMinimumCreditReminderAt = (baseTimeMs) => {
 const getCreditReceivableStatusLabel = (status) => {
   const labels = {
     open: "Pendiente",
-    partial: "Pendiente",
-    paid: "Saldada",
+    resolved: "Resuelta",
     void: "Anulada",
   };
   return labels[status] || status || "Pendiente";
 };
 const getCreditReceivableStatusStyle = (status) => {
-  if (status === "paid") return { background: "#DCFCE7", color: "#166534", border: "1px solid #22C55E40" };
+  if (status === "resolved") return { background: "#DCFCE7", color: "#166534", border: "1px solid #22C55E40" };
   if (status === "void") return { background: "#F1F5F9", color: "#475569", border: "1px solid #CBD5E140" };
   return { background: "#FEF3C7", color: "#92400E", border: "1px solid #F59E0B40" };
 };
@@ -209,7 +209,7 @@ const getOrderFiles = (order) => {
 // Badge que indica que una orden fue devuelta para correcciones
 function ReturnedBadge({ compact = false }) {
   return (
-    <span className={`pq-returned-badge${compact ? " compact" : ""}`}>
+    <span className={`ps-returned-badge${compact ? " compact" : ""}`}>
       Devuelta
     </span>
   );
@@ -321,7 +321,6 @@ function QuoteOrderDetailModal({
   const [creditClientRequired, setCreditClientRequired] = useState(false);
   const [initialPaymentStatus, setInitialPaymentStatus] = useState(null);
   const [receiptUrl, setReceiptUrl] = useState("");
-  const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -336,7 +335,6 @@ function QuoteOrderDetailModal({
       setLocalError("");
       setCreditClientRequired(false);
       setReceiptUrl("");
-      setImagePreviewUrl(null);
     }
   }, [open, order?.id, order?.payment_status]);
 
@@ -587,11 +585,15 @@ function QuoteOrderDetailModal({
                   <Icons.Eye /> Orden de Trabajo
                 </span>
                 {order.preview_image ? (
-                  <div className="pq-work-preview" onClick={() => setImagePreviewUrl(order.preview_image)}>
+                  <SecureImageLink
+                    url={order.preview_image}
+                    fileName={getFileNameFromUrl(order.preview_image)}
+                    className="pq-work-preview"
+                  >
                     <span className="pq-work-preview-btn">
                       <Icons.Eye /> Ver orden de trabajo
                     </span>
-                  </div>
+                  </SecureImageLink>
                 ) : (
                   <span className="pq-preview-empty">No hay preview cargado.</span>
                 )}
@@ -602,27 +604,12 @@ function QuoteOrderDetailModal({
                   <span className="pq-description-label pq-description-label--soft" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
                     <Icons.Image /> Imágenes de referencia
                   </span>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
-                    {referenceImageUrls.map((url, i) => (
-                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
-                        <img
-                          src={url}
-                          alt={`Ref ${i + 1}`}
-                          style={{
-                            width: 120,
-                            height: 120,
-                            objectFit: "cover",
-                            borderRadius: "var(--pq-radius-md)",
-                            border: "1px solid var(--pq-border)",
-                            cursor: "pointer",
-                            transition: "transform 0.2s",
-                          }}
-                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; }}
-                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; }}
-                        />
-                      </a>
-                    ))}
-                  </div>
+                  <SecureImageGallery
+                    urls={referenceImageUrls}
+                    fileNames={referenceImageUrls.map(getFileNameFromUrl)}
+                    altPrefix="Referencia"
+                    itemClassName="pq-ref-item"
+                  />
                 </div>
               )}
               {productionFiles.length > 0 && (() => {
@@ -776,6 +763,7 @@ function QuoteOrderDetailModal({
                       inputRef={fileInputRef}
                       buttonLabel="Seleccionar desde el ordenador"
                       hint={PAYMENT_RECEIPT_HINT}
+                      className={paymentStatus === PAYMENT_STATUS.PAID && !receiptFile ? "pq-receipt-required" : ""}
                       disabled={!canConfirmPayment || paymentSaving}
                       externalError={receiptZoneError}
                       externalErrorKey={receiptZoneErrorKey}
@@ -848,7 +836,7 @@ function QuoteOrderDetailModal({
                 </button>
               )}
               <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
-              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving || paymentStatus === initialPaymentStatus}>
+              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving || paymentStatus === initialPaymentStatus || (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile)}>
                 {getPaymentConfirmButtonLabel(paymentStatus, paymentSaving)}
               </button>
             </div>
@@ -856,12 +844,6 @@ function QuoteOrderDetailModal({
         </div>
       </div>
 
-      <ImagePreviewModal
-        open={!!imagePreviewUrl}
-        imageUrl={imagePreviewUrl}
-        alt="Orden de trabajo"
-        onClose={() => setImagePreviewUrl(null)}
-      />
     </div>
   );
 }
@@ -940,7 +922,7 @@ function CreditClientDetailView({
 }) {
   const clientId = group.client?.id;
   const openInvoices = group.invoices.filter((item) => isOpenCreditReceivable(item));
-  const settledInvoicesCount = group.invoices.filter((item) => item.status === "paid").length;
+  const settledInvoicesCount = group.invoices.filter((item) => item.status === "resolved").length;
   const selectedIds = selectedCreditOrderIds[clientId] || [];
   const allOpenSelected = openInvoices.length > 0 && openInvoices.every((item) => selectedIds.includes(item.order_id));
   const [detailSearch, setDetailSearch] = useState("");
@@ -951,7 +933,7 @@ function CreditClientDetailView({
     const q = normalizeText(detailSearch);
     return group.invoices.filter((item) => {
       if (detailFilter === "open" && !isOpenCreditReceivable(item)) return false;
-      if (detailFilter === "paid" && item.status !== "paid") return false;
+      if (detailFilter === "resolved" && item.status !== "resolved") return false;
       if (!q) return true;
       return normalizeText(`${item.invoiceNumber || ""} ${item.order_id || ""}`).includes(q);
     });
@@ -1028,7 +1010,7 @@ function CreditClientDetailView({
           >
             <option value="all">Todos</option>
             <option value="open">Pendientes</option>
-            <option value="paid">Saldadas</option>
+            <option value="resolved">Resueltas</option>
           </select>
           <span className="ps-select-arrow"><Icons.ChevronDown /></span>
         </div>
@@ -1234,18 +1216,8 @@ export default function PageQuote() {
   const [filterDate, setFilterDate] = useState("all"); // Filtro por fecha
   const [filterClient, setFilterClient] = useState("all"); // Filtro por cliente registrado
   const [filterSeller, setFilterSeller] = useState("all"); // Filtro por vendedor responsable
+  const [filterOverdue, setFilterOverdue] = useState("all");
   const [filterArchive, setFilterArchive] = useState("all");
-
-  const hasActiveFilters = (
-    search.trim() !== "" ||
-    filterType !== "all" ||
-    filterStatus !== "all" ||
-    filterPayment !== "all" ||
-    filterDate !== "all" ||
-    filterClient !== "all" ||
-    filterSeller !== "all" ||
-    (filterArchive !== "active" && filterArchive !== "all")
-  );
 
   const [viewMode, setViewMode] = useState("table"); // Vista predeterminada: tabla
   const [clients, setClients] = useState([]);
@@ -1266,13 +1238,15 @@ export default function PageQuote() {
   const [creditSettlementNotes, setCreditSettlementNotes] = useState("");
   const [creditSettlementLoading, setCreditSettlementLoading] = useState(false);
   const [creditCustomReminders, setCreditCustomReminders] = useState([]);
-  const [creditCustomReminderLinks, setCreditCustomReminderLinks] = useState([]);
   const [creditReminderTarget, setCreditReminderTarget] = useState(null);
   const [creditReminderForm, setCreditReminderForm] = useState({ remind_at: "", note: "", orderIds: [] });
   const [creditReminderSaving, setCreditReminderSaving] = useState(false);
   const [creditReminderDismissedIds, setCreditReminderDismissedIds] = useState([]);
   const [creditReminderCompletingId, setCreditReminderCompletingId] = useState(null);
   const [creditReminderNow, setCreditReminderNow] = useState(null);
+  const [creditPendingAlertDue, setCreditPendingAlertDue] = useState(false);
+  const [creditPendingAlertLoading, setCreditPendingAlertLoading] = useState(true);
+  const [creditPendingAlertSaving, setCreditPendingAlertSaving] = useState(false);
   const creditReminderServerClockRef = useRef(null);
   
   // Directorio de vendedores (cache para no hacer múltiples queries)
@@ -1368,34 +1342,23 @@ export default function PageQuote() {
   const fetchCreditCustomReminders = useCallback(async () => {
     if (!user?.id) {
       setCreditCustomReminders([]);
-      setCreditCustomReminderLinks([]);
       return;
     }
 
     try {
-      const [{ data: reminders, error: remindersError }, { data: links, error: linksError }] = await Promise.all([
-        supabase
-          .from("credit_custom_reminders")
-          .select("*")
-          .in("status", ["scheduled", "due"])
-          .order("remind_at", { ascending: true }),
-        supabase
-          .from("credit_custom_reminder_orders")
-          .select("*")
-          .order("created_at", { ascending: true }),
-      ]);
-
+      const { data: reminders, error: remindersError } = await supabase
+        .from("credit_custom_reminders")
+        .select("*")
+        .in("status", ["scheduled", "due"])
+        .order("remind_at", { ascending: true });
       if (remindersError) throw remindersError;
-      if (linksError) throw linksError;
 
       setCreditCustomReminders(Array.isArray(reminders) ? reminders : []);
-      setCreditCustomReminderLinks(Array.isArray(links) ? links : []);
     } catch (error) {
       if (!String(error?.message || "").includes("credit_custom_reminders")) {
         console.warn("No se pudieron cargar recordatorios de credito en caja:", error?.message || error);
       }
       setCreditCustomReminders([]);
-      setCreditCustomReminderLinks([]);
     }
   }, [user?.id]);
 
@@ -1487,15 +1450,10 @@ export default function PageQuote() {
 
     setClientLinkLoading(true);
     const { data: linkedOrder, error } = await supabase
-      .from("orders")
-      .update({
-        client_id: clientLinkSelection.id,
-        client_name: clientLinkSelection.name || "",
-        client_contact: clientLinkSelection.phone || null,
-      })
-      .eq("id", orderToLink.id)
-      .select("*, order_production_files(*)")
-      .single();
+      .rpc("quote_link_order_client", {
+        p_order_id: orderToLink.id,
+        p_client_id: clientLinkSelection.id,
+      });
     setClientLinkLoading(false);
 
     if (error || !linkedOrder) {
@@ -1547,7 +1505,7 @@ export default function PageQuote() {
   const refreshQuoteOrdersSilently = useCallback(() => {
     if (!user?.id) return Promise.resolve();
     return fetchOrdersRef.current(user.id, true);
-  }, [user?.id]);
+  }, [user]);
 
   useOrdersRealtimeSync({
     userId: user?.id,
@@ -1568,7 +1526,11 @@ export default function PageQuote() {
 
     setPaymentSaving(true);
     const { data: updatedOrder, error } = await supabase
-      .rpc("mark_order_as_credit", { p_order_id: order.id, p_due_date: null });
+        .rpc("mark_order_as_credit", {
+          p_order_id: order.id,
+          p_due_date: null,
+          p_expected_updated_at: order.updated_at,
+        });
     if (error || !updatedOrder) {
       setPaymentSaving(false);
       notif.showActionNotification({
@@ -1669,17 +1631,6 @@ export default function PageQuote() {
     };
   }, [dispatchDueCreditReminderNotifications, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, user?.id]);
 
-
-  // ============= EFECTO 3: SINCRONIZAR ORDEN SELECCIONADA =============
-  // Mantiene el modal actualizado si la orden cambia en tiempo real
-  // Si la orden abierta en el modal se actualiza en la BD, refleja los cambios
-  useEffect(() => {
-    if (!selectedOrder) return;
-    const freshOrder = [...orders, ...creditOrders].find(o => o.id === selectedOrder.id);
-    if (freshOrder) {
-      setSelectedOrder(freshOrder); // Actualiza los datos del modal sin cerrarlo
-    }
-  }, [creditOrders, orders, selectedOrder]);
 
   // ============= FUNCIÓN: SINCRONIZAR DIRECTORIO DE VENDEDORES =============
   // Carga los nombres de los vendedores desde la tabla "profiles"
@@ -1910,11 +1861,12 @@ export default function PageQuote() {
     }
 
     const { data: updatedOrder, error: updateError } = await supabase
-      .from("orders")
-      .update(updatePayload)
-      .eq("id", order.id)
-      .select("*, order_production_files(*)")
-      .single();
+        .rpc("quote_set_order_payment", {
+          p_order_id: order.id,
+          p_payment_status: updatePayload.payment_status,
+          p_invoice_payment: updatePayload[INVOICE_PAYMENT_FIELD] || null,
+          p_expected_updated_at: order.updated_at,
+        });
 
     setPaymentSaving(false);
 
@@ -2101,8 +2053,6 @@ export default function PageQuote() {
   }, [creditOrders, orders]);
 
   const clientsById = useMemo(() => Object.fromEntries(clients.map(client => [client.id, client])), [clients]);
-  const accountsReceivableById = useMemo(() => Object.fromEntries(accountsReceivable.map(item => [item.id, item])), [accountsReceivable]);
-  const accountsReceivableByOrderId = useMemo(() => Object.fromEntries(accountsReceivable.filter(item => item.order_id).map(item => [item.order_id, item])), [accountsReceivable]);
 
   const creditRows = useMemo(() => (
     accountsReceivable
@@ -2188,24 +2138,61 @@ export default function PageQuote() {
     new Set(creditRows.filter(item => isOpenCreditReceivable(item)).map(item => item.client_id)).size
   ), [creditRows]);
 
+  const creditPendingClientGroups = useMemo(() => (
+    allCreditClientGroups.filter(group => group.pendingCount > 0)
+  ), [allCreditClientGroups]);
+
+  useEffect(() => {
+    let active = true;
+    if (!user?.id || creditPendingInvoicesCount === 0) {
+      setCreditPendingAlertDue(false);
+      setCreditPendingAlertLoading(false);
+      return undefined;
+    }
+
+    setCreditPendingAlertLoading(true);
+    supabase.rpc("credit_pending_alert_is_due")
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (active) setCreditPendingAlertDue(data === true);
+      })
+      .catch(error => {
+        console.warn("No se pudo consultar el aviso de créditos pendientes:", error?.message || error);
+        if (active) setCreditPendingAlertDue(false);
+      })
+      .finally(() => {
+        if (active) setCreditPendingAlertLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [creditPendingInvoicesCount, user?.id]);
+
+  const acknowledgeCreditPendingAlert = async ({ review = false } = {}) => {
+    setCreditPendingAlertSaving(true);
+    try {
+      const { error } = await supabase.rpc("acknowledge_credit_pending_alert");
+      if (error) throw error;
+      setCreditPendingAlertDue(false);
+      if (review) {
+        setActiveTab("credits");
+        setCreditStatusFilter("open");
+        setCreditView("list");
+      }
+    } catch (error) {
+      showCreditFeedback("error", "No se pudo guardar el aviso", error?.message || "Intenta nuevamente.");
+    } finally {
+      setCreditPendingAlertSaving(false);
+    }
+  };
+
   const creditCustomReminderRows = useMemo(() => (
     creditCustomReminders.map((reminder) => {
-      const links = creditCustomReminderLinks.filter((link) => link.reminder_id === reminder.id);
       const client = clientsById[reminder.client_id] || { id: reminder.client_id, name: "Cliente sin nombre", phone: "" };
-      const invoices = links.map((link) => {
-        const receivable = accountsReceivableById[link.accounts_receivable_id] || accountsReceivableByOrderId[link.order_id] || null;
-        const order = quoteCreditOrdersById[link.order_id] || (receivable?.order_id ? quoteCreditOrdersById[receivable.order_id] : null);
-        return {
-          ...link,
-          receivable,
-          order,
-          invoiceNumber: receivable?.invoice_number || order?.invoice_number || "---",
-        };
-      });
+      const invoices = creditRows.filter(item => item.client_id === reminder.client_id && isOpenCreditReceivable(item));
 
       return { ...reminder, client, invoices };
     })
-  ), [accountsReceivableById, accountsReceivableByOrderId, clientsById, creditCustomReminderLinks, creditCustomReminders, quoteCreditOrdersById]);
+  ), [clientsById, creditCustomReminders, creditRows]);
 
   const dueCreditCustomReminders = useMemo(() => {
     const dismissed = new Set(creditReminderDismissedIds);
@@ -2358,16 +2345,6 @@ export default function PageQuote() {
     setCreditReminderForm({ remind_at: "", note: "", orderIds: [] });
   };
 
-  const toggleCreditReminderOrder = (orderId) => {
-    if (!orderId) return;
-    setCreditReminderForm(prev => {
-      const current = new Set(prev.orderIds || []);
-      if (current.has(orderId)) current.delete(orderId);
-      else current.add(orderId);
-      return { ...prev, orderIds: [...current] };
-    });
-  };
-
   const handleSaveCreditReminder = async () => {
     if (!user?.id) {
       showCreditFeedback("error", "Sesión no válida", "No se pudo identificar el usuario actual.");
@@ -2378,12 +2355,8 @@ export default function PageQuote() {
       return;
     }
 
-    const validSelectedOrderIds = [...new Set(creditReminderForm.orderIds || [])].filter((orderId) => {
-      const invoice = (creditReminderTarget.invoices || []).find(item => item.order_id === orderId);
-      return invoice?.order_id && isOpenCreditReceivable(invoice);
-    });
-    if (validSelectedOrderIds.length === 0) {
-      showCreditFeedback("error", "Orden a crédito requerida", "Los recordatorios personalizados solo pueden crearse para órdenes a crédito.");
+    if (!(creditReminderTarget.invoices || []).some(isOpenCreditReceivable)) {
+      showCreditFeedback("error", "Sin pendientes", "El cliente ya no tiene órdenes a crédito pendientes.");
       return;
     }
 
@@ -2419,12 +2392,10 @@ export default function PageQuote() {
 
     setCreditReminderSaving(true);
     try {
-      const { error } = await supabase.rpc("create_credit_custom_reminder", {
+      const { error } = await supabase.rpc("create_credit_client_reminder", {
         p_client_id: creditReminderTarget.client.id,
         p_remind_at: new Date(remindAtMs).toISOString(),
         p_note: reminderNote,
-        p_order_ids: validSelectedOrderIds,
-        p_visibility_scope: "creator",
       });
 
       if (error) throw error;
@@ -2514,6 +2485,7 @@ export default function PageQuote() {
       const matchesClient = orderMatchesClientFilter(order, filterClient);
       const sellerId = resolveSellerId(order);
       const matchesSeller = filterSeller === "all" || sellerId === filterSeller;
+      const matchesOverdue = filterOverdue === "all" || isOrderOverdue(order);
       const matchesArchive =
         filterArchive === "all" ||
         (filterArchive === "active" && !order.is_archived_quote) ||
@@ -2530,14 +2502,14 @@ export default function PageQuote() {
         (filterDate === "7days" && createdAt >= sevenDaysAgo) ||
         (filterDate === "month" && createdAt >= startOfMonth);
 
-      return matchesType && matchesSearch && matchesStatus && matchesPayment && matchesClient && matchesSeller && matchesArchive && matchesDate;
+      return matchesType && matchesSearch && matchesStatus && matchesPayment && matchesClient && matchesSeller && matchesArchive && matchesDate && matchesOverdue;
     });
-  }, [orders, search, filterType, filterStatus, filterPayment, filterClient, filterSeller, filterArchive, filterDate, sellerDirectory]);
+  }, [orders, search, filterType, filterStatus, filterPayment, filterClient, filterSeller, filterOverdue, filterArchive, filterDate, sellerDirectory]);
 
   const effectivePerPage = viewMode === "cards" ? 10 : PER_PAGE;
   const totalPages = Math.ceil(filteredOrders.length / effectivePerPage) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = sortOrdersByDeadlinePriority(filteredOrders).slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
   useEffect(() => { setPage(1); }, [viewMode]);
@@ -2557,11 +2529,11 @@ export default function PageQuote() {
   }).length;
 
   const CARD_ACCENTS = [
-    { color: "#0284C7", bg: "#E0F2FE", glow: "#E0F2FE" },
-    { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
-    { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
-    { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
-    { color: "#F5A215", bg: "#FEF3C7", glow: "#FEF3C7" },
+    { color: "#0284C7", bg: "#E0F2FE" },
+    { color: "#F59E0B", bg: "#FEF3C7" },
+    { color: "#10B981", bg: "#DCFCE7" },
+    { color: "#8B5CF6", bg: "#EDE9FE" },
+    { color: "#F5A215", bg: "#FEF3C7" },
   ];
 
   const metrics = [
@@ -2576,7 +2548,6 @@ export default function PageQuote() {
     const acc = CARD_ACCENTS[accentIdx];
     return (
       <article className="pq-metric-card">
-        <div className="pq-metric-glow" style={{ background: acc.glow }} />
         <div className="pq-metric-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
         <div className="pq-metric-value">{value}</div>
         <div className="pq-metric-label">{label}</div>
@@ -2725,13 +2696,6 @@ export default function PageQuote() {
                       <tr><td colSpan={5} className="ps-table-empty pq-table-empty">No hay órdenes asignadas actualmente.</td></tr>
                     ) : (
                       dashboardRecentOrders.map(order => {
-                        const normalizedOrderType = (() => {
-                          const type = String(order.order_type || "normal").trim();
-                          if (!type || type.toLowerCase() === "normal") return "Normal";
-                          if (type.toLowerCase().includes("911")) return "911";
-                          return type.charAt(0).toUpperCase() + type.slice(1);
-                        })();
-
                         return (
                           <tr key={order.id} className="row-hover pq-order-row"
                               onClick={() => handleViewOrder(order)}
@@ -2796,7 +2760,7 @@ export default function PageQuote() {
               <select className="pq-input" value={creditStatusFilter} onChange={event => setCreditStatusFilter(event.target.value)}>
                 <option value="all">Todos</option>
                 <option value="open">Pendientes</option>
-                <option value="paid">Saldadas</option>
+                <option value="resolved">Resueltas</option>
               </select>
               <span className="pq-results-count">{creditClientGroups.length} cliente{creditClientGroups.length !== 1 ? "s" : ""}</span>
             </div>
@@ -2892,10 +2856,10 @@ export default function PageQuote() {
                               </div>
                             </td>
                             <td>
-                              <span className="pq-credit-phone">{formatDominicanPhone(group.client?.phone) || "Sin teléfono"}</span>
+                              <span className="pq-credit-phone">{formatPhone(group.client?.phone) || "Sin teléfono"}</span>
                             </td>
                             <td>
-                              <span className="pq-badge" style={getCreditReceivableStatusStyle(openInvoices.length > 0 ? "open" : "paid")}>
+                              <span className="pq-badge" style={getCreditReceivableStatusStyle(openInvoices.length > 0 ? "open" : "resolved")}>
                                 {group.pendingCount} factura{group.pendingCount === 1 ? "" : "s"}
                               </span>
                             </td>
@@ -2906,7 +2870,7 @@ export default function PageQuote() {
                               </div>
                             </td>
                             <td>
-                              <span className="pq-badge" style={group.pendingCount > 0 ? getCreditReceivableStatusStyle("open") : getCreditReceivableStatusStyle("paid")}>
+                              <span className="pq-badge" style={group.pendingCount > 0 ? getCreditReceivableStatusStyle("open") : getCreditReceivableStatusStyle("resolved")}>
                                 {group.pendingCount > 0 ? "Con saldo pendiente" : "Sin pendientes"}
                               </span>
                             </td>
@@ -3058,6 +3022,16 @@ export default function PageQuote() {
                 options={[
                   { value: "all", label: "Todos los vendedores" },
                   ...Object.entries(sellerDirectory).map(([sellerId, sellerName]) => ({ value: sellerId, label: sellerName || "Vendedor" })),
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.AlertCircle />}
+                value={filterOverdue}
+                onChange={value => { setFilterOverdue(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todas las fechas de entrega" },
+                  { value: "overdue", label: "Atrasadas" },
                 ]}
               />
 
@@ -3254,7 +3228,7 @@ export default function PageQuote() {
                         </div>
                         <div className="ps-order-card-field">
                           <span className="ps-order-card-field-label">Estado</span>
-                          <StatusBadge status={order.status} className="acm-badge" bordered order={order} />
+                          <StatusBadge status={order.status} className="acm-badge" bordered showDot={false} order={order} />
                         </div>
                       </div>
 
@@ -3262,7 +3236,7 @@ export default function PageQuote() {
                       <div className="ps-order-card-fields">
                         <div className="ps-order-card-field">
                           <span className="ps-order-card-field-label">Pago</span>
-                          <PaymentBadge status={order.payment_status} className="acm-badge" bordered />
+                          <PaymentBadge status={order.payment_status} className="acm-badge" bordered showDot={false} />
                         </div>
                         <div className="ps-order-card-field">
                           <span className="ps-order-card-field-label">Fecha</span>
@@ -3414,7 +3388,6 @@ export default function PageQuote() {
         target={creditReminderTarget}
         form={creditReminderForm}
         onFormChange={setCreditReminderForm}
-        onToggleOrder={toggleCreditReminderOrder}
         onClose={closeCreditReminderModal}
         onSubmit={handleSaveCreditReminder}
         saving={creditReminderSaving}
@@ -3423,8 +3396,18 @@ export default function PageQuote() {
         isOpenCreditReceivable={isOpenCreditReceivable}
       />
 
+      <CreditPendingAlertModal
+        open={creditPendingAlertDue && !creditPendingAlertLoading}
+        invoiceCount={creditPendingInvoicesCount}
+        clientCount={creditPendingClientCount}
+        clients={creditPendingClientGroups}
+        saving={creditPendingAlertSaving}
+        onClose={() => acknowledgeCreditPendingAlert()}
+        onReview={() => acknowledgeCreditPendingAlert({ review: true })}
+      />
+
       <CreditCustomReminderDueModal
-        open={dueCreditCustomReminders.length > 0}
+        open={!creditPendingAlertDue && dueCreditCustomReminders.length > 0}
         variant="quote"
         reminders={dueCreditCustomReminders}
         completingId={creditReminderCompletingId}

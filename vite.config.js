@@ -23,6 +23,7 @@ import {
   handleFileDownloadUrl,
   handleImportRemoteFile,
   handleInitiateFileUpload,
+  handleResolveOrderAssetDownload,
 } from './server/storage-gateway.js'
 function createApiHandler(path, handler, { timeoutMs = 20000 } = {}) {
   return {
@@ -65,7 +66,7 @@ function createApiHandler(path, handler, { timeoutMs = 20000 } = {}) {
             res.statusCode = result.status;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify(result.body));
-          } catch (error) {
+          } catch {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({
@@ -97,6 +98,7 @@ const FILES_ACTIONS = {
   "initiate-upload": handleInitiateFileUpload,
   "import-url": handleImportRemoteFile,
   "download-url": handleFileDownloadUrl,
+  "resolve-download": handleResolveOrderAssetDownload,
   "complete-upload": handleCompleteFileUpload,
 };
 
@@ -158,7 +160,7 @@ function createConsolidatedHandler(path, actionsMap) {
             res.statusCode = result.status;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify(result.body));
-          } catch (error) {
+          } catch {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({

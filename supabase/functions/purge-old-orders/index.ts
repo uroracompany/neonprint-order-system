@@ -10,6 +10,18 @@ type PurgeCandidate = {
   notifications_count: number;
 };
 
+type PurgeClaim = {
+  order_id: string;
+  claim_token: string;
+  asset_manifest: Record<string, unknown> | null;
+};
+
+type ManifestObject = {
+  provider: "supabase" | "r2";
+  bucket: "order-docs" | "order-previews" | "payment-invoice";
+  object_key: string;
+};
+
 type StorageError = {
   provider?: string;
   bucket: string;
@@ -39,12 +51,7 @@ const parseBatchLimit = (value: unknown) => {
   return Math.min(Math.trunc(parsed), MAX_BATCH_LIMIT);
 };
 
-const storagePrefixesForOrder = (orderId: string) => [
-  { bucket: "order-docs", prefix: `orders/${orderId}/files` },
-  { bucket: "order-docs", prefix: `orders/${orderId}/ref-images` },
-  { bucket: "order-previews", prefix: `orders/${orderId}/preview` },
-  { bucket: "payment-invoice", prefix: orderId },
-];
+const PURGE_BUCKETS = new Set(["order-docs", "order-previews", "payment-invoice"]);
 
 const textEncoder = new TextEncoder();
 
@@ -165,34 +172,6 @@ const signedR2Delete = async (key: string) => {
   }
 };
 
-const parseJsonArrayLike = (value: unknown) => {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  try {
-    const parsed = JSON.parse(String(value));
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    return String(value).split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
-  }
-};
-
-const normalizeAssetUrl = (item: unknown) => {
-  if (!item) return null;
-  if (typeof item === "string") return item.trim() || null;
-  if (typeof item === "object" && typeof (item as { url?: unknown }).url === "string") {
-    return ((item as { url: string }).url).trim() || null;
-  }
-  return null;
-};
-
-const parseR2Url = (url = "") => {
-  if (!url.startsWith("r2://")) return null;
-  const rest = url.slice("r2://".length);
-  const slashIndex = rest.indexOf("/");
-  if (slashIndex <= 0) return null;
-  return { bucket: rest.slice(0, slashIndex), key: decodeURIComponent(rest.slice(slashIndex + 1)) };
-};
-
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return jsonResponse(405, { error: "Method not allowed" });
@@ -224,12 +203,11 @@ Deno.serve(async (req) => {
   const limit = parseBatchLimit(body.limit);
   const dryRun = body.dry_run === true;
 
+  // dry_run deliberately uses the legacy read-only candidate query. Claiming is
+  // a durable mutation and must never occur during a dry run.
   const { data: candidates, error: candidateError } = await supabase.rpc(
-    "purge_old_orders_batch",
-    {
-      p_cutoff: cutoff,
-      p_limit: limit,
-    },
+    dryRun ? "purge_old_orders_batch" : "claim_old_orders_for_purge",
+    { p_cutoff: cutoff, p_limit: limit },
   );
 
   if (candidateError) {
@@ -237,12 +215,13 @@ Deno.serve(async (req) => {
     return jsonResponse(500, { error: candidateError.message });
   }
 
-  const orders = (candidates || []) as PurgeCandidate[];
+  const orders = (candidates || []) as Array<PurgeCandidate | PurgeClaim>;
   const result = {
     cutoff,
     dry_run: dryRun,
     candidate_count: orders.length,
     purged: [] as string[],
+    claimed: dryRun ? [] as string[] : orders.map((order) => order.order_id),
     skipped: [] as Array<{ order_id: string; errors: StorageError[] }>,
     failed: [] as Array<{ order_id: string; message: string }>,
   };
@@ -252,13 +231,15 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    const storageResult = await removeOrderStorage(supabase, order.order_id);
+    const claim = order as PurgeClaim;
+    const storageResult = await removeOrderStorage(supabase, claim.asset_manifest);
 
     if (storageResult.errors.length > 0) {
       const { error: logError } = await supabase.rpc(
-        "log_old_order_purge_storage_error",
+        "record_order_purge_storage_result",
         {
-          p_order_id: order.order_id,
+          p_order_id: claim.order_id,
+          p_claim_token: claim.claim_token,
           p_storage_files_deleted: storageResult.removed,
           p_storage_errors: storageResult.errors,
         },
@@ -266,34 +247,48 @@ Deno.serve(async (req) => {
 
       if (logError) {
         console.error("order purge storage error audit failed", {
-          order_id: order.order_id,
+          order_id: claim.order_id,
           error: logError,
         });
       }
 
-      result.skipped.push({ order_id: order.order_id, errors: storageResult.errors });
+      result.skipped.push({ order_id: claim.order_id, errors: storageResult.errors });
+      continue;
+    }
+
+    const { error: storageRecordError } = await supabase.rpc(
+      "record_order_purge_storage_result",
+      {
+        p_order_id: claim.order_id,
+        p_claim_token: claim.claim_token,
+        p_storage_files_deleted: storageResult.removed,
+        p_storage_errors: [],
+      },
+    );
+    if (storageRecordError) {
+      result.failed.push({ order_id: claim.order_id, message: storageRecordError.message });
       continue;
     }
 
     const { error: purgeError } = await supabase.rpc(
-      "purge_old_order_after_storage",
+      "purge_claimed_order_after_storage",
       {
-        p_order_id: order.order_id,
+        p_order_id: claim.order_id,
+        p_claim_token: claim.claim_token,
         p_cutoff: cutoff,
-        p_storage_files_deleted: storageResult.removed,
       },
     );
 
     if (purgeError) {
       console.error("order purge database delete failed", {
-        order_id: order.order_id,
+        order_id: claim.order_id,
         error: purgeError,
       });
-      result.failed.push({ order_id: order.order_id, message: purgeError.message });
+      result.failed.push({ order_id: claim.order_id, message: purgeError.message });
       continue;
     }
 
-    result.purged.push(order.order_id);
+    result.purged.push(claim.order_id);
   }
 
   console.log("old order purge completed", result);
@@ -302,87 +297,39 @@ Deno.serve(async (req) => {
 
 const removeOrderStorage = async (
   supabase: ReturnType<typeof createClient>,
-  orderId: string,
+  manifest: Record<string, unknown> | null,
 ) => {
   let removed = 0;
   const errors: StorageError[] = [];
 
-  for (const target of storagePrefixesForOrder(orderId)) {
-    const prefixResult = await removeStoragePrefix(supabase, target.bucket, target.prefix);
-    removed += prefixResult.removed;
-    errors.push(...prefixResult.errors);
-  }
+  // A claim is an immutable deletion contract. Never inspect current orders,
+  // order_files or Storage prefixes: they may have changed after the claim.
+  const objects = Array.isArray(manifest?.objects)
+    ? manifest.objects as Array<Partial<ManifestObject>>
+    : [];
+  const targets = objects.filter((object): object is ManifestObject => (
+    (object.provider === "supabase" || object.provider === "r2")
+    && typeof object.bucket === "string"
+    && PURGE_BUCKETS.has(object.bucket)
+    && typeof object.object_key === "string"
+    && object.object_key.trim().length > 0
+  ));
 
-  const { data: order } = await supabase
-    .from("orders")
-    .select("order_file_url,preview_image,reference_images,invoice_payment")
-    .eq("id", orderId)
-    .maybeSingle();
-
-  const { data: orderFiles, error: orderFilesError } = await supabase
-    .from("order_files")
-    .select("id,provider,bucket,object_key")
-    .eq("order_id", orderId)
-    .is("deleted_at", null);
-
-  if (orderFilesError) {
-    errors.push({
-      provider: "supabase",
-      bucket: "order_files",
-      prefix: orderId,
-      message: orderFilesError.message,
-    });
-  }
-
-  const explicitSupabaseTargets = (orderFiles || [])
-    .filter((file: { provider?: string }) => file.provider === "supabase")
-    .map((file: { bucket: string; object_key: string }) => ({ bucket: file.bucket, path: file.object_key }));
+  const explicitSupabaseTargets = targets
+    .filter((object) => object.provider === "supabase")
+    .map((object) => ({ bucket: object.bucket, path: object.object_key }));
 
   const explicitSupabaseResult = await removeSupabaseObjects(supabase, explicitSupabaseTargets);
   removed += explicitSupabaseResult.removed;
   errors.push(...explicitSupabaseResult.errors);
 
-  const legacyR2Targets = [
-    ...parseJsonArrayLike(order?.order_file_url),
-    ...parseJsonArrayLike(order?.reference_images),
-    order?.preview_image,
-    order?.invoice_payment,
-  ]
-    .map(normalizeAssetUrl)
-    .filter((url): url is string => Boolean(url))
-    .map(parseR2Url)
-    .filter((target): target is { bucket: string; key: string } => Boolean(target));
-
-  const r2Targets = [
-    ...legacyR2Targets,
-    ...(orderFiles || [])
-      .filter((file: { provider?: string }) => file.provider === "r2")
-      .map((file: { bucket: string; object_key: string }) => ({ bucket: file.bucket, key: file.object_key })),
-  ];
+  const r2Targets = targets
+    .filter((object) => object.provider === "r2")
+    .map((object) => ({ bucket: object.bucket, key: object.object_key }));
 
   const r2Result = await removeR2Objects(r2Targets);
   removed += r2Result.removed;
   errors.push(...r2Result.errors);
-
-  if (errors.length === 0 && Array.isArray(orderFiles) && orderFiles.length > 0) {
-    const { error: markDeletedError } = await supabase
-      .from("order_files")
-      .update({
-        status: "deleted",
-        deleted_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("order_id", orderId);
-
-    if (markDeletedError) {
-      errors.push({
-        provider: "supabase",
-        bucket: "order_files",
-        prefix: orderId,
-        message: markDeletedError.message,
-      });
-    }
-  }
 
   return { removed, errors };
 };
@@ -441,54 +388,6 @@ const removeR2Objects = async (targets: Array<{ bucket: string; key: string }>) 
         message: error instanceof Error ? error.message : "No se pudo borrar el objeto en R2.",
       });
     }
-  }
-
-  return { removed, errors };
-};
-
-const removeStoragePrefix = async (
-  supabase: ReturnType<typeof createClient>,
-  bucket: string,
-  prefix: string,
-) => {
-  const limit = 1000;
-  let offset = 0;
-  let removed = 0;
-  const errors: StorageError[] = [];
-
-  while (true) {
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .list(prefix, {
-        limit,
-        offset,
-        sortBy: { column: "name", order: "asc" },
-      });
-
-    if (error) {
-      errors.push({ bucket, prefix, message: error.message });
-      break;
-    }
-
-    const items = data || [];
-    const paths = items
-      .filter((item) => item?.name && item.name !== ".emptyFolderPlaceholder")
-      .map((item) => `${prefix}/${item.name}`);
-
-    if (paths.length > 0) {
-      const { error: removeError } = await supabase.storage.from(bucket).remove(paths);
-      if (removeError) {
-        errors.push({ bucket, prefix, message: removeError.message });
-        break;
-      }
-      removed += paths.length;
-    }
-
-    if (items.length < limit) {
-      break;
-    }
-
-    offset += limit;
   }
 
   return { removed, errors };

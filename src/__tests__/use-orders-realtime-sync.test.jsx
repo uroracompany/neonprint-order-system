@@ -66,8 +66,21 @@ describe('useOrdersRealtimeSync', () => {
     expect(channels[1].name).toBe('realtime:data:user-1:orders')
 
     act(() => {
-      channels[0].handlers.broadcast[0].callback()
-      channels[1].handlers.postgres_changes[0].callback()
+      channels[0].handlers.broadcast[0].callback({
+        payload: { order_id: 'order-1', operation: 'UPDATE' },
+      })
+    })
+    await act(async () => vi.advanceTimersByTimeAsync(100))
+
+    expect(firstRefresh).toHaveBeenCalledTimes(1)
+    expect(secondRefresh).toHaveBeenCalledTimes(1)
+
+    // Broadcast is primary and Postgres Changes is the fallback. The fallback
+    // copy of the same update must not cause a second full reconciliation.
+    act(() => {
+      channels[1].handlers.postgres_changes[0].callback({
+        eventType: 'UPDATE', new: { id: 'order-1' },
+      })
     })
     await act(async () => vi.advanceTimersByTimeAsync(100))
 
@@ -105,7 +118,9 @@ describe('useOrdersRealtimeSync', () => {
     await flushConnection()
 
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
-    act(() => channels[1].handlers.postgres_changes.find(({ filter }) => filter.table === 'order_production_files').callback())
+    act(() => channels[1].handlers.postgres_changes.find(({ filter }) => filter.table === 'order_production_files').callback({
+      eventType: 'UPDATE', new: { id: 'file-1' },
+    }))
     await act(async () => vi.advanceTimersByTimeAsync(200))
     expect(refreshOrders).not.toHaveBeenCalled()
 
@@ -113,5 +128,9 @@ describe('useOrdersRealtimeSync', () => {
     act(() => document.dispatchEvent(new Event('visibilitychange')))
     await act(async () => vi.advanceTimersByTimeAsync(100))
     expect(refreshOrders).toHaveBeenCalledTimes(1)
+    expect(refreshOrders).toHaveBeenCalledWith(expect.objectContaining({
+      tables: expect.any(Set),
+      changes: [{ table: 'order_production_files', id: 'file-1', operation: 'UPDATE' }],
+    }))
   })
 })

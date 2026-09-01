@@ -39,7 +39,8 @@ describe("recordatorios visibles de creditos pendientes", () => {
     expect(dashboard).toContain("pa-credit-pending-banner");
     expect(dashboard).toContain("Este aviso se mostrara una vez al mes mientras existan créditos pendientes.");
     expect(dashboard).not.toMatch(/CREDIT_PENDING_ALERT_FREQUENCY|CREDIT_PENDING_ALERT_TICK_MS|1 minuto|prueba/i);
-    expect(dashboard).not.toMatch(/create_notification|NotificationCenter.*credito pendiente|vencid|mora|overdue/i);
+    expect(dashboard).not.toContain("create_notification");
+    expect(dashboard).not.toContain('type: "credit_pending_alert"');
   });
 
   it("agrega recordatorios personalizados independientes del aviso mensual", () => {

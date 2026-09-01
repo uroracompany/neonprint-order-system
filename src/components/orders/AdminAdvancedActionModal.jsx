@@ -76,12 +76,6 @@ export default function AdminAdvancedActionModal({
     if (selectorConfig && !selectorConfig.optional && !targetUserId) {
       return setError(`Selecciona un ${selectorConfig.users === "quote" ? "usuario de Caja" : selectorConfig.users === "seller" ? "vendedor" : "diseñador"}.`);
     }
-    if (actionKey === "route_sales" && !targetUserId) {
-      return setError("Selecciona un usuario de Ventas.");
-    }
-    if (actionKey === "assign_seller" && !targetUserId) {
-      return setError("Selecciona un vendedor.");
-    }
     if (showReason && needsReason) {
       if (!reasonCategory) return setError("Selecciona una categoría del motivo.");
       if (reasonDetail.trim().length < reasonMinLength) return setError(`Explica el motivo con al menos ${reasonMinLength} caracteres.`);
@@ -134,7 +128,15 @@ export default function AdminAdvancedActionModal({
     switch (selectorConfig.users) {
       case "quote": return quoteUsers;
       case "seller": return sellerUsers;
-      case "designer": return designUsers;
+      case "designer": {
+        const currentAdmin = profiles.find((profile) => (
+          profile.id === currentUserId
+          && profile.role === "admin"
+          && profile.employment_status !== false
+          && !profile.deleted_at
+        ));
+        return currentAdmin ? [currentAdmin, ...designUsers] : designUsers;
+      }
       default: return [];
     }
   };
@@ -238,7 +240,11 @@ export default function AdminAdvancedActionModal({
                 >
                   <option value="">{selectorConfig.optional ? "Sin asignar — Administración" : `Seleccionar ${selectorConfig.users === "quote" ? "responsable" : selectorConfig.users === "seller" ? "vendedor" : "diseñador"}`}</option>
                   {getUserList().map((item) => (
-                    <option key={item.id} value={item.id}>{getUserDisplayName(item)}</option>
+                    <option key={item.id} value={item.id}>
+                      {selectorConfig.users === "designer" && item.id === currentUserId && item.role === "admin"
+                        ? "Administración (yo)"
+                        : getUserDisplayName(item)}
+                    </option>
                   ))}
                 </select>
                 <Icons.ChevronDown aria-hidden="true" />

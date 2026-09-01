@@ -85,6 +85,7 @@ describe("registro de cliente desde credito en cotizacion", () => {
     };
     const searchBuilder = {
       select: vi.fn(() => searchBuilder),
+      is: vi.fn(() => searchBuilder),
       order: vi.fn(() => searchBuilder),
       limit: vi.fn(() => searchBuilder),
       or: vi.fn(async () => ({ data: [existingClient], error: null })),
@@ -124,6 +125,7 @@ describe("registro de cliente desde credito en cotizacion", () => {
     };
     const searchBuilder = {
       select: vi.fn(() => searchBuilder),
+      is: vi.fn(() => searchBuilder),
       order: vi.fn(() => searchBuilder),
       limit: vi.fn(() => searchBuilder),
       or: vi.fn()
@@ -166,7 +168,7 @@ describe("registro de cliente desde credito en cotizacion", () => {
     const createdClient = {
       id: "client-2",
       name: "Cliente Repetido",
-      phone: "829-555-9999",
+      phone: "8295559999",
     };
     const insertBuilder = {
       select: vi.fn(() => insertBuilder),
@@ -174,6 +176,7 @@ describe("registro de cliente desde credito en cotizacion", () => {
     };
     const searchBuilder = {
       select: vi.fn(() => searchBuilder),
+      is: vi.fn(() => searchBuilder),
       order: vi.fn(() => searchBuilder),
       limit: vi.fn(() => searchBuilder),
       or: vi.fn()
@@ -204,7 +207,7 @@ describe("registro de cliente desde credito en cotizacion", () => {
       expect(screen.getByText(/Ya existe un cliente con este nombre/i)).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByPlaceholderText("809-555-1234"), { target: { value: "8295559999" } });
+    fireEvent.change(screen.getByPlaceholderText("+1 555 123 4567"), { target: { value: "8295559999" } });
     fireEvent.click(screen.getByRole("button", { name: "Agregar cliente" }));
 
     await waitFor(() => {
@@ -212,7 +215,7 @@ describe("registro de cliente desde credito en cotizacion", () => {
     });
     expect(searchBuilder.insert).toHaveBeenCalledWith(expect.objectContaining({
       name: "Cliente Repetido",
-      phone: "829-555-9999",
+      phone: "8295559999",
     }));
     expect(onClose).toHaveBeenCalled();
   });

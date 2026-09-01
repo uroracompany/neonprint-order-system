@@ -2,7 +2,7 @@ import {
   STATUS_LABELS,
   getPaymentStatusLabel,
   normalizeOrderStatus,
-} from "./constants";
+} from "./constants.js";
 
 const PAYMENT_FIELDS = new Set(["payment", "payment_status"]);
 const STATUS_FIELDS = new Set(["status", "order_status"]);

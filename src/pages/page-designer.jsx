@@ -17,7 +17,7 @@ import {
   canArchiveOrder,
   archiveOrder,
 } from "../utils/archive";
-import { ORDER_STATUS, PRODUCTION_AREAS, isOrderStatus, isOrderStatusIn, ARCHIVE_MODULES, getFileNameFromUrl } from "../utils/constants";
+import { ORDER_STATUS, isOrderStatus, isOrderStatusIn, ARCHIVE_MODULES, getFileNameFromUrl } from "../utils/constants";
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
@@ -31,16 +31,21 @@ import useNewOrderAssignments from "../hooks/useNewOrderAssignments";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
-import { formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
-import { loadClients, orderMatchesClientFilter, formatDominicanPhone } from "../utils/clients";
+import { buildStorageSafeFileName, formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
+import { resolveOrderAssetUrl } from "../utils/fileAccess";
+import { loadClients, orderMatchesClientFilter, formatPhone } from "../utils/clients";
 import { getOrderFiles, getPreviewImage, getReferenceImages } from "../utils/orderAssets";
+import { canDecodeAsImage, compressImage, REF_IMAGE_CONFIG, validateReferenceImages } from "../utils/imageValidation";
 import { buildProductionFileRows } from "../utils/production";
+import { buildProductionCatalogs } from "../utils/production";
+import { ProductionFileDetailsModal } from "../components/orders/CreateOrderModal";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import DesignerProfileModule from "../components/designer/DesignerProfileModule";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
 import ReturnToCashierModal from "../components/orders/ReturnToCashierModal";
 import { OrderReturnHandoffPanel } from "../components/orders/OrderReturnHandoff";
-import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
+import { isOrderOverdue } from "../utils/orderDeadline";
+import { isReturnedDesignerOrder, shouldMarkDesignerOrderEdited } from "../utils/designerOrderEdits";
 
 const EDITED_ORDERS_STORAGE_KEY = "pd_edited_orders";
 const PER_PAGE = 15;
@@ -50,6 +55,8 @@ const DESIGNER_ORDER_SELECT = [
   "client_contact",
   "order_type",
   "created_at",
+  "updated_at",
+  "updated_by",
   "description",
   "material",
   "status",
@@ -57,63 +64,27 @@ const DESIGNER_ORDER_SELECT = [
   "returned_to_designer_at",
   "order_file_url",
   "preview_image",
+  "reference_images",
   "designer_id",
   "seller_id",
   "created_by",
   "is_archived_designer",
   "quote_id",
   "quantity",
+  "order_production_files(id, order_id, url, public_label, production_area_code, material_names, termination_name)",
+  "order_files(id, provider, bucket, object_key, original_filename, content_type, category, status, deleted_at, uploaded_by)",
 ].join(", ");
-const TRACKED_ORDER_FIELDS = [
-  "client_name",
-  "client_contact",
-  "order_type",
-  "created_at",
-  "description",
-  "material",
-];
-
-const normalizeTrackedValue = (value) => {
-  if (value === null || value === undefined) return "";
-  return String(value).trim();
-};
-
-const hasTrackedOrderChanges = (previousOrder, nextOrder) => {
-  return TRACKED_ORDER_FIELDS.some(field => (
-    normalizeTrackedValue(previousOrder?.[field]) !== normalizeTrackedValue(nextOrder?.[field])
-  ));
-};
-
-const isReturnedOrder = (order) => (
-  isOrderStatus(order?.status, ORDER_STATUS.IN_DESIGN) &&
-  String(order?.return_reason || "").trim().length > 0
-);
-
-const hasReturnUpdate = (previousOrder, nextOrder) => {
-  if (!isReturnedOrder(nextOrder)) return false;
-
-  return (
-    !isReturnedOrder(previousOrder) ||
-    normalizeTrackedValue(previousOrder?.return_reason) !== normalizeTrackedValue(nextOrder?.return_reason) ||
-    normalizeTrackedValue(previousOrder?.returned_to_designer_at) !== normalizeTrackedValue(nextOrder?.returned_to_designer_at)
-  );
-};
+const isReturnedOrder = isReturnedDesignerOrder;
 
 function ReturnedBadge({ compact = false }) {
   return (
-    <span className={`pd-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta por caja">
+    <span className={`ps-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta por caja">
       Devuelta
     </span>
   );
 }
 
 
-
-const hasFiles = (order, orderFiles) => {
-  const storageFiles = orderFiles?.[order?.id]?.length || 0;
-  const dbFiles = getOrderFiles(order).length;
-  return storageFiles > 0 || dbFiles > 0;
-};
 
 const getInitials = (name) => String(name || "?")
   .split(/\s+/)
@@ -162,8 +133,14 @@ const buildDesignerAssetPath = (orderId, folder, file, prefix = "") => {
   return `orders/${orderId}/${folder}/${prefix}${suffix}-${safeName}`;
 };
 
+const getOrderFileAssetRef = (file) => {
+  if (!file?.provider || !file?.bucket || !file?.object_key) return "";
+  return `${file.provider === "r2" ? "r2" : "supabase"}://${file.bucket}/${file.object_key}`;
+};
+
 const DESIGNER_FILES_BUCKET = "order-docs";
 const DESIGNER_PREVIEW_BUCKET = "order-previews";
+const EMPTY_REFERENCE_MANIFEST = [];
 
 const getDesignerFilesFromOrder = (order) => (
   getOrderFiles(order).map((url) => ({
@@ -194,18 +171,7 @@ function MetricCard({ icon, label, value, sub, accentIdx = 0 }) {
   );
 }
 
-function ProductionAreaSelect({ value, onChange, isError }) {
-  return (
-    <select className={`pd-input${isError ? ' pd-input-error' : ''}`} value={value || ""} onChange={(event) => onChange(event.target.value)}>
-      <option value="">Tipo de produccion *</option>
-      {PRODUCTION_AREAS.map((area) => (
-        <option key={area.code} value={area.code}>{area.label}</option>
-      ))}
-    </select>
-  );
-}
-
-function OrderDetailModal({
+export function OrderDetailModal({
   onClose,
   order,
   designerFiles,
@@ -220,27 +186,139 @@ function OrderDetailModal({
   returnHandoff,
   returnHistory,
   onReturnToCashier,
+  currentUserId,
 }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingFileAreas, setPendingFileAreas] = useState([]);
   const [pendingFileLabels, setPendingFileLabels] = useState([]);
+  const [pendingFileMaterials, setPendingFileMaterials] = useState([]);
+  const [pendingFileTerminations, setPendingFileTerminations] = useState([]);
+  const [productionCatalog, setProductionCatalog] = useState({});
+  const [fileDetailsTarget, setFileDetailsTarget] = useState(null);
+  const [fileDetailsSaving, setFileDetailsSaving] = useState(false);
+  const [orderUpdatedAt, setOrderUpdatedAt] = useState(order?.updated_at || null);
   const [pendingPreview, setPendingPreview] = useState(null);
   const [pendingPreviewName, setPendingPreviewName] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [removingFileId, setRemovingFileId] = useState(null);
+  const [removingPreview, setRemovingPreview] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveSuccessMessage, setSaveSuccessMessage] = useState("");
   const [saveError, setSaveError] = useState(null);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
+  const [missingSpecificationIndices, setMissingSpecificationIndices] = useState([]);
   const [sellerName, setSellerName] = useState("");
+  const [pendingPreviewUrl, setPendingPreviewUrl] = useState("");
+  const [resolvedPreviewUrl, setResolvedPreviewUrl] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [pendingReferenceFiles, setPendingReferenceFiles] = useState([]);
+  const [referenceStates, setReferenceStates] = useState({});
+  const [referenceSaving, setReferenceSaving] = useState(false);
+  const [replacingReferenceId, setReplacingReferenceId] = useState(null);
   const designerPreviewInputRef = useRef(null);
+  const designerReplacementReferenceInputRef = useRef(null);
   const referenceImageUrls = getReferenceImages(order);
-  const displayPreview = useMemo(() => (
-    pendingPreview ? URL.createObjectURL(pendingPreview) : (designerPreview || order?.preview_image)
-  ), [designerPreview, order?.preview_image, pendingPreview]);
+  const referenceImageKey = referenceImageUrls.join("\u0000");
+  const referenceManifest = order?.order_files || EMPTY_REFERENCE_MANIFEST;
+  const persistedPreviewRef = designerPreview || order?.preview_image || "";
+  const displayPreview = removingPreview ? "" : (pendingPreviewUrl || resolvedPreviewUrl);
+  const referenceAssets = useMemo(() => {
+    const manifestByRef = new Map(
+      referenceManifest
+        .filter((file) => file?.category === "reference" && file.status === "uploaded" && !file.deleted_at)
+        .map((file) => [getOrderFileAssetRef(file), file]),
+    );
 
-  useEffect(() => () => {
-    if (displayPreview?.startsWith("blob:")) URL.revokeObjectURL(displayPreview);
-  }, [displayPreview]);
+    return (referenceImageKey ? referenceImageKey.split("\u0000") : []).map((assetRef, index) => {
+      const file = manifestByRef.get(assetRef);
+      return {
+        assetRef,
+        fileId: file?.id || null,
+        filename: file?.original_filename || getFileNameFromUrl(assetRef) || `Referencia ${index + 1}`,
+        canManage: Boolean(file?.id && file.uploaded_by === currentUserId),
+      };
+    });
+  }, [currentUserId, referenceImageKey, referenceManifest]);
+
+  useEffect(() => {
+    setOrderUpdatedAt(order?.updated_at || null);
+  }, [order?.id, order?.updated_at]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([
+      supabase.from("materials").select("name,production_area_code").not("production_area_code", "is", null),
+      supabase.from("production_terminations").select("name,production_area_code"),
+    ]).then(([materialsResult, terminationsResult]) => {
+      if (cancelled || materialsResult.error || terminationsResult.error) return;
+      setProductionCatalog(buildProductionCatalogs(materialsResult.data || [], terminationsResult.data || []));
+    }).catch(() => {});
+
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingPreview) {
+      setPendingPreviewUrl("");
+      return undefined;
+    }
+
+    const objectUrl = URL.createObjectURL(pendingPreview);
+    setPendingPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [pendingPreview]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!persistedPreviewRef || pendingPreview) {
+      setResolvedPreviewUrl("");
+      setPreviewLoading(false);
+      setPreviewError("");
+      return () => { cancelled = true; };
+    }
+
+    setPreviewLoading(true);
+    setPreviewError("");
+    setResolvedPreviewUrl("");
+    resolveOrderAssetUrl(persistedPreviewRef)
+      .then((url) => {
+        if (!url) throw new Error("No se pudo generar el enlace temporal de la imagen.");
+        if (!cancelled) setResolvedPreviewUrl(url);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPreviewError(error?.message || "No se pudo cargar la imagen guardada.");
+          setPreviewLoading(false);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [pendingPreview, persistedPreviewRef]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const assets = referenceAssets;
+    const initial = Object.fromEntries(assets.map(({ assetRef }) => [assetRef, { status: "loading", url: "", error: "" }]));
+    setReferenceStates(initial);
+
+    Promise.all(assets.map(async ({ assetRef }) => {
+      try {
+        const url = await resolveOrderAssetUrl(assetRef);
+        return [assetRef, { status: url ? "loading" : "error", url, error: url ? "" : "No se pudo cargar la imagen." }];
+      } catch (error) {
+        console.error("Error resolving design reference image:", error);
+        return [assetRef, { status: "error", url: "", error: "Ocurrió un problema. Inténtalo nuevamente en unos minutos." }];
+      }
+    })).then((entries) => {
+      if (!cancelled) setReferenceStates(Object.fromEntries(entries));
+    });
+
+    return () => { cancelled = true; };
+  }, [referenceAssets]);
 
   useEffect(() => {
     if (order?.seller_name) {
@@ -259,7 +337,7 @@ function OrderDetailModal({
       .select("name")
       .eq("id", idToLookup)
       .single()
-      .then(({ data, error }) => {
+      .then(({ data }) => {
         if (data?.name) {
           setSellerName(data.name);
           return;
@@ -311,6 +389,8 @@ function OrderDetailModal({
       setPendingFiles(prev => [...prev, ...acceptedFiles]);
       setPendingFileAreas(prev => [...prev, ...acceptedFiles.map(() => "")]);
       setPendingFileLabels(prev => [...prev, ...acceptedFiles.map(() => "")]);
+      setPendingFileMaterials(prev => [...prev, ...acceptedFiles.map(() => [])]);
+      setPendingFileTerminations(prev => [...prev, ...acceptedFiles.map(() => "")]);
     }
 
     if (rejectedFiles.length > 0) {
@@ -326,6 +406,7 @@ function OrderDetailModal({
     setSaveSuccess(false);
     setMissingAreaIndices([]);
     setMissingLabelIndices([]);
+    setMissingSpecificationIndices([]);
     if (rejectedFiles.length > 0) {
       requestAnimationFrame(() => {
         const el = document.querySelector(".pd-upload-area");
@@ -334,7 +415,7 @@ function OrderDetailModal({
     }
     if (filesOrEvent?.target) filesOrEvent.target.value = "";
   };
-  
+
   const handlePreviewSelect = (filesOrEvent, { showError } = {}) => {
     if (!canEditDesignerAssets) return;
     const file = Array.from(filesOrEvent?.target?.files || filesOrEvent || [])[0];
@@ -368,8 +449,239 @@ function OrderDetailModal({
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
     setPendingFileAreas(prev => prev.filter((_, i) => i !== index));
     setPendingFileLabels(prev => prev.filter((_, i) => i !== index));
+    setPendingFileMaterials(prev => prev.filter((_, i) => i !== index));
+    setPendingFileTerminations(prev => prev.filter((_, i) => i !== index));
     setSaveSuccess(false);
     setMissingAreaIndices([]);
+    setMissingSpecificationIndices([]);
+  };
+
+  const handleRemovePersistedFile = async (file) => {
+    if (!canEditDesignerAssets || !file?.productionFile?.id || removingFileId) return;
+
+    setRemovingFileId(file.productionFile.id);
+    setSaveError(null);
+    setSaveSuccess(false);
+    setSaveSuccessMessage("");
+
+    try {
+      const { error } = await supabase.rpc("designer_remove_order_file", {
+        p_order_id: order.id,
+        p_file_id: file.productionFile.id,
+        p_expected_updated_at: orderUpdatedAt || order.updated_at,
+      });
+      if (error) throw error;
+
+      await onRefresh?.();
+      setSaveSuccessMessage("Archivo eliminado de la orden correctamente.");
+      setSaveSuccess(true);
+    } catch (error) {
+      console.error("Error removing design file:", error);
+      setSaveError(
+        error?.message === "ORDER_STALE"
+          ? "La orden cambió mientras la revisabas. Actualízala antes de volver a intentarlo."
+          : error?.message || "No se pudo eliminar el archivo. Inténtalo nuevamente.",
+      );
+    } finally {
+      setRemovingFileId(null);
+    }
+  };
+
+  const selectedFileDetails = fileDetailsTarget?.type === "pending"
+    ? {
+      publicLabel: pendingFileLabels[fileDetailsTarget.index] || "",
+      areaCode: pendingFileAreas[fileDetailsTarget.index] || "",
+      materialNames: pendingFileMaterials[fileDetailsTarget.index] || [],
+      terminationName: pendingFileTerminations[fileDetailsTarget.index] || "",
+    }
+    : fileDetailsTarget?.file?.productionFile
+      ? {
+        publicLabel: fileDetailsTarget.file.productionFile.public_label || "",
+        areaCode: fileDetailsTarget.file.productionFile.production_area_code || "",
+        materialNames: fileDetailsTarget.file.productionFile.material_names || [],
+        terminationName: fileDetailsTarget.file.productionFile.termination_name || "",
+      }
+      : null;
+
+  const handleSaveFileDetails = async (details) => {
+    if (!fileDetailsTarget) return;
+
+    if (fileDetailsTarget.type === "pending") {
+      const index = fileDetailsTarget.index;
+      setPendingFileLabels((current) => current.map((label, currentIndex) => currentIndex === index ? details.publicLabel : label));
+      setPendingFileAreas((current) => current.map((area, currentIndex) => currentIndex === index ? details.areaCode : area));
+      setPendingFileMaterials((current) => current.map((materials, currentIndex) => currentIndex === index ? details.materialNames : materials));
+      setPendingFileTerminations((current) => current.map((termination, currentIndex) => currentIndex === index ? details.terminationName : termination));
+      setMissingAreaIndices([]);
+      setMissingLabelIndices([]);
+      setMissingSpecificationIndices([]);
+      return;
+    }
+
+    const productionFile = fileDetailsTarget.file?.productionFile;
+    if (!productionFile?.url) throw new Error("No se encontraron los datos de producción del archivo.");
+
+    setFileDetailsSaving(true);
+    try {
+      const { data, error } = await supabase.rpc("save_order_production_file_specifications", {
+        p_order_id: order.id,
+        p_expected_updated_at: orderUpdatedAt || order.updated_at,
+        p_specifications: [{
+          url: productionFile.url,
+          production_area_code: details.areaCode,
+          material_names: details.materialNames,
+          termination_name: details.terminationName,
+        }],
+      });
+      if (error) throw error;
+      setOrderUpdatedAt(data?.updated_at || orderUpdatedAt);
+      await onRefresh?.();
+    } finally {
+      setFileDetailsSaving(false);
+    }
+  };
+
+  const handleRemovePersistedPreview = async () => {
+    if (!canEditDesignerAssets || !persistedPreviewRef || removingPreview || removingFileId) return;
+
+    setRemovingPreview(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+    setSaveSuccessMessage("");
+
+    try {
+      const { error } = await supabase.rpc("designer_remove_order_preview", {
+        p_order_id: order.id,
+        p_expected_updated_at: orderUpdatedAt || order.updated_at,
+      });
+      if (error) throw error;
+
+      await onRefresh?.();
+      setSaveSuccessMessage("Orden de trabajo eliminada correctamente.");
+      setSaveSuccess(true);
+    } catch (error) {
+      console.error("Error removing design preview:", error);
+      setSaveError(
+        error?.message === "ORDER_STALE"
+          ? "La orden cambió mientras la revisabas. Actualízala antes de volver a intentarlo."
+          : error?.message || "No se pudo eliminar la orden de trabajo. Inténtalo nuevamente.",
+      );
+    } finally {
+      setRemovingPreview(false);
+    }
+  };
+
+  const validateDesignerReferenceFiles = async (filesOrEvent, { showError } = {}) => {
+    if (!canEditDesignerAssets) return [];
+    const files = Array.from(filesOrEvent?.target?.files || filesOrEvent || []);
+    const decoded = await Promise.all(files.map((file) => canDecodeAsImage(file)));
+    const validFiles = files.filter((_, index) => decoded[index]?.valid);
+    const errors = decoded.filter((result) => !result.valid).map((result) => result.error).filter(Boolean);
+    const validation = validateReferenceImages(validFiles);
+    if (errors.length || !validation.valid) {
+      const message = [...errors, ...validation.errors].join(" ");
+      if (showError) showError(message); else setSaveError(message);
+      return [];
+    }
+    return validFiles;
+  };
+
+  const uploadDesignerReferenceFiles = async (files) => {
+    const uploadedRefs = [];
+    for (const rawFile of files) {
+      const file = await compressImage(rawFile);
+      const path = `orders/${order.id}/ref-images/${buildStorageSafeFileName(file, "ref-")}`;
+      const assetRef = await uploadOrderAsset({ bucket: DESIGNER_FILES_BUCKET, path, file });
+      if (!assetRef) throw new Error(`No se pudo registrar la imagen ${file.name}.`);
+      uploadedRefs.push(assetRef);
+    }
+    return uploadedRefs;
+  };
+
+  const persistReferenceMutation = async ({ additions = [], removeFileIds = [] }) => {
+    const { error } = await supabase.rpc("designer_manage_reference_images", {
+      p_order_id: order.id,
+      p_expected_updated_at: orderUpdatedAt || order.updated_at,
+      p_additions: additions,
+      p_remove_file_ids: removeFileIds,
+    });
+    if (error) throw error;
+    await onRefresh?.();
+  };
+
+  const handleReferenceFiles = async (filesOrEvent, context) => {
+    const files = await validateDesignerReferenceFiles(filesOrEvent, context);
+    if (!files.length) return;
+    const fileKey = (file) => `${file.name}:${file.size}:${file.lastModified}`;
+    const combined = [...pendingReferenceFiles, ...files].filter((file, index, list) => (
+      list.findIndex((candidate) => fileKey(candidate) === fileKey(file)) === index
+    ));
+    const available = REF_IMAGE_CONFIG.MAX_COUNT - referenceAssets.length;
+    if (combined.length > available) {
+      const message = `Solo puedes agregar ${available} imagen${available === 1 ? "" : "es"} de referencia más.`;
+      context?.showError?.(message);
+      setSaveError(message);
+      return;
+    }
+    setPendingReferenceFiles(combined);
+    setSaveSuccess(false);
+    setSaveError(null);
+  };
+
+  const handleSaveReferenceFiles = async () => {
+    if (!pendingReferenceFiles.length || referenceSaving) return;
+    setReferenceSaving(true);
+    setSaveError(null);
+    try {
+      const additions = await uploadDesignerReferenceFiles(pendingReferenceFiles);
+      await persistReferenceMutation({ additions });
+      setPendingReferenceFiles([]);
+      setSaveSuccessMessage("Imágenes de referencia guardadas correctamente.");
+      setSaveSuccess(true);
+    } catch (error) {
+      console.error("Error saving design reference images:", error);
+      setSaveError(error?.message === "ORDER_STALE"
+        ? "La orden cambió mientras la revisabas. Actualízala antes de volver a intentarlo."
+        : error?.message || "No se pudieron guardar las imágenes de referencia.");
+    } finally {
+      setReferenceSaving(false);
+    }
+  };
+
+  const handleRemoveReference = async (asset) => {
+    if (!asset?.canManage || referenceSaving) return;
+    setReferenceSaving(true);
+    setSaveError(null);
+    try {
+      await persistReferenceMutation({ removeFileIds: [asset.fileId] });
+      setSaveSuccessMessage("Imagen de referencia eliminada correctamente.");
+      setSaveSuccess(true);
+    } catch (error) {
+      console.error("Error removing design reference image:", error);
+      setSaveError(error?.message || "No se pudo eliminar la imagen de referencia.");
+    } finally {
+      setReferenceSaving(false);
+    }
+  };
+
+  const handleReplaceReference = async (filesOrEvent, context) => {
+    const asset = referenceAssets.find((item) => item.fileId === replacingReferenceId);
+    const files = await validateDesignerReferenceFiles(filesOrEvent, context);
+    setReplacingReferenceId(null);
+    if (!asset?.canManage || !files.length || referenceSaving) return;
+    setReferenceSaving(true);
+    setSaveError(null);
+    try {
+      const additions = await uploadDesignerReferenceFiles([files[0]]);
+      await persistReferenceMutation({ additions, removeFileIds: [asset.fileId] });
+      setSaveSuccessMessage("Imagen de referencia reemplazada correctamente.");
+      setSaveSuccess(true);
+    } catch (error) {
+      console.error("Error replacing design reference image:", error);
+      setSaveError(error?.message || "No se pudo reemplazar la imagen de referencia.");
+    } finally {
+      setReferenceSaving(false);
+    }
   };
   
   const handleSave = async () => {
@@ -380,11 +692,15 @@ function OrderDetailModal({
     const missingLabels = pendingFiles
       .map((_, i) => (!pendingFileLabels[i]?.trim() ? i : -1))
       .filter(i => i !== -1);
+    const missingSpecifications = pendingFiles
+      .map((_, i) => (!pendingFileMaterials[i]?.some((name) => String(name || "").trim()) || !pendingFileTerminations[i]?.trim() ? i : -1))
+      .filter(i => i !== -1);
 
     setMissingAreaIndices(missingAreas);
     setMissingLabelIndices(missingLabels);
+    setMissingSpecificationIndices(missingSpecifications);
 
-    if (missingAreas.length > 0 || missingLabels.length > 0) {
+    if (missingAreas.length > 0 || missingLabels.length > 0 || missingSpecifications.length > 0) {
       setSaveError("missing-area");
       requestAnimationFrame(() => {
         const el = document.querySelector(".pd-file-missing");
@@ -397,9 +713,11 @@ function OrderDetailModal({
     setSaveError(null);
     setMissingAreaIndices([]);
     setMissingLabelIndices([]);
+    setMissingSpecificationIndices([]);
     
     try {
       const updateData = {};
+      let productionRows = [];
       
       if (pendingFiles.length > 0) {
         const fileUrls = [];
@@ -419,31 +737,19 @@ function OrderDetailModal({
         }
         
         if (fileUrls.length > 0) {
-          const { data: orderData } = await supabase
-            .from("orders")
-            .select("order_file_url")
-            .eq("id", order.id)
-            .single();
-          
-          const existingUrls = parseOrderFileUrls(orderData?.order_file_url);
+          const existingUrls = parseOrderFileUrls(order.order_file_url);
 
-          const productionRows = buildProductionFileRows({
+          productionRows = buildProductionFileRows({
             orderId: order.id,
             urls: fileUrls,
             files: pendingFiles,
             areaCodes: pendingFileAreas,
             publicLabels: pendingFileLabels,
+            materialNames: pendingFileMaterials,
+            terminationNames: pendingFileTerminations,
             userId: order.designer_id,
           });
 
-          const { error: productionFilesError } = await supabase
-            .from("order_production_files")
-            .insert(productionRows);
-
-          if (productionFilesError) {
-            throw new Error("No se pudo guardar la clasificacion de produccion de los archivos.");
-          }
-          
           updateData.order_file_url = JSON.stringify([...existingUrls, ...fileUrls]);
         }
       }
@@ -462,12 +768,13 @@ function OrderDetailModal({
         updateData.preview_image = publicUrl;
       }
       
-      if (Object.keys(updateData).length > 0) {
-        const { error: updateError } = await supabase
-          .from("orders")
-          .update(updateData)
-          .eq("id", order.id);
-        
+      if (Object.keys(updateData).length > 0 || productionRows.length > 0) {
+        const { error: updateError } = await supabase.rpc("designer_update_order_with_file_specifications", {
+          p_order_id: order.id,
+          p_expected_updated_at: orderUpdatedAt || order.updated_at,
+          p_changes: updateData,
+          p_new_production_files: productionRows,
+        });
         if (updateError) throw updateError;
       }
       
@@ -476,8 +783,11 @@ function OrderDetailModal({
       setPendingFiles([]);
       setPendingFileAreas([]);
       setPendingFileLabels([]);
+      setPendingFileMaterials([]);
+      setPendingFileTerminations([]);
       setPendingPreview(null);
       setPendingPreviewName(null);
+      setSaveSuccessMessage("Archivos guardados correctamente.");
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
@@ -492,9 +802,13 @@ function OrderDetailModal({
     setPendingFiles([]);
     setPendingFileAreas([]);
     setPendingFileLabels([]);
+    setPendingFileMaterials([]);
+    setPendingFileTerminations([]);
     setPendingPreview(null);
     setSaveSuccess(false);
+    setSaveSuccessMessage("");
     setSaveError(null);
+    setFileDetailsTarget(null);
     onClose();
   };
   
@@ -505,10 +819,45 @@ function OrderDetailModal({
     url,
   }));
   
+  const productionFilesByUrl = new Map(
+    (order.order_production_files || [])
+      .filter((file) => file?.id && file?.order_id === order.id && file?.url)
+      .map((file) => [file.url, file]),
+  );
   const allFiles = [...(designerFiles || []), ...dbFiles];
-  const uniqueFiles = allFiles.filter((f, i, arr) => arr.findIndex(x => x.url === f.url) === i);
-  const hasPreview = !!displayPreview;
-  const canSendToQuotation = canEditDesignerAssets && uniqueFiles.length > 0 && hasPreview && !hasChanges;
+  const uniqueFiles = allFiles
+    .filter((file, index, files) => files.findIndex((item) => item.url === file.url) === index)
+    .map((file) => ({ ...file, productionFile: productionFilesByUrl.get(file.url) }));
+  const effectivePersistedFiles = uniqueFiles.filter((file) => file.productionFile?.id !== removingFileId);
+  const hasPersistedPreview = Boolean(persistedPreviewRef) && !removingPreview;
+  const hasPreview = Boolean(pendingPreview || hasPersistedPreview);
+  const hasRequiredAssets = effectivePersistedFiles.length + pendingFiles.length > 0 && hasPreview;
+  const hasPersistedRequiredAssets = effectivePersistedFiles.length > 0 && hasPersistedPreview;
+  const persistedFilesAreConfigured = effectivePersistedFiles.length > 0 && effectivePersistedFiles.every((file) => (
+    Boolean(file.productionFile?.public_label?.trim())
+    && Boolean(file.productionFile?.production_area_code)
+    && file.productionFile?.material_names?.some((name) => String(name || "").trim())
+    && Boolean(file.productionFile?.termination_name?.trim())
+  ));
+  const pendingFilesAreConfigured = pendingFiles.every((_, index) => (
+    Boolean(pendingFileAreas[index])
+    && Boolean(pendingFileLabels[index]?.trim())
+    && pendingFileMaterials[index]?.length > 0
+    && Boolean(pendingFileTerminations[index]?.trim())
+  ));
+  const canSaveChanges = canEditDesignerAssets
+    && hasChanges
+    && hasRequiredAssets
+    && pendingFilesAreConfigured
+    && !saving
+    && !removingFileId
+    && !removingPreview;
+  const canSendToQuotation = canEditDesignerAssets
+    && hasPersistedRequiredAssets
+    && persistedFilesAreConfigured
+    && !hasChanges
+    && !removingFileId
+    && !removingPreview;
   const workSummary = hasChanges
     ? { label: "Pendiente", icon: <Icons.Clock />, tone: "is-warning" }
     : canSendToQuotation
@@ -520,52 +869,56 @@ function OrderDetailModal({
           : { label: "Completado", icon: <Icons.Check />, tone: "is-ready" };
   const footerNote = !canEditDesignerAssets
     ? readonlyMessage
+    : !hasRequiredAssets
+      ? "Adjunta un archivo de diseño y la orden de trabajo para continuar."
     : hasChanges
-      ? "Hay cambios sin guardar."
+      ? "Completa los datos de los archivos y guarda los cambios."
+      : !persistedFilesAreConfigured
+        ? "Completa los detalles de cada archivo antes de enviar a caja."
       : canSendToQuotation
         ? "La orden tiene archivos y preview. Lista para enviar a caja."
         : "Agrega archivos y preview para completar el trabajo de diseño.";
   const footerNoteClass = !canEditDesignerAssets || hasChanges || canSendToQuotation
-    ? "pd-modal-footer-note"
-    : "pd-modal-footer-note pd-modal-footer-note--accent";
-  
+    ? "designer-order-modal__footer-note"
+    : "designer-order-modal__footer-note designer-order-modal__footer-note--accent";
+
   return (
-    <div className="pd-modal-overlay">
-      <div className="pd-modal">
-        <div className="pd-modal-stripe"></div>
-        <div className="pd-modal-header">
-          <div className="pd-modal-inner-header">
-            <div className="pd-modal-title">
+    <div className="designer-order-modal-overlay">
+      <div className="designer-order-modal">
+        <div className="designer-order-modal__stripe"></div>
+        <div className="designer-order-modal__header">
+          <div className="designer-order-modal__inner-header">
+            <div className="designer-order-modal__title">
               <h3>Orden #{order.id?.slice(0, 8).toUpperCase()}</h3>
-              <span className="pd-modal-subtitle">Detalles de la orden de trabajo</span>
+              <span className="designer-order-modal__subtitle">Detalles de la orden de trabajo</span>
             </div>
-            <button className="pd-modal-close" onClick={handleClose}>
+            <button className="designer-order-modal__close" onClick={handleClose}>
               <Icons.Close />
             </button>
           </div>
         </div>
         
-        <div className="pd-modal-body">
-          <div className="pd-modal-summary" aria-label="Resumen de la orden">
-            <div className="pd-modal-summary-item">
+        <div className="designer-order-modal__body">
+          <div className="designer-order-modal__summary" aria-label="Resumen de la orden">
+            <div className="designer-order-modal__summary-item">
               <span><Icons.CheckCircle /> Estado</span>
-              <StatusBadge status={order.status} className="pd-modal-summary-badge" showDot={false} bordered order={order} />
+              <StatusBadge status={order.status} className="designer-order-modal__summary-badge" showDot={false} bordered order={order} />
             </div>
-            <div className="pd-modal-summary-item">
+            <div className="designer-order-modal__summary-item">
               <span><Icons.Paperclip /> Archivos</span>
-              <strong className="acm-badge info pd-modal-summary-badge pd-modal-summary-badge-files">
+              <strong className="acm-badge info designer-order-modal__summary-badge designer-order-modal__summary-badge-files">
                 {uniqueFiles.length.toLocaleString("es-DO")} Archivos
               </strong>
             </div>
-            <div className="pd-modal-summary-item">
+            <div className="designer-order-modal__summary-item">
               <span><Icons.Eye /> Preview</span>
-              <strong className={`pd-modal-summary-badge pd-modal-summary-badge-preview ${hasPreview ? "is-ready" : "is-pending"}`}>
+              <strong className={`designer-order-modal__summary-badge designer-order-modal__summary-badge-preview ${hasPreview ? "is-ready" : "is-pending"}`}>
                 {hasPreview ? "Cargada" : "Pendiente"}
               </strong>
             </div>
-            <div className={`pd-modal-summary-item ${workSummary.tone}`}>
+            <div className={`designer-order-modal__summary-item ${workSummary.tone}`}>
               <span><Icons.Package /> Trabajo</span>
-              <strong className="pd-modal-work-status">
+              <strong className="designer-order-modal__work-status">
                 {workSummary.icon}
                 {workSummary.label}
               </strong>
@@ -575,7 +928,7 @@ function OrderDetailModal({
           {saveSuccess && (
             <div className="pd-alert pd-alert-success">
               <Icons.Check />
-              Archivos guardados correctamente
+              {saveSuccessMessage || "Archivos guardados correctamente."}
             </div>
           )}
           
@@ -583,11 +936,11 @@ function OrderDetailModal({
             <div className="pd-alert pd-alert-error">
               <Icons.X />
               <div>
-                <div className="pd-file-error-title">Área de producción requerida</div>
+                <div className="pd-file-error-title">Datos de producción requeridos</div>
                 <div className="pd-file-error-desc">
-                  No es posible guardar los cambios porque uno o más archivos adjuntos no tienen un área de producción asignada.
+                  No es posible guardar los cambios porque uno o más archivos adjuntos no tienen su área, materiales o terminación asignados.
                   <br />
-                  Por favor, selecciona un área de producción para cada archivo antes de continuar.
+                  Completa todos los datos de producción para cada archivo antes de continuar.
                 </div>
               </div>
             </div>
@@ -599,22 +952,22 @@ function OrderDetailModal({
             </div>
           )}
           
-          <div className="pd-modal-card">
-            <div className="pd-modal-card-title">
+          <div className="designer-order-modal__card">
+            <div className="designer-order-modal__card-title">
               <Icons.User />
               <h4>Información del Cliente</h4>
             </div>
-            <div className="pd-modal-grid">
-              <div className="pd-modal-item">
-                <span className="pd-modal-label"><Icons.User /> Cliente</span>
-                <span className="pd-modal-value">{order.client_name || "No especificado"}</span>
+            <div className="designer-order-modal__grid">
+              <div className="designer-order-modal__item">
+                <span className="designer-order-modal__label"><Icons.User /> Cliente</span>
+                <span className="designer-order-modal__value">{order.client_name || "No especificado"}</span>
               </div>
-              <div className="pd-modal-item">
-                <span className="pd-modal-label"><Icons.User /> Vendedor</span>
-                <span className="pd-modal-value highlight">{sellerName || "No especificado"}</span>
+              <div className="designer-order-modal__item">
+                <span className="designer-order-modal__label"><Icons.User /> Vendedor</span>
+                <span className="designer-order-modal__value highlight">{sellerName || "No especificado"}</span>
               </div>
-              <div className="pd-modal-item">
-                <span className="pd-modal-label"><Icons.Phone /> Teléfono</span>
+              <div className="designer-order-modal__item">
+                <span className="designer-order-modal__label"><Icons.Phone /> Teléfono</span>
                 {order.client_contact ? (
                   <a 
                     href={`https://wa.me/${order.client_contact.replace(/\D/g, '')}`}
@@ -623,13 +976,13 @@ function OrderDetailModal({
                     className="pd-whatsapp-btn"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                    {formatDominicanPhone(order.client_contact)}
+                    {formatPhone(order.client_contact)}
                   </a>
-                ) : <span className="pd-modal-value">No especificado</span>}
+                ) : <span className="designer-order-modal__value">No especificado</span>}
               </div>
-              <div className="pd-modal-item">
-                <span className="pd-modal-label"><Icons.Package /> Tipo de Orden</span>
-                <span className="pd-modal-value">
+              <div className="designer-order-modal__item">
+                <span className="designer-order-modal__label"><Icons.Package /> Tipo de Orden</span>
+                <span className="designer-order-modal__value">
                   {order.order_type === "orden 911" ? (
                     <span className="acm-badge danger">⚡ 911 - Urgente</span>
                   ) : (
@@ -637,9 +990,9 @@ function OrderDetailModal({
                   )}
                 </span>
               </div>
-              <div className="pd-modal-item">
-                <span className="pd-modal-label"><Icons.Calendar /> Fecha de Creación</span>
-                <span className="pd-modal-date-badge">{created}</span>
+              <div className="designer-order-modal__item">
+                <span className="designer-order-modal__label"><Icons.Calendar /> Fecha de Creación</span>
+                <span className="designer-order-modal__date-badge">{created}</span>
               </div>
             </div>
           </div>
@@ -651,39 +1004,39 @@ function OrderDetailModal({
             error={reviewError}
           />
 
-          <div className="pd-modal-card">
-            <div className="pd-modal-card-title">
+          <div className="designer-order-modal__card">
+            <div className="designer-order-modal__card-title">
               <Icons.Clipboard />
               <h4>Detalles de la orden de trabajo</h4>
               {isReturnedOrder(order) && <ReturnedBadge />}
             </div>
-            <div className="pd-modal-grid">
-              <div className="pd-modal-item full">
-                <span className="pd-modal-label"><Icons.FileText /> Descripción</span>
-                <p className="pd-modal-description">{order.description || "Sin descripción"}</p>
+            <div className="designer-order-modal__grid">
+              <div className="designer-order-modal__item full">
+                <span className="designer-order-modal__label"><Icons.FileText /> Descripción</span>
+                <p className="designer-order-modal__description">{order.description || "Sin descripción"}</p>
               </div>
-              <div className="pd-modal-item">
-                <span className="pd-modal-label"><Icons.Package /> Material</span>
-                <span className="pd-modal-value highlight">{order.material || "No especificado"}</span>
+              <div className="designer-order-modal__item">
+                <span className="designer-order-modal__label"><Icons.Package /> Material</span>
+                <span className="designer-order-modal__value highlight">{order.material || "No especificado"}</span>
               </div>
               {order.width && order.height && (
-                <div className="pd-modal-item">
-                  <span className="pd-modal-label"><Icons.Maximize /> Dimensiones</span>
-                  <span className="pd-modal-value">{order.width} x {order.height} cm</span>
+                <div className="designer-order-modal__item">
+                  <span className="designer-order-modal__label"><Icons.Maximize /> Dimensiones</span>
+                  <span className="designer-order-modal__value">{order.width} x {order.height} cm</span>
                 </div>
               )}
               {order.quantity && (
-                <div className="pd-modal-item">
-                  <span className="pd-modal-label"><Icons.Hash /> Cantidad</span>
-                  <span className="pd-modal-value">{order.quantity} unidades</span>
+                <div className="designer-order-modal__item">
+                  <span className="designer-order-modal__label"><Icons.Hash /> Cantidad</span>
+                  <span className="designer-order-modal__value">{order.quantity} unidades</span>
                 </div>
               )}
             </div>
           </div>
 
           {isReturnedOrder(order) && (
-            <div className="pd-modal-card">
-              <div className="pd-modal-card-title">
+            <div className="designer-order-modal__card">
+              <div className="designer-order-modal__card-title">
                 <Icons.X />
                 <h4>Motivo de devolución</h4>
               </div>
@@ -694,8 +1047,8 @@ function OrderDetailModal({
           )}
           <OrderReturnHandoffPanel incomingHandoff={returnHandoff} history={returnHistory} />
           
-          <div className="pd-modal-card">
-            <div className="pd-modal-card-title">
+          <div className="designer-order-modal__card">
+            <div className="designer-order-modal__card-title">
               <Icons.File />
               <h4>Archivos del Diseño</h4>
               {hasChanges && <span className="pd-pending-badge">Cambios pendientes</span>}
@@ -713,7 +1066,7 @@ function OrderDetailModal({
                 mode="attachment"
                 multiple
                 buttonLabel="Agregar archivo"
-                hint={`Archivos hasta ${formatFileSize(getOrderAssetLimit(DESIGNER_FILES_BUCKET))} se guardarán al hacer clic en "Guardar cambios"`}
+                hint="Los cambios realizados se guardarán al hacer clic en «Guardar cambios»."
                 onFilesAccepted={handleFileSelect}
               />
             ) : (
@@ -727,68 +1080,91 @@ function OrderDetailModal({
               <div className="pd-files-container">
                 <span className="pd-files-label">Archivos pendientes ({pendingFiles.length})</span>
                 {pendingFiles.map((file, i) => (
-                  <div key={i} className={missingLabelIndices.includes(i) || missingAreaIndices.includes(i) ? 'pd-file-missing' : ''}>
+                  <div key={i} className={missingLabelIndices.includes(i) || missingAreaIndices.includes(i) || missingSpecificationIndices.includes(i) ? 'pd-file-missing' : ''}>
                     <FileCard
                       name={file.name}
                       secondaryText={formatFileSize(file.size)}
                       onRemove={() => removePendingFile(i)}
-                    >
-                      <div className="production-file-meta pd-production-file-fields">
-                        <label className="production-file-field">
-                          <span className="production-file-field-label">Nombre visible en seguimiento</span>
-                          <input
-                            className={`pd-input${missingLabelIndices.includes(i) ? " pd-input-error" : ""}`}
-                            value={pendingFileLabels[i] || ""}
-                            onChange={(event) => {
-                              setPendingFileLabels(pendingFileLabels.map((label, idx) => idx === i ? event.target.value : label));
-                              setMissingLabelIndices([]);
-                            }}
-                            placeholder="Ej: Banner principal"
-                            aria-label={`Nombre visible en seguimiento de ${file.name}`}
-                          />
-                        </label>
-                        <label className="production-file-field">
-                          <span className="production-file-field-label">Área de producción</span>
-                          <ProductionAreaSelect
-                            value={pendingFileAreas[i]}
-                            isError={missingAreaIndices.includes(i)}
-                            onChange={(value) => {
-                              setPendingFileAreas(pendingFileAreas.map((area, idx) => idx === i ? value : area));
-                              setMissingAreaIndices([]);
-                            }}
-                          />
-                        </label>
-                      </div>
-                    </FileCard>
+                      detailText={pendingFileLabels[i] ? `Seguimiento: ${pendingFileLabels[i]}` : "Seguimiento pendiente"}
+                      actions={[{
+                        title: `Ver detalles de ${file.name}`,
+                        label: "Detalles",
+                        icon: <Icons.Edit />,
+                        onClick: () => setFileDetailsTarget({ type: "pending", index: i, file }),
+                      }]}
+                      removeIcon={<Icons.Trash />}
+                      removeTitle={`Eliminar ${file.name}`}
+                    />
                   </div>
                 ))}
               </div>
             )}
-            
+
             {uniqueFiles.length > 0 && (
-              <div className="pd-files-container" style={{ marginTop: pendingFiles.length > 0 ? '12px' : '0' }}>
+              <div className="pd-files-container" style={{ marginTop: pendingFiles.length > 0 ? '12px' : '16px' }}>
                 <span className="pd-files-label">Archivos guardados ({uniqueFiles.length})</span>
                 {uniqueFiles.map((file, i) => (
                   <FileCard
                     key={i}
                     name={file.name}
                     url={file.url}
+                    hideDownload
+                    secondaryText={
+                      canEditDesignerAssets && !file.productionFile
+                        ? "Este archivo histórico no se puede eliminar desde Diseño."
+                        : undefined
+                    }
+                    detailText={file.productionFile?.public_label ? `Seguimiento: ${file.productionFile.public_label}` : "Seguimiento pendiente"}
+                    actions={canEditDesignerAssets && file.productionFile ? [
+                      {
+                        title: `Ver detalles de ${file.name}`,
+                        label: "Detalles",
+                        icon: <Icons.Edit />,
+                        onClick: () => setFileDetailsTarget({ type: "saved", file }),
+                      },
+                      {
+                        title: removingFileId === file.productionFile.id ? "Eliminando archivo" : "Eliminar archivo",
+                        disabled: Boolean(removingFileId),
+                        onClick: () => handleRemovePersistedFile(file),
+                        icon: removingFileId === file.productionFile.id ? <Icons.Clock /> : <Icons.Trash />,
+                        label: removingFileId === file.productionFile.id ? "Eliminando…" : undefined,
+                      },
+                    ] : []}
                   />
                 ))}
               </div>
             )}
           </div>
           
-          <div className="pd-modal-card">
-            <div className="pd-modal-card-title">
+          <div className="designer-order-modal__card">
+            <div className="designer-order-modal__card-title">
               <Icons.Image />
-              <h4>Vista Previa</h4>
+              <h4>Orden de trabajo</h4>
             </div>
             
             <div className="pd-preview-container">
               {displayPreview ? (
                 <>
-                  <img src={displayPreview} alt="Preview" className="pd-preview-image" />
+                  <img
+                    src={displayPreview}
+                    alt="Preview"
+                    className={`pd-preview-image${previewLoading ? " is-loading" : ""}`}
+                    onLoad={() => {
+                      setPreviewLoading(false);
+                      setPreviewError("");
+                    }}
+                    onError={() => {
+                      setResolvedPreviewUrl("");
+                      setPreviewError("Ocurrió un problema. Inténtalo nuevamente en unos minutos.");
+                      setPreviewLoading(false);
+                    }}
+                  />
+                  {previewLoading && (
+                    <div className="pd-preview-loading" role="status">
+                      <span className="designer-order-modal__spinner" />
+                      <span>Cargando imagen...</span>
+                    </div>
+                  )}
                   {pendingPreview && <span className="pd-preview-badge">Nuevo</span>}
                   {pendingPreviewName && <span className="pd-file-name-badge">{pendingPreviewName}</span>}
                   <div className="pd-preview-overlay">
@@ -808,12 +1184,47 @@ function OrderDetailModal({
                         <button className="pd-file-action" style={{ background: 'white', color: '#0f172a' }} onClick={() => designerPreviewInputRef.current?.click()}>
                           <Icons.Edit />
                         </button>
-                        <button className="pd-file-action remove" style={{ background: 'white' }} onClick={() => { setPendingPreview(null); setPendingPreviewName(null); setSaveSuccess(false); }}>
+                        <button
+                          className="pd-file-action remove"
+                          style={{ background: 'white' }}
+                          disabled={removingPreview || Boolean(removingFileId)}
+                          title={pendingPreview ? "Quitar orden de trabajo pendiente" : "Eliminar orden de trabajo"}
+                          onClick={() => {
+                            if (pendingPreview) {
+                              setPendingPreview(null);
+                              setPendingPreviewName(null);
+                              setSaveSuccess(false);
+                              return;
+                            }
+                            handleRemovePersistedPreview();
+                          }}
+                        >
                           <Icons.Trash />
                         </button>
                       </>
                     )}
                   </div>
+                </>
+              ) : previewLoading ? (
+                <div className="pd-preview-empty" role="status">
+                  <Icons.Clock />
+                  <span>Cargando imagen...</span>
+                </div>
+              ) : previewError ? (
+                <>
+                  <div className="pd-preview-empty pd-preview-empty-disabled" role="alert">
+                    <Icons.AlertCircle />
+                    <span>{previewError}</span>
+                  </div>
+                  {canEditDesignerAssets && (
+                    <FileUploadZone
+                      mode="image"
+                      replaceMode
+                      buttonLabel="Reemplazar orden de trabajo"
+                      hint="La imagen guardada se conservará hasta que guardes el reemplazo."
+                      onFilesAccepted={handlePreviewSelect}
+                    />
+                  )}
                 </>
               ) : (
                 canEditDesignerAssets ? (
@@ -834,25 +1245,102 @@ function OrderDetailModal({
             </div>
           </div>
 
-          {referenceImageUrls.length > 0 && (
-            <div className="pd-modal-card">
-              <div className="pd-modal-card-title">
-                <Icons.Image />
-                <h4>Imágenes de referencia</h4>
-              </div>
-              <div className="pd-reference-grid">
-                {referenceImageUrls.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="pd-reference-link">
-                    <img
-                      src={url}
-                      alt={`Ref ${i + 1}`}
-                      className="pd-reference-thumb"
-                    />
-                  </a>
-                ))}
-              </div>
+          <div className="designer-order-modal__card">
+            <div className="designer-order-modal__card-title">
+              <Icons.Image />
+              <h4>Imágenes de referencia</h4>
+              <span className="pd-reference-count">{referenceAssets.length}/{REF_IMAGE_CONFIG.MAX_COUNT}</span>
             </div>
-          )}
+            {referenceAssets.length > 0 ? (
+              <div className="pd-reference-grid">
+                {referenceAssets.map((asset, index) => {
+                  const state = referenceStates[asset.assetRef] || { status: "loading" };
+                  return (
+                    <div key={asset.assetRef} className="pd-reference-card">
+                      {state.status !== "error" && state.url ? (
+                        <a href={state.url} target="_blank" rel="noopener noreferrer" className="pd-reference-link" aria-label={`Abrir ${asset.filename}`}>
+                          <img
+                            src={state.url}
+                            alt={`Ref ${index + 1}`}
+                            className={`pd-reference-thumb${state.status === "loading" ? " is-loading" : ""}`}
+                            onLoad={() => setReferenceStates((previous) => ({ ...previous, [asset.assetRef]: { ...previous[asset.assetRef], status: "ready", error: "" } }))}
+                            onError={() => setReferenceStates((previous) => ({ ...previous, [asset.assetRef]: { ...previous[asset.assetRef], status: "error", url: "", error: "No se pudo cargar la imagen." } }))}
+                          />
+                        </a>
+                      ) : state.status === "error" ? (
+                        <div className="pd-reference-state pd-reference-state--error" role="alert">
+                          <Icons.AlertCircle />
+                          <span>Ocurrió un problema. Inténtalo nuevamente en unos minutos.</span>
+                        </div>
+                      ) : (
+                        <div className="pd-reference-state" role="status">
+                          <span className="designer-order-modal__spinner" />
+                          <span>Cargando imagen...</span>
+                        </div>
+                      )}
+                      {state.status === "loading" && state.url && (
+                        <div className="pd-reference-state pd-reference-state--overlay" role="status">
+                          <span className="designer-order-modal__spinner" />
+                          <span>Cargando imagen...</span>
+                        </div>
+                      )}
+                      {asset.canManage && canEditDesignerAssets && (
+                        <div className="pd-reference-actions">
+                          <button
+                            type="button"
+                            className="pd-file-action"
+                            title="Reemplazar imagen"
+                            disabled={referenceSaving}
+                            onClick={() => {
+                              setReplacingReferenceId(asset.fileId);
+                              designerReplacementReferenceInputRef.current?.click();
+                            }}
+                          ><Icons.Edit /></button>
+                          <button type="button" className="pd-file-action remove" title="Eliminar imagen" disabled={referenceSaving} onClick={() => handleRemoveReference(asset)}><Icons.Trash /></button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <p className="pd-reference-empty">Aún no hay imágenes de referencia.</p>}
+
+            {canEditDesignerAssets && (referenceAssets.length + pendingReferenceFiles.length < REF_IMAGE_CONFIG.MAX_COUNT || pendingReferenceFiles.length > 0) && (
+              <div className="pd-reference-upload">
+                {referenceAssets.length + pendingReferenceFiles.length < REF_IMAGE_CONFIG.MAX_COUNT && (
+                  <FileUploadZone
+                    mode="image"
+                    multiple
+                    variant="compact"
+                    maxFiles={REF_IMAGE_CONFIG.MAX_COUNT - referenceAssets.length}
+                    existingCount={pendingReferenceFiles.length}
+                    buttonLabel="Agregar imágenes de referencia"
+                    onFilesAccepted={handleReferenceFiles}
+                    disabled={referenceSaving}
+                  />
+                )}
+                {pendingReferenceFiles.length > 0 && (
+                  <div className="pd-reference-pending">
+                    <span>{pendingReferenceFiles.length} imagen{pendingReferenceFiles.length === 1 ? "" : "es"} pendiente{pendingReferenceFiles.length === 1 ? "" : "s"}</span>
+                    <div className="pd-reference-pending-actions">
+                      <button type="button" className="designer-order-modal__button designer-order-modal__button--secondary" disabled={referenceSaving} onClick={() => setPendingReferenceFiles([])}>Cancelar</button>
+                      <button type="button" className="designer-order-modal__button designer-order-modal__button--primary" disabled={referenceSaving} onClick={handleSaveReferenceFiles}>
+                        {referenceSaving ? "Guardando..." : "Guardar imágenes"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <FileUploadZone
+              mode="image"
+              replaceMode
+              className="file-upload-zone--hidden-picker"
+              inputRef={designerReplacementReferenceInputRef}
+              buttonLabel="Reemplazar referencia"
+              onFilesAccepted={handleReplaceReference}
+            />
+          </div>
           
           {/* <div className="pd-status-bar">
             <div className="pd-status-item">
@@ -862,21 +1350,21 @@ function OrderDetailModal({
           </div> */}
         </div>
         {/* Footer Modal */}
-        <div className="pd-modal-footer">
+        <div className="designer-order-modal__footer">
           <div className={footerNoteClass}>{footerNote}</div>
           {/* Boton para cerral el modal */}
-          <button className="pd-btn pd-btn-secondary" onClick={handleClose}>
+          <button className="designer-order-modal__button designer-order-modal__button--secondary" onClick={handleClose}>
             Cerrar
           </button>
           {canSendToQuotation && (
             <button
-              className="pd-btn pd-btn-quotation"
+              className="designer-order-modal__button designer-order-modal__button--quotation"
               onClick={() => returnHandoff ? onReturnToCashier?.(returnHandoff) : onSendToQuotation?.(order)}
-              disabled={quotationSending}
+              disabled={quotationSending || Boolean(removingFileId)}
             >
               {quotationSending ? (
                 <>
-                  <span className="pd-btn-spinner"></span>
+                  <span className="designer-order-modal__spinner"></span>
                   Enviando...
                 </>
               ) : (
@@ -889,13 +1377,13 @@ function OrderDetailModal({
           )}
           {/* Boton para guardar cambios   */}
           <button 
-            className="pd-btn pd-btn-primary" 
+            className="designer-order-modal__button designer-order-modal__button--primary"
             onClick={handleSave}
-            disabled={!canEditDesignerAssets || !hasChanges || saving}
+            disabled={!canSaveChanges}
           >
             {saving ? (
               <>
-                <span className="pd-btn-spinner"></span>
+                <span className="designer-order-modal__spinner"></span>
                 Guardando...
               </>
             ) : (
@@ -907,6 +1395,19 @@ function OrderDetailModal({
           </button>
         </div>
       </div>
+      <ProductionFileDetailsModal
+        open={Boolean(fileDetailsTarget)}
+        fileName={fileDetailsTarget?.file?.name}
+        fileKey={fileDetailsTarget?.type === "pending"
+          ? `pending-${fileDetailsTarget.index}-${fileDetailsTarget.file?.name || ""}`
+          : `saved-${fileDetailsTarget?.file?.productionFile?.id || ""}`}
+        value={selectedFileDetails}
+        catalog={productionCatalog}
+        saving={fileDetailsSaving}
+        orderId={order.id}
+        onClose={() => setFileDetailsTarget(null)}
+        onSave={handleSaveFileDetails}
+      />
     </div>
   );
 }
@@ -924,6 +1425,7 @@ export default function PageDesigner() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
   const [filterClient, setFilterClient] = useState("all");
+  const [filterOverdue, setFilterOverdue] = useState("all");
   const [filterArchive, setFilterArchive] = useState("all");
   const [clients, setClients] = useState([]);
   const [viewMode, setViewMode] = useState("table");
@@ -970,6 +1472,19 @@ export default function PageDesigner() {
       const previousOrders = previousOrdersRef.current;
 
       if (!ordersInitializedRef.current) {
+        setEditedOrders(prev => {
+          let changed = false;
+          const next = { ...prev };
+
+          data.forEach(order => {
+            if (order.updated_by === userRef.current?.id && next[order.id]) {
+              delete next[order.id];
+              changed = true;
+            }
+          });
+
+          return changed ? next : prev;
+        });
         previousOrdersRef.current = data.reduce((acc, order) => {
           acc[order.id] = order;
           return acc;
@@ -984,12 +1499,17 @@ export default function PageDesigner() {
       data.forEach(order => {
         const previousOrder = previousOrders[order.id];
 
-        if (
-          previousOrder &&
-          !isOrderStatus(order.status, ORDER_STATUS.CANCELLED) &&
-          !hasReturnUpdate(previousOrder, order) &&
-          hasTrackedOrderChanges(previousOrder, order)
-        ) {
+        if (order.updated_by === userRef.current?.id) {
+          setEditedOrders(prev => {
+            if (!prev[order.id]) return prev;
+            const next = { ...prev };
+            delete next[order.id];
+            return next;
+          });
+          return;
+        }
+
+        if (shouldMarkDesignerOrderEdited(previousOrder, order, userRef.current?.id)) {
           setEditedOrders(prev => ({ ...prev, [order.id]: Date.now() }));
         }
       });
@@ -1030,7 +1550,7 @@ export default function PageDesigner() {
     return () => window.cancelAnimationFrame(frameId);
   }, [activeTab]);
 
-  const handleViewOrder = async (order) => {
+  const handleViewOrder = useCallback(async (order) => {
     setEditedOrders(prev => {
       if (!prev[order.id]) return prev;
       const next = { ...prev };
@@ -1053,7 +1573,7 @@ export default function PageDesigner() {
     if (pendingNewAssignments[order.id]) {
       void newOrderAssignments.acknowledgeOrder(order.id);
     }
-  };
+  }, [newOrderAssignments, pendingNewAssignments]);
 
   const isInteractiveOrderRowTarget = (target) => Boolean(
     target?.closest?.("button, a, input, select, textarea, [data-row-action]")
@@ -1132,12 +1652,12 @@ export default function PageDesigner() {
   const cancelledOrders = useMemo(() => orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.CANCELLED)), [orders]);
   const returnedOrders = useMemo(() => orders.filter(o => isReturnedOrder(o)), [orders]);
 
-  const metrics = useMemo(() => [
+  const metrics = [
     { label: "Órdenes activas", value: activeOrdersCount, sub: "Asignadas a tu bandeja", accentIdx: 0, icon: <Icons.Orders /> },
     { label: "En caja", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_QUOTE)).length, sub: "Listas para seguir flujo", accentIdx: 1, icon: <Icons.Send /> },
     { label: "Devueltas", value: returnedOrdersCount, sub: "Requieren corrección", accentIdx: 2, icon: <Icons.ArrowLeft /> },
     { label: "En producción", value: orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, sub: "Siendo producidas", accentIdx: 3, icon: <Icons.Package /> },
-  ], [activeOrdersCount, returnedOrdersCount, orders]);
+  ];
 
   const filteredOrders = orders.filter((order) => {
     const query = search.trim().toLowerCase();
@@ -1160,6 +1680,7 @@ export default function PageDesigner() {
 
     const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
     const matchesClient = orderMatchesClientFilter(order, filterClient);
+    const matchesOverdue = filterOverdue === "all" || isOrderOverdue(order);
 
     const matchesArchive =
       filterArchive === "all" ||
@@ -1187,18 +1708,16 @@ export default function PageDesigner() {
       (filterDate === "7days" && createdAt >= sevenDaysAgo) ||
       (filterDate === "month" && createdAt >= startOfMonth);
 
-    return matchesSearch && matchesType && matchesStatus && matchesClient && matchesDate && matchesArchive;
+    return matchesSearch && matchesType && matchesStatus && matchesClient && matchesDate && matchesArchive && matchesOverdue;
   });
 
   const effectivePerPage = viewMode === "cards" ? 10 : PER_PAGE;
   const totalPages = Math.ceil(filteredOrders.length / effectivePerPage) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = sortOrdersByDeadlinePriority(filteredOrders).slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
   useEffect(() => { setPage(1); }, [viewMode]);
-
-  const shouldEnableOrdersScroll = filteredOrders.length > 7;
 
   useEffect(() => {
     const nextFiles = {};
@@ -1271,25 +1790,10 @@ export default function PageDesigner() {
 
     setQuotationSending(true);
 
-    const assignmentPayloads = [
-      { status: ORDER_STATUS.IN_QUOTE, quote_id: quoteUserId, return_reason: null, returned_to_designer_at: null },
-    ];
-
-    let updateError = null;
-
-    for (const payload of assignmentPayloads) {
-      const { error } = await supabase
-        .from("orders")
-        .update(payload)
-        .eq("id", sendingToQuotation.id);
-
-      if (!error) {
-        updateError = null;
-        break;
-      }
-
-      updateError = error;
-    }
+    const { error: updateError } = await supabase.rpc("designer_send_order_to_quote", {
+      p_order_id: sendingToQuotation.id,
+      p_quote_id: quoteUserId,
+    });
 
     setQuotationSending(false);
 
@@ -1362,7 +1866,7 @@ export default function PageDesigner() {
           { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
           { id: "orders", label: "Mis Órdenes", icon: <Icons.Orders />, badge: activeOrdersCount },
           { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
-          { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount, badgeClassName: "pd-notifications-sidebar-badge" }
+          { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount }
         ]}
         onLogout={handleLogout}
       />
@@ -1603,6 +2107,16 @@ export default function PageDesigner() {
                   options={[
                     { value: "all", label: "Todos los clientes" },
                     ...clients.map(c => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+
+                <FilterSelect
+                  icon={<Icons.AlertCircle />}
+                  value={filterOverdue}
+                  onChange={v => { setFilterOverdue(v); setPage(1); }}
+                  options={[
+                    { value: "all", label: "Todas las fechas de entrega" },
+                    { value: "overdue", label: "Atrasadas" },
                   ]}
                 />
 
@@ -1882,15 +2396,14 @@ export default function PageDesigner() {
         designerPreview={selectedOrder ? orderPreviews[selectedOrder.id] : null}
         onSendToQuotation={handleOpenSendToQuotation}
         quotationSending={quotationSending}
-        onRefresh={() => {
-          if (selectedOrder) {
-            refreshOrderFromDB(selectedOrder.id);
-          }
-        }}
+        onRefresh={() => (
+          selectedOrder ? refreshOrderFromDB(selectedOrder.id) : Promise.resolve()
+        )}
         pendingReview={pendingReviewForDesigner}
         onAcknowledgeReview={pendingReviewForDesigner ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
         reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
         reviewError={orderReviews.acknowledgeError}
+        currentUserId={user?.id}
         returnHandoff={selectedOrder ? orderReturns.incomingByOrder[selectedOrder.id] : null}
         returnHistory={selectedOrder ? orderReturns.historyByOrder[selectedOrder.id] || [] : []}
         onReturnToCashier={setReturningToCashier}

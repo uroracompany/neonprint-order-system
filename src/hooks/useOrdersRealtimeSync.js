@@ -19,9 +19,9 @@ export default function useOrdersRealtimeSync({ userId, scope, refreshOrders, ta
     return registerRealtimeListener({
       userId,
       tables: realtimeTables,
-      onChange: async () => {
+      onChange: async (changeSet) => {
         try {
-          await refreshRef.current?.()
+          await refreshRef.current?.(changeSet)
         } catch (error) {
           console.warn(`No se pudo reconciliar ${scope} en tiempo real:`, error?.message || error)
         }

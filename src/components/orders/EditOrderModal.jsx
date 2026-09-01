@@ -17,33 +17,22 @@ import {
   REF_IMAGE_CONFIG,
   validateReferenceImages,
 } from "../../utils/imageValidation";
-import { formatDominicanPhone, getSelectedClientOrderFields } from "../../utils/clients";
+import { formatPhone, getSelectedClientOrderFields } from "../../utils/clients";
 import { getMinimumDeliveryDate, isPastDeliveryDateChange } from "../../utils/deliveryDate";
 import { adminApiFetch } from "../../utils/adminApi";
 import {
   Field,
   Modal,
-  MultiMaterialSelector,
   PHONE_PLACEHOLDER,
-  ProductionAreaSelect,
+  ProductionFileSpecifications,
 } from "./CreateOrderModal";
-
-const isValidDominicanPhone = (value) => {
-  const digits = String(value || "").replace(/\D/g, "");
-  const normalized = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-
-  if (normalized.length !== 10) return false;
-
-  const areaCode = normalized.slice(0, 3);
-  return ["809", "829", "849"].includes(areaCode);
-};
 
 export default function EditOrderModal({
   open,
   onClose,
   order,
   onUpdated,
-  materialOptions = [],
+  productionCatalog = {},
   clients = [],
   clientsLoading = false,
   onClientSearch,
@@ -67,6 +56,8 @@ export default function EditOrderModal({
   const [newFiles, setNewFiles] = useState([]);
   const [newFileAreas, setNewFileAreas] = useState([]);
   const [newFileLabels, setNewFileLabels] = useState([]);
+  const [newFileMaterials, setNewFileMaterials] = useState([]);
+  const [newFileTerminations, setNewFileTerminations] = useState([]);
   const [existingPreview, setExistingPreview] = useState(null);
   const [newPreview, setNewPreview] = useState(null);
   const [existingRefImages, setExistingRefImages] = useState([]);
@@ -97,8 +88,8 @@ export default function EditOrderModal({
       client_contact: order.client_contact || "",
       invoice_number: order.invoice_number || "",
       description: order.description || "",
-      materials: order.material ? order.material.split(", ").filter(Boolean) : [],
-      termination_type: order.termination_type || "",
+      materials: [],
+      termination_type: "",
       delivery_date: order.delivery_date ? order.delivery_date.split("T")[0] : "",
     });
 
@@ -108,6 +99,8 @@ export default function EditOrderModal({
     setNewFiles([]);
     setNewFileAreas([]);
     setNewFileLabels([]);
+    setNewFileMaterials([]);
+    setNewFileTerminations([]);
     setNewPreview(null);
     setNewRefImages([]);
     setRemovedRefImageUrls([]);
@@ -134,7 +127,7 @@ export default function EditOrderModal({
     }
 
     const fields = getSelectedClientOrderFields(client, "client_contact");
-    if (fields.client_contact) fields.client_contact = formatDominicanPhone(fields.client_contact);
+    if (fields.client_contact) fields.client_contact = formatPhone(fields.client_contact);
 
     setForm(previous => ({ ...previous, ...fields }));
     setFieldErrors(previous => {
@@ -161,6 +154,9 @@ export default function EditOrderModal({
     if (!form.description.trim()) {
       errors.description = "La descripcion es requerida.";
     }
+    if (order?.delivery_date && !form.delivery_date) {
+      errors.delivery_date = "La fecha de entrega existente no puede quedar vacia.";
+    }
     if (isPastDeliveryDateChange(form.delivery_date, order?.delivery_date)) {
       errors.delivery_date = "La fecha de entrega no puede ser anterior a hoy.";
     }
@@ -175,9 +171,14 @@ export default function EditOrderModal({
       setMissingAreaIndices(missingAreas);
       setMissingLabelIndices(missingLabels);
 
+      const missingSpecifications = newFileAreas
+        .map((_, index) => (!newFileMaterials[index]?.length || !newFileTerminations[index]?.trim() ? index : -1))
+        .filter(index => index !== -1);
+
       const messages = [];
       if (missingAreas.length > 0) messages.push("un tipo de produccion");
       if (missingLabels.length > 0) messages.push("un nombre de representacion");
+      if (missingSpecifications.length > 0) messages.push("materiales y terminacion");
       if (messages.length > 0) {
         errors.order_files = `Cada archivo nuevo debe tener ${messages.join(" y ")}.`;
       }
@@ -185,10 +186,6 @@ export default function EditOrderModal({
       setMissingAreaIndices([]);
       setMissingLabelIndices([]);
     }
-    if (form.client_contact.trim() && !isValidDominicanPhone(form.client_contact)) {
-      errors.client_contact = "El telefono debe ser un numero valido de Republica Dominicana (809, 829 o 849).";
-    }
-
     return errors;
   };
 
@@ -212,6 +209,8 @@ export default function EditOrderModal({
     setNewFiles(previous => [...previous, ...files]);
     setNewFileAreas(previous => [...previous, ...files.map(() => "")]);
     setNewFileLabels(previous => [...previous, ...files.map(() => "")]);
+    setNewFileMaterials(previous => [...previous, ...files.map(() => [])]);
+    setNewFileTerminations(previous => [...previous, ...files.map(() => "")]);
     if (filesOrEvent?.target) filesOrEvent.target.value = "";
   };
 
@@ -219,6 +218,8 @@ export default function EditOrderModal({
     setNewFiles(previous => previous.filter((_, currentIndex) => currentIndex !== index));
     setNewFileAreas(previous => previous.filter((_, currentIndex) => currentIndex !== index));
     setNewFileLabels(previous => previous.filter((_, currentIndex) => currentIndex !== index));
+    setNewFileMaterials(previous => previous.filter((_, currentIndex) => currentIndex !== index));
+    setNewFileTerminations(previous => previous.filter((_, currentIndex) => currentIndex !== index));
   };
 
   const handleRemoveExistingPreview = () => {
@@ -297,7 +298,7 @@ export default function EditOrderModal({
       }
     } catch (uploadError) {
       setLoading(false);
-      setError(uploadError?.message || "Error al subir los archivos de diseno.");
+      setError(uploadError?.message || "Error al subir los archivos de diseño.");
       return;
     }
 
@@ -308,6 +309,8 @@ export default function EditOrderModal({
         files: newFiles,
         areaCodes: newFileAreas,
         publicLabels: newFileLabels,
+        materialNames: newFileMaterials,
+        terminationNames: newFileTerminations,
         userId: order.seller_id || order.created_by,
       })
       : [];
@@ -368,8 +371,6 @@ export default function EditOrderModal({
       client_contact: form.client_contact.trim() || null,
       invoice_number: form.invoice_number.trim(),
       description: form.description.trim(),
-      material: form.materials.join(", "),
-      termination_type: form.termination_type.trim() || null,
       delivery_date: form.delivery_date || null,
       order_file_url: JSON.stringify(fileUrls),
       preview_image: previewUrl,
@@ -400,15 +401,13 @@ export default function EditOrderModal({
           client_contact: form.client_contact.trim() || null,
           invoice_number: form.invoice_number.trim(),
           description: form.description.trim(),
-          material: form.materials.join(", "),
-          termination_type: form.termination_type.trim() || null,
           delivery_date: form.delivery_date || null,
         };
         if (canEditAssets) {
           adminChanges.preview_image = previewUrl;
           adminChanges.reference_images = refImageUrls.length > 0 ? serializeReferenceImages(refImageUrls) : [];
         }
-        const { data: adminEditResult, error: adminEditError } = await supabase.rpc("admin_edit_order_with_assets", {
+        const { data: adminEditResult, error: adminEditError } = await supabase.rpc("admin_edit_order_with_file_specifications", {
           p_order_id: order.id,
           p_expected_updated_at: order.updated_at,
           p_changes: adminChanges,
@@ -494,16 +493,6 @@ export default function EditOrderModal({
           </Field>
         </div>
         <div className="col-full">
-          <Field label="Material" optional>
-            <MultiMaterialSelector selected={form.materials} onChange={value => set("materials", value)} options={materialOptions} />
-          </Field>
-        </div>
-        <div className="col-full">
-          <Field label="Tipo de terminacion" optional>
-            <input className="ps-form-input" value={form.termination_type} onChange={event => set("termination_type", event.target.value)} placeholder="Ej: Brillante, Mate, Con marco..." />
-          </Field>
-        </div>
-        <div className="col-full">
           <Field label="Fecha de entrega" optional error={fieldErrors.delivery_date}>
             <div className="ps-input-icon-wrap">
               <span className="ps-input-icon"><Icons.Calendar /></span>
@@ -520,7 +509,7 @@ export default function EditOrderModal({
           </div>
           <div className="ps-form-grid">
         <div className="col-full">
-          <Field label="Archivos adjuntos" hint="Archivos de diseno existentes y nuevos" error={fieldErrors.order_files}>
+          <Field label="Archivos adjuntos" hint="Archivos de diseño existentes y nuevos" error={fieldErrors.order_files}>
             {existingFiles.length > 0 && (
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {existingFiles.map((url, index) => (
@@ -557,18 +546,20 @@ export default function EditOrderModal({
                             aria-label={`Nombre visible en seguimiento de ${file.name}`}
                           />
                         </label>
-                        <label className="production-file-field">
-                          <span className="production-file-field-label">Area de produccion</span>
-                          <ProductionAreaSelect
-                            value={newFileAreas[index]}
-                            isError={missingAreaIndices.includes(index)}
-                            onChange={(value) => {
-                              setNewFileAreas(newFileAreas.map((area, currentIndex) => currentIndex === index ? value : area));
-                              setMissingAreaIndices([]);
-                              setFieldErrors(previous => ({ ...previous, order_files: "" }));
-                            }}
-                          />
-                        </label>
+                        <ProductionFileSpecifications
+                          areaCode={newFileAreas[index]}
+                          materialNames={newFileMaterials[index] || []}
+                          terminationName={newFileTerminations[index] || ""}
+                          catalog={productionCatalog}
+                          isError={missingAreaIndices.includes(index)}
+                          onAreaChange={(value) => {
+                            setNewFileAreas(newFileAreas.map((area, currentIndex) => currentIndex === index ? value : area));
+                            setMissingAreaIndices([]);
+                            setFieldErrors(previous => ({ ...previous, order_files: "" }));
+                          }}
+                          onMaterialsChange={(value) => setNewFileMaterials(newFileMaterials.map((materials, currentIndex) => currentIndex === index ? value : materials))}
+                          onTerminationChange={(value) => setNewFileTerminations(newFileTerminations.map((termination, currentIndex) => currentIndex === index ? value : termination))}
+                        />
                       </div>
                     </FileCard>
                   </div>
@@ -587,7 +578,7 @@ export default function EditOrderModal({
         </div>
 
         <div className="col-full">
-          <Field label="Imagen de preview" hint="Vista previa del diseno">
+          <Field label="Imagen de preview" hint="Vista previa del diseño">
             {(existingPreview || newPreview) ? (
               <div className="ps-preview-showcase">
                 <FileUploadZone

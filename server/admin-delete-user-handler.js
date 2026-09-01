@@ -71,7 +71,7 @@ export async function handleAdminDeleteUser(payload, env = process.env) {
   let references = [];
   try {
     references = await findEmployeeReferences(supabaseAdmin, userId);
-  } catch (referenceError) {
+  } catch {
     return jsonResponse(400, {
       error: "No se pudieron validar las referencias del empleado.",
       code: "USER_REFERENCE_LOOKUP_FAILED",

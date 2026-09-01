@@ -124,7 +124,7 @@ export async function handleDeliveryProfile(payload = {}, env = process.env) {
         },
       },
     };
-  } catch (error) {
+  } catch {
     return { status: 500, body: { error: "No se pudo cargar el perfil de entrega.", code: "DELIVERY_PROFILE_LOOKUP_FAILED" } };
   }
 }

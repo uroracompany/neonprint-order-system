@@ -1,0 +1,23 @@
+.ainm-overlay { position: fixed; inset: 0; z-index: 12000; display: grid; place-items: center; padding: 28px; background: rgba(15, 30, 64, .52); backdrop-filter: blur(8px); }
+.ainm-modal { width: min(560px, 100%); max-height: calc(100vh - 56px); overflow: auto; border: 1px solid rgba(148, 163, 184, .28); border-radius: 22px; background: #fff; box-shadow: 0 32px 90px rgba(15, 23, 42, .34); color: #0f1e40; font-family: "Poppins", sans-serif; }
+.ainm-header { display: flex; align-items: center; gap: 14px; padding: 28px 30px 20px; border-bottom: 1px solid #e8edf4; }
+.ainm-icon { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 14px; background: #eef2ff; color: #2563eb; }
+.ainm-header span:not(.ainm-icon) { display: block; color: #2563eb; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.ainm-header h2 { margin: 3px 0 0; color: #0f1e40; font-size: 21px; letter-spacing: -.03em; }
+.ainm-body { display: grid; gap: 16px; padding: 24px 30px 28px; }
+.ainm-message { margin: 0; color: #475569; font-size: 14px; line-height: 1.65; }
+.ainm-order, .ainm-reason { padding: 15px 16px; border: 1px solid #dbe5f2; border-radius: 14px; background: #f8fbff; }
+.ainm-order span, .ainm-reason strong { display: block; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.ainm-order strong { display: block; margin-top: 4px; color: #1e293b; font-size: 14px; }
+.ainm-reason { border-left: 3px solid #2563eb; background: #f8fafc; }
+.ainm-reason p { margin: 5px 0 0; color: #475569; font-size: 12px; line-height: 1.5; }
+.ainm-error { margin: 0; color: #b91c1c; font-size: 12px; }
+.ainm-modal footer { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 30px; border-top: 1px solid #e8edf4; background: #f8fafc; }
+.ainm-modal button { min-width: 126px; height: 44px; padding: 0 18px; border-radius: 11px; font: 700 12px "Poppins", sans-serif; cursor: pointer; }
+.ainm-modal .secondary { border: 1px solid #cbd5e1; background: #fff; color: #334155; }
+.ainm-modal .primary { border: 1px solid #0f1e40; background: #0f1e40; color: #fff; box-shadow: 0 6px 16px rgba(15, 30, 64, .18); }
+.ainm-modal button:hover:not(:disabled) { transform: translateY(-1px); }
+.ainm-modal button:focus-visible { outline: 3px solid rgba(37, 99, 235, .2); outline-offset: 2px; }
+.ainm-modal button:disabled { cursor: wait; opacity: .6; }
+@media (max-width: 620px) { .ainm-overlay { align-items: end; padding: 0; } .ainm-modal { max-height: 94vh; border-radius: 22px 22px 0 0; } .ainm-header, .ainm-body, .ainm-modal footer { padding-inline: 20px; } .ainm-modal footer { display: grid; grid-template-columns: 1fr; } .ainm-modal button { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .ainm-modal button { transition: none; } }

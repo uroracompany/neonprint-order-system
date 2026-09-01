@@ -339,7 +339,7 @@ export async function handleAdminEmployeeDetail(payload = {}, env = process.env)
       pageSize,
       total: ordersResult.count || 0,
     });
-  } catch (error) {
+  } catch {
     return jsonResponse(400, {
       error: "No se pudo calcular el detalle del empleado.",
       code: "EMPLOYEE_DETAIL_FAILED",

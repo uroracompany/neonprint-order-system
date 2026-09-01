@@ -475,7 +475,7 @@ export async function handleDesignerProfile(payload = {}, env = process.env) {
         }),
       },
     };
-  } catch (error) {
+  } catch {
     return {
       status: 500,
       body: { error: "No se pudo cargar el perfil del disenador.", code: "DESIGNER_PROFILE_LOOKUP_FAILED" },

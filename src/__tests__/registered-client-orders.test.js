@@ -65,13 +65,14 @@ describe("registered client order enforcement", () => {
   it("shared create order flow keeps sales upload, production, and audit defaults for admin", () => {
     const createOrderModal = readProjectFile("src/components/orders/CreateOrderModal.jsx");
 
-    expect(createOrderModal).toContain("const orderId = crypto.randomUUID()");
+    expect(createOrderModal).toContain("const orderId = createRequestIdRef.current || crypto.randomUUID();");
     expect(createOrderModal).toContain("path: `orders/${orderId}/files/${fileName}`");
-    expect(createOrderModal).toContain('.from("order_production_files")');
+    expect(createOrderModal).toContain('.rpc("create_seller_order_with_file_specifications"');
+    expect(createOrderModal).not.toContain('.from("order_production_files")');
     expect(createOrderModal).toContain('payment_status: "Pending_Payment"');
     expect(createOrderModal).toContain("status: ORDER_STATUS.PENDING");
-    expect(createOrderModal).toContain("seller_id: userId");
-    expect(createOrderModal).toContain("created_by: userId");
+    expect(createOrderModal).toContain("seller_id: userId,");
+    expect(createOrderModal).toContain("created_by: userId,");
   });
 
   it("order forms no longer use manual client edit helpers", () => {

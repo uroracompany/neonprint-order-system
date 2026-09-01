@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import process from "node:process";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import NewOrderBadge from "../components/orders/NewOrderBadge";

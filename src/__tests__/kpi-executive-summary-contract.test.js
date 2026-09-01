@@ -68,7 +68,8 @@ describe('verified executive KPI contract', () => {
     const hook = readProjectFile('src/hooks/useKPI.js')
 
     expect(sql).toContain("['order_events', 'profiles', 'clients']")
-    expect(hook).toContain("'orders', 'order_events', 'order_production_files', 'profiles', 'clients'")
+    expect(hook).toContain("const KPI_REALTIME_TABLES = ['orders', 'order_events', 'clients']")
+    expect(hook).not.toContain("'order_production_files', 'profiles'")
     expect(hook).toContain("useOrdersRealtimeSync")
     expect(hook).not.toContain("window.addEventListener('focus'")
   })

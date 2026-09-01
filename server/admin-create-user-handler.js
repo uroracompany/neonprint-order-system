@@ -6,6 +6,7 @@ import {
   getPasswordPolicyError,
   getSupabaseAdminEnv,
   isMissingEmailColumnError,
+  isDuplicateAuthEmailError,
   jsonResponse,
   normalizeUserProfile,
 } from "./admin-user-utils.js";
@@ -80,7 +81,7 @@ export async function handleAdminCreateUser(payload, env = process.env) {
 
   if (Array.isArray(duplicateProfiles) && duplicateProfiles.length > 0) {
     return jsonResponse(409, {
-      error: "Ya existe otro usuario con ese correo electronico.",
+      error: "Este correo ya está registrado.",
     });
   }
 
@@ -96,6 +97,12 @@ export async function handleAdminCreateUser(payload, env = process.env) {
   });
 
   if (authError) {
+    if (isDuplicateAuthEmailError(authError)) {
+      return jsonResponse(409, {
+        error: "Este correo ya está registrado.",
+      });
+    }
+
     return jsonResponse(400, {
       error: "No se pudo crear la cuenta de autenticacion.",
       code: "AUTH_USER_CREATE_FAILED",

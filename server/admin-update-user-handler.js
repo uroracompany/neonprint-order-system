@@ -6,6 +6,7 @@ import {
   getPasswordPolicyError,
   getSupabaseAdminEnv,
   isMissingEmailColumnError,
+  isDuplicateAuthEmailError,
   jsonResponse,
   normalizeUserProfile,
 } from "./admin-user-utils.js";
@@ -86,7 +87,7 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
 
   if (!duplicateError && Array.isArray(duplicateProfiles) && duplicateProfiles.length > 0) {
     return jsonResponse(409, {
-      error: "Ya existe otro usuario con ese correo electronico.",
+      error: "Este correo ya está registrado.",
     });
   }
 
@@ -163,6 +164,16 @@ export async function handleAdminUpdateUser(payload, env = process.env) {
       .from("profiles")
       .update(rollbackPayload)
       .eq("id", userId);
+
+    if (rollbackError) {
+      console.error("No se pudo revertir el perfil tras fallar la actualización de Auth.");
+    }
+
+    if (isDuplicateAuthEmailError(authError)) {
+      return jsonResponse(409, {
+        error: "Este correo ya está registrado.",
+      });
+    }
 
     return jsonResponse(400, {
       error: "No se pudo actualizar la cuenta del usuario. Los cambios se revirtieron cuando fue posible.",

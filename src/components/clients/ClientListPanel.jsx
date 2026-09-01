@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Icons } from "../../utils/icons";
-import { formatDominicanPhone } from "../../utils/clients";
+import { formatPhone } from "../../utils/clients";
 
 const PAGE_SIZE = 7;
 
@@ -152,7 +152,7 @@ export default function ClientListPanel({ supabase, onViewDetail }) {
                     </div>
                   </td>
                   <td className="td-pad">
-                    <span className="pq-clients-phone">{formatDominicanPhone(client.phone)}</span>
+                    <span className="pq-clients-phone">{formatPhone(client.phone)}</span>
                   </td>
                   <td className="td-pad pq-clients-date">{formatDate(client.last_order_at)}</td>
                   <td className="td-pad">

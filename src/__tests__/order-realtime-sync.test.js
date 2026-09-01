@@ -59,19 +59,29 @@ describe("order realtime synchronization", () => {
     modules.forEach((path) => {
       const source = readProjectFile(path);
       expect(source).toContain("useOrdersRealtimeSync({");
-      expect(source).toContain("applyOrdersSnapshot({");
+      expect(source).toMatch(/applyOrdersSnapshot\s*\(\s*\{/);
       expect(source).not.toContain('{ event: "*", schema: "public", table: "orders" }');
       expect(source).not.toContain("{ event: '*', schema: 'public', table: 'orders' }");
     });
+    const dashboard = readProjectFile("src/pages/dashboard.jsx");
+    expect(dashboard).toContain("preserveMissingOpenOrders: silent");
+    expect(dashboard).toContain("openOrderSetters: [setSettingsOrder, setPaymentModalOrder]");
+    expect(dashboard).not.toContain("const freshOrder = ordersById[selectedOrder.id]");
+    expect(readProjectFile("src/pages/page-quote.jsx")).not.toContain("const freshOrder = [...orders, ...creditOrders].find");
     expect(readProjectFile("src/pages/page-tracking.jsx")).not.toContain("useOrdersRealtimeSync");
   });
 
-  it("updates or closes an open modal from a successful authoritative snapshot", () => {
+  it("updates or closes an open modal from an explicitly authoritative snapshot", () => {
     const setOrders = vi.fn();
     const setSelectedOrder = vi.fn();
     const freshOrder = { id: "order-1", payment_status: "pagado" };
 
-    applyOrdersSnapshot({ orders: [freshOrder], setOrders, setSelectedOrder });
+    applyOrdersSnapshot({
+      orders: [freshOrder],
+      setOrders,
+      setSelectedOrder,
+      preserveOpenOrderState: false,
+    });
     expect(setOrders).toHaveBeenCalledWith([freshOrder]);
     expect(setSelectedOrder.mock.calls[0][0]({ id: "order-1", payment_status: "Pending_Payment" })).toEqual(freshOrder);
     expect(setSelectedOrder.mock.calls[0][0]({ id: "order-2" })).toBeNull();
@@ -90,6 +100,18 @@ describe("order realtime synchronization", () => {
     });
 
     expect(setSelectedOrder.mock.calls[0][0](openOrder)).toEqual(openOrder);
+  });
+
+  it("keeps an open order object stable while a background snapshot refreshes the list", () => {
+    const setOrders = vi.fn();
+    const setSelectedOrder = vi.fn();
+    const openOrder = { id: "order-1", payment_status: "Pending_Payment" };
+    const freshOrder = { id: "order-1", payment_status: "pagado" };
+
+    applyOrdersSnapshot({ orders: [freshOrder], setOrders, setSelectedOrder });
+
+    expect(setOrders).toHaveBeenCalledWith([freshOrder]);
+    expect(setSelectedOrder.mock.calls[0][0](openOrder)).toBe(openOrder);
   });
 
   it("reconciles secondary open order modals without dropping hydrated production relations", () => {
@@ -111,6 +133,7 @@ describe("order realtime synchronization", () => {
       setSelectedOrder,
       openOrderSetters: [setAdvancedOrder, setPaymentModalOrder],
       openOrderContainers: [{ setter: setAdvancedProduction }],
+      preserveOpenOrderState: false,
     });
 
     const nextAdvancedOrder = setAdvancedOrder.mock.calls[0][0](staleHydratedOrder);

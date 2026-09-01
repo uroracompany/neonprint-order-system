@@ -28,6 +28,8 @@ const referenceToAsset = (url) => {
   if (!value) return null;
   const r2 = /^r2:\/\/([^/]+)\/(.+)$/.exec(value);
   if (r2) return { provider: "r2", bucket: r2[1], objectPath: r2[2] };
+  const supabaseRef = /^supabase:\/\/([^/]+)\/(.+)$/.exec(value);
+  if (supabaseRef) return { provider: "supabase", bucket: supabaseRef[1], objectPath: decodeURIComponent(supabaseRef[2]) };
   const supabase = /^https?:\/\/[^/]+\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+).*$/i.exec(value);
   return supabase ? { provider: "supabase", bucket: supabase[1], objectPath: decodeURIComponent(supabase[2]) } : null;
 };
@@ -189,6 +191,7 @@ export async function reconcileOrphanOrderAssets({
   clientFactory = createClient,
   r2List = listR2OrderObjects,
   now = () => new Date(),
+  dryRun = true,
 } = {}) {
   const envResult = getSupabaseAdminEnv(env);
   if (envResult.error) return envResult.error;
@@ -201,6 +204,8 @@ export async function reconcileOrphanOrderAssets({
     skippedUnrecognised: 0,
     skippedFresh: 0,
     skippedWithParent: 0,
+    candidates: 0,
+    dry_run: dryRun !== false,
     sources: 0,
   };
   const processSource = async ({ provider, bucket, list }) => {
@@ -216,7 +221,10 @@ export async function reconcileOrphanOrderAssets({
     summary.skippedUnrecognised += identified.skippedUnrecognised;
     summary.skippedFresh += identified.skippedFresh;
     summary.skippedWithParent += identified.skippedWithParent;
-    summary.queued += await enqueueOrphans({ supabaseAdmin, orphans: identified.orphans });
+    summary.candidates += identified.orphans.length;
+    if (dryRun === false) {
+      summary.queued += await enqueueOrphans({ supabaseAdmin, orphans: identified.orphans });
+    }
     summary.sources += 1;
     await saveCursor({ supabaseAdmin, provider, bucket, cursor: page.nextCursor });
   };

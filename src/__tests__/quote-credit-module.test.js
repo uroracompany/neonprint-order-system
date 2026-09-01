@@ -32,15 +32,20 @@ describe("modulo de creditos en caja", () => {
     expect(creditsBlock).not.toContain("openEditOrder");
   });
 
-  it("usa las rpc existentes para crear recordatorios y cerrar creditos", () => {
+  it("usa seguimiento por cliente y Caja cierra créditos", () => {
     const quote = readProjectFile("src/pages/page-quote.jsx");
+    const migration = readProjectFile("supabase/migrations/20260901120000_simplify_credit_followup.sql");
 
-    expect(quote).toContain('supabase.rpc("create_credit_custom_reminder"');
-    expect(quote).toContain('p_visibility_scope: "creator"');
+    expect(quote).toContain('supabase.rpc("create_credit_client_reminder"');
+    expect(quote).toContain('supabase.rpc("credit_pending_alert_is_due"');
+    expect(quote).toContain('supabase.rpc("acknowledge_credit_pending_alert"');
+    expect(quote).toContain("CreditPendingAlertModal");
     expect(quote).toContain('supabase.rpc("settle_credit_orders"');
-    expect(quote).toContain("Los recordatorios personalizados solo pueden crearse para órdenes a crédito.");
+    expect(quote).toContain("El cliente ya no tiene órdenes a crédito pendientes.");
     expect(quote).toContain("Describe la razón del recordatorio antes de continuar.");
     expect(quote).toContain("Selecciona una fecha antes de continuar.");
+    expect(migration).toContain("Solo Caja puede crear recordatorios de crédito.");
+    expect(migration).toContain("interval '30 days'");
   });
 
   it("muestra recordatorios vencidos propios en caja", () => {

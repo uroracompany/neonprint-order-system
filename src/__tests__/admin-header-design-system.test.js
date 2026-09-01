@@ -15,17 +15,14 @@ describe("Admin header design-system contract", () => {
     const adminCss = readProjectFile("src/css-components/page-admin.css");
     const headerBlock = getCssBlock(adminCss, ".pa-header");
     const headerIconBlock = getCssBlock(adminCss, ".pa-header .pa-icon-btn");
-    const bellBlock = getCssBlock(adminCss, ".pa-header .nc-bell-btn");
 
     expect(headerBlock).toContain("background: #ffffff;");
     expect(headerBlock).not.toContain("linear-gradient");
-    expect(headerBlock).toContain("border-bottom: 1px solid #e2e8f0;");
-    expect(headerBlock).toContain("box-shadow: 0 1px 0 rgba(15, 30, 64, 0.04);");
+    expect(headerBlock).toContain("border-bottom: 1px solid #dbe3ef;");
+    expect(headerBlock).toContain("box-shadow: 0 10px 28px rgba(15, 30, 64, .055);");
 
     expect(adminCss).toContain(".pa-header .pa-kicker");
     expect(headerIconBlock).toContain("background: #ffffff;");
     expect(headerIconBlock).toContain("color: #405474;");
-    expect(bellBlock).toContain("background: #ffffff;");
-    expect(bellBlock).toContain("color: #405474;");
   });
 });

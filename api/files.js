@@ -1,10 +1,17 @@
-import { handleInitiateFileUpload, handleImportRemoteFile, handleFileDownloadUrl, handleCompleteFileUpload } from "../server/storage-gateway.js";
+import {
+  handleInitiateFileUpload,
+  handleImportRemoteFile,
+  handleFileDownloadUrl,
+  handleCompleteFileUpload,
+  handleResolveOrderAssetDownload,
+} from "../server/storage-gateway.js";
 import { rateLimit } from "../server/rateLimit.js";
 
 const ACTIONS = {
   "initiate-upload": handleInitiateFileUpload,
   "import-url": handleImportRemoteFile,
   "download-url": handleFileDownloadUrl,
+  "resolve-download": handleResolveOrderAssetDownload,
   "complete-upload": handleCompleteFileUpload,
 };
 

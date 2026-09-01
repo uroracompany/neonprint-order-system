@@ -135,7 +135,7 @@ export async function requireAuthenticated(authHeader = "", env = process.env, o
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
-    .select("id,name,email,role,employment_status,created_at")
+    .select("id,name,email,role,employment_status,deleted_at,created_at")
     .eq("id", user.id)
     .single();
 
@@ -144,7 +144,7 @@ export async function requireAuthenticated(authHeader = "", env = process.env, o
     return { authorized: false, status: 403, code: "PROFILE_UNAVAILABLE", error: "Tu perfil no esta disponible." };
   }
 
-  if (profile.employment_status === false) {
+  if (profile.employment_status === false || profile.deleted_at) {
     debugAuth("inactive-profile", { userId: user.id, role: profile.role }, env);
     return { authorized: false, status: 403, code: "ACCOUNT_INACTIVE", error: "Tu usuario esta inactivo." };
   }

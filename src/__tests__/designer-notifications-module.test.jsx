@@ -73,8 +73,7 @@ describe("DesignerNotificationsModule", () => {
       />
     );
 
-    expect(screen.getByText("Módulo de entrega")).toBeInTheDocument();
-    expect(screen.getByText("En bandeja de entrega")).toBeInTheDocument();
+    expect(screen.getByText("Consulta tu bandeja de trabajo y mantén acceso al historial completo de notificaciones.")).toBeInTheDocument();
     expect(screen.getByText("Entrega")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle("Archivar"));

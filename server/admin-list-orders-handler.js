@@ -13,8 +13,8 @@ const ORDER_ASSIGNMENT_FIELDS = [
 
 const clampPageSize = (value) => {
   const size = Number.parseInt(value, 10);
-  if (!Number.isFinite(size)) return 500;
-  return Math.min(Math.max(size, 1), 1000);
+  if (!Number.isFinite(size)) return 50;
+  return Math.min(Math.max(size, 1), 100);
 };
 
 const sanitizeSearch = (value) =>
@@ -50,6 +50,33 @@ const normalizeOrder = (order) => ({
   ...order,
   is_archived_admin: Boolean(order?.is_archived_admin),
 });
+
+const countActiveOverviewOrders = async ({ supabaseAdmin, configure = (query) => query }) => {
+  let query = supabaseAdmin
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .or("is_archived_admin.is.false,is_archived_admin.is.null");
+  query = configure(query);
+  const { count, error } = await query;
+  if (error) throw error;
+  return count || 0;
+};
+
+const loadGlobalOrderOverview = async ({ supabaseAdmin }) => {
+  const [total, pending, quote, design, production, delivered, completed, active, priorityActive, needsReview] = await Promise.all([
+    countActiveOverviewOrders({ supabaseAdmin }),
+    countActiveOverviewOrders({ supabaseAdmin, configure: (query) => query.eq("status", "Pending") }),
+    countActiveOverviewOrders({ supabaseAdmin, configure: (query) => query.eq("status", "in_Quote") }),
+    countActiveOverviewOrders({ supabaseAdmin, configure: (query) => query.eq("status", "in_Design") }),
+    countActiveOverviewOrders({ supabaseAdmin, configure: (query) => query.eq("status", "in_Production") }),
+    countActiveOverviewOrders({ supabaseAdmin, configure: (query) => query.eq("status", "in_Delivered") }),
+    countActiveOverviewOrders({ supabaseAdmin, configure: (query) => query.eq("status", "in_Completed") }),
+    countActiveOverviewOrders({ supabaseAdmin, configure: (query) => query.not("status", "in", "(in_Completed,in_Delivered,cancelled)") }),
+    countActiveOverviewOrders({ supabaseAdmin, configure: (query) => query.eq("order_type", "orden 911").not("status", "in", "(in_Completed,in_Delivered,cancelled)") }),
+    countActiveOverviewOrders({ supabaseAdmin, configure: (query) => query.or("operational_status.eq.blocked,commercial_review_required.eq.true") }),
+  ]);
+  return { total, pending, quote, design, production, delivered, completed, active, priority_active: priorityActive, needs_review: needsReview };
+};
 
 export async function handleAdminListOrders(payload = {}, env = process.env) {
   const envResult = getSupabaseAdminEnv(env);
@@ -89,6 +116,8 @@ export async function handleAdminListOrders(payload = {}, env = process.env) {
   const clientId = String(payload?.clientId || "").trim();
   const ownerId = String(payload?.ownerId || "").trim();
   const dateFilter = String(payload?.dateFilter || "all").trim();
+  const intervention = String(payload?.intervention || "all").trim();
+  const operational = String(payload?.operational || "all").trim();
   const search = sanitizeSearch(payload?.search);
 
   let query = supabaseAdmin
@@ -105,7 +134,9 @@ export async function handleAdminListOrders(payload = {}, env = process.env) {
     query = query.or("is_archived_admin.is.false,is_archived_admin.is.null");
   }
 
-  if (clientId) {
+  if (payload?.withoutClient === true) {
+    query = query.is("client_id", null);
+  } else if (clientId) {
     query = query.eq("client_id", clientId);
   }
 
@@ -119,7 +150,24 @@ export async function handleAdminListOrders(payload = {}, env = process.env) {
   }
 
   if (search) {
-    query = query.or(`client_name.ilike.%${search}%,description.ilike.%${search}%,material.ilike.%${search}%`);
+    query = query.or(`client_name.ilike.%${search}%,description.ilike.%${search}%,material.ilike.%${search}%,invoice_number.ilike.%${search}%`);
+  }
+
+  if (intervention === "intervened") {
+    query = query.not("last_admin_intervention_at", "is", null);
+  } else if (intervention === "not_intervened") {
+    query = query.is("last_admin_intervention_at", null);
+  }
+
+  if (operational === "blocked") {
+    query = query.eq("operational_status", "blocked");
+  } else if (operational === "priority") {
+    query = query.eq("order_type", "orden 911");
+  } else if (operational === "commercial_review") {
+    query = query.eq("commercial_review_required", true);
+  } else if (operational === "overdue") {
+    query = query.lt("delivery_date", new Date().toISOString().slice(0, 10))
+      .not("status", "in", "(in_Completed,in_Delivered,cancelled)");
   }
 
   const { data, error, count } = await query
@@ -135,6 +183,14 @@ export async function handleAdminListOrders(payload = {}, env = process.env) {
   }
 
   const orders = Array.isArray(data) ? data.map((order) => normalizeOrder(order)) : [];
+  let overview = null;
+  if (payload?.includeOverview === true) {
+    try {
+      overview = await loadGlobalOrderOverview({ supabaseAdmin });
+    } catch (overviewError) {
+      debugOrders("overview-error", { message: overviewError?.message }, env);
+    }
+  }
   debugOrders("response", { count: orders.length, total: count || 0, page, pageSize }, env);
 
   return jsonResponse(200, {
@@ -142,5 +198,6 @@ export async function handleAdminListOrders(payload = {}, env = process.env) {
     page,
     pageSize,
     total: count || 0,
+    ...(overview ? { overview } : {}),
   });
 }

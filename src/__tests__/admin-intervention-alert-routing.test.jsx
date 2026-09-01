@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminInterventionAlert from "../components/orders/AdminInterventionAlert";
@@ -27,9 +27,19 @@ const pendingReview = {
 
 const reviewState = {
   pendingByOrder: { "order-1": pendingReview },
+  pendingNotices: [{
+    id: "review-1",
+    order_id: "order-1",
+    event_key: "admin_intervention_notice",
+    label: "Administración te asignó como responsable",
+    summary: "Hola, Vendedor. Administración te asignó como responsable de la orden #NP-1.",
+    metadata: { requires_ack: true, order_code: "NP-1", client_name: "Cliente" },
+    created_at: "2026-06-30T12:00:00.000Z",
+  }],
   acknowledgingOrderId: null,
   acknowledgeError: "",
   acknowledgeOrder: vi.fn(),
+  acknowledgeReview: vi.fn(),
 };
 
 const renderAt = (path) => render(
@@ -65,5 +75,14 @@ describe("AdminInterventionAlert routing", () => {
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(mockUseOrderEventReviews).toHaveBeenCalledWith("user-1");
+  });
+
+  it("acknowledges only the displayed review", () => {
+    renderAt("/production");
+
+    fireEvent.click(screen.getByRole("button", { name: "Entendido" }));
+
+    expect(reviewState.acknowledgeReview).toHaveBeenCalledWith("review-1");
+    expect(reviewState.acknowledgeOrder).not.toHaveBeenCalled();
   });
 });

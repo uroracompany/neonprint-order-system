@@ -30,6 +30,8 @@ export const normalizeProductionFile = (file, index = 0) => {
     filename: file.filename || file.name || getFileNameFromUrl(url),
     public_label: file.public_label || null,
     production_area_code: file.production_area_code || null,
+    material_names: Array.isArray(file.material_names) ? file.material_names.filter(Boolean) : [],
+    termination_name: file.termination_name || null,
     status: file.status || PRODUCTION_FILE_STATUS.PENDING,
     assigned_to: file.assigned_to || null,
     updated_at: file.updated_at || null,
@@ -178,15 +180,38 @@ export const getNextProductionFileStatus = (status) => {
   return PRODUCTION_FILE_STATUS.IN_TERMINATION;
 };
 
-export const buildProductionFileRows = ({ orderId, urls, files, areaCodes, publicLabels, userId }) => (
+export const buildProductionFileRows = ({ orderId, urls, files, areaCodes, publicLabels, materialNames, terminationNames, userId }) => (
   (urls || []).map((url, index) => ({
     order_id: orderId,
     url,
     filename: files?.[index]?.name || getFileNameFromUrl(url),
     public_label: String(publicLabels?.[index] || "").trim() || null,
     production_area_code: areaCodes?.[index] || null,
+    material_names: Array.from(new Set((materialNames?.[index] || []).map((name) => String(name || "").trim()).filter(Boolean))),
+    termination_name: String(terminationNames?.[index] || "").trim() || null,
     status: PRODUCTION_FILE_STATUS.PENDING,
     created_by: userId || null,
     updated_by: userId || null,
   }))
 );
+
+export const buildProductionCatalogs = (materials = [], terminations = []) => {
+  const byArea = { materials: {}, terminations: {} };
+
+  materials.forEach((item) => {
+    const area = String(item?.production_area_code || "").trim();
+    const name = String(item?.name || "").trim();
+    if (!area || !name) return;
+    byArea.materials[area] = [...(byArea.materials[area] || []), name];
+  });
+  terminations.forEach((item) => {
+    const area = String(item?.production_area_code || "").trim();
+    const name = String(item?.name || "").trim();
+    if (!area || !name) return;
+    byArea.terminations[area] = [...(byArea.terminations[area] || []), name];
+  });
+
+  Object.values(byArea.materials).forEach((items) => items.sort((a, b) => a.localeCompare(b, "es")));
+  Object.values(byArea.terminations).forEach((items) => items.sort((a, b) => a.localeCompare(b, "es")));
+  return byArea;
+};

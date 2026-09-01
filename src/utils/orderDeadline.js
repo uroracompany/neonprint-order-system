@@ -50,11 +50,3 @@ export const getOrderDeadlineState = (order, now = new Date(), timeZone = ORDER_
 };
 
 export const isOrderOverdue = (order, now, timeZone) => getOrderDeadlineState(order, now, timeZone).isOverdue;
-
-export const sortOrdersByDeadlinePriority = (orders = [], now, timeZone) => [...orders].sort((left, right) => {
-  const leftState = getOrderDeadlineState(left, now, timeZone);
-  const rightState = getOrderDeadlineState(right, now, timeZone);
-  if (leftState.isOverdue !== rightState.isOverdue) return leftState.isOverdue ? -1 : 1;
-  if (leftState.daysOverdue !== rightState.daysOverdue) return rightState.daysOverdue - leftState.daysOverdue;
-  return 0;
-});

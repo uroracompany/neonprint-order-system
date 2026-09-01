@@ -11,11 +11,29 @@ const dashboardSource = readFileSync(
 );
 
 describe("admin orders pagination", () => {
-  it("limits the filtered orders table to seven rows per page", () => {
-    expect(dashboardSource).toContain("const PER_PAGE = 7;");
-    expect(dashboardSource).toContain(
+  it("requests 50-row server pages and renders the returned page without local slicing", () => {
+    expect(dashboardSource).toContain("const PER_PAGE = 50;");
+    expect(dashboardSource).toContain("pageSize: PER_PAGE,");
+    expect(dashboardSource).toContain("setOrdersTotal(Number.isFinite(Number(result?.total))");
+    expect(dashboardSource).toContain("const totalPages = Math.ceil(ordersTotal / PER_PAGE) || 1;");
+    expect(dashboardSource).toContain("const paginatedOrders = filteredOrders;");
+    expect(dashboardSource).not.toContain(
       "filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE)",
     );
+    expect(dashboardSource).toContain(
+      "{!loadingOrders && !loadOrdersError && (\n                <div className=\"acm-pagination-footer\">\n                  <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />",
+    );
+    expect(dashboardSource).not.toContain(
+      "!loadingOrders && !loadOrdersError && filteredOrders.length > 0 && (",
+    );
+  });
+
+  it("keeps overview metrics global instead of deriving them from the current table page", () => {
+    expect(dashboardSource).toContain("const [orderOverview, setOrderOverview] = useState(null);");
+    expect(dashboardSource).toContain("const requestOverview = !orderOverviewLoadedRef.current && !orderOverviewLoadingRef.current;");
+    expect(dashboardSource).toContain("includeOverview: requestOverview,");
+    expect(dashboardSource).toContain('getOverviewCount("pending")');
+    expect(dashboardSource).not.toContain('value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length');
   });
 
   it("keeps previous, next and numbered navigation wired to page changes", async () => {

@@ -212,6 +212,8 @@ const UI_TERM_REPLACEMENTS = [
   [/\bentregador(?:a|es|as)?\b/g, UI_TERMS.delivery.toLowerCase()],
   [/\bRepartidor(?:a|es|as)?\b/g, UI_TERMS.delivery],
   [/\brepartidor(?:a|es|as)?\b/g, UI_TERMS.delivery.toLowerCase()],
+  [/\bDiseno\b/g, "Diseño"],
+  [/\bdiseno\b/g, "diseño"],
 ];
 
 export const formatUiTerms = (value) => {
@@ -323,10 +325,10 @@ export const getOrderStatusConfig = (value) => STATUS_COLORS[normalizeOrderStatu
 // COLORES Y ESTILOS PARA ESTADOS DE PAGO
 // Estos colores se muestran en los badges de pago en toda la aplicación
 export const PAYMENT_COLORS = {
-  [PAYMENT_STATUS.PAID]: { label: "Pagado", color: "#14532D", bg: "#DCFCE7" },
-  [PAYMENT_STATUS.PENDING]: { label: "Pago Pendiente", color: "#92620A", bg: "#FEF3C7" },
-  [PAYMENT_STATUS.PARTIAL]: { label: "Pago parcial", color: "#0369A1", bg: "#E0F2FE" },
-  [PAYMENT_STATUS.CREDIT]: { label: "Pago a crédito", color: "#6D28D9", bg: "#F3E8FF" },
+  [PAYMENT_STATUS.PAID]: { label: "Pagado", color: "#14532D", bg: "#DCFCE7", dot: "#16A34A" },
+  [PAYMENT_STATUS.PENDING]: { label: "Pago Pendiente", color: "#92620A", bg: "#FEF3C7", dot: "#D97706" },
+  [PAYMENT_STATUS.PARTIAL]: { label: "Pago parcial", color: "#0369A1", bg: "#E0F2FE", dot: "#0284C7" },
+  [PAYMENT_STATUS.CREDIT]: { label: "Pago a crédito", color: "#6D28D9", bg: "#F3E8FF", dot: "#7C3AED" },
 };
 
 // FUNCIONES UTILIDAD PARA FORMATEO

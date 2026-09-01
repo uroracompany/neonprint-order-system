@@ -55,7 +55,7 @@ function NotificationToast({ notification, onDismiss }) {
     <div className={`nc-toast ${typeClass}`} role="alert" aria-live="polite">
       <div className="nc-toast-main">
         <div className="nc-toast-icon">
-          {typeClass === "cancelled" ? <Icons.X /> : <Icons.Bell />}
+          {typeClass === "completed" ? <Icons.Check /> : typeClass === "cancelled" ? <Icons.X /> : <Icons.Bell />}
         </div>
         <div className="nc-toast-content">
           <span className="nc-toast-title">{formatUiTerms(notification.title)}</span>

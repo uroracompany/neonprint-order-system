@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../supabaseClient";
 import { Icons } from "../../utils/icons";
-import { ORDER_STATUS, PAYMENT_STATUS, PRODUCTION_AREA_LABELS, PRODUCTION_FILE_STATUS, PRODUCTION_FILE_STATUS_LABELS } from "../../utils/constants";
+import { ORDER_STATUS, PAYMENT_STATUS, PRODUCTION_AREA_LABELS, PRODUCTION_FILE_STATUS, PRODUCTION_FILE_STATUS_LABELS, getFileNameFromUrl } from "../../utils/constants";
 import { buildStorageSafeFileName, formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../../utils/uploadOrderAsset";
 import { compressImage, REF_IMAGE_CONFIG } from "../../utils/imageValidation";
 import { getReferenceImages } from "../../utils/orderAssets";
 import FileUploadZone from "../ui/FileUploadZone";
+import { SecureImage, SecureImageLink } from "../ui/SecureImage";
+import { ProductionFileSpecifications } from "./CreateOrderModal";
+import { buildProductionCatalogs } from "../../utils/production";
 import "./AdminManageFilesModal.css";
 
 const getUserDisplayName = (profile) => {
@@ -48,6 +51,9 @@ export default function AdminManageFilesModal({
   const [newFile, setNewFile] = useState(null);
   const [newFileLabel, setNewFileLabel] = useState("");
   const [newFileAreaCode, setNewFileAreaCode] = useState("");
+  const [newFileMaterials, setNewFileMaterials] = useState([]);
+  const [newFileTermination, setNewFileTermination] = useState("");
+  const [productionCatalog, setProductionCatalog] = useState({ materials: {}, terminations: {} });
   const [addingFile, setAddingFile] = useState(false);
   const [showAddFileForm, setShowAddFileForm] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
@@ -83,6 +89,10 @@ export default function AdminManageFilesModal({
     }
     let active = true;
     (async () => {
+      const catalogsRequest = Promise.all([
+        supabase.from("materials").select("name,production_area_code").not("production_area_code", "is", null),
+        supabase.from("production_terminations").select("name,production_area_code"),
+      ]);
       const { data, error: fetchError } = await supabase
         .from("orders")
         .select("order_production_files(*)")
@@ -100,6 +110,8 @@ export default function AdminManageFilesModal({
         .eq("is_active", true);
       if (!active) return;
       setAllProductionAreas(areaData || []);
+      const [materialsResult, terminationsResult] = await catalogsRequest;
+      if (active) setProductionCatalog(buildProductionCatalogs(materialsResult.data || [], terminationsResult.data || []));
       const roles = [...new Set((areaData || []).map((a) => a.producer_role).filter(Boolean))];
       if (roles.length === 0) { setProductionUsers([]); return; }
       const { data: userData } = await supabase
@@ -212,6 +224,7 @@ export default function AdminManageFilesModal({
     if (!newFile) return setError("Selecciona un archivo.");
     if (!newFileLabel.trim()) return setError("Ingresa una etiqueta para el archivo.");
     if (!newFileAreaCode) return setError("Selecciona un area de produccion.");
+    if (!newFileMaterials.length || !newFileTermination.trim()) return setError("Agrega materiales y una terminación para el archivo.");
     setAddingFile(true);
     setError("");
     try {
@@ -220,12 +233,14 @@ export default function AdminManageFilesModal({
       const path = `orders/${order.id}/files/${fileName}`;
       const publicUrl = await uploadOrderAsset({ bucket: "order-docs", path, file: newFile });
       if (!publicUrl) throw new Error("Error al subir el archivo.");
-      const { data: attached, error: insertError } = await supabase.rpc("admin_add_production_file", {
+      const { data: attached, error: insertError } = await supabase.rpc("admin_add_production_file_with_specifications", {
         p_order_id: order.id,
         p_url: publicUrl,
         p_filename: newFile.name,
         p_public_label: newFileLabel.trim(),
         p_area_code: newFileAreaCode,
+        p_material_names: newFileMaterials,
+        p_termination_name: newFileTermination.trim(),
         p_expected_updated_at: orderUpdatedAt,
       });
       // The object was uploaded but could not be attached.  Do not give the
@@ -247,6 +262,8 @@ export default function AdminManageFilesModal({
       setNewFile(null);
       setNewFileLabel("");
       setNewFileAreaCode("");
+      setNewFileMaterials([]);
+      setNewFileTermination("");
     } catch (err) {
       setError(err.message || "Error al anadir el archivo.");
     } finally {
@@ -430,20 +447,17 @@ export default function AdminManageFilesModal({
                 <span>Etiqueta</span>
                 <input type="text" value={newFileLabel} onChange={(e) => setNewFileLabel(e.target.value)} placeholder="Nombre visible del archivo" />
               </label>
-              <label className="amfm-field">
-                <span>Area de produccion</span>
-                <div className="amfm-select-wrap">
-                  <select value={newFileAreaCode} onChange={(e) => setNewFileAreaCode(e.target.value)}>
-                    <option value="">Seleccionar area</option>
-                    {allProductionAreas.map((a) => (
-                      <option key={a.code} value={a.code}>{a.label || a.code}</option>
-                    ))}
-                  </select>
-                  <Icons.ChevronDown />
-                </div>
-              </label>
+              <ProductionFileSpecifications
+                areaCode={newFileAreaCode}
+                materialNames={newFileMaterials}
+                terminationName={newFileTermination}
+                catalog={productionCatalog}
+                onAreaChange={setNewFileAreaCode}
+                onMaterialsChange={setNewFileMaterials}
+                onTerminationChange={setNewFileTermination}
+              />
               <div className="amfm-add-file-actions">
-                <button type="button" className="amfm-button" onClick={() => { setShowAddFileForm(false); setNewFile(null); setNewFileLabel(""); setNewFileAreaCode(""); }}>
+                <button type="button" className="amfm-button" onClick={() => { setShowAddFileForm(false); setNewFile(null); setNewFileLabel(""); setNewFileAreaCode(""); setNewFileMaterials([]); setNewFileTermination(""); }}>
                   Cancelar
                 </button>
                 <button type="button" className="amfm-button primary" disabled={addingFile} onClick={handleAddFile}>
@@ -475,6 +489,8 @@ export default function AdminManageFilesModal({
                       <span className="amfm-file-label">
                         <strong>{file.public_label || file.filename || "Archivo"}</strong>
                         <small>{PRODUCTION_AREA_LABELS[file.production_area_code] || file.production_area_code}</small>
+                        {file.material_names?.length > 0 && <small>Materiales: {file.material_names.join(", ")}</small>}
+                        {file.termination_name && <small>Terminación: {file.termination_name}</small>}
                         <small className="amfm-file-status-badge">{PRODUCTION_FILE_STATUS_LABELS[file.status]}</small>
                       </span>
                       {!isPaymentLocked && canManageOrderAssets && !(productionFiles.length <= 1 && isInQuoteOrLater) && (
@@ -600,12 +616,34 @@ export default function AdminManageFilesModal({
             <h4>Imagen de la Orden de Trabajo</h4>
             {currentPreviewUrl ? (
               <div className="amfm-preview-container">
-                <img src={currentPreviewUrl} alt="Preview" className="amfm-preview-image" />
+                {previewFile ? (
+                  <img src={currentPreviewUrl} alt="Preview" className="amfm-preview-image" />
+                ) : assetMetadata.preview_image ? (
+                  <SecureImageLink
+                    url={assetMetadata.preview_image}
+                    fileName={getFileNameFromUrl(assetMetadata.preview_image)}
+                  >
+                    {(resolvedUrl) => <img src={resolvedUrl} alt="Preview" className="amfm-preview-image" />}
+                  </SecureImageLink>
+                ) : (
+                  <img src={currentPreviewUrl} alt="Preview" className="amfm-preview-image" />
+                )}
                 {previewFile && <span className="amfm-preview-badge">Nuevo</span>}
                 <div className="amfm-preview-overlay">
-                  <a href={currentPreviewUrl} target="_blank" rel="noopener noreferrer" className="amfm-preview-action" title="Ver imagen">
-                    <Icons.Eye />
-                  </a>
+                  {!previewFile && assetMetadata.preview_image ? (
+                    <SecureImageLink
+                      url={assetMetadata.preview_image}
+                      fileName={getFileNameFromUrl(assetMetadata.preview_image)}
+                      className="amfm-preview-action"
+                      title="Ver imagen"
+                    >
+                      <Icons.Eye />
+                    </SecureImageLink>
+                  ) : (
+                    <a href={currentPreviewUrl} target="_blank" rel="noopener noreferrer" className="amfm-preview-action" title="Ver imagen">
+                      <Icons.Eye />
+                    </a>
+                  )}
                   {!isPaymentLocked && canManageOrderAssets && (
                     <>
                       <FileUploadZone mode="image" replaceMode className="file-upload-zone--hidden-picker" buttonLabel="Cambiar" onFilesAccepted={handlePreviewSelect} />
@@ -640,11 +678,17 @@ export default function AdminManageFilesModal({
             <h4>Imagenes de Referencia {existingRefUrls.length > 0 && `(${existingRefUrls.length})`}</h4>
             {(existingRefUrls.length > 0 || refFilesToAdd.length > 0) && (
               <div className="amfm-ref-gallery">
-                {existingRefUrls.filter((url) => !refUrlsToRemove.includes(url)).map((url, i) => (
-                  <div key={i} className="amfm-ref-thumb">
-                    <img src={url} alt={`Ref ${i + 1}`} />
+                {existingRefUrls.filter((url) => !refUrlsToRemove.includes(url)).map((url, index) => (
+                  <div className="amfm-ref-thumb" key={url}>
+                    <SecureImage url={url} alt={`Referencia ${index + 1}`} />
                     {!isPaymentLocked && canManageOrderAssets && (
-                      <button type="button" className="amfm-ref-thumb-remove" onClick={() => handleRemoveRefUrl(url)} title="Quitar imagen">
+                      <button
+                        type="button"
+                        className="amfm-ref-thumb-remove"
+                        onClick={() => handleRemoveRefUrl(url)}
+                        aria-label={`Quitar imagen de referencia ${index + 1}`}
+                        title="Quitar imagen"
+                      >
                         <Icons.X />
                       </button>
                     )}
@@ -654,7 +698,7 @@ export default function AdminManageFilesModal({
                   const origIndex = existingRefUrls.indexOf(url);
                   return (
                     <div key={`removed-${i}`} className="amfm-ref-thumb removed">
-                      <img src={url} alt={`Ref a eliminar ${origIndex + 1}`} style={{ opacity: 0.4 }} />
+                      <SecureImage url={url} alt={`Ref a eliminar ${origIndex + 1}`} style={{ opacity: 0.4 }} />
                       <button type="button" className="amfm-ref-thumb-restore" onClick={() => handleUndoRemoveRefUrl(url)}>Restaurar</button>
                     </div>
                   );
@@ -663,7 +707,7 @@ export default function AdminManageFilesModal({
                   const objectUrl = URL.createObjectURL(file);
                   return (
                     <div key={`new-${i}`} className="amfm-ref-thumb new">
-                      <img src={objectUrl} alt={`Nueva ${i + 1}`} />
+                      <img src={objectUrl} alt={`Nueva ${i + 1}`} style={{ borderColor: "var(--cyan)" }} />
                       <button type="button" className="amfm-ref-thumb-remove" onClick={() => handleRemoveRefFile(i)} title="Quitar imagen">
                         <Icons.X />
                       </button>

@@ -43,6 +43,12 @@ describe("flujo de produccion en caja", () => {
     expect(modal).toContain("source.filter((item) => participating.includes(item.code))");
     expect(modal).toContain("hasUnclassifiedProductionFiles");
     expect(modal).toContain("Clasifica todos los archivos antes de continuar.");
+    expect(modal).toContain("pq-dialog--production-assignment pq-dialog--return-designer");
+    expect(modal).toContain("pq-dialog-header pq-dialog-header--delivery");
+    expect(modal).toContain("pq-production-header-code");
+    expect(modal).not.toContain("pq-dialog-icon production");
+    expect(modal).toContain("pq-dialog-order");
+    expect(modal).toContain("pq-dialog-actions");
   });
 
   it("rehidrata archivos de produccion despues de credito y antes de abrir el modal", () => {
@@ -77,6 +83,24 @@ describe("flujo de produccion en caja", () => {
     expect(fn).not.toContain("from public.production_areas\n    where is_active = true\n    order by code");
   });
 
+  it("autoriza localmente solo la actualizacion protegida tras validar y asignar la orden", () => {
+    const migration = readLatestMigration("_send_order_to_production_command_context.sql");
+    const fnStart = migration.indexOf("create or replace function public.send_order_to_production");
+    const fnEnd = migration.indexOf("revoke all on function public.send_order_to_production", fnStart);
+    const fn = migration.slice(fnStart, fnEnd);
+    const context = "perform set_config('app.neonprint_order_command', 'on', true);";
+    const orderUpdate = "update public.orders";
+
+    expect(fn).toContain(context);
+    expect(fn).toContain("for update");
+    expect(fn).toContain("El area % no participa en esta orden.");
+    expect(fn).toContain("update public.order_production_files opf");
+    expect(fn.indexOf(context)).toBeGreaterThan(fn.indexOf("update public.order_production_files opf"));
+    expect(fn.indexOf(context)).toBeLessThan(fn.indexOf(orderUpdate));
+    expect(fn).toContain("returning * into updated_order;");
+    expect(migration).toContain("grant execute on function public.send_order_to_production(uuid, jsonb) to authenticated;");
+  });
+
   it("limpia solo asignaciones activas sin archivos y no notifica roles genericos de produccion", () => {
     const migration = readLatestMigration("_dynamic_production_participating_areas.sql");
 
@@ -88,7 +112,7 @@ describe("flujo de produccion en caja", () => {
 
   it("mantiene visibles las acciones correctas en las tarjetas de caja", () => {
     const quote = readProjectFile("src/pages/page-quote.jsx");
-    const cardStart = quote.indexOf('<div className="pq-order-footer">');
+    const cardStart = quote.indexOf('<div className="ps-order-card-actions">');
     const cardEnd = quote.indexOf("</article>", cardStart);
     const cardActions = quote.slice(cardStart, cardEnd);
 
@@ -97,5 +121,18 @@ describe("flujo de produccion en caja", () => {
     expect(cardActions).toContain("canArchiveQuoteOrder(order, user?.id)");
     expect(cardActions).toContain("setArchivingOrder(order)");
     expect(cardActions).toContain("Archivar");
+    expect(quote).toContain('<StatusBadge status={order.status} className="acm-badge" bordered showDot={false} order={order} />');
+    expect(quote).toContain('<PaymentBadge status={order.payment_status} className="acm-badge" bordered showDot={false} />');
+  });
+
+  it("elimina el circulo decorativo de las metricas de caja sin quitar sus iconos", () => {
+    const quote = readProjectFile("src/pages/page-quote.jsx");
+    const metricStart = quote.indexOf("function MetricCard");
+    const metricEnd = quote.indexOf("const getSidebarBadge", metricStart);
+    const metricCard = quote.slice(metricStart, metricEnd);
+
+    expect(quote).not.toContain("pq-metric-glow");
+    expect(metricCard).toContain("pq-metric-icon");
+    expect(metricCard).not.toContain("acc.glow");
   });
 });

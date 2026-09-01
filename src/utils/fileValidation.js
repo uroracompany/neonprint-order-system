@@ -108,7 +108,7 @@ export const getFileModeError = (file, mode = "attachment") => {
   }
   return isAllowedAttachmentFile(file)
     ? null
-    : `"${file.name}" no es un adjunto permitido. Usa documentos, ZIP/RAR, TXT/CSV, imagenes o formatos de diseno.`;
+    : `"${file.name}" no es un adjunto permitido. Usa documentos, ZIP/RAR, TXT/CSV, imágenes o formatos de diseño.`;
 };
 
 export const validateFilesForMode = (files, { mode = "attachment", multiple = false, maxFiles, existingCount = 0 } = {}) => {

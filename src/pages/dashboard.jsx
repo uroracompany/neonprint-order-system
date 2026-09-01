@@ -23,7 +23,6 @@ import {
 } from "../utils/uploadOrderAsset";
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge, RoleBadge } from "../components/ui/Badge";
-import { isOrderOverdue } from "../utils/orderDeadline";
 import { getMinimumDeliveryDate } from "../utils/deliveryDate";
 import { AssignModal } from "../components/ui/AssignModal";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
@@ -55,7 +54,6 @@ import {
   parseFileUrls,
   serializeFileUrls,
   getFileNameFromUrl,
-  resolveSellerId,
   ARCHIVE_MODULES,
 } from "../utils/constants";
 import {
@@ -63,19 +61,21 @@ import {
   archiveOrder,
 } from "../utils/archive";
 import { getReferenceImages } from "../utils/orderAssets";
+import { SecureImage, SecureImageLink, SecureImageGallery } from "../components/ui/SecureImage";
 import {
-  formatDominicanPhone,
+  formatPhone,
   getClientDisplayName,
   getSelectedClientOrderFields,
   NO_CLIENT_FILTER_VALUE,
   normalizeClientPhone,
-  orderMatchesClientFilter,
   searchClients,
   validateClientForm,
 } from "../utils/clients";
 import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../utils/adminApi";
 import { filterActiveNotifications, getActiveUnreadCount, showCreditActionFeedback } from "../utils/notifications";
+import { buildProductionCatalogs } from "../utils/production";
 import { getAdminTabFromSearch, getAdminTabSearch } from "../utils/adminTabRoute";
+import { getAdminPasswordPolicyError, getEmployeeFormValidationMessage, validateEmployeeForm } from "../utils/employeeFormValidation";
 import {
   buildAdminWorkspaceRecovery,
   clearAdminWorkspaceRecovery,
@@ -120,27 +120,12 @@ const DEFAULT_ORDER_FORM = {
   indefinido: false,
 };
 const DEFAULT_USER_FORM = { name: "", email: "", password: "", confirmPassword: "", role: "seller", employment_status: true };
-const ADMIN_PASSWORD_MIN_LENGTH = 12;
-
-const getAdminPasswordPolicyError = (password) => {
-  const value = String(password || "");
-
-  if (value.length < ADMIN_PASSWORD_MIN_LENGTH) {
-    return `La contrasena debe tener al menos ${ADMIN_PASSWORD_MIN_LENGTH} caracteres.`;
-  }
-
-  if (!/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/[0-9]/.test(value)) {
-    return "La contrasena debe incluir mayusculas, minusculas y numeros.";
-  }
-
-  return null;
-};
 const DEFAULT_CLIENT_FORM = { name: "", phone: "", email: "", address: "", notes: "" };
 const getOpenCreditReceivables = (items = []) => items.filter((item) => (
-  item?.client_id && ["open", "partial"].includes(item.status)
+  item?.client_id && item.status === "open"
 ));
 
-const isOpenCreditReceivable = (item) => ["open", "partial"].includes(item?.status);
+const isOpenCreditReceivable = (item) => item?.status === "open";
 const formatCreditDate = (value) => (value ? formatDate(value) : "---");
 const formatOverviewDeliveryDate = (value) => {
   const datePart = String(value || "").split("T")[0];
@@ -270,49 +255,18 @@ const getMinimumCreditReminderAt = (baseTimeMs) => {
 const getCreditReceivableStatusLabel = (status) => {
   const labels = {
     open: "Pendiente",
-    partial: "Pendiente",
-    paid: "Saldada",
+    resolved: "Resuelta",
     void: "Anulada",
   };
   return labels[status] || status || "Pendiente";
 };
 const getCreditReceivableStatusStyle = (status) => {
-  if (status === "paid") return { background: "#DCFCE7", color: "#166534", border: "1px solid #22C55E40" };
+  if (status === "resolved") return { background: "#DCFCE7", color: "#166534", border: "1px solid #22C55E40" };
   if (status === "void") return { background: "#F1F5F9", color: "#475569", border: "1px solid #CBD5E140" };
   return { background: "#FEF3C7", color: "#92400E", border: "1px solid #F59E0B40" };
 };
 
 const resolveQuoteAssignmentId = (order) => QUOTE_ASSIGNMENT_FIELDS.map((field) => order?.[field]).find(Boolean) || null;
-const resolveAssignmentIdsByRole = (order, role) => {
-  const normalizedRole = normalizeText(role);
-
-  if (["seller", "admin"].includes(normalizedRole)) {
-    return [resolveSellerId(order)].filter(Boolean);
-  }
-
-  if (normalizedRole === "designer") {
-    return [order?.designer_id].filter(Boolean);
-  }
-
-  if (normalizedRole === "quote") {
-    return QUOTE_ASSIGNMENT_FIELDS.map((field) => order?.[field]).filter(Boolean);
-  }
-
-  const fallbackFields = [`${normalizedRole}_id`, `${normalizedRole}_user_id`, `assigned_${normalizedRole}_id`];
-  return fallbackFields.map((field) => order?.[field]).filter(Boolean);
-};
-const orderMatchesProfileFilter = (order, profile) => {
-  if (!profile?.id) return false;
-  return resolveAssignmentIdsByRole(order, profile.role).includes(profile.id);
-};
-const getOrderSearchUserIds = (order) => [
-  resolveSellerId(order),
-  order?.designer_id,
-  ...QUOTE_ASSIGNMENT_FIELDS.map((field) => order?.[field]),
-  order?.printer_id,
-].filter(Boolean);
-
-
 // Genera nombres únicos y legibles para los archivos que sube el administrador.
 // Función uploadOrderAsset importada desde ../utils/uploadOrderAsset.js
 // Para usar: uploadOrderAsset({ bucket, path, file })
@@ -337,6 +291,13 @@ const isEmploymentActive = (profile) => {
 
 // Convierte el estado booleano a una etiqueta legible para mostrarla en la interfaz.
 const getEmploymentStatus = (profile) => (isEmploymentActive(profile) ? "empleado" : "despedido");
+
+const getInitials = (name) => {
+  const parts = String(name || "").split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  if (parts.length === 1) return (parts[0][0] + parts[0][0]).toUpperCase();
+  return "??";
+};
 const getRoleLabel = (role) => {
   const map = {
     seller: "Vendedor",
@@ -536,9 +497,9 @@ function OrderDetailInfo({ order, usersById, assignmentAction = null }) {
                   <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                     <Icons.Eye /> Orden de Trabajo
                   </p>
-                  <a href={preview} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                    <img
-                      src={preview}
+                  <SecureImageLink url={preview} fileName={getFileNameFromUrl(preview)}>
+                    <SecureImage
+                      url={preview}
                       alt="preview"
                       style={{
                         width: "100%",
@@ -550,7 +511,7 @@ function OrderDetailInfo({ order, usersById, assignmentAction = null }) {
                       onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
                       onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
                     />
-                  </a>
+                  </SecureImageLink>
                 </div>
               )}
               {existingFiles.length > 0 && (
@@ -574,27 +535,11 @@ function OrderDetailInfo({ order, usersById, assignmentAction = null }) {
                   <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                     <Icons.Image /> Imágenes de referencia
                   </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                    {referenceImageUrls.map((url, index) => (
-                      <a key={index} href={url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
-                        <img
-                          src={url}
-                          alt={`Ref ${index + 1}`}
-                          style={{
-                            width: 120,
-                            height: 120,
-                            objectFit: "cover",
-                            borderRadius: "var(--radius-md)",
-                            border: "1px solid var(--border)",
-                            cursor: "pointer",
-                            transition: "transform 0.2s, box-shadow 0.2s",
-                          }}
-                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
-                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
-                        />
-                      </a>
-                    ))}
-                  </div>
+                  <SecureImageGallery
+                    urls={referenceImageUrls}
+                    fileNames={referenceImageUrls.map(getFileNameFromUrl)}
+                    altPrefix="Referencia"
+                  />
                 </div>
               )}
             </>
@@ -805,7 +750,7 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
     }
 
     const fields = getSelectedClientOrderFields(client, "client_contact");
-    if (fields.client_contact) fields.client_contact = formatDominicanPhone(fields.client_contact);
+    if (fields.client_contact) fields.client_contact = formatPhone(fields.client_contact);
 
     setOrderForm((prev) => ({
       ...prev,
@@ -1000,7 +945,17 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
               <span>Preview / Orden de trabajo</span>
               {previewSource ? (
                 <div className="pa-preview-card">
-                  <img src={previewSource} alt="Preview de la orden" className="pa-preview-image" />
+                  {previewSource.startsWith("blob:") ? (
+                    <img src={previewSource} alt="Preview de la orden" className="pa-preview-image" />
+                  ) : (
+                    <SecureImageLink url={previewSource} fileName={getFileNameFromUrl(previewSource)}>
+                      <SecureImage
+                        url={previewSource}
+                        alt="Preview de la orden"
+                        className="pa-preview-image"
+                      />
+                    </SecureImageLink>
+                  )}
                   <div className="pa-preview-card-footer">
                     <div>
                       <strong>{orderForm.newPreview ? orderForm.newPreview.name : "Preview actual"}</strong>
@@ -1046,102 +1001,153 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
 }
 
 // Formulario para crea usuarios en el apartado de admin
-function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, onSubmit, saving }) {
+export function UserFormModal({ open, mode = "create", userForm, setUserForm, onClose, onSubmit, saving, submissionError = "", onClearSubmissionError }) {
   const isEdit = mode === "edit";
-  const passwordValue = userForm.password;
-  const confirmPasswordValue = userForm.confirmPassword;
-  const passwordPolicyError = passwordValue ? getAdminPasswordPolicyError(passwordValue) : null;
-  const isPasswordReady = isEdit
-    ? (!passwordValue && !confirmPasswordValue) || (!passwordPolicyError && passwordValue === confirmPasswordValue)
-    : !passwordPolicyError && passwordValue === confirmPasswordValue;
-  const isSubmitReady =
-    userForm.name.trim() &&
-    userForm.email.trim() &&
-    userForm.role &&
-    isPasswordReady;
-
-  const _roleDescriptions = {
-    digital_producer: "Gestiona archivos de producción digital.",
-    dtf_producer: "Gestiona archivos de producción DTF.",
-    ploteo_producer: "Gestiona archivos de producción ploteo.",
-    seller: "Gestiona y da seguimiento comercial a las órdenes.",
-    designer: "Recibe y trabaja los archivos asignados para producción.",
-    quote: "Gestiona caja y valida la información de pago.",
-    printer: "Gestiona producción, terminación e impresión.",
-    delivery: "Coordina entregas y cierre logístico.",
-    admin: "Supervisa módulos, usuarios y el flujo general del sistema.",
+  const validation = validateEmployeeForm(userForm, mode);
+  const createValidationMessage = !isEdit ? getEmployeeFormValidationMessage(userForm, mode) : null;
+  const credentialsTouched = Boolean(userForm.password || userForm.confirmPassword);
+  const credentialError = credentialsTouched && (validation.passwordError || (!validation.passwordsMatch && "Las contraseñas no coinciden."));
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const updateUserForm = (updater) => {
+    setUserForm(updater);
+    onClearSubmissionError?.();
   };
 
+  if (!open) return null;
+
   return (
-    <ModalShell open={open} onClose={onClose} title={isEdit ? "Editar empleado" : "Crear empleado"} size="large" className="pa-user-form-modal">
-      <div className="pa-order-form-layout">
-        <section className="pa-form-section">
-          <div className="pa-form-section-head">
-            <span className="pa-form-section-kicker">Identidad</span>
-            <h5>Información principal</h5>
+    <div className="pa-overlay">
+      <div className="pa-modal pa-client-modal ps-file-details-modal" style={{ maxWidth: 620 }} onClick={e => e.stopPropagation()}>
+        <div className="pa-modal-head">
+          <div>
+            <h3>{isEdit ? "Editar empleado" : "Crear empleado"}</h3>
+            <p className="pa-client-modal-subtitle">{isEdit ? "Actualiza la información y permisos del empleado." : "Completa los datos para registrar un nuevo empleado en el sistema."}</p>
           </div>
-          <div className="pa-form-grid">
-            <label className="pa-field">
-              <span>Nombre</span>
-              <input value={userForm.name} onChange={(e) => setUserForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Ej. Maria Fernanda" autoComplete="name" />
-            </label>
-            <label className="pa-field">
-              <span>Email</span>
-              <input type="email" value={userForm.email} onChange={(e) => setUserForm(prev => ({ ...prev, email: e.target.value }))} placeholder="usuario@empresa.com" autoComplete="email" />
-            </label>
+          <button className="pa-close-btn" onClick={onClose}>
+            <Icons.Close />
+          </button>
+        </div>
+        <div className="pa-modal-body">
+          <div className="pa-client-form-intro">
+            <Icons.AlertCircle />
+            <div>
+              <span>{isEdit ? "Editar empleado" : "Nuevo empleado"}</span>
+              <strong>{isEdit ? "Modifica los datos necesarios y guarda los cambios." : "Nombre, email y rol son obligatorios."}</strong>
+            </div>
           </div>
-        </section>
-
-        <section className="pa-form-section">
-          <div className="pa-form-section-head">
-            <span className="pa-form-section-kicker">Credenciales</span>
-            <h5>Seguridad de acceso</h5>
-          </div>
-          <div className="pa-form-grid">
-            <label className="pa-field">
-              <span>{isEdit ? "Nueva contraseña" : "Contraseña"}</span>
-              <input type="password" value={userForm.password} onChange={(e) => setUserForm(prev => ({ ...prev, password: e.target.value }))} placeholder={isEdit ? "Dejar vacío para no cambiar" : "Mínimo 12 caracteres"} autoComplete="new-password" />
-            </label>
-            <label className="pa-field">
-              <span>Confirmar contraseña</span>
-              <input type="password" value={userForm.confirmPassword} onChange={(e) => setUserForm(prev => ({ ...prev, confirmPassword: e.target.value }))} placeholder={isEdit ? "Confirma solo si cambias contraseña" : "Repite la contraseña"} autoComplete="new-password" />
-            </label>
-          </div>
-        </section>
-
-        <section className="pa-form-section">
-          <div className="pa-form-section-head">
-            <span className="pa-form-section-kicker">Acceso</span>
-            <h5>Permisos y estado</h5>
-          </div>
-          <div className="pa-form-grid">
-            <label className="pa-field">
-              <span>Rol</span>
-              <select value={userForm.role} onChange={(e) => setUserForm(prev => ({ ...prev, role: e.target.value }))}>
+          <div className="ps-file-details-content">
+            <div className="ps-field">
+              <label className="ps-label">Nombre <span className="ps-label-req">*</span></label>
+              <input
+                className="ps-form-input"
+                value={userForm.name}
+                onChange={e => updateUserForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Ej. María Fernanda"
+                autoComplete="name"
+                autoFocus
+              />
+            </div>
+            <div className="ps-field">
+              <label className="ps-label">Email <span className="ps-label-req">*</span></label>
+              <input
+                className="ps-form-input"
+                type="email"
+                value={userForm.email}
+                onChange={e => updateUserForm(prev => ({ ...prev, email: e.target.value }))}
+                placeholder="usuario@empresa.com"
+                autoComplete="email"
+              />
+            </div>
+            <div className="ps-field">
+              <label className="ps-label">{isEdit ? "Nueva contraseña" : "Contraseña"} <span className="ps-label-req">*</span></label>
+              <div className="ps-password-wrapper">
+                <input
+                  className="ps-form-input"
+                  type={showPassword ? "text" : "password"}
+                  value={userForm.password}
+                  onChange={e => updateUserForm(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder={isEdit ? "Dejar vacío para no cambiar" : "Mínimo 12 caracteres"}
+                  autoComplete="new-password"
+                />
+                <button type="button" className="ps-password-toggle" onClick={() => setShowPassword(prev => !prev)} tabIndex={-1} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>
+                  {showPassword ? <Icons.EyeOff /> : <Icons.Eye />}
+                </button>
+              </div>
+            </div>
+            <div className="ps-field">
+              <label className="ps-label">Confirmar contraseña <span className="ps-label-req">*</span></label>
+              <div className="ps-password-wrapper">
+                <input
+                  className="ps-form-input"
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={userForm.confirmPassword}
+                  onChange={e => updateUserForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                  placeholder={isEdit ? "Confirma solo si cambias contraseña" : "Repite la contraseña"}
+                  autoComplete="new-password"
+                />
+                <button type="button" className="ps-password-toggle" onClick={() => setShowConfirmPassword(prev => !prev)} tabIndex={-1} aria-label={showConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>
+                  {showConfirmPassword ? <Icons.EyeOff /> : <Icons.Eye />}
+                </button>
+              </div>
+            </div>
+            {credentialError && (
+              <p className="ps-field-error-message" role="alert">{credentialError}</p>
+            )}
+            <div className="ps-field">
+              <label className="ps-label">Rol <span className="ps-label-req">*</span></label>
+              <select
+                className="ps-form-input"
+                value={userForm.role}
+                onChange={e => updateUserForm(prev => ({ ...prev, role: e.target.value }))}
+              >
                 <option value="seller">Vendedor</option>
                 <option value="designer">Diseñador</option>
                 <option value="quote">Caja</option>
-                <option value="printer">Produccion legacy</option>
+                <option value="printer">Producción legacy</option>
                 <option value="digital_producer">Producción Digital</option>
                 <option value="dtf_producer">Producción DTF</option>
                 <option value="ploteo_producer">Producción Ploteo</option>
                 <option value="delivery">Entrega</option>
-                <option value="admin">Administrador</option>
               </select>
-            </label>
-            <label className="pa-field">
-              <span>Estado laboral</span>
-              <input value={isEdit ? getEmploymentStatus(userForm) : "Empleado por defecto"} readOnly disabled />
-            </label>
+            </div>
+            <div className="ps-field">
+              <label className="ps-label">Estado laboral</label>
+              <input
+                className="ps-form-input"
+                value={isEdit ? getEmploymentStatus(userForm) : "Empleado por defecto"}
+                readOnly
+                disabled
+              />
+            </div>
           </div>
-        </section>
+        </div>
+        <div className="pq-production-dialog-footer">
+          {submissionError && !saving && (
+            <p id="employee-create-submit-error" className="ps-field-error-message" role="alert">
+              {submissionError}
+            </p>
+          )}
+          {createValidationMessage && !saving && (
+            <p id="employee-create-validation-message" className="ps-field-error-message" role="status">
+              {createValidationMessage}
+            </p>
+          )}
+          <div className="pq-dialog-actions">
+            <button type="button" className="pq-btn pq-btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
+            <button
+              type="button"
+              className="pq-btn pq-btn-primary"
+              onClick={onSubmit}
+              disabled={saving || !validation.isValid}
+              aria-describedby={submissionError ? "employee-create-submit-error" : createValidationMessage ? "employee-create-validation-message" : undefined}
+            >
+              {saving ? "Guardando..." : <><Icons.Plus />{isEdit ? "Guardar cambios" : "Crear empleado"}</>}
+            </button>
+          </div>
+        </div>
       </div>
-
-      <div className="pa-modal-actions">
-        <button className="pa-btn secondary" onClick={onClose}>Cancelar</button>
-        <button className="pa-btn primary" onClick={onSubmit} disabled={saving || !isSubmitReady}>{saving ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear empleado"}</button>
-      </div>
-    </ModalShell>
+    </div>
   );
 }
 
@@ -1171,7 +1177,7 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
             <div><span>Pago</span><strong><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></strong></div>
             <div><span>Facturacion</span><strong>{order.invoice_number || "No definido"}</strong></div>
             <div><span>Precio</span><strong>{order.price ? `RD$${Number(order.price).toLocaleString("es-DO")}` : "Precio pendiente"}</strong></div>
-            <div><span>Preview</span><strong>{order.preview_image ? <a href={order.preview_image} target="_blank" rel="noreferrer">Ver preview</a> : "Sin preview"}</strong></div>
+            <div><span>Preview</span><strong>{order.preview_image ? <SecureImageLink url={order.preview_image} fileName={getFileNameFromUrl(order.preview_image)}>Ver preview</SecureImageLink> : "Sin preview"}</strong></div>
           </div>
           {files.length > 0 ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
@@ -1554,6 +1560,8 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [ordersTotal, setOrdersTotal] = useState(0);
+  const [orderOverview, setOrderOverview] = useState(null);
   const [profiles, setProfiles] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -1575,7 +1583,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const PER_PAGE = 7;
+  const PER_PAGE = 50;
   const [dateFilter, setDateFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
@@ -1610,6 +1618,7 @@ export default function Dashboard() {
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [userModalMode, setUserModalMode] = useState("create");
   const [userForm, setUserForm] = useState(DEFAULT_USER_FORM);
+  const [userModalError, setUserModalError] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
   const [userDetailModalOpen, setUserDetailModalOpen] = useState(false);
   // Guarda la intención de cambio hasta que el admin confirme la acción en el modal.
@@ -1618,15 +1627,26 @@ export default function Dashboard() {
   const [savingEmploymentStatus, setSavingEmploymentStatus] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [materials, setMaterials] = useState([]);
+  const [productionTerminations, setProductionTerminations] = useState([]);
+  const [productionAreas, setProductionAreas] = useState([]);
   const [materialsLoading, setMaterialsLoading] = useState(false);
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [materialFormName, setMaterialFormName] = useState("");
+  const [materialFormAreaCode, setMaterialFormAreaCode] = useState("");
   const [materialFormError, setMaterialFormError] = useState("");
   const [materialToDelete, setMaterialToDelete] = useState(null);
   const [materialDeleteLoading, setMaterialDeleteLoading] = useState(false);
   const [materialSearch, setMaterialSearch] = useState("");
   const [materialsPage, setMaterialsPage] = useState(1);
+  const [materialViewMode, setMaterialViewMode] = useState("materials");
+const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
+  const [terminationsPage, setTerminationsPage] = useState(1);
+  const [showTerminationModal, setShowTerminationModal] = useState(false);
+  const [editingTermination, setEditingTermination] = useState(null);
+  const [terminationFormName, setTerminationFormName] = useState("");
+  const [terminationFormAreaCode, setTerminationFormAreaCode] = useState("");
+  const [terminationFormError, setTerminationFormError] = useState("");
   const [clients, setClients] = useState([]);
   const [clientsTotal, setClientsTotal] = useState(0);
   const [clientsLoading, setClientsLoading] = useState(true);
@@ -1676,6 +1696,10 @@ export default function Dashboard() {
   const [clientToDelete, setClientToDelete] = useState(null);
   const [clientDeleteLoading, setClientDeleteLoading] = useState(false);
   const restoredWorkspaceUserRef = useRef(null);
+  const loadOrdersRef = useRef(null);
+  const orderOverviewLoadedRef = useRef(false);
+  const orderOverviewLoadingRef = useRef(false);
+  const orderOverviewRequestIdRef = useRef(0);
 
   const selectAdminTab = useCallback((nextTab, { replace = false } = {}) => {
     const nextSearch = getAdminTabSearch(location.search, nextTab);
@@ -1724,7 +1748,8 @@ export default function Dashboard() {
   const adminUnreadCount = useMemo(() => getActiveUnreadCount(adminVisibleNotifications), [adminVisibleNotifications]);
   const creditAlertPeriodKey = useMemo(() => getCreditAlertPeriodKey(), []);
   const minimumCreditReminderAt = useMemo(() => getMinimumCreditReminderAt(creditReminderNow), [creditReminderNow]);
-  const showFeedback = (type, message) => setFeedback({ type, message, id: Date.now() });
+  const feedbackIdRef = useRef(0);
+  const showFeedback = (type, message) => setFeedback({ type, message, id: ++feedbackIdRef.current });
   const showCreditFeedback = useCallback((variant, title, message) => {
     showCreditActionFeedback(notif, {
       variant,
@@ -1820,8 +1845,29 @@ export default function Dashboard() {
       setLoadOrdersError(null);
     }
 
+    const requestOverview = !orderOverviewLoadedRef.current && !orderOverviewLoadingRef.current;
+    const overviewRequestId = requestOverview ? orderOverviewRequestIdRef.current + 1 : null;
+    if (requestOverview) {
+      orderOverviewRequestIdRef.current = overviewRequestId;
+      orderOverviewLoadingRef.current = true;
+    }
+
     try {
-      const { response, result } = await adminApiFetch("/api/admin", { action: "list-orders", page: 1, pageSize: 1000 });
+      const { response, result } = await adminApiFetch("/api/admin", {
+        action: "list-orders",
+        page,
+        pageSize: PER_PAGE,
+        search,
+        status: statusFilter,
+        dateFilter,
+        ownerId: ownerFilter === "all" ? "" : ownerFilter,
+        clientId: clientFilter === "all" || clientFilter === NO_CLIENT_FILTER_VALUE ? "" : clientFilter,
+        withoutClient: clientFilter === NO_CLIENT_FILTER_VALUE,
+        archive: archiveFilter,
+        intervention: interventionFilter,
+        operational: operationalFilter,
+        includeOverview: requestOverview,
+      });
 
       if (!response.ok) {
         const isRateLimit = response.status === 429;
@@ -1852,6 +1898,11 @@ export default function Dashboard() {
         openOrderContainers: [{ setter: setAdvancedProduction }],
         preserveMissingOpenOrders: silent,
       });
+      setOrdersTotal(Number.isFinite(Number(result?.total)) ? Number(result.total) : 0);
+      if (result?.overview && typeof result.overview === "object") {
+        setOrderOverview(result.overview);
+        orderOverviewLoadedRef.current = true;
+      }
       if (!silent) setLoadingOrders(false);
       return;
     } catch (error) {
@@ -1862,8 +1913,16 @@ export default function Dashboard() {
         setLoadingOrders(false);
       }
       return;
+    } finally {
+      if (requestOverview && orderOverviewRequestIdRef.current === overviewRequestId) {
+        orderOverviewLoadingRef.current = false;
+      }
     }
-  }, []);
+  }, [archiveFilter, clientFilter, dateFilter, interventionFilter, operationalFilter, ownerFilter, page, search, statusFilter]);
+
+  useEffect(() => {
+    loadOrdersRef.current = loadOrders;
+  }, [loadOrders]);
 
   const loadProfiles = useCallback(async () => {
     setLoadingUsers(true);
@@ -1903,21 +1962,26 @@ export default function Dashboard() {
 
   }, []);
 
-  const fetchMaterials = async () => {
+  const fetchMaterials = useCallback(async () => {
     setMaterialsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("materials")
-        .select("*")
-        .order("name", { ascending: true });
-      if (error) throw error;
-      setMaterials(data || []);
+      const [materialsResult, terminationsResult, areasResult] = await Promise.all([
+        supabase.from("materials").select("*").order("name", { ascending: true }),
+        supabase.from("production_terminations").select("*").order("name", { ascending: true }),
+        supabase.from("production_areas").select("code,label").eq("is_active", true).order("label", { ascending: true }),
+      ]);
+      if (materialsResult.error || terminationsResult.error || areasResult.error) {
+        throw materialsResult.error || terminationsResult.error || areasResult.error;
+      }
+      setMaterials(materialsResult.data || []);
+      setProductionTerminations(terminationsResult.data || []);
+      setProductionAreas(areasResult.data || []);
     } catch (err) {
       console.error("Error fetching materials:", err);
     } finally {
       setMaterialsLoading(false);
     }
-  };
+  }, []);
 
   const fetchClients = useCallback(async () => {
     setClientsLoading(true);
@@ -2051,7 +2115,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!authUser?.id) return undefined;
 
-    loadOrders();
+    loadOrdersRef.current?.();
     loadProfiles();
     fetchClients();
     fetchAccountsReceivable();
@@ -2061,7 +2125,7 @@ export default function Dashboard() {
     const relatedDataChannel = supabase
       .channel(`admin-related-data-${authUser.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts_receivable' }, () => {
-        loadOrders(true);
+        loadOrdersRef.current?.(true);
         fetchAccountsReceivable();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
@@ -2078,7 +2142,16 @@ export default function Dashboard() {
     return () => {
       supabase.removeChannel(relatedDataChannel);
     };
-  }, [authUser?.id, dispatchDueCreditReminderNotifications, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, loadOrders, loadProfiles]);
+  }, [authUser?.id, dispatchDueCreditReminderNotifications, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, loadProfiles]);
+
+  // The server is the source of truth for operational filtering.  Debouncing
+  // search avoids a full request for every keystroke while changing a filter
+  // still resets to page one through the existing controls.
+  useEffect(() => {
+    if (!authUser?.id) return undefined;
+    const timeout = window.setTimeout(() => { void loadOrders(); }, search ? 280 : 0);
+    return () => window.clearTimeout(timeout);
+  }, [authUser?.id, loadOrders, search]);
 
   useEffect(() => {
     if (!authUser?.id || restoredWorkspaceUserRef.current === authUser.id) return;
@@ -2199,7 +2272,7 @@ export default function Dashboard() {
       fetchAccountsReceivable();
       fetchCreditCustomReminders();
     }
-  }, [activeTab, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders]);
+  }, [activeTab, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, fetchMaterials]);
 
   useEffect(() => {
     fetchCreditCustomReminders();
@@ -2335,10 +2408,6 @@ export default function Dashboard() {
     payload.preview_image = finalPreviewUrl;
     payload.order_file_url = remainingFiles.length > 0 ? serializeFileUrls(remainingFiles) : null;
 
-    // Determinar si es create o edit
-    const isCreate = orderModalMode === "create";
-    const orderId = orderForm.id;
-
     // This legacy handler is no longer wired by the dashboard (creation and
     // editing use CreateOrderModal/SharedEditOrderModal). Keep it fail-closed
     // until it can be deleted, rather than retaining a direct table writer.
@@ -2374,6 +2443,7 @@ export default function Dashboard() {
     setSelectedOrder(null);
     setSettingsOrder(order);
     setSettingsView("detail");
+    selectAdminTab("orders");
   };
 
   const handleConfirmCancelOrder = async () => {
@@ -2679,11 +2749,13 @@ export default function Dashboard() {
     setUserModalMode("create");
     setSelectedUser(null);
     setUserForm(DEFAULT_USER_FORM);
+    setUserModalError("");
     setUserModalOpen(true);
   };
 
   const openEditUserModal = (profileItem) => {
     setUserModalMode("edit");
+    setUserModalError("");
     setSelectedUser(profileItem);
     setUserDetailModalOpen(false);
     setUserForm({
@@ -2701,6 +2773,7 @@ export default function Dashboard() {
     setUserModalOpen(false);
     setUserModalMode("create");
     setUserForm(DEFAULT_USER_FORM);
+    setUserModalError("");
   };
 
   // Funcionalidad para registrar usuarios
@@ -2708,18 +2781,17 @@ export default function Dashboard() {
     const trimmedName = userForm.name.trim();
     const trimmedEmail = userForm.email.trim().toLowerCase();
     const password = userForm.password;
-    const confirmPassword = userForm.confirmPassword;
+    const validation = validateEmployeeForm(userForm, "create");
 
-    if (!trimmedName || !trimmedEmail || !userForm.role) {
+    if (!validation.hasRequiredIdentity) {
       return showFeedback("error", "Nombre, email y rol son obligatorios.");
     }
 
-    const passwordPolicyError = getAdminPasswordPolicyError(password);
-    if (!password || passwordPolicyError) {
-      return showFeedback("error", passwordPolicyError || "La contraseña es obligatoria.");
+    if (validation.passwordError) {
+      return showFeedback("error", validation.passwordError);
     }
 
-    if (password !== confirmPassword) {
+    if (!validation.passwordsMatch) {
       return showFeedback("error", "Las contraseñas no coinciden.");
     }
 
@@ -2736,18 +2808,29 @@ export default function Dashboard() {
         }));
     } catch (err) {
       setSavingUser(false);
-      return showFeedback("error", isTimeoutError(err) ? FRIENDLY_TIMEOUT_MESSAGE : "No se pudo conectar con el servicio de creación de usuarios.");
+      setUserModalError(isTimeoutError(err) ? FRIENDLY_TIMEOUT_MESSAGE : "No se pudo conectar con el servicio de creación de usuarios.");
+      return;
     }
 
     setSavingUser(false);
 
     if (!response.ok) {
-      return showFeedback("error", result?.error || "No se pudo crear el usuario.");
+      setUserModalError(result?.error || "No se pudo crear el usuario.");
+      return;
     }
 
     closeUserModal();
     await loadProfiles();
-    showFeedback("success", result?.message || "Usuario creado correctamente en autenticación y profiles.");
+    notif.showActionNotification({
+      type: "info",
+      title: "Usuario creado",
+      message: `Usuario ${trimmedName} creado correctamente.`,
+      metadata: {
+        variant: "success",
+        event_kind: "admin_user_created",
+        user_id: result?.user?.id || null,
+      },
+    });
 
   };
 
@@ -2759,18 +2842,17 @@ export default function Dashboard() {
     const trimmedName = userForm.name.trim();
     const trimmedEmail = userForm.email.trim().toLowerCase();
     const password = userForm.password;
-    const confirmPassword = userForm.confirmPassword;
+    const validation = validateEmployeeForm(userForm, "edit");
 
-    if (!trimmedName || !trimmedEmail || !userForm.role) {
+    if (!validation.hasRequiredIdentity) {
       return showFeedback("error", "Nombre, email y rol son obligatorios.");
     }
 
-    const passwordPolicyError = password ? getAdminPasswordPolicyError(password) : null;
-    if ((password || confirmPassword) && passwordPolicyError) {
-      return showFeedback("error", passwordPolicyError);
+    if (validation.passwordError) {
+      return showFeedback("error", validation.passwordError);
     }
 
-    if (password !== confirmPassword) {
+    if (!validation.passwordsMatch) {
       return showFeedback("error", "Las contraseñas no coinciden.");
     }
 
@@ -2807,7 +2889,16 @@ export default function Dashboard() {
     closeUserModal();
     setSelectedUser(updatedUser);
     await loadProfiles();
-    showFeedback("success", result?.message || "Empleado actualizado correctamente.");
+    notif.showActionNotification({
+      type: "info",
+      title: "Usuario actualizado",
+      message: `Usuario ${getUserDisplayName(updatedUser)} actualizado correctamente.`,
+      metadata: {
+        variant: "success",
+        event_kind: "admin_user_updated",
+        user_id: updatedUser.id,
+      },
+    });
   };
 
   const handleSaveUser = () => (
@@ -2839,7 +2930,7 @@ export default function Dashboard() {
   };
 
   // Aplica el cambio real en la base usando el campo booleano employment_status.
-  const handleEmploymentStatusChange = async (profileId, nextStatus) => {
+  const handleEmploymentStatusChange = async (profileId, nextStatus, userName) => {
     setSavingEmploymentStatus(true);
     let response;
     let result;
@@ -2862,10 +2953,16 @@ export default function Dashboard() {
     }
 
     await loadProfiles();
-    showFeedback(
-      "success",
-      nextStatus ? "Usuario activado correctamente." : "Usuario desactivado correctamente."
-    );
+    notif.showActionNotification({
+      type: "info",
+      title: nextStatus ? "Usuario activado" : "Usuario desactivado",
+      message: `Usuario ${userName} ${nextStatus ? "activado" : "desactivado"} correctamente.`,
+      metadata: {
+        variant: "success",
+        event_kind: nextStatus ? "admin_user_activated" : "admin_user_deactivated",
+        user_id: profileId,
+      },
+    });
   };
 
   // Si el admin confirma, recién aquí se persiste el cambio.
@@ -2883,7 +2980,8 @@ export default function Dashboard() {
 
     await handleEmploymentStatusChange(
       pendingEmploymentStatusChange.userId,
-      pendingEmploymentStatusChange.nextStatus
+      pendingEmploymentStatusChange.nextStatus,
+      pendingEmploymentStatusChange.userName
     );
 
     closeEmploymentStatusConfirm();
@@ -2957,6 +3055,7 @@ export default function Dashboard() {
   const handleAddMaterial = () => {
     setEditingMaterial(null);
     setMaterialFormName("");
+    setMaterialFormAreaCode("");
     setMaterialFormError("");
     setShowMaterialModal(true);
   };
@@ -2964,27 +3063,33 @@ export default function Dashboard() {
   const handleEditMaterial = (mat) => {
     setEditingMaterial(mat);
     setMaterialFormName(mat.name);
+    setMaterialFormAreaCode(mat.production_area_code || "");
     setMaterialFormError("");
     setShowMaterialModal(true);
   };
 
   const handleSaveMaterial = async () => {
     const name = materialFormName.trim();
+    const production_area_code = materialFormAreaCode;
     if (!name || name.length < 2) {
       setMaterialFormError("El nombre debe tener al menos 2 caracteres.");
+      return;
+    }
+    if (!production_area_code) {
+      setMaterialFormError("Selecciona el área de producción.");
       return;
     }
     try {
       if (editingMaterial) {
         const { error } = await supabase
           .from("materials")
-          .update({ name, updated_at: new Date().toISOString() })
+          .update({ name, production_area_code, updated_at: new Date().toISOString() })
           .eq("id", editingMaterial.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from("materials")
-          .insert({ name });
+          .insert({ name, production_area_code });
         if (error) {
           if (error.code === "23505") {
             setMaterialFormError("Ya existe un material con ese nombre.");
@@ -3075,6 +3180,8 @@ export default function Dashboard() {
     setSaving(true);
 
     try {
+      const isEditingClient = Boolean(editingClient);
+      let savedClientId = editingClient?.id || null;
       const phoneDigits = normalizeClientPhone(payload.phone);
       if (phoneDigits.length >= 3) {
         const existingClients = await searchClients(supabase, payload.phone, 10);
@@ -3090,17 +3197,23 @@ export default function Dashboard() {
         }
       }
 
-      if (editingClient) {
-        const { error } = await supabase
+      if (isEditingClient) {
+        const { data, error } = await supabase
           .from("clients")
           .update(payload)
-          .eq("id", editingClient.id);
+          .eq("id", editingClient.id)
+          .select("id")
+          .single();
         if (error) throw error;
+        savedClientId = data?.id || savedClientId;
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from("clients")
-          .insert({ ...payload, created_by: user?.id || null });
+          .insert({ ...payload, created_by: user?.id || null })
+          .select("id")
+          .single();
         if (error) throw error;
+        savedClientId = data?.id || null;
       }
 
       setShowClientModal(false);
@@ -3109,9 +3222,14 @@ export default function Dashboard() {
       setClientFormErrors({});
       await Promise.all([fetchClients(), fetchAccountsReceivable(), loadOrders(true)]);
       notif.showActionNotification({
-        type: "success",
-        title: editingClient ? "Cliente actualizado" : "Cliente registrado",
-        message: `Cliente "${clientForm.name.trim()}" ${editingClient ? "actualizado" : "creado"} correctamente.`,
+        type: "info",
+        title: isEditingClient ? "Cliente actualizado" : "Cliente registrado",
+        message: `Cliente "${clientForm.name.trim()}" ${isEditingClient ? "actualizado" : "creado"} correctamente.`,
+        metadata: {
+          variant: "success",
+          event_kind: isEditingClient ? "admin_client_updated" : "admin_client_created",
+          client_id: savedClientId,
+        },
       });
     } catch (err) {
       setClientFormError(err.message || "No se pudo guardar el cliente.");
@@ -3126,16 +3244,64 @@ export default function Dashboard() {
     return false;
   };
 
+  const openTerminationModal = (termination = null) => {
+    setEditingTermination(termination);
+    setTerminationFormName(termination?.name || "");
+    setTerminationFormAreaCode(termination?.production_area_code || "");
+    setTerminationFormError("");
+    setShowTerminationModal(true);
+  };
+
+  const handleSaveTermination = async () => {
+    const name = terminationFormName.trim();
+    if (name.length < 2 || !terminationFormAreaCode) {
+      setTerminationFormError("Indica un nombre y un área de producción.");
+      return;
+    }
+    try {
+      const payload = { name, production_area_code: terminationFormAreaCode, updated_at: new Date().toISOString() };
+      const query = editingTermination
+        ? supabase.from("production_terminations").update(payload).eq("id", editingTermination.id)
+        : supabase.from("production_terminations").insert(payload);
+      const { error } = await query;
+      if (error) throw error;
+      setShowTerminationModal(false);
+      fetchMaterials();
+    } catch (err) {
+      setTerminationFormError(err.code === "23505" ? "Ya existe esta terminación en el área." : (err.message || "No se pudo guardar la terminación."));
+    }
+  };
+
+  const handleDeleteTermination = async (termination) => {
+    if (!window.confirm(`¿Eliminar la terminación "${termination.name}"?`)) return;
+    const { error } = await supabase.from("production_terminations").delete().eq("id", termination.id);
+    if (error) {
+      showFeedback("error", "No se pudo eliminar la terminación.");
+      return;
+    }
+    fetchMaterials();
+  };
+
   const handleConfirmDeleteClient = async () => {
     if (!clientToDelete) return;
     setClientDeleteLoading(true);
     try {
-      const { response, result } = await adminApiFetch("/api/admin", { action: "retire-client", clientId: clientToDelete.id });
+      const deletedClient = clientToDelete;
+      const { response, result } = await adminApiFetch("/api/admin", { action: "retire-client", clientId: deletedClient.id });
       if (!response.ok) throw new Error(result?.error || "No se pudo dar de baja al cliente.");
       setClientToDelete(null);
       await fetchClients();
       await loadOrders();
-      showFeedback("success", result?.message || "Cliente dado de baja correctamente.");
+      notif.showActionNotification({
+        type: "info",
+        title: "Cliente dado de baja",
+        message: `El cliente ${deletedClient.name} fue eliminado correctamente.`,
+        metadata: {
+          variant: "success",
+          event_kind: "admin_client_retired",
+          client_id: deletedClient.id,
+        },
+      });
     } catch (err) {
       showFeedback("error", err?.message || "No se pudo dar de baja al cliente.");
     } finally {
@@ -3169,24 +3335,6 @@ export default function Dashboard() {
     setCreditDetailClientId(clientId);
     setCreditView(clientId ? "detail" : "list");
   }, [selectAdminTab]);
-
-  const openOverviewCreditTracking = () => {
-    selectAdminTab("credits");
-    setCreditStatusFilter("open");
-    setCreditView("list");
-  };
-
-  const handleOpenCreditSettleAll = (client, openInvoices) => {
-    const orderIds = openInvoices.map((item) => item.order_id);
-    const invoices = openInvoices.map((item) => item.invoiceNumber);
-    const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
-    if (uniqueOrderIds.length === 0) {
-      showFeedback("error", "No hay pendientes para cerrar.");
-      return;
-    }
-    setCreditSettleAllTarget({ client, orderIds: uniqueOrderIds, invoices: [...new Set((invoices || []).filter(Boolean))] });
-    setCreditSettleAllNotes("");
-  };
 
   const handleConfirmCreditSettleAll = async () => {
     const target = creditSettleAllTarget;
@@ -3451,44 +3599,13 @@ export default function Dashboard() {
     }
   };
 
-  // Funcionalidad de filtros 
-  const filteredOrders = useMemo(() => {
-    const q = normalizeText(search);
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfWeek = new Date(startOfToday);
-    startOfWeek.setDate(startOfWeek.getDate() - 7);
-    const selectedProfile = ownerFilter === "all" ? null : usersById[ownerFilter];
-
-    return orders.filter(order => {
-      const relatedUserNames = [...new Set(getOrderSearchUserIds(order))]
-        .map((userId) => getUserDisplayName(usersById[userId]));
-      const matchesSearch = !q || [order.client_name, order.description, order.material, order.invoice_number, order.id, ...relatedUserNames].some(value => normalizeText(value).includes(q));
-      const matchesStatus = statusFilter === "all" || isOrderStatus(order.status, statusFilter);
-      const matchesOwner = ownerFilter === "all" || orderMatchesProfileFilter(order, selectedProfile);
-      const matchesClient = orderMatchesClientFilter(order, clientFilter);
-      const matchesArchive = archiveFilter === "all"
-        || (archiveFilter === "active" && !order.is_archived_admin)
-        || (archiveFilter === "archived" && order.is_archived_admin);
-      const createdAt = new Date(order.created_at);
-      const matchesDate = dateFilter === "all" || (dateFilter === "today" && createdAt >= startOfToday) || (dateFilter === "week" && createdAt >= startOfWeek);
-      const matchesIntervention = interventionFilter === "all"
-        || (interventionFilter === "intervened" && Boolean(order.last_admin_intervention_at))
-        || (interventionFilter === "not_intervened" && !order.last_admin_intervention_at);
-      const matchesOperational = operationalFilter === "all"
-        || (operationalFilter === "blocked" && order.operational_status === "blocked")
-        || (operationalFilter === "priority" && order.order_type === "orden 911")
-        || (operationalFilter === "commercial_review" && order.commercial_review_required)
-        || (operationalFilter === "overdue" && isOrderOverdue(order));
-      return matchesSearch && matchesStatus && matchesOwner && matchesClient && matchesArchive && matchesDate && matchesIntervention && matchesOperational;
-    });
-  }, [orders, search, statusFilter, ownerFilter, clientFilter, archiveFilter, dateFilter, interventionFilter, operationalFilter, usersById]);
-
-  const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
+  // Filters and ordering execute in the protected endpoint, before paging.
+  const filteredOrders = orders;
+  const totalPages = Math.ceil(ordersTotal / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const paginatedOrders = filteredOrders;
 
-  const receivablesByClient = useMemo(() => {
+  const receivablesByClient = (() => {
     return getOpenCreditReceivables(accountsReceivable).reduce((acc, item) => {
       const current = acc[item.client_id] || { count: 0, orderIds: [], invoices: [], oldestIssuedAt: null };
       const issuedAt = item.issued_at || item.created_at || null;
@@ -3500,7 +3617,7 @@ export default function Dashboard() {
       };
       return acc;
     }, {});
-  }, [accountsReceivable]);
+  })();
 
   const ordersById = useMemo(() => Object.fromEntries(orders.map(order => [order.id, order])), [orders]);
   const clientsById = useMemo(() => Object.fromEntries(clients.map(client => [client.id, client])), [clients]);
@@ -3633,7 +3750,7 @@ export default function Dashboard() {
     })
   ), [accountsReceivableById, accountsReceivableByOrderId, clientsById, creditCustomReminderLinks, creditCustomReminders, ordersById]);
 
-  const dueCreditCustomReminders = useMemo(() => {
+  const dueCreditCustomReminders = (() => {
     const dismissed = new Set(creditReminderDismissedIds);
     return creditCustomReminderRows
       .filter((reminder) => (
@@ -3644,7 +3761,7 @@ export default function Dashboard() {
         && !dismissed.has(reminder.id)
       ))
       .sort((a, b) => new Date(a.remind_at || 0) - new Date(b.remind_at || 0));
-  }, [creditCustomReminderRows, creditReminderDismissedIds, creditReminderNow]);
+  })();
 
   useEffect(() => {
     if (creditReminderNow === null) return undefined;
@@ -3706,14 +3823,6 @@ export default function Dashboard() {
     setCreditView("list");
     setCreditDetailClientId(null);
   }, [creditDetailClient, creditDetailClientId, creditView]);
-
-  useEffect(() => {
-    if (!selectedOrder?.id) return;
-    const freshOrder = ordersById[selectedOrder.id];
-    if (freshOrder && freshOrder !== selectedOrder) {
-      setSelectedOrder(freshOrder);
-    }
-  }, [ordersById, selectedOrder]);
 
   const toggleAdminSidebar = useCallback(() => {
     setSidebarOpen(previous => !previous);
@@ -3779,30 +3888,47 @@ export default function Dashboard() {
     getLatestCollectionTimestamp(accountsReceivable),
   ].join(":"), [accountsReceivable, clients, orders]);
 
-  const filteredMaterials = useMemo(() => {
-    const q = normalizeText(materialSearch);
-    return q ? materials.filter(mat => normalizeText(mat.name).includes(q)) : materials;
-  }, [materials, materialSearch]);
+const filteredMaterials = useMemo(() => {
+  const q = normalizeText(materialSearch);
+  let result = q ? materials.filter(mat => normalizeText(mat.name).includes(q)) : materials;
+  if (materialAreaFilter !== "all") {
+    result = result.filter(mat => mat.production_area_code === materialAreaFilter);
+  }
+  return result;
+}, [materials, materialSearch, materialAreaFilter]);
 
-  const MATERIALS_PER_PAGE = 10;
+  const productionCatalog = useMemo(
+    () => buildProductionCatalogs(materials, productionTerminations),
+    [materials, productionTerminations],
+  );
+
+  const MATERIALS_PER_PAGE = 7;
   const totalMaterialPages = Math.ceil(filteredMaterials.length / MATERIALS_PER_PAGE) || 1;
   const safeMaterialPage = Math.min(materialsPage, totalMaterialPages);
   const paginatedMaterials = filteredMaterials.slice((safeMaterialPage - 1) * MATERIALS_PER_PAGE, safeMaterialPage * MATERIALS_PER_PAGE);
 
   useEffect(() => { setMaterialsPage(1); }, [filteredMaterials.length]);
 
+  const TERMINATIONS_PER_PAGE = 7;
+  const totalTerminationPages = Math.ceil(productionTerminations.length / TERMINATIONS_PER_PAGE) || 1;
+  const safeTerminationPage = Math.min(terminationsPage, totalTerminationPages);
+  const paginatedTerminations = productionTerminations.slice((safeTerminationPage - 1) * TERMINATIONS_PER_PAGE, safeTerminationPage * TERMINATIONS_PER_PAGE);
+
+  useEffect(() => { setTerminationsPage(1); }, [productionTerminations.length]);
+
+  const getOverviewCount = (key) => {
+    const value = Number(orderOverview?.[key]);
+    return Number.isFinite(value) ? value : null;
+  };
+  const formatOverviewCount = (value) => value === null ? "—" : value.toLocaleString("es-PE");
   const overviewFlowMetrics = [
-    { label: "Pendientes", detail: "Órdenes por iniciar", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.PENDING)).length, icon: <Icons.Clock />, color: "#F59E0B" },
-    { label: "Caja", detail: "Órdenes en cotización", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)).length, icon: <Icons.Package />, color: "#1E40AF" },
-    { label: "Diseño", detail: "Órdenes en diseño", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DESIGN)).length, icon: <Icons.File />, color: "#8B5CF6" },
-    { label: "Producción", detail: "Órdenes en producción", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)).length, icon: <Icons.Package />, color: "#F97316" },
-    { label: "Entrega", detail: "Órdenes en entrega", value: orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_DELIVERED)).length, icon: <Icons.Truck />, color: "#10B981" },
+    { label: "Pendientes", detail: "Órdenes por iniciar", value: getOverviewCount("pending"), icon: <Icons.Clock />, color: "#F59E0B" },
+    { label: "Caja", detail: "Órdenes en cotización", value: getOverviewCount("quote"), icon: <Icons.Package />, color: "#1E40AF" },
+    { label: "Diseño", detail: "Órdenes en diseño", value: getOverviewCount("design"), icon: <Icons.File />, color: "#8B5CF6" },
+    { label: "Producción", detail: "Órdenes en producción", value: getOverviewCount("production"), icon: <Icons.Package />, color: "#F97316" },
+    { label: "Entrega", detail: "Órdenes en entrega", value: getOverviewCount("delivered"), icon: <Icons.Truck />, color: "#10B981" },
   ];
 
-  const overviewActiveOrders = orders.filter(order => (
-    !order.is_archived_admin &&
-    !isOrderStatusIn(order.status, [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_COMPLETED])
-  ));
   const overviewRecentOrders = orders.slice(0, 3);
   const overviewQuickActions = [
     { label: "Órdenes", tab: "orders", icon: <Icons.Orders /> },
@@ -3811,39 +3937,12 @@ export default function Dashboard() {
     { label: "Materiales", tab: "materials", icon: <Icons.Package /> },
     { label: "Empleados", tab: "users", icon: <Icons.Users /> },
   ];
-  const overviewAttentionItems = [
-    {
-      id: "credit",
-      label: "Seguimiento de crédito",
-      detail: `${creditPendingClientCount} cliente${creditPendingClientCount === 1 ? "" : "s"} requiere${creditPendingClientCount === 1 ? "" : "n"} seguimiento.`,
-      value: creditPendingInvoicesCount,
-      icon: <Icons.Receipt />,
-      tone: "credit",
-    },
-    {
-      id: "priority",
-      label: "Órdenes 911 activas",
-      detail: "Prioridades que requieren seguimiento operativo.",
-      value: overviewActiveOrders.filter(order => order.order_type === "orden 911").length,
-      icon: <Icons.AlertCircle />,
-      tone: "priority",
-    },
-    {
-      id: "orders",
-      label: "Órdenes bloqueadas o en revisión",
-      detail: "Revisa los casos que necesitan intervención administrativa.",
-      value: orders.filter(order => order.operational_status === "blocked" || order.commercial_review_required).length,
-      icon: <Icons.AlertCircle />,
-      tone: "review",
-    },
-  ].filter(item => item.value > 0);
-
   const getSidebarBadge = (loading, value) => (loading ? "..." : value);
 
   const menuItems = [
     { id: "overview", label: "Resumen", icon: <Icons.Dashboard /> },
     { id: "kpi", label: "KPI", icon: <Icons.BarChart /> },
-    { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loadingOrders, orders.length) },
+    { id: "orders", label: "Órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loadingOrders, getOverviewCount("total") ?? ordersTotal) },
     { id: "credits", label: "Seguimiento", icon: <Icons.AlertCircle />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
     { id: "clients", label: "Clientes", icon: <Icons.User />, badge: getSidebarBadge(clientsLoading, clientsTotal) },
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
@@ -3955,11 +4054,11 @@ export default function Dashboard() {
                 <div className="pa-overview-banner-badges">
                   <div className="acm-total-badge pa-overview-banner-badge" data-tone="orders">
                     <Icons.Orders />
-                    <strong>{loadingOrders ? "..." : orders.length.toLocaleString("es-PE")}</strong> órdenes
+                    <strong>{loadingOrders ? "..." : formatOverviewCount(getOverviewCount("total"))}</strong> órdenes
                   </div>
                   <div className="acm-total-badge pa-overview-banner-badge" data-tone="completed">
                     <Icons.Check />
-                    <strong>{loadingOrders ? "..." : orders.filter(order => isOrderStatus(order.status, ORDER_STATUS.IN_COMPLETED)).length}</strong> completadas
+                    <strong>{loadingOrders ? "..." : formatOverviewCount(getOverviewCount("completed"))}</strong> completadas
                   </div>
                   <div className="acm-total-badge pa-overview-banner-badge" data-tone="clients">
                     <Icons.User />
@@ -3987,7 +4086,7 @@ export default function Dashboard() {
                 {overviewFlowMetrics.map(item => (
                   <article key={item.label} className="pa-overview-flow-step" style={{ "--flow-color": item.color }}>
                     <span className="pa-overview-flow-step-icon">{item.icon}</span>
-                    <strong className="pa-overview-flow-step-value">{loadingOrders ? "..." : item.value}</strong>
+                    <strong className="pa-overview-flow-step-value">{loadingOrders ? "..." : formatOverviewCount(item.value)}</strong>
                     <span className="pa-overview-flow-step-label">{item.label}</span>
                     <span className="pa-overview-flow-step-sub">{item.detail}</span>
                   </article>
@@ -4062,10 +4161,10 @@ export default function Dashboard() {
               <div>
                 <h2>Gestión de Órdenes</h2>
                 <p>Supervisa, filtra y administra las órdenes del sistema.</p>
-                {orders.length > 0 && (
+                {ordersTotal > 0 && (
                   <div className="acm-total-badge">
                     <Icons.Orders />
-                    <strong>{orders.length.toLocaleString("es-PE")}</strong> órdenes registradas
+                    <strong>{ordersTotal.toLocaleString("es-PE")}</strong> órdenes registradas
                   </div>
                 )}
               </div>
@@ -4091,8 +4190,8 @@ export default function Dashboard() {
                 { id: "intervention", label: "Intervención", icon: <Icons.AlertCircle />, className: "pp-filter-select-wrap--wide", value: interventionFilter, onChange: (value) => { setInterventionFilter(value); setPage(1); }, isActive: interventionFilter !== "all", options: [{ value: "all", label: "Todas las intervenciones" }, { value: "intervened", label: "Intervenidas por Admin" }, { value: "not_intervened", label: "Sin intervención avanzada" }] },
                 { id: "operational", label: "Situación operativa", icon: <Icons.Orders />, className: "pp-filter-select-wrap--wide", value: operationalFilter, onChange: (value) => { setOperationalFilter(value); setPage(1); }, isActive: operationalFilter !== "all", options: [{ value: "all", label: "Toda la situación operativa" }, { value: "overdue", label: "Atrasadas" }, { value: "blocked", label: "Bloqueadas" }, { value: "priority", label: "Prioridad 911" }, { value: "commercial_review", label: "Revisión comercial pendiente" }] },
               ]}
-              resultCount={filteredOrders.length}
-              resultLabel={`resultado${filteredOrders.length === 1 ? "" : "s"}`}
+              resultCount={ordersTotal}
+              resultLabel={`resultado${ordersTotal === 1 ? "" : "s"}`}
               activeFilters={[search, statusFilter !== "all", dateFilter !== "all", ownerFilter !== "all", clientFilter !== "all", archiveFilter !== "active", interventionFilter !== "all", operationalFilter !== "all"].filter(Boolean).length}
               onReset={() => { setSearch(""); setStatusFilter("all"); setDateFilter("all"); setOwnerFilter("all"); setClientFilter("all"); setArchiveFilter("active"); setInterventionFilter("all"); setOperationalFilter("all"); setPage(1); }}
             />
@@ -4185,7 +4284,7 @@ export default function Dashboard() {
                   </tbody>
                 </table>
               </div>
-              {!loadingOrders && !loadOrdersError && filteredOrders.length > 0 && (
+              {!loadingOrders && !loadOrdersError && (
                 <div className="acm-pagination-footer">
                   <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
                 </div>
@@ -4236,7 +4335,7 @@ export default function Dashboard() {
                 options: [
                   { value: "open", label: "Pendientes" },
                   { value: "all", label: "Todos" },
-                  { value: "paid", label: "Saldadas" },
+                  { value: "resolved", label: "Resueltas" },
                 ],
               }]}
               resultCount={creditClientGroups.length}
@@ -4310,7 +4409,6 @@ export default function Dashboard() {
                     ) : (
                       paginatedCreditClientGroups.map(group => {
                         const clientId = group.client?.id;
-                        const openInvoices = group.invoices.filter(item => isOpenCreditReceivable(item));
                         return (
                           <tr
                             key={clientId}
@@ -4354,24 +4452,6 @@ export default function Dashboard() {
                                 >
                                   <Icons.Eye />
                                 </button>
-                                {openInvoices.length > 0 && (
-                                  <button
-                                    className="table-action-btn edit"
-                                    onClick={() => openCreditReminderModal(group.client, openInvoices)}
-                                    title="Crear recordatorio"
-                                  >
-                                    <Icons.Clock />
-                                  </button>
-                                )}
-                                {openInvoices.length > 0 && (
-                                  <button
-                                    className="table-action-btn cancel"
-                                    onClick={() => handleOpenCreditSettleAll(group.client, openInvoices)}
-                                    title="Marcar todas como saldadas"
-                                  >
-                                    <Icons.Check />
-                                  </button>
-                                )}
                               </div>
                             </td>
                           </tr>
@@ -4404,6 +4484,7 @@ export default function Dashboard() {
             getCreditReceivableStatusLabel={getCreditReceivableStatusLabel}
             getCreditReceivableStatusStyle={getCreditReceivableStatusStyle}
             formatCreditDate={formatCreditDate}
+            readOnly
           />
         )}
 
@@ -4508,8 +4589,8 @@ export default function Dashboard() {
         </ModalShell>
 
         {showClientModal && (
-          <div className="pa-overlay" onClick={() => setShowClientModal(false)}>
-            <div className="pa-modal pa-client-modal" style={{ maxWidth: 620 }} onClick={event => event.stopPropagation()}>
+          <div className="pa-overlay">
+            <div className="pa-modal pa-client-modal ps-file-details-modal" style={{ maxWidth: 620 }} onClick={event => event.stopPropagation()}>
               <div className="pa-modal-head">
                 <div>
                   <h3>{editingClient ? "Editar cliente" : "Agregar cliente"}</h3>
@@ -4527,10 +4608,11 @@ export default function Dashboard() {
                     <strong>Nombre y telefono son obligatorios</strong>
                   </div>
                 </div>
-                <div className="pa-form-grid pa-client-form-grid">
-                  <label className="pa-field">
-                    <span>Nombre <strong className="pa-required-mark">*</strong></span>
+                <div className="ps-file-details-content">
+                  <div className="ps-field">
+                    <label className="ps-label">Nombre <span className="ps-label-req">*</span></label>
                     <input
+                      className="ps-form-input"
                       value={clientForm.name}
                       onChange={event => {
                         setClientForm(prev => ({ ...prev, name: event.target.value }));
@@ -4541,60 +4623,65 @@ export default function Dashboard() {
                       autoComplete="name"
                       autoFocus
                     />
-                    {clientFormErrors.name && <small className="pa-field-help error">{clientFormErrors.name}</small>}
-                  </label>
-                  <label className="pa-field">
-                    <span>Teléfono <strong className="pa-required-mark">*</strong></span>
+                    {clientFormErrors.name && <p className="ps-field-error-message">{clientFormErrors.name}</p>}
+                  </div>
+                  <div className="ps-field">
+                    <label className="ps-label">Teléfono <span className="ps-label-req">*</span></label>
                     <input
+                      className="ps-form-input"
                       type="tel"
                       value={clientForm.phone}
                       onChange={event => {
-                        setClientForm(prev => ({ ...prev, phone: formatDominicanPhone(event.target.value) }));
+                        setClientForm(prev => ({ ...prev, phone: formatPhone(event.target.value) }));
                         setClientFormError("");
                         setClientFormErrors(prev => ({ ...prev, phone: "" }));
                       }}
-                      placeholder="809-555-1234"
-                      maxLength="12"
+                      placeholder="+1 555 123 4567"
                       autoComplete="tel"
                     />
-                    {clientFormErrors.phone && <small className="pa-field-help error">{clientFormErrors.phone}</small>}
-                  </label>
-                  <label className="pa-field">
-                    <span>Correo <small className="pa-optional-pill">Opcional</small></span>
+                    {clientFormErrors.phone && <p className="ps-field-error-message">{clientFormErrors.phone}</p>}
+                  </div>
+                  <div className="ps-field">
+                    <label className="ps-label">Correo <span className="ps-label-opt">(opcional)</span></label>
                     <input
+                      className="ps-form-input"
                       type="email"
                       value={clientForm.email}
                       onChange={event => setClientForm(prev => ({ ...prev, email: event.target.value }))}
                       placeholder="cliente@empresa.com"
                       autoComplete="email"
                     />
-                  </label>
-                  <label className="pa-field">
-                    <span>Dirección <small className="pa-optional-pill">Opcional</small></span>
+                  </div>
+                  <div className="ps-field">
+                    <label className="ps-label">Dirección <span className="ps-label-opt">(opcional)</span></label>
                     <input
+                      className="ps-form-input"
                       value={clientForm.address}
                       onChange={event => setClientForm(prev => ({ ...prev, address: event.target.value }))}
                       placeholder="Dirección opcional"
                       autoComplete="street-address"
                     />
-                  </label>
-                  <label className="pa-field full">
-                    <span>Notas <small className="pa-optional-pill">Opcional</small></span>
+                  </div>
+                  <div className="ps-field">
+                    <label className="ps-label">Notas <span className="ps-label-opt">(opcional)</span></label>
                     <textarea
+                      className="ps-form-input"
                       rows={3}
                       value={clientForm.notes}
                       onChange={event => setClientForm(prev => ({ ...prev, notes: event.target.value }))}
                       placeholder="Notas internas opcionales"
                     />
-                  </label>
+                  </div>
                 </div>
                 {clientFormError && <p className="pa-client-form-error">{clientFormError}</p>}
               </div>
-              <div className="pa-modal-actions">
-                <button className="pa-btn secondary" onClick={() => setShowClientModal(false)}>Cancelar</button>
-                <button className="pa-btn primary" onClick={handleSaveClient} disabled={saving}>
-                  {saving ? "Guardando..." : editingClient ? "Guardar cambios" : "Agregar cliente"}
-                </button>
+              <div className="pq-production-dialog-footer">
+                <div className="pq-dialog-actions">
+                  <button type="button" className="pq-btn pq-btn-secondary" onClick={() => setShowClientModal(false)} disabled={saving}>Cancelar</button>
+                  <button type="button" className="pq-btn pq-btn-primary" onClick={handleSaveClient} disabled={saving}>
+                    {saving ? "Guardando..." : <><Icons.Plus />{editingClient ? "Guardar cambios" : "Agregar cliente"}</>}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -4605,18 +4692,26 @@ export default function Dashboard() {
             <div className="pa-section-heading acm-heading">
               <div>
                 <h2>Gestión de Materiales</h2>
-                <p>Administra los materiales disponibles para las órdenes de producción.</p>
-                {materials.length > 0 && (
-                  <div className="acm-total-badge">
-                    <Icons.Package />
-                    <strong>{materials.length.toLocaleString("es-PE")}</strong> materiales registrados
-                  </div>
-                )}
+                <p>Administra los materiales y terminaciones disponibles para las órdenes de producción.</p>
+                <div className="acm-total-badge">
+                  <Icons.Package />
+                  <strong>{materials.length.toLocaleString("es-PE")}</strong> materiales registrados
+                </div>
+                <div className="acm-total-badge">
+                  <Icons.Paintbrush />
+                  <strong>{productionTerminations.length.toLocaleString("es-PE")}</strong> terminaciones registradas
+                </div>
               </div>
-              <button className="pa-btn primary" onClick={handleAddMaterial}>
-                <Icons.Plus />
-                Agregar material
-              </button>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button className="pa-btn primary" onClick={handleAddMaterial}>
+                  <Icons.Plus />
+                  Registrar material
+                </button>
+                <button className="pa-btn primary" onClick={() => openTerminationModal()}>
+                  <Icons.Paintbrush />
+                  Registrar terminación
+                </button>
+              </div>
             </div>
             <SalesFilterToolbar
               ariaLabel="Filtros de materiales"
@@ -4632,64 +4727,162 @@ export default function Dashboard() {
               onReset={() => setMaterialSearch("")}
             />
             <div className="pa-panel mat-table-panel">
-              <div className="pa-panel-head">
+              <div className="pa-panel-head mat-unified-head">
                 <div>
-                  <h2>Materiales registrados</h2>
+                  <span className="mat-kicker">Catálogo de producción</span>
+                  <h2>Materiales y Terminaciones</h2>
+                </div>
+                <div className="mat-panel-tools">
+                  <div className="mat-tabs" role="tablist" aria-label="Filtro de materiales y terminaciones">
+                    <button
+                      type="button"
+                      className={materialViewMode === "materials" ? "active" : ""}
+                      onClick={() => setMaterialViewMode("materials")}
+                      aria-selected={materialViewMode === "materials"}
+                    >
+                      <Icons.Package />
+                      <span>Materiales</span>
+                      <strong>{materials.length}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={materialViewMode === "terminations" ? "active" : ""}
+                      onClick={() => setMaterialViewMode("terminations")}
+                      aria-selected={materialViewMode === "terminations"}
+                    >
+                      <Icons.Clipboard />
+                      <span>Terminaciones</span>
+                      <strong>{productionTerminations.length}</strong>
+                    </button>
+                  </div>
+                  {materialViewMode === "materials" && (
+                    <div className="mat-tabs" role="tablist" aria-label="Filtro por área de producción">
+                      <button
+                        type="button"
+                        className={materialAreaFilter === "all" ? "active" : ""}
+                        onClick={() => setMaterialAreaFilter("all")}
+                        aria-selected={materialAreaFilter === "all"}
+                      >
+                        <span>Todos</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={materialAreaFilter === "ploteo" ? "active" : ""}
+                        onClick={() => setMaterialAreaFilter(materialAreaFilter === "ploteo" ? "all" : "ploteo")}
+                        aria-selected={materialAreaFilter === "ploteo"}
+                      >
+                        <Icons.Package />
+                        <span>Ploteo</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={materialAreaFilter === "digital" ? "active" : ""}
+                        onClick={() => setMaterialAreaFilter(materialAreaFilter === "digital" ? "all" : "digital")}
+                        aria-selected={materialAreaFilter === "digital"}
+                      >
+                        <Icons.Package />
+                        <span>Impresión</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={materialAreaFilter === "dtf" ? "active" : ""}
+                        onClick={() => setMaterialAreaFilter(materialAreaFilter === "dtf" ? "all" : "dtf")}
+                        aria-selected={materialAreaFilter === "dtf"}
+                      >
+                        <Icons.Package />
+                        <span>DTF</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="ps-table-wrap" style={{ maxHeight: 520 }}>
-                <table className="ps-table">
-                  <thead>
-                    <tr>
-                      <th>Nombre</th>
-                      <th>Registro</th>
-                      <th style={{ width: 120 }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {materialsLoading ? (
-                      <tr>
-                        <td colSpan={3} className="ps-table-empty">Cargando materiales...</td>
-                      </tr>
-                    ) : filteredMaterials.length === 0 ? (
-                      <tr>
-                        <td colSpan={3} className="ps-table-empty">
-                          {materialSearch ? "No hay materiales que coincidan con la búsqueda." : "No hay materiales registrados. Agrega el primer material para comenzar."}
-                        </td>
-                      </tr>
-                    ) : (
-                      paginatedMaterials.map((mat) => (
-                        <tr key={mat.id} className="row-hover">
-                          <td className="td-pad td-name">{mat.name}</td>
-                          <td className="td-pad td-date">
-                            {new Date(mat.created_at).toLocaleDateString("es-DO", {
-                              day: "2-digit", month: "short", year: "numeric"
-                            })}
-                          </td>
-                          <td className="td-pad td-actions" onClick={(e) => e.stopPropagation()}>
-                            <div className="table-actions mat-row-actions">
-                              <button className="table-action-btn edit" onClick={() => handleEditMaterial(mat)} title="Editar material">
-                                <Icons.Edit />
-                              </button>
-                              <button
-                                className="table-action-btn cancel"
-                                onClick={() => handleDeleteMaterial(mat)}
-                                title="Eliminar material"
-                              >
-                                <Icons.Trash />
-                              </button>
-                            </div>
-                          </td>
+
+              {materialViewMode === "materials" ? (
+                <>
+                  <div className="ps-table-wrap" style={{ maxHeight: 520 }}>
+                    <table className="ps-table">
+                      <thead>
+                        <tr>
+                          <th>Nombre</th>
+                          <th>Área de producción</th>
+                          <th>Registro</th>
+                          <th style={{ width: 120 }}></th>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {!materialsLoading && filteredMaterials.length > 0 && (
-                <div className="acm-pagination-footer">
-                  <Pagination currentPage={safeMaterialPage} totalPages={totalMaterialPages} onPageChange={setMaterialsPage} />
-                </div>
+                      </thead>
+                      <tbody>
+                        {materialsLoading ? (
+                          <tr>
+                            <td colSpan={4} className="ps-table-empty">Cargando materiales...</td>
+                          </tr>
+                        ) : filteredMaterials.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="ps-table-empty">
+                              {materialSearch ? "No hay materiales que coincidan con la búsqueda." : "No hay materiales registrados. Agrega el primer material para comenzar."}
+                            </td>
+                          </tr>
+                        ) : (
+                          paginatedMaterials.map((mat) => (
+                            <tr key={mat.id} className="row-hover">
+                              <td className="td-pad td-name">{mat.name}</td>
+                              <td className="td-pad"><span className={`acm-badge ${mat.production_area_code ? "info" : "neutral"}`}>{productionAreas.find((area) => area.code === mat.production_area_code)?.label || "Sin clasificar"}</span></td>
+                              <td className="td-pad td-date">
+                                <span className="acm-badge neutral">{new Date(mat.created_at).toLocaleDateString("es-DO", {
+                                  day: "2-digit", month: "short", year: "numeric"
+                                })}</span>
+                              </td>
+                              <td className="td-pad td-actions" onClick={(e) => e.stopPropagation()}>
+                                <div className="table-actions mat-row-actions">
+                                  <button className="table-action-btn edit" onClick={() => handleEditMaterial(mat)} title="Editar material">
+                                    <Icons.Edit />
+                                  </button>
+                                  <button
+                                    className="table-action-btn cancel"
+                                    onClick={() => handleDeleteMaterial(mat)}
+                                    title="Eliminar material"
+                                  >
+                                    <Icons.Trash />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {!materialsLoading && filteredMaterials.length > 0 && (
+                    <div className="acm-pagination-footer">
+                      <Pagination currentPage={safeMaterialPage} totalPages={totalMaterialPages} onPageChange={setMaterialsPage} />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="ps-table-wrap" style={{ maxHeight: 520 }}>
+                    <table className="ps-table">
+                      <thead><tr><th>Terminación</th><th>Área</th><th style={{ width: 120 }} /></tr></thead>
+                      <tbody>
+                        {productionTerminations.length === 0 ? (
+                          <tr><td colSpan={3} className="ps-table-empty">No hay terminaciones registradas.</td></tr>
+                        ) : paginatedTerminations.map((termination) => (
+                          <tr key={termination.id} className="row-hover">
+                            <td className="td-pad td-name">{termination.name}</td>
+                            <td className="td-pad">{productionAreas.find((area) => area.code === termination.production_area_code)?.label || termination.production_area_code}</td>
+                            <td className="td-pad td-actions"><div className="table-actions mat-row-actions">
+                              <button className="table-action-btn edit" onClick={() => openTerminationModal(termination)} title="Editar terminación"><Icons.Edit /></button>
+                              <button className="table-action-btn cancel" onClick={() => handleDeleteTermination(termination)} title="Eliminar terminación"><Icons.Trash /></button>
+                            </div></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {productionTerminations.length > 0 && (
+                    <div className="acm-pagination-footer">
+                      <Pagination currentPage={safeTerminationPage} totalPages={totalTerminationPages} onPageChange={setTerminationsPage} />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </section>
@@ -4716,6 +4909,16 @@ export default function Dashboard() {
                     autoFocus
                     onKeyDown={e => { if (e.key === "Enter") handleSaveMaterial(); }}
                   />
+                  <label style={{ display: "block", margin: "14px 0 6px", fontWeight: 600, fontSize: "13px", color: "#0f1e40" }}>Área de producción</label>
+                  <select
+                    className="pa-input"
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1.5px solid #DDE3EF", fontSize: "14px" }}
+                    value={materialFormAreaCode}
+                    onChange={e => { setMaterialFormAreaCode(e.target.value); setMaterialFormError(""); }}
+                  >
+                    <option value="">Seleccionar área</option>
+                    {productionAreas.map((area) => <option key={area.code} value={area.code}>{area.label}</option>)}
+                  </select>
                   {materialFormError && (
                     <p style={{ color: "#EF4444", fontSize: "12px", marginTop: 6 }}>{materialFormError}</p>
                   )}
@@ -4726,6 +4929,33 @@ export default function Dashboard() {
                 <button className="pa-btn primary" onClick={handleSaveMaterial}>
                   {editingMaterial ? "Guardar cambios" : "Agregar material"}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showTerminationModal && (
+          <div className="pa-overlay" onClick={() => setShowTerminationModal(false)}>
+            <div className="pa-modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+              <div className="pa-modal-head">
+                <h3>{editingTermination ? "Editar terminación" : "Agregar terminación"}</h3>
+                <button className="pa-close-btn" onClick={() => setShowTerminationModal(false)} aria-label="Cerrar"><Icons.X /></button>
+              </div>
+              <div className="pa-modal-body" style={{ paddingBottom: 44 }}>
+                <div className="pa-field">
+                  <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "13px", color: "#0f1e40" }}>Nombre de la terminación</label>
+                  <input className="pa-input" value={terminationFormName} onChange={e => { setTerminationFormName(e.target.value); setTerminationFormError(""); }} placeholder="Ej. Dobladillo, Ojales, Mate..." autoFocus />
+                  <label style={{ display: "block", margin: "14px 0 6px", fontWeight: 600, fontSize: "13px", color: "#0f1e40" }}>Área de producción</label>
+                  <select className="pa-input" value={terminationFormAreaCode} onChange={e => { setTerminationFormAreaCode(e.target.value); setTerminationFormError(""); }}>
+                    <option value="">Seleccionar área</option>
+                    {productionAreas.map((area) => <option key={area.code} value={area.code}>{area.label}</option>)}
+                  </select>
+                  {terminationFormError && <p style={{ color: "#EF4444", fontSize: "12px", marginTop: 6 }}>{terminationFormError}</p>}
+                </div>
+              </div>
+              <div className="pa-modal-actions">
+                <button className="pa-btn secondary" onClick={() => setShowTerminationModal(false)}>Cancelar</button>
+                <button className="pa-btn primary" onClick={handleSaveTermination}>{editingTermination ? "Guardar cambios" : "Agregar terminación"}</button>
               </div>
             </div>
           </div>
@@ -4837,9 +5067,41 @@ export default function Dashboard() {
             />
 
             <div className="pa-panel acm-table-panel">
-              <div className="pa-panel-head pa-panel-head-results">
+              <div className="pa-panel-head mat-unified-head">
                 <div>
+                  <span className="mat-kicker">Gestión de RRHH</span>
                   <h2>Empleados del sistema</h2>
+                </div>
+                <div className="mat-panel-tools">
+                  <div className="mat-tabs" role="tablist" ariaLabel="Filtro de empleados">
+                    <button
+                      type="button"
+                      className={employmentFilter === "all" ? "active" : ""}
+                      onClick={() => setEmploymentFilter("all")}
+                      aria-selected={employmentFilter === "all"}
+                    >
+                      <Icons.Users />
+                      <span>Todos</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={employmentFilter === "active" ? "active" : ""}
+                      onClick={() => setEmploymentFilter(employmentFilter === "active" ? "all" : "active")}
+                      aria-selected={employmentFilter === "active"}
+                    >
+                      <Icons.Check />
+                      <span>Activos</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={employmentFilter === "inactive" ? "active" : ""}
+                      onClick={() => setEmploymentFilter(employmentFilter === "inactive" ? "all" : "inactive")}
+                      aria-selected={employmentFilter === "inactive"}
+                    >
+                      <Icons.UserMinus />
+                      <span>Desactivados</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -4894,14 +5156,14 @@ export default function Dashboard() {
                         >
                           <td className="td-pad">
                             <div className="acm-client-cell">
-                              <span className="acm-avatar acm-avatar-small">{getUserDisplayName(item).charAt(0).toUpperCase()}</span>
+                              <span className="acm-avatar acm-avatar-small">{getInitials(getUserDisplayName(item))}</span>
                               <span>
                                 <strong>{getUserDisplayName(item)}</strong>
-                                <small>#{item.id.slice(0, 8).toUpperCase()}</small>
+                                <small className="acm-employee-id">#{item.id.slice(0, 8).toUpperCase()}</small>
                               </span>
                             </div>
                           </td>
-                          <td className="td-pad">{item.email || "Sin correo"}</td>
+                          <td className="td-pad"><span className="acm-employee-email">{item.email || "Sin correo"}</span></td>
                           <td className="td-pad"><RoleBadge role={item.role} /></td>
                           <td className="td-pad">
                             <span className={`acm-badge ${isActive ? "success" : "neutral"}`}>
@@ -4956,7 +5218,7 @@ export default function Dashboard() {
             showFeedback("success", "Orden creada correctamente.");
           }}
           userId={user?.id}
-          materialOptions={materials.map(item => item.name)}
+          productionCatalog={productionCatalog}
           clients={clients}
           clientsLoading={clientsLoading}
           onClientSearch={handleClientSearch}
@@ -4974,7 +5236,7 @@ export default function Dashboard() {
             await Promise.all([loadOrders(), fetchAccountsReceivable()]);
             showFeedback("success", "Orden actualizada correctamente.");
           }}
-          materialOptions={materials.map(item => item.name)}
+          productionCatalog={productionCatalog}
           clients={clients}
           onClientSearch={handleClientSearch}
           clientsLoading={clientsLoading}
@@ -5077,7 +5339,7 @@ export default function Dashboard() {
         order={archivingOrder}
         loading={archiveLoading}
       />
-      <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} />
+      <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} submissionError={userModalError} onClearSubmissionError={() => setUserModalError("")} />
       <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onCreateOrder={handleCreateOrderFromUser} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} currentUserId={user?.id} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />
       <SettleCreditModal
@@ -5176,7 +5438,7 @@ function CreditPendingAlertModal({ open, invoiceCount, clientCount, clients, sav
 
 function CreditPendingAlertModalPolished({ open, invoiceCount, clientCount, clients, saving, onClose, onReview }) {
   return (
-    <ModalShell open={open} onClose={onClose} title="Seguimientos pendientes" size="compact">
+    <ModalShell open={open} onClose={onClose} title="Seguimientos pendientes" size="compact" className="pa-modal--no-gradient">
       <div className="pa-credit-alert-modal polished">
         <div className="pa-credit-alert-hero polished">
           <span className="pa-credit-alert-hero-icon"><Icons.Receipt /></span>
@@ -5244,10 +5506,11 @@ function CreditClientDetailView({
   isOpenCreditReceivable,
   getCreditReceivableStatusLabel,
   formatCreditDate,
+  readOnly = false,
 }) {
   const clientId = group.client?.id;
   const openInvoices = group.invoices.filter((item) => isOpenCreditReceivable(item));
-  const settledInvoicesCount = group.invoices.filter((item) => item.status === "paid").length;
+  const settledInvoicesCount = group.invoices.filter((item) => item.status === "resolved").length;
   const selectedIds = selectedCreditOrderIds[clientId] || [];
   const allOpenSelected = openInvoices.length > 0 && openInvoices.every((item) => selectedIds.includes(item.order_id));
   const [detailSearch, setDetailSearch] = useState("");
@@ -5258,7 +5521,7 @@ function CreditClientDetailView({
     const q = detailSearch.toLowerCase().trim();
     return group.invoices.filter((item) => {
       if (detailFilter === "open" && !isOpenCreditReceivable(item)) return false;
-      if (detailFilter === "paid" && item.status !== "paid") return false;
+      if (detailFilter === "resolved" && item.status !== "resolved") return false;
       if (!q) return true;
       return (
         (item.invoiceNumber || "").toLowerCase().includes(q) ||
@@ -5303,14 +5566,14 @@ function CreditClientDetailView({
               <Icons.ChevronLeft />
               Volver a seguimiento
             </button>
-            <button
+            {!readOnly && <button
               className="pa-credit-detail-primary-btn"
               onClick={() => onCreateReminder(group.client, openInvoices)}
               disabled={openInvoices.length === 0}
             >
               <Icons.Clock />
               Crear recordatorio
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -5340,7 +5603,7 @@ function CreditClientDetailView({
               <select value={detailFilter} onChange={(e) => setDetailFilter(e.target.value)}>
                 <option value="all">Todos</option>
                 <option value="open">Pendientes</option>
-                <option value="paid">Saldadas</option>
+                <option value="resolved">Resueltas</option>
               </select>
             </div>
           </div>
@@ -5352,7 +5615,7 @@ function CreditClientDetailView({
                     <input
                       type="checkbox"
                       checked={allOpenSelected}
-                      disabled={openInvoices.length === 0}
+                      disabled={readOnly || openInvoices.length === 0}
                       onChange={() => onToggleAll(clientId, group.invoices)}
                       aria-label="Seleccionar pendientes"
                     />
@@ -5391,7 +5654,7 @@ function CreditClientDetailView({
                           <input
                             type="checkbox"
                             checked={selected}
-                            disabled={!itemOpen || !item.order_id}
+                            disabled={readOnly || !itemOpen || !item.order_id}
                             onChange={() => onToggleSelection(clientId, item.order_id)}
                             onClick={(e) => e.stopPropagation()}
                             aria-label={`Seleccionar pendiente ${item.invoiceNumber}`}
@@ -5412,7 +5675,7 @@ function CreditClientDetailView({
                                 <Icons.Eye />
                               </button>
                             )}
-                            {itemOpen && (
+                            {!readOnly && itemOpen && (
                               <button
                                 className="table-action-btn edit"
                                 onClick={(e) => {
@@ -5424,7 +5687,7 @@ function CreditClientDetailView({
                                 <Icons.Clock />
                               </button>
                             )}
-                            {itemOpen && (
+                            {!readOnly && itemOpen && (
                               <button
                                 className="table-action-btn cancel"
                                 onClick={(e) => { e.stopPropagation(); onSettle({
@@ -5452,7 +5715,7 @@ function CreditClientDetailView({
               <Pagination currentPage={safeDetailPage} totalPages={detailTotalPages} onPageChange={setDetailPage} />
             </div>
           )}
-          <div className="pa-credit-detail-actions-bar">
+          {!readOnly && <div className="pa-credit-detail-actions-bar">
             <span className="pa-credit-selection-count">
               {selectedIds.length} seleccionada{selectedIds.length === 1 ? "" : "s"}
             </span>
@@ -5477,7 +5740,7 @@ function CreditClientDetailView({
                 Marcar saldadas
               </button>
             </div>
-          </div>
+          </div>}
         </div>
       </div>
     </section>

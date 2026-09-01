@@ -57,6 +57,7 @@ export function AssignModal({
   role,
   filterActive = false,
   defaultUserId = "",
+  lockedDeliveryId = "",
   title: customTitle,
   description: customDescription,
 }) {
@@ -67,7 +68,9 @@ export function AssignModal({
 
   const config = ROLE_CONFIG[role] || ROLE_CONFIG.designer;
   const IconComponent = ICON_MAP[config.icon];
-  const hasDefaultUser = !!defaultUserId;
+  const hasLockedDelivery = role === "delivery" && !!lockedDeliveryId;
+  const effectiveDefaultUserId = hasLockedDelivery ? lockedDeliveryId : defaultUserId;
+  const hasDefaultUser = !!effectiveDefaultUserId;
 
   useEffect(() => {
     if (!open) return;
@@ -79,10 +82,13 @@ export function AssignModal({
       .from("profiles")
       .select("id, name, role");
 
-    if (filterActive) {
+    if (filterActive || hasLockedDelivery) {
       query = query.eq("role", config.filterRole).eq("employment_status", true);
     } else {
       query = query.eq("role", config.filterRole);
+    }
+    if (hasLockedDelivery) {
+      query = query.eq("id", lockedDeliveryId);
     }
 
     query.then(({ data, error: fetchError }) => {
@@ -99,18 +105,18 @@ export function AssignModal({
 
       if (hasDefaultUser) {
         mapped.sort((a, b) => {
-          if (a.id === defaultUserId) return -1;
-          if (b.id === defaultUserId) return 1;
+          if (a.id === effectiveDefaultUserId) return -1;
+          if (b.id === effectiveDefaultUserId) return 1;
           return 0;
         });
       }
 
       setUsers(mapped);
-      if (hasDefaultUser && defaultUserId) {
-        setSelectedUserId(defaultUserId);
+      if (hasDefaultUser && effectiveDefaultUserId) {
+        setSelectedUserId(effectiveDefaultUserId);
       }
     });
-  }, [open, config.filterRole, config.label, filterActive, hasDefaultUser, defaultUserId]);
+  }, [open, config.filterRole, config.label, filterActive, hasDefaultUser, effectiveDefaultUserId, hasLockedDelivery, lockedDeliveryId]);
 
   const handleConfirm = () => {
     if (!selectedUserId) {
@@ -185,7 +191,7 @@ export function AssignModal({
             </span>
           </div>
 
-          {hasDefaultUser && (
+          {hasLockedDelivery && (
             <div
               style={{
                 marginBottom: 16, padding: "10px 14px", borderRadius: 8,
@@ -193,7 +199,7 @@ export function AssignModal({
                 color: "#991B1B", fontSize: 13, fontWeight: 500, lineHeight: 1.4, textAlign: "left",
               }}
             >
-              Esta orden fue devuelta. Solo se puede reenviar al {config.label.toLowerCase()} que la regres&oacute;.
+              Esta orden fue devuelta. Solo se puede reenviar al {config.label.toLowerCase()} que la devolvi&oacute;.
             </div>
           )}
 
@@ -203,14 +209,16 @@ export function AssignModal({
             </div>
           ) : users.length === 0 ? (
             <div style={{ textAlign: "center", padding: "24px 0", color: "#EF4444", fontSize: 14 }}>
-              No hay {config.label.toLowerCase()}s disponibles
+              {hasLockedDelivery
+                ? `El ${config.label.toLowerCase()} original ya no está activo; la orden no puede reenviarse.`
+                : `No hay ${config.label.toLowerCase()}s disponibles`}
             </div>
           ) : (
             <div style={{ marginBottom: 16 }}>
               <select
                 value={selectedUserId}
                 onChange={(e) => { setSelectedUserId(e.target.value); setError(""); }}
-                disabled={loading || (hasDefaultUser && users.length <= 1)}
+                disabled={loading || hasLockedDelivery || (hasDefaultUser && users.length <= 1)}
                 style={{
                   width: "100%", padding: "12px 16px", borderRadius: 8,
                   border: `1.5px solid ${error ? "#EF4444" : "#E5E7EB"}`,
@@ -222,7 +230,7 @@ export function AssignModal({
                 <option value="">-- Seleccionar {config.label} --</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.displayName}{u.id === defaultUserId ? " (Original)" : ""}
+                    {u.displayName}{u.id === effectiveDefaultUserId ? " (Original)" : ""}
                   </option>
                 ))}
               </select>

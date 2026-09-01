@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Icons } from "../../utils/icons";
-import { formatDominicanPhone } from "../../utils/clients";
+import { formatPhone } from "../../utils/clients";
 
 const ORDERS_PAGE_SIZE = 5;
 
@@ -18,7 +18,7 @@ function formatCurrency(amount) {
 const STATUS_LABELS = {
   pending: "Pendiente",
   in_progress: "En proceso",
-  in_design: "En diseno",
+  in_design: "En diseño",
   in_production: "En produccion",
   in_quality: "En control",
   ready: "Listo",
@@ -132,7 +132,7 @@ export default function ClientDetailPanel({ supabase, clientId, onBack, onViewOr
           <div className="pa-credit-detail-banner-info">
             <h3>{client.name}</h3>
             <span className="pq-clients-detail-contact">
-              <Icons.Phone /> {formatDominicanPhone(client.phone)}
+              <Icons.Phone /> {formatPhone(client.phone)}
               {client.email && <><span className="pq-clients-detail-sep">·</span><Icons.Mail /> {client.email}</>}
             </span>
           </div>
@@ -287,7 +287,7 @@ export default function ClientDetailPanel({ supabase, clientId, onBack, onViewOr
           </div>
           <div className="pq-clients-info-item">
             <span className="pq-clients-info-label"><Icons.Phone /> Telefono</span>
-            <span className="pq-clients-info-value">{formatDominicanPhone(client.phone)}</span>
+            <span className="pq-clients-info-value">{formatPhone(client.phone)}</span>
           </div>
           {client.email && (
             <div className="pq-clients-info-item">

@@ -18,17 +18,22 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "No autorizado." });
   }
 
-  const beforeReconciliation = await processOrderAssetDeletionOutbox({ env: process.env });
-  if (beforeReconciliation.status !== 200) {
-    return res.status(beforeReconciliation.status).json(beforeReconciliation.body);
-  }
+  // Scheduled invocations are evidence-only.  A deletion run must be explicitly
+  // requested with execute=true after an Administrator reviews the inventory.
+  const executeDeletion = String(req.query?.execute || "").toLowerCase() === "true";
+  const beforeReconciliation = executeDeletion
+    ? await processOrderAssetDeletionOutbox({ env: process.env })
+    : { status: 200, body: { skipped: true, reason: "dry_run" } };
+  if (beforeReconciliation.status !== 200) return res.status(beforeReconciliation.status).json(beforeReconciliation.body);
 
-  const reconciliation = await reconcileOrphanOrderAssets({ env: process.env });
+  const reconciliation = await reconcileOrphanOrderAssets({ env: process.env, dryRun: !executeDeletion });
   if (reconciliation.status !== 200) {
     return res.status(reconciliation.status).json(reconciliation.body);
   }
 
-  const afterReconciliation = await processOrderAssetDeletionOutbox({ env: process.env });
+  const afterReconciliation = executeDeletion
+    ? await processOrderAssetDeletionOutbox({ env: process.env })
+    : { status: 200, body: { skipped: true, reason: "dry_run" } };
   return res.status(afterReconciliation.status).json({
     cleanup: {
       before_reconciliation: beforeReconciliation.body,

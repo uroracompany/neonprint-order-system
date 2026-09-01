@@ -90,7 +90,7 @@ describe("AdminEmployeeModule", () => {
 
     await screen.findByText("Cliente Uno");
     await user.click(screen.getByRole("button", { name: /Editar empleado/i }));
-    await user.click(screen.getByRole("button", { name: /Eliminar empleado/i }));
+    await user.click(screen.getByRole("button", { name: /Dar de baja/i }));
 
     expect(onEditUser).toHaveBeenCalledWith(profile);
     expect(onDeleteUser).toHaveBeenCalledWith(profile);

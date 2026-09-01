@@ -50,7 +50,7 @@ describe("visibilidad de recordatorios de credito", () => {
     expect(migration).toContain("notified_at is null");
   });
 
-  it("admin envia visibilidad y caja crea recordatorios propios", () => {
+  it("admin conserva visibilidad histórica y Caja crea seguimiento por cliente", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
     const quote = readProjectFile("src/pages/page-quote.jsx");
 
@@ -58,7 +58,8 @@ describe("visibilidad de recordatorios de credito", () => {
     expect(dashboard).toContain("creditReminderVisibilityIncludesQuote");
     expect(dashboard).toContain("resolveQuoteAssignmentId(invoice?.order)");
     expect(dashboard).toContain("p_visibility_scope: visibilityScope");
-    expect(quote).toContain('p_visibility_scope: "creator"');
+    expect(quote).toContain('supabase.rpc("create_credit_client_reminder"');
+    expect(quote).not.toContain('p_order_ids: validSelectedOrderIds');
   });
 
   it("frontend usa rpc para visto y atendido", () => {

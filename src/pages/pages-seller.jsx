@@ -32,6 +32,7 @@ import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
 import useOrderReturnHandoffs from "../hooks/useOrderReturnHandoffs";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import NotificationCenter from "../components/NotificationCenter";
 import SharedCreateOrderModal from "../components/orders/CreateOrderModal";
 import SharedEditOrderModal from "../components/orders/EditOrderModal";
@@ -45,7 +46,9 @@ import { loadClients, searchClients } from "../utils/clients";
 import { adminApiFetch } from "../utils/adminApi";
 import { getAvatarInitials } from "../utils/avatar-initials";
 import ReturnToCashierModal from "../components/orders/ReturnToCashierModal";
-import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
+import GreetingBanner from "../components/ui/GreetingBanner";
+import MetricCard from "../components/ui/MetricCard";
+import { buildProductionCatalogs } from "../utils/production";
 
 export { default as OrderDetailModal } from "../components/orders/OrderDetailModal";
 
@@ -105,19 +108,6 @@ const isSellerVisibleNotification = (notification) => {
 
 const PHONE_PLACEHOLDER = "Seleccionar Cliente";
 
-const CARD_ACCENTS = [
-  { color: "#0f1e40", bg: "#F1F5F9", glow: "#F1F5F9" },
-  { color: "#F59E0B", bg: "#FEF3C7", glow: "#FEF3C7" },
-  { color: "#8B5CF6", bg: "#EDE9FE", glow: "#EDE9FE" },
-  { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
-  { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
-  { color: "#1E40AF", bg: "#dbeafe", glow: "#dbeafe" },
-  { color: "#991b1b", bg: "#fef2f2", glow: "#fef2f2" },
-];
-
-
-
-
 
 
 function StatusBadge({ status, type = "status", order = null }) {
@@ -127,20 +117,6 @@ function StatusBadge({ status, type = "status", order = null }) {
   return <SharedStatusBadge status={status} className="ps-badge" showDot bordered order={order} />;
 }
 
-// CARTA DE METRICA PARA DASHBOARD
-function MetricCard({ icon, label, value, sub, accentIdx = 0, trend, subColor }) {
-  const acc = CARD_ACCENTS[accentIdx];
-  return (
-    <div className="ps-card">
-      <div className="ps-card-glow" style={{ background: acc.glow }} />
-      {trend !== undefined && <span className="ps-trend-badge"><Icons.TrendUp /> +{trend}%</span>}
-      <div className="ps-card-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
-      <div className="ps-card-value">{value}</div>
-      <div className="ps-card-label">{label}</div>
-      {sub && <div className="ps-card-sub" style={{ color: subColor || acc.color }}>{sub}</div>}
-    </div>
-  );
-}
 
 //OVERLAY DE LOS MODALES, RECIBE PROPS DE CONTROL Y CONTENIDO
 function Modal({ open, onClose, title, children, wide, stickyHeader = false }) {
@@ -189,7 +165,7 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
         {isPaid || isPartial || isCredit ? (
           <>
             <p style={{ fontSize: 14, color: "#991B1B", marginBottom: 16, lineHeight: 1.5, fontWeight: 500 }}>
-              âš ï¸ No se puede cancelar esta orden
+              No se puede cancelar esta orden
             </p>
             <p style={{ fontSize: 13, color: "#7F1D1D", marginBottom: 20, lineHeight: 1.5 }}>
               {isPartial
@@ -261,9 +237,6 @@ function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
 
 // â”€â”€â”€ ARCHIVAR ORDEN VENTANA DE CONFIRMACION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-
-
-
 // â”€â”€â”€ MAIN PAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function PageSeller() {
   const navigate = useNavigate();
@@ -274,6 +247,8 @@ export default function PageSeller() {
   const [ordersTotal, setOrdersTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [sellerSummary, setSellerSummary] = useState(EMPTY_SELLER_SUMMARY);
+  const [ordersError, setOrdersError] = useState(null);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -282,6 +257,7 @@ export default function PageSeller() {
   const [filterDate, setFilterDate] = useState("all");
   const [filterClient, setFilterClient] = useState("all");
   const [filterArchive, setFilterArchive] = useState("all");
+  const [filterOverdue, setFilterOverdue] = useState("all");
   const [page, setPage] = useState(1);
   const [viewMode, setViewMode] = useState("table");
   const [showCreate, setShowCreate] = useState(false);
@@ -289,9 +265,10 @@ export default function PageSeller() {
   const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
-  const [materialOptions, setMaterialOptions] = useState([]);
+  const [productionCatalog, setProductionCatalog] = useState({ materials: {}, terminations: {} });
   const [clients, setClients] = useState([]);
   const [clientsLoading, setClientsLoading] = useState(true);
+  const catalogsStartedRef = useRef(false);
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [cancelingOrder, setCancelingOrder] = useState(null);
@@ -351,6 +328,8 @@ export default function PageSeller() {
       setOrdersTotal(0);
       setTotalPages(1);
       setSellerSummary(EMPTY_SELLER_SUMMARY);
+      setOrdersError(null);
+      setOrdersLoaded(false);
       visibleOrdersLoadingRef.current = false;
       setLoading(false);
       return;
@@ -377,10 +356,13 @@ export default function PageSeller() {
         clientId: filterClient,
         archive: isReturnedFilter ? "all" : filterArchive,
         dateFilter: filterDate,
+        overdue: filterOverdue === "overdue",
         includeDashboard,
       });
 
       if (requestId !== ordersRequestIdRef.current) return;
+      setOrdersError(null);
+      setOrdersLoaded(true);
 
       const rawOrders = Array.isArray(result?.orders) ? result.orders : [];
       const nextOrders = isReturnedFilter ? rawOrders.filter(o => isReturnedOrder(o)) : rawOrders;
@@ -395,7 +377,12 @@ export default function PageSeller() {
         return;
       }
 
-      setOrders(nextOrders);
+      applyOrdersSnapshot({
+        orders: nextOrders,
+        setOrders,
+        setSelectedOrder,
+        preserveMissingOpenOrders: silent,
+      });
       setRecentOrders(Array.isArray(result?.recent_orders) ? result.recent_orders : []);
       setOrdersTotal(filteredTotal);
       setTotalPages(resolvedTotalPages);
@@ -410,12 +397,8 @@ export default function PageSeller() {
       if (silent) {
         console.warn("No se pudo refrescar ordenes en segundo plano:", error?.message || error);
       } else {
+        setOrdersError(error?.message || "No se pudieron cargar las ordenes.");
         showToast(error?.message || "No se pudieron cargar las ordenes", "error");
-        setOrders([]);
-        setRecentOrders([]);
-        setOrdersTotal(0);
-        setTotalPages(1);
-        setSellerSummary(EMPTY_SELLER_SUMMARY);
       }
     } finally {
       if (isVisibleLoad && visibleLoadId === visibleOrdersLoadIdRef.current) {
@@ -431,6 +414,7 @@ export default function PageSeller() {
     filterDate,
     filterPayment,
     filterStatus,
+    filterOverdue,
     page,
     runSellerOrderAction,
     viewMode,
@@ -441,9 +425,6 @@ export default function PageSeller() {
     setSelectedOrder(order);
   }, []);
 
-
-
-
   // Carga inicial + listener de sesiÃ³n
   useEffect(() => {
     if (!authUser) {
@@ -453,6 +434,8 @@ export default function PageSeller() {
       setOrdersTotal(0);
       setTotalPages(1);
       setSellerSummary(EMPTY_SELLER_SUMMARY);
+      setOrdersError(null);
+      setOrdersLoaded(false);
       return;
     }
 
@@ -476,7 +459,7 @@ export default function PageSeller() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, filterDate, filterStatus, filterPayment, filterClient, filterArchive]);
+  }, [debouncedSearch, filterDate, filterStatus, filterPayment, filterClient, filterArchive, filterOverdue]);
 
   useEffect(() => {
     setPage(1);
@@ -500,15 +483,32 @@ export default function PageSeller() {
     refreshOrders: refreshSellerOrdersSilently,
   });
 
-  useEffect(() => {
-    supabase.from("materials").select("name").order("name").then(({ data }) => {
-      setMaterialOptions(data?.map(m => m.name) || []);
-    });
+  const loadSellerCatalogs = useCallback(() => {
+    if (!authUser?.id || catalogsStartedRef.current) return;
+    catalogsStartedRef.current = true;
     setClientsLoading(true);
-    loadClients(supabase)
-      .then(setClients)
-      .finally(() => setClientsLoading(false));
-  }, []);
+    Promise.all([
+      supabase.from("materials").select("name,production_area_code").not("production_area_code", "is", null).order("name"),
+      supabase.from("production_terminations").select("name,production_area_code").order("name"),
+      loadClients(supabase),
+    ]).then(([materialsResult, terminationsResult, loadedClients]) => {
+      setProductionCatalog(buildProductionCatalogs(materialsResult.data || [], terminationsResult.data || []));
+      setClients(loadedClients);
+    }).catch((error) => {
+      console.warn("No se pudieron cargar los catálogos de Ventas:", error?.message || error);
+    }).finally(() => setClientsLoading(false));
+  }, [authUser?.id]);
+
+  // Catalogs are not needed to render the order queue. Defer them until after
+  // the first paint, while opening a form still loads them immediately.
+  useEffect(() => {
+    const timer = window.setTimeout(loadSellerCatalogs, 800);
+    return () => window.clearTimeout(timer);
+  }, [loadSellerCatalogs]);
+
+  useEffect(() => {
+    if (showCreate || editingOrder) loadSellerCatalogs();
+  }, [editingOrder, loadSellerCatalogs, showCreate]);
 
   const handleClientSearch = useCallback(async (query) => {
     const results = await searchClients(supabase, query);
@@ -574,6 +574,7 @@ export default function PageSeller() {
       const result = await runSellerOrderAction("cancel", {
         order_id: cancelingOrder.id,
         reason: String(reason).trim(),
+        expected_updated_at: cancelingOrder.updated_at,
       });
 
       setCancelingOrder(null);
@@ -599,6 +600,20 @@ export default function PageSeller() {
       openOrderDetail(order);
     }
   }, [openOrderDetail, runSellerOrderAction, showToast]);
+
+  const handleEditOrder = useCallback(async (order) => {
+    if (!order?.id) return;
+
+    try {
+      const result = await runSellerOrderAction("detail", { order_id: order.id });
+      if (!result?.order) {
+        throw new Error("No se recibieron los datos completos de la orden.");
+      }
+      setEditingOrder(result.order);
+    } catch (error) {
+      showToast(error?.message || "No se pudo cargar la orden para editarla", "error");
+    }
+  }, [runSellerOrderAction, showToast]);
 
   const handleSellerOrderRowClick = useCallback((event, order) => {
     if (isInteractiveOrderRowTarget(event.target)) return;
@@ -632,6 +647,7 @@ export default function PageSeller() {
       await runSellerOrderAction("send_to_quote", {
         order_id: sendingToQuotation.id,
         quote_user_id: quoteUserId,
+        expected_updated_at: sendingToQuotation.updated_at,
       });
 
       setSendingToQuotation(null);
@@ -675,6 +691,7 @@ export default function PageSeller() {
       const result = await runSellerOrderAction("send_to_designer", {
         order_id: sendingToDesigner.id,
         designer_id: designerId,
+        expected_updated_at: sendingToDesigner.updated_at,
       });
 
       setSendingToDesigner(null);
@@ -692,7 +709,6 @@ export default function PageSeller() {
     }
   };
 
-
   // â”€â”€ Funcion para archivar orden â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleArchiveOrder = (order) => {
     if (!canArchiveOrder(order, ARCHIVE_MODULES.SELLER, user?.id)) return;
@@ -705,7 +721,10 @@ export default function PageSeller() {
 
     setArchiveLoading(true);
     try {
-      const result = await runSellerOrderAction("archive", { order_id: archivingOrder.id });
+      const result = await runSellerOrderAction("archive", {
+        order_id: archivingOrder.id,
+        expected_updated_at: archivingOrder.updated_at,
+      });
       if (result?.order) setSelectedOrder((current) => current?.id === result.order.id ? result.order : current);
       await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
       setArchivingOrder(null);
@@ -721,7 +740,8 @@ export default function PageSeller() {
   const activeOrdersCount = sellerSummary.active;
   const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
   const editedOrdersCount = orders.filter(o => o?.metadata?.event_kind === "admin_edited_order").length;
-  const activeOrders = useMemo(() => sortOrdersByDeadlinePriority(orders.filter(o => !o.is_archived)), [orders]);
+  const displayCount = (value) => (ordersLoaded ? value : "—");
+  const activeOrders = useMemo(() => orders.filter(o => !o.is_archived), [orders]);
   const archivedOrders = useMemo(() => orders.filter(o => o.is_archived), [orders]);
   const returnedOrders = useMemo(() => orders.filter(o => isReturnedOrder(o)), [orders]);
 
@@ -742,7 +762,7 @@ export default function PageSeller() {
 
   const nav = [
     { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
-    { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: sellerSummary.unarchived },
+    { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: displayCount(sellerSummary.unarchived) },
     { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
     { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: visibleSellerUnreadCount },
   ];
@@ -822,38 +842,29 @@ export default function PageSeller() {
           {/* DASHBOARD */}
           {activeTab === "dashboard" && (
             <>
-              <div className="ps-greeting">
-                <div className="ps-greeting-copy">
-                  <h2>Bienvenido, <span>{user?.displayName || "Vendedor"}</span></h2>
-                  <p>Aqui tienes el resumen de tu actividad de hoy.</p>
-                  <div className="ps-greeting-badges">
-                    <div className="ps-greeting-count" aria-label={`${activeOrdersCount} ordenes activas`}>
-                      <Icons.Orders />
-                      <strong>{activeOrdersCount.toLocaleString("es-DO")}</strong> Ordenes activas
-                    </div>
-                    <div className="ps-greeting-count ps-greeting-count--returned" aria-label={`${returnedOrdersCount} órdenes devueltas`}>
-                      <Icons.ArrowLeft />
-                      <strong>{returnedOrdersCount.toLocaleString("es-DO")}</strong> Devueltas
-                    </div>
-                    <div className="ps-greeting-count ps-greeting-count--edited" aria-label={`${editedOrdersCount} órdenes editadas por administrador`}>
-                      <Icons.Edit />
-                      <strong>{editedOrdersCount.toLocaleString("es-DO")}</strong> Editadas por Administrador
-                    </div>
-                  </div>
-                </div>
-                <div className="ps-greeting-actions" aria-label="Acciones principales de ventas">
-                  <button type="button" className="ps-greeting-btn primary" onClick={() => setShowCreate(true)}>
-                    <Icons.Plus />
-                    Crear Ordenes
-                  </button>
-    <button type="button" className="ps-greeting-btn secondary" onClick={() => setShowNewClientModal(true)}>
-      <Icons.Users />
-      Nuevo Cliente
-    </button>
-                </div>
-              </div>
+              <GreetingBanner
+                title={<>Bienvenido, <span>{user?.displayName || "Vendedor"}</span></>}
+                subtitle="Aqui tienes el resumen de tu actividad de hoy."
+                badges={[
+                  { icon: <Icons.Orders />, count: ordersLoaded ? activeOrdersCount.toLocaleString("es-DO") : "—", label: "Ordenes activas", ariaLabel: `${displayCount(activeOrdersCount)} ordenes activas` },
+                  { icon: <Icons.ArrowLeft />, count: ordersLoaded ? returnedOrdersCount.toLocaleString("es-DO") : "—", label: "Devueltas", variant: "returned", ariaLabel: `${displayCount(returnedOrdersCount)} órdenes devueltas` },
+                  { icon: <Icons.Edit />, count: ordersLoaded ? editedOrdersCount.toLocaleString("es-DO") : "—", label: "Editadas por Administrador", variant: "edited", ariaLabel: `${displayCount(editedOrdersCount)} órdenes editadas por administrador` },
+                ]}
+                actions={
+                  <>
+                    <button type="button" className="ps-greeting-btn primary" onClick={() => setShowCreate(true)}>
+                      <Icons.Plus />
+                      Crear Ordenes
+                    </button>
+                    <button type="button" className="ps-greeting-btn secondary" onClick={() => setShowNewClientModal(true)}>
+                      <Icons.Users />
+                      Nuevo Cliente
+                    </button>
+                  </>
+                }
+              />
               <div className="ps-metrics">
-                {metrics.map((m, i) => <MetricCard key={i} {...m} />)}
+                {metrics.map((m, i) => <MetricCard key={i} {...m} value={displayCount(m.value)} />)}
               </div>
               <div className="ps-panel">
                 <div className="ps-panel-stripe" />
@@ -873,6 +884,16 @@ export default function PageSeller() {
                       {loading ? (
                         <tr>
                           <td colSpan={4} className="ps-table-empty">Cargando Ordenes...</td>
+                        </tr>
+                      ) : ordersError ? (
+                        <tr>
+                          <td colSpan={4} className="ps-table-empty">
+                            <div className="acm-empty-state">
+                              <Icons.AlertCircle />
+                              <strong>No se pudieron cargar las órdenes recientes</strong>
+                              <span>{ordersError}</span>
+                            </div>
+                          </td>
                         </tr>
                       ) : recentOrders.length === 0 ? (
                         <tr>
@@ -908,7 +929,7 @@ export default function PageSeller() {
                                   <Icons.Eye />
                                 </button>
                                 {canSellerEditOrder(o) && (
-                                  <button className="table-action-btn edit" onClick={e => { e.stopPropagation(); setEditingOrder(o); }} title="Editar orden">
+                                  <button className="table-action-btn edit" onClick={e => { e.stopPropagation(); handleEditOrder(o); }} title="Editar orden">
                                     <Icons.Edit />
                                   </button>
                                 )}
@@ -981,11 +1002,16 @@ export default function PageSeller() {
                       { value: "3days", label: "Hace 3 días" }, { value: "7days", label: "Hace 7 días" }, { value: "thismonth", label: "Este mes" }, { value: "thisyear", label: "Este año" },
                     ],
                   },
+                  {
+                    id: "overdue", label: "Entrega", icon: <Icons.AlertCircle />, value: filterOverdue, onChange: setFilterOverdue,
+                    isActive: filterOverdue !== "all", placeholder: "Todas las fechas de entrega",
+                    options: [{ value: "all", label: "Todas las fechas de entrega" }, { value: "overdue", label: "Atrasadas" }],
+                  },
                 ]}
-                resultCount={ordersTotal}
+                resultCount={!ordersLoaded || ordersError ? undefined : ordersTotal}
                 resultLabel={`resultado${ordersTotal !== 1 ? "s" : ""}`}
-                activeFilters={[search, filterStatus !== "all", filterPayment !== "all", filterClient !== "all", filterDate !== "all", filterArchive !== "all"].filter(Boolean).length}
-                onReset={() => { setSearch(""); setFilterStatus("all"); setFilterPayment("all"); setFilterClient("all"); setFilterDate("all"); setFilterArchive("all"); }}
+                activeFilters={[search, filterStatus !== "all", filterPayment !== "all", filterClient !== "all", filterDate !== "all", filterArchive !== "all", filterOverdue !== "all"].filter(Boolean).length}
+                onReset={() => { setSearch(""); setFilterStatus("all"); setFilterPayment("all"); setFilterClient("all"); setFilterDate("all"); setFilterArchive("all"); setFilterOverdue("all"); setPage(1); }}
               />
 
               <div className="pp-workbench-panel">
@@ -996,17 +1022,17 @@ export default function PageSeller() {
                   </div>
                   <div className="pp-workbench-tools">
                     <div className="pp-workbench-tabs" role="tablist">
-                      <button className={filterArchive === "all" ? "active" : ""} onClick={() => { setFilterArchive("all"); setPage(1); }}>
-                        <Icons.Clipboard /> Todas <span className="pp-workbench-badge">{orders.length}</span>
+                        <button className={filterArchive === "all" ? "active" : ""} onClick={() => { setFilterArchive("all"); setPage(1); }}>
+                        <Icons.Clipboard /> Todas <span className="pp-workbench-badge">{displayCount(orders.length)}</span>
                       </button>
                       <button className={filterArchive === "active" ? "active" : ""} onClick={() => { setFilterArchive("active"); setPage(1); }}>
-                        <Icons.Package /> Activas <span className="pp-workbench-badge">{activeOrders.length}</span>
+                        <Icons.Package /> Activas <span className="pp-workbench-badge">{displayCount(activeOrders.length)}</span>
                       </button>
                       <button className={filterArchive === "archived" ? "active" : ""} onClick={() => { setFilterArchive("archived"); setPage(1); }}>
-                        <Icons.Archive /> Archivadas <span className="pp-workbench-badge">{archivedOrders.length}</span>
+                        <Icons.Archive /> Archivadas <span className="pp-workbench-badge">{displayCount(archivedOrders.length)}</span>
                       </button>
                       <button className={filterArchive === "returned" ? "active" : ""} onClick={() => { setFilterArchive("returned"); setPage(1); }}>
-                        <Icons.ArrowLeft /> Devueltas <span className="pp-workbench-badge">{returnedOrders.length}</span>
+                        <Icons.ArrowLeft /> Devueltas <span className="pp-workbench-badge">{displayCount(returnedOrders.length)}</span>
                       </button>
                     </div>
                     <div className="pp-workbench-view-toggle">
@@ -1032,13 +1058,23 @@ export default function PageSeller() {
                           <tr>
                             <td colSpan={7} className="ps-table-empty">Cargando Ordenes...</td>
                           </tr>
+                        ) : ordersError ? (
+                          <tr>
+                            <td colSpan={7} className="ps-table-empty">
+                              <div className="acm-empty-state">
+                                <Icons.AlertCircle />
+                                <strong>No se pudieron cargar las órdenes</strong>
+                                <span>{ordersError}</span>
+                              </div>
+                            </td>
+                          </tr>
                         ) : orders.length === 0 ? (
                           <tr>
                             <td colSpan={7} className="ps-table-empty">
                               <div className="acm-empty-state">
                                 <Icons.Package />
                                 <strong>No hay órdenes disponibles</strong>
-                                <span>{search || filterStatus !== "all" || filterPayment !== "all" || filterClient !== "all" || filterDate !== "all" || filterArchive !== "all"
+                                <span>{search || filterStatus !== "all" || filterPayment !== "all" || filterClient !== "all" || filterDate !== "all" || filterArchive !== "all" || filterOverdue !== "all"
                                   ? "Prueba con otros filtros o limpia la búsqueda."
                                   : "Las órdenes que crees aparecerán aquí."}</span>
                               </div>
@@ -1082,7 +1118,7 @@ export default function PageSeller() {
                                     <Icons.Eye />
                                   </button>
                                   {canSellerEditOrder(o) && (
-                                    <button className="table-action-btn edit" onClick={() => setEditingOrder(o)} title="Editar orden">
+                                    <button className="table-action-btn edit" onClick={() => handleEditOrder(o)} title="Editar orden">
                                       <Icons.Edit />
                                     </button>
                                   )}
@@ -1124,12 +1160,20 @@ export default function PageSeller() {
                   <div className="ps-cards-grid">
                     {loading ? (
                       <div className="ps-cards-empty">Cargando Ordenes...</div>
+                    ) : ordersError ? (
+                      <div className="ps-cards-empty">
+                        <div className="acm-empty-state">
+                          <Icons.AlertCircle />
+                          <strong>No se pudieron cargar las órdenes</strong>
+                          <span>{ordersError}</span>
+                        </div>
+                      </div>
                     ) : orders.length === 0 ? (
                       <div className="ps-cards-empty">
                         <div className="acm-empty-state">
                           <Icons.Package />
                           <strong>No hay órdenes disponibles</strong>
-                          <span>{search || filterStatus !== "all" || filterPayment !== "all" || filterClient !== "all" || filterDate !== "all" || filterArchive !== "all"
+                          <span>{search || filterStatus !== "all" || filterPayment !== "all" || filterClient !== "all" || filterDate !== "all" || filterArchive !== "all" || filterOverdue !== "all"
                             ? "Prueba con otros filtros o limpia la búsqueda."
                             : "Las órdenes que crees aparecerán aquí."}</span>
                         </div>
@@ -1182,7 +1226,7 @@ export default function PageSeller() {
                               <Icons.Eye />
                             </button>
                             {canSellerEditOrder(o) && (
-                              <button className="card-action-btn edit" onClick={(event) => { event.stopPropagation(); setEditingOrder(o); }} title="Editar">
+                              <button className="card-action-btn edit" onClick={(event) => { event.stopPropagation(); handleEditOrder(o); }} title="Editar">
                                 <Icons.Edit />
                               </button>
                             )}
@@ -1242,7 +1286,7 @@ export default function PageSeller() {
           await notif.refresh({ showNewToasts: true });
         }}
         userId={user?.id}
-        materialOptions={materialOptions}
+        productionCatalog={productionCatalog}
         clients={clients}
         clientsLoading={clientsLoading}
         onClientSearch={handleClientSearch}
@@ -1255,7 +1299,7 @@ export default function PageSeller() {
         onClose={() => setEditingOrder(null)}
         order={editingOrder}
         onUpdated={() => fetchOrders({ nextPage: page, includeDashboard: true })}
-        materialOptions={materialOptions}
+        productionCatalog={productionCatalog}
         clients={clients}
         clientsLoading={clientsLoading}
         onClientSearch={handleClientSearch}

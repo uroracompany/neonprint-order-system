@@ -10,7 +10,7 @@ import { serializeReferenceImages } from "../../utils/orderAssets";
 import { buildProductionFileRows } from "../../utils/production";
 import { buildStorageSafeFileName, formatFileSize, uploadOrderAsset } from "../../utils/uploadOrderAsset";
 import { canDecodeAsImage, compressImage, REF_IMAGE_CONFIG, validateReferenceImages } from "../../utils/imageValidation";
-import { formatDominicanPhone, getSelectedClientOrderFields } from "../../utils/clients";
+import { formatPhone, getSelectedClientOrderFields } from "../../utils/clients";
 import { getMinimumDeliveryDate, isDeliveryDateInPast } from "../../utils/deliveryDate";
 
 export const PHONE_PLACEHOLDER = "Seleccionar Cliente";
@@ -18,6 +18,8 @@ export const PHONE_PLACEHOLDER = "Seleccionar Cliente";
 const EMPTY_FORM = {
   design_file_areas: [],
   design_file_labels: [],
+  design_file_materials: [],
+  design_file_terminations: [],
   client_id: null,
   client_name: "",
   client_phone: "",
@@ -63,6 +65,8 @@ export function Modal({
   closeOnEscape = false,
   hideStripe = false,
   overlayClassName = "",
+  headerContent = null,
+  footer = null,
 }) {
   const titleId = useId();
   const overlayRef = useRef(null);
@@ -172,10 +176,15 @@ export function Modal({
       >
         {!hideStripe && <div className="ps-modal-stripe" aria-hidden="true" />}
         <div className={`ps-modal-header ${stickyHeader ? "is-sticky" : ""}`}>
-          <span id={titleId} className="ps-modal-title">{title}</span>
+          {headerContent ? (
+            <div className="ps-modal-header-custom" id={titleId}>{headerContent}</div>
+          ) : (
+            <span id={titleId} className="ps-modal-title">{title}</span>
+          )}
           <button ref={closeButtonRef} type="button" className="ps-modal-close" onClick={handleCloseClick} aria-label="Cerrar modal"><Icons.Close /></button>
         </div>
         <div className="ps-modal-body">{children}</div>
+        {footer && <div className="ps-modal-footer">{footer}</div>}
       </div>
     </div>
   );
@@ -200,9 +209,9 @@ export function Field({ label, required, optional, hint, error, children }) {
   );
 }
 
-export function ProductionAreaSelect({ value, onChange, className = "ps-form-input", isError }) {
+export function ProductionAreaSelect({ value, onChange, className = "ps-form-input", isError, disabled = false, ariaLabelledBy }) {
   return (
-    <select className={`${className}${isError ? " ps-input-error" : ""}`} value={value || ""} onChange={(event) => onChange(event.target.value)}>
+    <select aria-labelledby={ariaLabelledBy} className={`${className}${isError ? " ps-input-error" : ""}`} value={value || ""} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
       <option value="">Tipo de produccion</option>
       {PRODUCTION_AREAS.map((area) => (
         <option key={area.code} value={area.code}>{area.label}</option>
@@ -211,31 +220,59 @@ export function ProductionAreaSelect({ value, onChange, className = "ps-form-inp
   );
 }
 
-export function MultiMaterialSelector({ selected = [], onChange, options = [] }) {
+function useCatalogDropdown(disabled) {
   const [open, setOpen] = useState(false);
-  const [customMode, setCustomMode] = useState(false);
-  const [customValue, setCustomValue] = useState("");
   const ref = useRef(null);
-  const customInputRef = useRef(null);
 
   useEffect(() => {
     const handler = (e) => {
       if (ref.current && !ref.current.contains(e.target)) {
         setOpen(false);
-        setCustomMode(false);
-        setCustomValue("");
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
   }, []);
 
-  const toggle = (mat) => {
+  const toggle = () => {
+    if (!disabled) setOpen((current) => !current);
+  };
+
+  return { open, setOpen, ref, toggle };
+}
+
+function CatalogOption({ children, selected = false, onClick, className = "" }) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={selected}
+      className={`ps-multimat-option ${selected ? "selected" : ""} ${className}`.trim()}
+      onClick={onClick}
+    >
+      <span className="ps-multimat-check">{selected ? "✓" : ""}</span>
+      {children}
+    </button>
+  );
+}
+
+export function MultiMaterialSelector({ selected = [], onChange, options = [], disabled = false, ariaLabel = "Materiales", ariaLabelledBy }) {
+  const [customMode, setCustomMode] = useState(false);
+  const [customValue, setCustomValue] = useState("");
+  const customInputRef = useRef(null);
+  const { open, setOpen, ref, toggle: toggleDropdown } = useCatalogDropdown(disabled);
+
+  const toggleMaterial = (mat) => {
+    if (disabled) return;
     onChange(selected.includes(mat) ? selected.filter(m => m !== mat) : [...selected, mat]);
   };
-  const remove = (mat) => onChange(selected.filter(m => m !== mat));
+  const remove = (mat) => {
+    if (disabled) return;
+    onChange(selected.filter(m => m !== mat));
+  };
 
   const handleAddCustom = () => {
+    if (disabled) return;
     const val = customValue.trim();
     if (val && !selected.includes(val)) {
       onChange([...selected, val]);
@@ -262,28 +299,44 @@ export function MultiMaterialSelector({ selected = [], onChange, options = [] })
   const isCustomMaterial = (mat) => !options.includes(mat);
 
   return (
-    <div className="ps-multimat" ref={ref}>
-      <div className={`ps-multimat-box ${open ? "focused" : ""}`} onClick={() => setOpen(p => !p)}>
+    <div className={`ps-multimat${disabled ? " ps-multimat--disabled" : ""}`} ref={ref}>
+      <div
+        className={`ps-multimat-box ${open ? "focused" : ""}`}
+        role="combobox"
+        aria-label={ariaLabelledBy ? undefined : ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        tabIndex={disabled ? -1 : 0}
+        onClick={toggleDropdown}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            toggleDropdown();
+          }
+          if (event.key === "Escape") setOpen(false);
+        }}
+      >
         {selected.length === 0
           ? <span className="ps-multimat-placeholder">Seleccionar materiales...</span>
           : selected.map(m => (
             <span key={m} className={`ps-chip ${isCustomMaterial(m) ? "ps-chip--custom" : ""}`}>
               {isCustomMaterial(m) && <span className="ps-chip-custom-icon"><Icons.Plus /></span>}
               {m}
-              <button className="ps-chip-remove" onClick={e => { e.stopPropagation(); remove(m); }}><Icons.X /></button>
+              <button type="button" className="ps-chip-remove" aria-label={`Quitar ${m}`} onClick={e => { e.stopPropagation(); remove(m); }}><Icons.X /></button>
             </span>
           ))
         }
         <span className="ps-multimat-arrow"><Icons.ChevronDown /></span>
       </div>
 
-      {open && (
-        <div className="ps-multimat-dropdown">
+      {open && !disabled && (
+        <div className="ps-multimat-dropdown" role="listbox" aria-label="Materiales disponibles" aria-multiselectable="true">
           {!customMode ? (
-            <div className="ps-multimat-option ps-multimat-add" onClick={() => setCustomMode(true)}>
+            <button type="button" className="ps-multimat-option ps-multimat-add" onClick={() => setCustomMode(true)}>
               <span className="ps-multimat-add-icon"><Icons.Plus /></span>
               Agregar material personalizado
-            </div>
+            </button>
           ) : (
             <div className="ps-multimat-custom-form">
               <input
@@ -294,7 +347,7 @@ export function MultiMaterialSelector({ selected = [], onChange, options = [] })
                 onChange={e => setCustomValue(e.target.value)}
                 onKeyDown={handleCustomKeyDown}
               />
-              <button className="ps-multimat-custom-btn" onClick={handleAddCustom} disabled={!customValue.trim()}>
+              <button type="button" className="ps-multimat-custom-btn" onClick={handleAddCustom} disabled={!customValue.trim()}>
                 Agregar
               </button>
             </div>
@@ -302,34 +355,280 @@ export function MultiMaterialSelector({ selected = [], onChange, options = [] })
 
           <div className="ps-multimat-divider" />
 
-          {options.map(mat => (
-            <div key={mat} className={`ps-multimat-option ${selected.includes(mat) ? "selected" : ""}`} onClick={() => toggle(mat)}>
-              <span className="ps-multimat-check">{selected.includes(mat) ? "✓" : ""}</span>
-              {mat}
-            </div>
-          ))}
+          {options.length === 0 ? (
+            <div className="ps-multimat-option ps-multimat-empty">No hay elementos registrados</div>
+          ) : (
+            options.map(mat => (
+              <CatalogOption key={mat} selected={selected.includes(mat)} onClick={() => toggleMaterial(mat)}>{mat}</CatalogOption>
+            ))
+          )}
         </div>
       )}
     </div>
   );
 }
 
-const isValidDominicanPhone = (value) => {
-  const digits = String(value || "").replace(/\D/g, "");
-  const normalized = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+export function TerminationSelector({ value = "", onChange, options = [], disabled = false, ariaLabel = "Terminación", ariaLabelledBy, emptyMessage = "Sin terminaciones disponibles" }) {
+  const [customMode, setCustomMode] = useState(false);
+  const { open, setOpen, ref, toggle } = useCatalogDropdown(disabled);
 
-  if (normalized.length !== 10) return false;
+  const selectOption = (option) => {
+    if (disabled) return;
+    if (option === "__custom__") {
+      setCustomMode(true);
+      onChange("");
+      setOpen(false);
+      return;
+    }
+    setCustomMode(false);
+    onChange(option);
+    setOpen(false);
+  };
 
-  const areaCode = normalized.slice(0, 3);
-  return ["809", "829", "849"].includes(areaCode);
-};
+  const isCustomValue = Boolean(value) && !options.includes(value);
+  const displayValue = customMode || isCustomValue ? "Terminación personalizada..." : value || "";
+
+  return (
+    <div className={`ps-multimat ps-termination-selector${disabled ? " ps-termination-selector--disabled" : ""}`} ref={ref}>
+      <button
+        type="button"
+        className={`ps-multimat-box${open ? " focused" : ""}`}
+        aria-label={ariaLabelledBy ? undefined : ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={toggle}
+        disabled={disabled}
+      >
+        {displayValue ? (
+          <span className="ps-termination-display">{displayValue}</span>
+        ) : (
+          <span className="ps-multimat-placeholder">Seleccionar terminación</span>
+        )}
+        <span className="ps-multimat-arrow"><Icons.ChevronDown /></span>
+      </button>
+
+      {open && !disabled && (
+        <div className="ps-multimat-dropdown" role="listbox" aria-label="Terminaciones disponibles">
+          <button type="button" className="ps-multimat-option ps-multimat-add" onClick={() => selectOption("__custom__")}>
+            <span className="ps-multimat-add-icon"><Icons.Plus /></span>
+            Agregar terminación personalizada
+          </button>
+
+          <div className="ps-multimat-divider" />
+
+          {options.length === 0 ? (
+            <div className="ps-multimat-option ps-multimat-empty">{emptyMessage}</div>
+          ) : (
+            options.map((option) => (
+              <CatalogOption
+                key={option}
+                selected={value === option}
+                onClick={() => selectOption(option)}
+              >{option}</CatalogOption>
+            ))
+          )}
+        </div>
+      )}
+
+      {(customMode || isCustomValue) && !disabled && (
+        <textarea
+          className="ps-form-input ps-termination-custom-textarea"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Describe la terminación personalizada..."
+          aria-label="Terminación personalizada"
+          rows={2}
+        />
+      )}
+    </div>
+  );
+}
+
+export function ProductionFileSpecifications({
+  areaCode,
+  materialNames = [],
+  terminationName = "",
+  onAreaChange,
+  onMaterialsChange,
+  onTerminationChange,
+  onAreaSpecificationsChange,
+  catalog = {},
+  isError = false,
+  areaDisabled = false,
+  materialsDisabled = false,
+  terminationDisabled = false,
+}) {
+  const areaLabelId = useId();
+  const materialsLabelId = useId();
+  const terminationLabelId = useId();
+  const materialOptions = catalog.materials?.[areaCode] || [];
+  const terminationOptions = catalog.terminations?.[areaCode] || [];
+
+  return (
+    <div className="production-file-meta ps-production-file-fields">
+      <label className="production-file-field">
+        <span id={areaLabelId} className="production-file-field-label">Área de producción</span>
+        <ProductionAreaSelect
+          value={areaCode}
+          isError={isError && !areaCode}
+          disabled={areaDisabled}
+          ariaLabelledBy={areaLabelId}
+          onChange={(nextArea) => {
+            const nextMaterialOptions = catalog.materials?.[nextArea] || [];
+            const nextTerminationOptions = catalog.terminations?.[nextArea] || [];
+            const nextMaterials = (materialNames || []).filter((name) => (
+              !materialOptions.includes(name) || nextMaterialOptions.includes(name)
+            ));
+            const nextTermination = (
+              terminationOptions.includes(terminationName) && !nextTerminationOptions.includes(terminationName)
+                ? ""
+                : terminationName
+            );
+            if (onAreaSpecificationsChange) {
+              onAreaSpecificationsChange({ areaCode: nextArea, materialNames: nextMaterials, terminationName: nextTermination });
+              return;
+            }
+            onAreaChange(nextArea);
+            onMaterialsChange(nextMaterials);
+            onTerminationChange(nextTermination);
+          }}
+        />
+      </label>
+      <label className="production-file-field">
+        <span id={materialsLabelId} className="production-file-field-label">Materiales</span>
+        <MultiMaterialSelector selected={materialNames} onChange={onMaterialsChange} options={materialOptions} disabled={materialsDisabled} ariaLabelledBy={materialsLabelId} />
+      </label>
+      <label className="production-file-field">
+        <span id={terminationLabelId} className="production-file-field-label">Terminación</span>
+        <TerminationSelector value={terminationName} onChange={onTerminationChange} options={terminationOptions} disabled={terminationDisabled} ariaLabelledBy={terminationLabelId} />
+      </label>
+    </div>
+  );
+}
+
+export function ProductionFileDetailsModal({
+  open,
+  fileName,
+  value,
+  catalog = {},
+  onClose,
+  onSave,
+  saving = false,
+  orderId = null,
+  fileKey = "",
+}) {
+  const [draft, setDraft] = useState(value || {});
+  const [errors, setErrors] = useState({});
+  const incomingValueRef = useRef(value);
+
+  useEffect(() => {
+    incomingValueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const incomingValue = incomingValueRef.current;
+    setDraft({
+      publicLabel: incomingValue?.publicLabel || "",
+      areaCode: incomingValue?.areaCode || "",
+      materialNames: incomingValue?.materialNames || [],
+      terminationName: incomingValue?.terminationName || "",
+    });
+    setErrors({});
+  }, [open, fileKey]);
+
+  const update = (key, nextValue) => setDraft((current) => ({ ...current, [key]: nextValue }));
+  const handleSave = async () => {
+    const nextErrors = {};
+    const materialNames = (draft.materialNames || [])
+      .map((name) => String(name || "").trim())
+      .filter(Boolean);
+    if (!draft.publicLabel?.trim()) nextErrors.publicLabel = "Indica el nombre visible en seguimiento.";
+    if (!draft.areaCode) nextErrors.areaCode = "Selecciona el área de producción.";
+    if (!materialNames.length) nextErrors.materials = "Selecciona al menos un material.";
+    if (!draft.terminationName?.trim()) nextErrors.terminationName = "Selecciona o escribe una terminación.";
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    try {
+      await onSave?.({
+        publicLabel: draft.publicLabel.trim(),
+        areaCode: draft.areaCode,
+        materialNames,
+        terminationName: draft.terminationName.trim(),
+      });
+      onClose?.();
+    } catch (error) {
+      setErrors({ form: error?.message || "No se pudieron guardar los detalles del archivo." });
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Detalles: ${fileName || "archivo"}`}
+      hideStripe
+      className="ps-file-details-modal"
+      headerContent={
+        <>
+          {orderId && <span className="ps-file-details-order-code">#{String(orderId).slice(0, 8).toUpperCase()}</span>}
+          <h3 className="ps-file-details-title">Detalles de Archivo</h3>
+        </>
+      }
+    >
+      <div className="ps-file-details-content">
+        {errors.form && <p className="ps-form-error-banner" role="alert">{errors.form}</p>}
+        <Field label="Nombre visible en seguimiento" required error={errors.publicLabel}>
+          <input
+            className="ps-form-input"
+            value={draft.publicLabel || ""}
+            onChange={(event) => update("publicLabel", event.target.value)}
+            placeholder="Ej: Banner principal"
+            aria-label="Nombre visible en seguimiento"
+          />
+        </Field>
+        <ProductionFileSpecifications
+          areaCode={draft.areaCode}
+          materialNames={draft.materialNames}
+          terminationName={draft.terminationName}
+          catalog={catalog}
+          isError={Boolean(errors.areaCode || errors.materials || errors.terminationName)}
+          areaDisabled={!draft.publicLabel?.trim()}
+          materialsDisabled={!draft.publicLabel?.trim() || !draft.areaCode}
+          terminationDisabled={!draft.publicLabel?.trim() || !draft.areaCode}
+          onAreaChange={(value) => update("areaCode", value)}
+          onMaterialsChange={(value) => update("materialNames", value)}
+          onTerminationChange={(value) => update("terminationName", value)}
+          onAreaSpecificationsChange={(nextSpecifications) => setDraft((current) => ({ ...current, ...nextSpecifications }))}
+        />
+        {(errors.areaCode || errors.materials || errors.terminationName) && (
+          <p className="ps-field-error-message" role="alert">
+            {errors.areaCode || errors.materials || errors.terminationName}
+          </p>
+        )}
+        <div className="ps-form-actions ps-file-details-actions">
+          <button type="button" className="ps-btn-cancel ps-file-details-btn-cancel" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button type="button" className="ps-btn-submit ps-file-details-btn-save" onClick={handleSave} disabled={saving}>
+            {saving ? (
+              <><span className="ps-btn-spinner" /> Guardando...</>
+            ) : (
+              <><Icons.Check /> Guardar Detalles</>
+            )}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 export default function CreateOrderModal({
   open,
   onClose,
   onCreated,
   userId,
-  materialOptions,
+  productionCatalog = {},
   clients = [],
   clientsLoading = false,
   onClientSearch,
@@ -348,6 +647,7 @@ export default function CreateOrderModal({
   const [fieldErrors, setFieldErrors] = useState({});
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
+  const [detailsFileIndex, setDetailsFileIndex] = useState(null);
   // A retry after an uncertain network response must address the same command.
   const createRequestIdRef = useRef(null);
 
@@ -359,6 +659,7 @@ export default function CreateOrderModal({
     setFieldErrors({});
     setMissingLabelIndices([]);
     setMissingAreaIndices([]);
+    setDetailsFileIndex(null);
   }, [userId]);
 
   useEffect(() => {
@@ -383,7 +684,7 @@ export default function CreateOrderModal({
     }
 
     const fields = getSelectedClientOrderFields(client, "client_phone");
-    if (fields.client_phone) fields.client_phone = formatDominicanPhone(fields.client_phone);
+    if (fields.client_phone) fields.client_phone = formatPhone(fields.client_phone);
 
     setForm(previous => ({ ...previous, ...fields }));
     setFieldErrors(previous => {
@@ -415,9 +716,6 @@ export default function CreateOrderModal({
     if (!form.description.trim()) {
       errors.description = "La descripción del trabajo es requerida.";
     }
-    if (form.materials.length === 0) {
-      errors.materials = "Selecciona al menos un material.";
-    }
     if (!form.order_type) {
       errors.order_type = "Selecciona el tipo de orden.";
     }
@@ -426,9 +724,6 @@ export default function CreateOrderModal({
     }
     if (!form.invoice_number.trim()) {
       errors.invoice_number = "El número de facturación es requerido.";
-    }
-    if (form.client_phone.trim() && !isValidDominicanPhone(form.client_phone)) {
-      errors.client_phone = "El teléfono debe ser un número válido de República Dominicana (809, 829 o 849).";
     }
     if (!form.indefinido && !form.delivery_date) {
       errors.delivery_date = "Selecciona una fecha de entrega o marca 'Por definir'.";
@@ -450,9 +745,16 @@ export default function CreateOrderModal({
       setMissingAreaIndices(missingAreas);
       setMissingLabelIndices(missingLabels);
 
+      const missingSpecifications = form.design_file_areas
+        .map((_, index) => (
+          !form.design_file_materials[index]?.some((name) => String(name || "").trim()) || !form.design_file_terminations[index]?.trim() ? index : -1
+        ))
+        .filter(index => index !== -1);
+
       const messages = [];
       if (missingAreas.length > 0) messages.push("un tipo de producción");
       if (missingLabels.length > 0) messages.push("un nombre de representación");
+      if (missingSpecifications.length > 0) messages.push("materiales y terminación");
       if (messages.length > 0) {
         errors.design_files = `Cada archivo debe tener ${messages.join(" y ")}.`;
       }
@@ -516,6 +818,12 @@ export default function CreateOrderModal({
                 uploadedUrls.push({ bucket: "order-docs", url: uploadedAsset });
               } else if (uploadedAsset?.preorder) {
                 preorderAssets.push({ target: "design", index: i, descriptor: uploadedAsset });
+                const preorder = uploadedAsset.preorder;
+                fileUrls[i] = preorder?.provider === "supabase"
+                  ? `supabase://${preorder.bucket}/${preorder.objectKey}`
+                  : preorder?.bucket && preorder?.objectKey
+                    ? `r2://${preorder.bucket}/${preorder.objectKey}`
+                    : null;
               }
             }
           } catch {
@@ -526,12 +834,24 @@ export default function CreateOrderModal({
           if (form.design_preview) {
             try {
               const fileName = buildStorageSafeFileName(form.design_preview, "preview-");
-              previewUrl = await uploadOrderAsset({
+              const uploadedPreview = await uploadOrderAsset({
                 bucket: "order-previews",
                 path: `orders/${orderId}/preview/${fileName}`,
                 file: form.design_preview,
+                deferR2Binding: true,
               });
-              if (previewUrl) uploadedUrls.push({ bucket: "order-previews", url: previewUrl });
+              if (typeof uploadedPreview === "string" && uploadedPreview) {
+                previewUrl = uploadedPreview;
+                uploadedUrls.push({ bucket: "order-previews", url: previewUrl });
+              } else if (uploadedPreview?.preorder) {
+                const preorder = uploadedPreview.preorder;
+                previewUrl = preorder?.provider === "supabase"
+                  ? `supabase://${preorder.bucket}/${preorder.objectKey}`
+                  : preorder?.bucket && preorder?.objectKey
+                    ? `r2://${preorder.bucket}/${preorder.objectKey}`
+                    : null;
+                preorderAssets.push({ target: "preview", descriptor: uploadedPreview });
+              }
             } catch (err) {
               console.error("Preview upload failed:", err);
               await leaveUploadedUrlsForReconciliation();
@@ -566,6 +886,12 @@ export default function CreateOrderModal({
                   uploadedUrls.push({ bucket: "order-docs", url: uploadedAsset });
                 } else if (uploadedAsset?.preorder) {
                   preorderAssets.push({ target: "reference", index: i, descriptor: uploadedAsset });
+                  const preorder = uploadedAsset.preorder;
+                  refImageUrls[i] = preorder?.provider === "supabase"
+                    ? `supabase://${preorder.bucket}/${preorder.objectKey}`
+                    : preorder?.bucket && preorder?.objectKey
+                      ? `r2://${preorder.bucket}/${preorder.objectKey}`
+                      : null;
                 }
               }
             } catch {
@@ -582,8 +908,8 @@ export default function CreateOrderModal({
           client_contact: form.client_phone.trim() || null,
           invoice_number: form.invoice_number.trim(),
           description: form.description.trim(),
-          material: form.materials.join(", "),
-          termination_type: form.termination_type.trim() || null,
+          material: "",
+          termination_type: null,
           order_type: form.order_type,
           order_design_type: form.design_type,
           delivery_date: nextIndefinido ? null : (form.delivery_date || null),
@@ -605,10 +931,12 @@ export default function CreateOrderModal({
           files: form.design_files.filter((_, index) => Boolean(fileUrls[index])),
           areaCodes: form.design_file_areas.filter((_, index) => Boolean(fileUrls[index])),
           publicLabels: form.design_file_labels.filter((_, index) => Boolean(fileUrls[index])),
+          materialNames: form.design_file_materials.filter((_, index) => Boolean(fileUrls[index])),
+          terminationNames: form.design_file_terminations.filter((_, index) => Boolean(fileUrls[index])),
           userId,
         });
         payload.order_file_url = fileUrls.length > 0 ? JSON.stringify(fileUrls.filter(Boolean)) : null;
-        const { data: createdOrder, error: createError } = await supabase.rpc("create_seller_order_with_assets", {
+        const { data: createdOrder, error: createError } = await supabase.rpc("create_seller_order_with_file_specifications", {
           p_idempotency_key: orderId,
           p_order: payload,
           p_production_files: productionRows,
@@ -626,7 +954,7 @@ export default function CreateOrderModal({
           preorderAssets.forEach((asset) => {
             const descriptor = asset.descriptor?.preorder || asset.descriptor;
             const url = descriptor?.bucket && descriptor?.objectKey
-              ? `r2://${descriptor.bucket}/${descriptor.objectKey}`
+              ? `${descriptor?.provider === "supabase" ? "supabase" : "r2"}://${descriptor.bucket}/${descriptor.objectKey}`
               : null;
             if (asset.target === "design") fileUrls[asset.index] = url;
             if (asset.target === "reference") refImageUrls[asset.index] = url;
@@ -648,7 +976,10 @@ export default function CreateOrderModal({
     onClose();
   };
 
+  const selectedDetailsFile = detailsFileIndex === null ? null : form.design_files[detailsFileIndex];
+
   return (
+    <>
     <Modal open={open} onClose={handleClose} title="Nueva Orden" stickyHeader hideStripe>
       {error && <div className="ps-form-error">{error}</div>}
 
@@ -705,19 +1036,6 @@ export default function CreateOrderModal({
         </div>
 
         <div className="col-full">
-          <Field label="Materiales" required hint="Puedes seleccionar más de un material" error={fieldErrors.materials}>
-            <MultiMaterialSelector selected={form.materials} onChange={value => set("materials", value)} options={materialOptions} />
-          </Field>
-        </div>
-
-        <div className="col-full">
-          <Field label="Tipo de terminación" optional hint="Describe el tipo de terminación del trabajo">
-            <input className="ps-form-input" placeholder="Ej: Brillante, Mate, Con marco..."
-              value={form.termination_type} onChange={event => set("termination_type", event.target.value)} />
-          </Field>
-        </div>
-
-        <div className="col-full">
           <Field label="Tipo de orden" required error={fieldErrors.order_type}>
             <div className="ps-order-type-group">
               {[
@@ -738,11 +1056,11 @@ export default function CreateOrderModal({
         </div>
 
         <div className="col-full">
-          <Field label="Tipo de diseno" required error={fieldErrors.design_type}>
+          <Field label="Tipo de diseño" required error={fieldErrors.design_type}>
             <div className="ps-order-type-group">
               {[
-                { val: "INTERNAL_DESING", label: "Diseño Interno", desc: "El diseno lo realiza NeonPrint" },
-                { val: "EXTERNAL_DESING", label: "Diseño Externo", desc: "El cliente entrega su diseno" },
+                { val: "INTERNAL_DESING", label: "Diseño Interno", desc: "El diseño lo realiza NeonPrint" },
+                { val: "EXTERNAL_DESING", label: "Diseño Externo", desc: "El cliente entrega su diseño" },
               ].map(opt => (
                 <label key={opt.val} className={`ps-order-type-card ${form.design_type === opt.val ? "selected" : ""}`}>
                   <input type="radio" name="design_type" value={opt.val}
@@ -771,6 +1089,8 @@ export default function CreateOrderModal({
                     set("design_files", [...form.design_files, ...files]);
                     set("design_file_areas", [...form.design_file_areas, ...files.map(() => "")]);
                     set("design_file_labels", [...form.design_file_labels, ...files.map(() => "")]);
+                    set("design_file_materials", [...form.design_file_materials, ...files.map(() => [])]);
+                    set("design_file_terminations", [...form.design_file_terminations, ...files.map(() => "")]);
                     setFieldErrors(previous => ({ ...previous, design_files: "" }));
                   }}
                 />
@@ -781,41 +1101,23 @@ export default function CreateOrderModal({
                         <FileCard
                           name={file.name}
                           secondaryText={formatFileSize(file.size)}
+                          detailText={form.design_file_labels[index] ? `Seguimiento: ${form.design_file_labels[index]}` : "Seguimiento pendiente"}
+                          actions={[{
+                            title: `Ver detalles de ${file.name}`,
+                            label: "Detalles",
+                            icon: <Icons.Edit />,
+                            onClick: () => setDetailsFileIndex(index),
+                          }]}
+                          removeIcon={<Icons.Trash />}
+                          removeTitle={`Eliminar ${file.name}`}
                           onRemove={() => {
                             set("design_files", form.design_files.filter((_, currentIndex) => currentIndex !== index));
                             set("design_file_areas", form.design_file_areas.filter((_, currentIndex) => currentIndex !== index));
                             set("design_file_labels", form.design_file_labels.filter((_, currentIndex) => currentIndex !== index));
+                            set("design_file_materials", form.design_file_materials.filter((_, currentIndex) => currentIndex !== index));
+                            set("design_file_terminations", form.design_file_terminations.filter((_, currentIndex) => currentIndex !== index));
                           }}
-                        >
-                          <div className="production-file-meta ps-production-file-fields">
-                            <label className="production-file-field">
-                              <span className="production-file-field-label">Nombre visible en seguimiento</span>
-                              <input
-                                className={`ps-form-input${missingLabelIndices.includes(index) ? " ps-input-error" : ""}`}
-                                value={form.design_file_labels[index] || ""}
-                                onChange={(event) => {
-                                  set("design_file_labels", form.design_file_labels.map((label, currentIndex) => currentIndex === index ? event.target.value : label));
-                                  setMissingLabelIndices([]);
-                                  setFieldErrors(previous => ({ ...previous, design_files: "" }));
-                                }}
-                                placeholder="Ej: Banner principal"
-                                aria-label={`Nombre visible en seguimiento de ${file.name}`}
-                              />
-                            </label>
-                            <label className="production-file-field">
-                              <span className="production-file-field-label">Área de producción</span>
-                              <ProductionAreaSelect
-                                value={form.design_file_areas[index]}
-                                isError={missingAreaIndices.includes(index)}
-                                onChange={(value) => {
-                                  set("design_file_areas", form.design_file_areas.map((area, currentIndex) => currentIndex === index ? value : area));
-                                  setMissingAreaIndices([]);
-                                  setFieldErrors(previous => ({ ...previous, design_files: "" }));
-                                }}
-                              />
-                            </label>
-                          </div>
-                        </FileCard>
+                        />
                       </div>
                     ))}
                   </div>
@@ -956,9 +1258,34 @@ export default function CreateOrderModal({
       <div className="ps-form-actions">
         <button className="ps-btn-cancel" onClick={handleClose}>Cancelar</button>
         <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Guardando..." : "Crear Orden →"}
+          {loading ? (<><span className="ps-btn-spinner" /> Guardando...</>) : "Crear Orden →"}
         </button>
       </div>
     </Modal>
+    <ProductionFileDetailsModal
+      open={Boolean(selectedDetailsFile)}
+      fileName={selectedDetailsFile?.name}
+      fileKey={selectedDetailsFile ? `new-${detailsFileIndex}-${selectedDetailsFile.name}` : ""}
+      value={selectedDetailsFile ? {
+        publicLabel: form.design_file_labels[detailsFileIndex] || "",
+        areaCode: form.design_file_areas[detailsFileIndex] || "",
+        materialNames: form.design_file_materials[detailsFileIndex] || [],
+        terminationName: form.design_file_terminations[detailsFileIndex] || "",
+      } : null}
+      catalog={productionCatalog}
+      onClose={() => setDetailsFileIndex(null)}
+      onSave={async (details) => {
+        const index = detailsFileIndex;
+        if (index === null) return;
+        set("design_file_labels", form.design_file_labels.map((label, currentIndex) => currentIndex === index ? details.publicLabel : label));
+        set("design_file_areas", form.design_file_areas.map((area, currentIndex) => currentIndex === index ? details.areaCode : area));
+        set("design_file_materials", form.design_file_materials.map((materials, currentIndex) => currentIndex === index ? details.materialNames : materials));
+        set("design_file_terminations", form.design_file_terminations.map((termination, currentIndex) => currentIndex === index ? details.terminationName : termination));
+        setMissingLabelIndices([]);
+        setMissingAreaIndices([]);
+        setFieldErrors(previous => ({ ...previous, design_files: "" }));
+      }}
+    />
+    </>
   );
 }

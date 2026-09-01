@@ -26,6 +26,9 @@ const MAX_NOTIFICATION_ROWS = 300;
 const getNotificationEventKind = (notification) =>
   notification?.metadata?.event_kind || "";
 
+const shouldShowToast = (notification) =>
+  !notification?.metadata?.priority || notification.metadata.priority === "important";
+
 const sameNotificationFingerprint = (notification, target) =>
   notification?.user_id === target?.user_id &&
   notification?.type === target?.type &&
@@ -209,7 +212,7 @@ export default function useNotifications(userId) {
       notificationsRef.current = visibleNotifications;
       setNotifications(visibleNotifications);
 
-      [...newNotifications].reverse().forEach((notification) => enqueueToast(notification));
+      [...newNotifications].reverse().filter(shouldShowToast).forEach((notification) => enqueueToast(notification));
     }
     setLoading(false);
   }, [clearToastTimeouts, enqueueToast, userId]);
@@ -290,7 +293,7 @@ export default function useNotifications(userId) {
             return [newNotif, ...prev].slice(0, MAX_NOTIFICATION_ROWS);
           });
 
-          enqueueToast(newNotif, { playSound: true });
+          if (shouldShowToast(newNotif)) enqueueToast(newNotif, { playSound: true });
         }
       )
       .on(

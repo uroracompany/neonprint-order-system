@@ -8,6 +8,7 @@ vi.mock("@supabase/supabase-js", () => ({
 
 const env = {
   SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_ANON_KEY: "anon-key",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
   authHeader: "Bearer seller-token",
 };
@@ -29,6 +30,8 @@ const applyFilters = (rows, filters) => rows.filter((row) => filters.every((filt
   if (filter.type === "eq") return row[filter.field] === filter.value;
   if (filter.type === "is" && filter.value === null) return row[filter.field] === null || row[filter.field] === undefined;
   if (filter.type === "is") return row[filter.field] === filter.value;
+  if (filter.type === "not" && filter.operator === "is" && filter.value === null) return row[filter.field] !== null && row[filter.field] !== undefined;
+  if (filter.type === "neq") return row[filter.field] !== filter.value;
   if (filter.type === "gte") return new Date(row[filter.field]) >= new Date(filter.value);
   if (filter.type === "lt") return new Date(row[filter.field]) < new Date(filter.value);
   if (filter.type === "or") return applyOrFilter(row, filter.expression);
@@ -61,6 +64,14 @@ function makeSelectBuilder(rows) {
     },
     is(field, value) {
       state.filters.push({ type: "is", field, value });
+      return builder;
+    },
+    not(field, operator, value) {
+      state.filters.push({ type: "not", field, operator, value });
+      return builder;
+    },
+    neq(field, value) {
+      state.filters.push({ type: "neq", field, value });
       return builder;
     },
     gte(field, value) {
@@ -142,7 +153,21 @@ const makeSellerOrderClient = ({
     update: vi.fn((updates) => makeUpdateBuilder(table === "profiles" ? profileRows : orders, updates)),
   }));
 
-  return { auth: { getUser }, from, getUser, orders };
+  const rpc = vi.fn(async (name, args = {}) => {
+    const order = orders.find((item) => item.id === args.p_order_id);
+    if (!order) return { data: null, error: { message: "No rows found" } };
+    if (args.p_expected_updated_at && order.updated_at && args.p_expected_updated_at !== order.updated_at) {
+      return { data: null, error: { message: "ORDER_STALE" } };
+    }
+    if (name === "seller_update_order") Object.assign(order, args.p_changes, { updated_at: order.updated_at || "updated" });
+    if (name === "seller_cancel_order") Object.assign(order, { status: "cancelled", cancellation_reason: args.p_reason });
+    if (name === "seller_send_order_to_designer") Object.assign(order, { status: "in_Design", designer_id: args.p_designer_id, return_reason: null, returned_to_designer_at: null });
+    if (name === "seller_send_order_to_quote") Object.assign(order, { status: "in_Quote", quote_id: args.p_quote_id, return_reason: null, returned_to_designer_at: null });
+    if (name === "seller_set_order_archive") Object.assign(order, { is_archived: args.p_archived });
+    return { data: { ...order }, error: null };
+  });
+
+  return { auth: { getUser }, from, rpc, getUser, orders };
 };
 
 describe("handleSellerOrderAction", () => {
@@ -233,6 +258,40 @@ describe("handleSellerOrderAction", () => {
     expect(result.status).toBe(200);
     expect(result.body.orders.map((order) => order.id)).toEqual(["o2"]);
     expect(result.body.total).toBe(1);
+  });
+
+  it("filters overdue seller orders before exact count, chronology, and pagination", async () => {
+    currentClient = makeSellerOrderClient({
+      orders: [
+        { id: "recent-overdue", seller_id: "seller-1", status: "in_Production", payment_status: "pendiente", delivery_date: "2026-07-27", created_at: "2026-07-28T11:00:00.000Z", is_archived: false },
+        { id: "older-overdue", seller_id: "seller-1", status: "pending", payment_status: "pendiente", delivery_date: "2026-07-20", created_at: "2026-07-28T09:00:00.000Z", is_archived: false },
+        { id: "due-today", seller_id: "seller-1", status: "pending", payment_status: "pendiente", delivery_date: "2026-07-28", created_at: "2026-07-28T12:00:00.000Z", is_archived: false },
+        { id: "delivered", seller_id: "seller-1", status: "in_Delivered", payment_status: "pagado", delivery_date: "2026-07-20", created_at: "2026-07-28T13:00:00.000Z", is_archived: false },
+        { id: "cancelled", seller_id: "seller-1", status: "cancelled", payment_status: "pendiente", delivery_date: "2026-07-20", created_at: "2026-07-28T14:00:00.000Z", is_archived: false },
+        { id: "no-date", seller_id: "seller-1", status: "pending", payment_status: "pendiente", delivery_date: null, created_at: "2026-07-28T15:00:00.000Z", is_archived: false },
+      ],
+    });
+
+    const firstPage = await handleSellerOrderAction({
+      action: "list",
+      overdue: true,
+      page: 1,
+      pageSize: 1,
+      includeDashboard: false,
+    }, { ...env, now: "2026-07-28T16:00:00.000Z" });
+    const secondPage = await handleSellerOrderAction({
+      action: "list",
+      overdue: true,
+      page: 2,
+      pageSize: 1,
+      includeDashboard: false,
+    }, { ...env, now: "2026-07-28T16:00:00.000Z" });
+
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.orders.map((order) => order.id)).toEqual(["recent-overdue"]);
+    expect(firstPage.body.total).toBe(2);
+    expect(firstPage.body.totalPages).toBe(2);
+    expect(secondPage.body.orders.map((order) => order.id)).toEqual(["older-overdue"]);
   });
 
   it("rejects access to orders owned by another seller", async () => {
@@ -342,6 +401,24 @@ describe("handleSellerOrderAction", () => {
     expect(foreign.status).toBe(403);
   });
 
+  it("returns 409 when the command detects a write-time stale version", async () => {
+    currentClient = makeSellerOrderClient({
+      orders: [{ id: "o1", seller_id: "seller-1", status: "pending", updated_at: "2026-07-28T10:00:00.000Z", is_archived: false }],
+    });
+    currentClient.rpc.mockImplementationOnce(async () => ({ data: null, error: { message: "ORDER_STALE" } }));
+
+    const result = await handleSellerOrderAction({
+      action: "update",
+      order_id: "o1",
+      expected_updated_at: "2026-07-28T10:00:00.000Z",
+      changes: { description: "No debe sobrescribir" },
+    }, env);
+
+    expect(result.status).toBe(409);
+    expect(currentClient.orders[0].description).toBeUndefined();
+    expect(currentClient.from).not.toHaveBeenCalledWith("order_production_files");
+  });
+
   it("cancels an owned unpaid order and rejects paid or partial orders", async () => {
     currentClient = makeSellerOrderClient({
       orders: [
@@ -373,16 +450,212 @@ describe("handleSellerOrderAction", () => {
     });
 
     const designer = await handleSellerOrderAction({ action: "send_to_designer", order_id: "o1", designer_id: "designer-1" }, env);
-    const quote = await handleSellerOrderAction({ action: "send_to_quote", order_id: "o1", quote_user_id: "quote-1" }, env);
     const inactive = await handleSellerOrderAction({ action: "send_to_designer", order_id: "o1", designer_id: "inactive-designer" }, env);
 
     expect(designer.status).toBe(200);
     expect(designer.body.order.status).toBe("in_Design");
     expect(designer.body.order.designer_id).toBe("designer-1");
-    expect(quote.status).toBe(200);
-    expect(quote.body.order.status).toBe("in_Quote");
-    expect(quote.body.order.quote_id).toBe("quote-1");
     expect(inactive.status).toBe(400);
+  });
+
+  it("routes EXTERNAL_DESING order from Pending to in_Quote via send_to_quote", async () => {
+    currentClient = makeSellerOrderClient({
+      profiles: [
+        { id: "quote-1", role: "quote", employment_status: true },
+      ],
+      orders: [{
+        id: "o1",
+        seller_id: "seller-1",
+        status: "pending",
+        payment_status: "pendiente",
+        order_design_type: "EXTERNAL_DESING",
+        updated_at: "2026-07-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const result = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "o1",
+      quote_user_id: "quote-1",
+      expected_updated_at: "2026-07-28T10:00:00.000Z",
+    }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.order.status).toBe("in_Quote");
+    expect(result.body.order.quote_id).toBe("quote-1");
+    expect(result.body.order.return_reason).toBeNull();
+    expect(result.body.order.returned_to_designer_at).toBeNull();
+  });
+
+  it("rejects send_to_quote for INTERNAL_DESING orders", async () => {
+    currentClient = makeSellerOrderClient({
+      profiles: [
+        { id: "quote-1", role: "quote", employment_status: true },
+      ],
+      orders: [{
+        id: "o1",
+        seller_id: "seller-1",
+        status: "pending",
+        payment_status: "pendiente",
+        order_design_type: "INTERNAL_DESING",
+        updated_at: "2026-07-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const result = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "o1",
+      quote_user_id: "quote-1",
+      expected_updated_at: "2026-07-28T10:00:00.000Z",
+    }, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toContain("Solo órdenes de Diseño Externo");
+  });
+
+  it("rejects send_to_quote when order is not in Pending status", async () => {
+    currentClient = makeSellerOrderClient({
+      profiles: [
+        { id: "quote-1", role: "quote", employment_status: true },
+      ],
+      orders: [{
+        id: "o1",
+        seller_id: "seller-1",
+        status: "in_Design",
+        payment_status: "pendiente",
+        order_design_type: "EXTERNAL_DESING",
+        updated_at: "2026-07-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const result = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "o1",
+      quote_user_id: "quote-1",
+      expected_updated_at: "2026-07-28T10:00:00.000Z",
+    }, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toContain("debe estar en Ventas");
+  });
+
+  it("rejects send_to_quote with stale expected_updated_at (optimistic locking)", async () => {
+    currentClient = makeSellerOrderClient({
+      profiles: [
+        { id: "quote-1", role: "quote", employment_status: true },
+      ],
+      orders: [{
+        id: "o1",
+        seller_id: "seller-1",
+        status: "pending",
+        payment_status: "pendiente",
+        order_design_type: "EXTERNAL_DESING",
+        updated_at: "2026-07-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const result = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "o1",
+      quote_user_id: "quote-1",
+      expected_updated_at: "2026-07-28T09:00:00.000Z",
+    }, env);
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toContain("cambio mientras");
+  });
+
+  it("rejects send_to_quote when quote user is inactive or wrong role", async () => {
+    currentClient = makeSellerOrderClient({
+      profiles: [
+        { id: "quote-1", role: "quote", employment_status: false },
+        { id: "designer-1", role: "designer", employment_status: true },
+      ],
+      orders: [{
+        id: "o1",
+        seller_id: "seller-1",
+        status: "pending",
+        payment_status: "pendiente",
+        order_design_type: "EXTERNAL_DESING",
+        updated_at: "2026-07-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const inactive = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "o1",
+      quote_user_id: "quote-1",
+      expected_updated_at: "2026-07-28T10:00:00.000Z",
+    }, env);
+    expect(inactive.status).toBe(400);
+
+    const wrongRole = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "o1",
+      quote_user_id: "designer-1",
+      expected_updated_at: "2026-07-28T10:00:00.000Z",
+    }, env);
+    expect(wrongRole.status).toBe(400);
+  });
+
+  it("rejects send_to_quote when order is archived", async () => {
+    currentClient = makeSellerOrderClient({
+      profiles: [
+        { id: "quote-1", role: "quote", employment_status: true },
+      ],
+      orders: [{
+        id: "o1",
+        seller_id: "seller-1",
+        status: "pending",
+        payment_status: "pendiente",
+        order_design_type: "EXTERNAL_DESING",
+        updated_at: "2026-07-28T10:00:00.000Z",
+        is_archived: true,
+      }],
+    });
+
+    const result = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "o1",
+      quote_user_id: "quote-1",
+      expected_updated_at: "2026-07-28T10:00:00.000Z",
+    }, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toContain("no puede enviarse a Caja en este estado");
+  });
+
+  it("accepts quoteUserId camelCase alias for quote_user_id", async () => {
+    currentClient = makeSellerOrderClient({
+      profiles: [
+        { id: "quote-1", role: "quote", employment_status: true },
+      ],
+      orders: [{
+        id: "o1",
+        seller_id: "seller-1",
+        status: "pending",
+        payment_status: "pendiente",
+        order_design_type: "EXTERNAL_DESING",
+        updated_at: "2026-07-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const result = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "o1",
+      quoteUserId: "quote-1",
+      expected_updated_at: "2026-07-28T10:00:00.000Z",
+    }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.order.status).toBe("in_Quote");
+    expect(result.body.order.quote_id).toBe("quote-1");
   });
 
   it("archives only seller-archivable owned orders", async () => {

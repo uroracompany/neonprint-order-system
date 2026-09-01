@@ -3,6 +3,8 @@ import { Icons } from "../../utils/icons";
 import { formatDate, formatUiTerms } from "../../utils/constants";
 import { filterActiveNotifications, filterArchivedNotifications } from "../../utils/notifications";
 import "./DesignerNotificationsModule.css";
+import GreetingBanner from "../ui/GreetingBanner";
+import MetricCard from "../ui/MetricCard";
 
 const TYPE_LABELS = {
   new_order: "Nueva orden",
@@ -444,33 +446,27 @@ export default function DesignerNotificationsModule({
 
   return (
     <section className="dnm-shell" aria-labelledby="designer-notifications-title">
-      <div className="dnm-hero">
-        <div className="dnm-hero-identity">
-          <span className="dnm-hero-icon"><Icons.Bell /></span>
-          <div className="dnm-hero-copy">
-            <div className="dnm-hero-title-line">
-              <h2 id="designer-notifications-title">Notificaciones</h2>
-            </div>
-            <div className="dnm-hero-meta">
-              <span><ModuleIcon /> Módulo de {moduleLabel.toLowerCase()}</span>
-              <span><Icons.Archive /> Historial archivado</span>
-            </div>
-            <div className="dnm-hero-status-line">
-              <span className="dnm-status-pill"><span /> Bandeja activa</span>
-              <small>{unreadCount.toLocaleString("es-DO")} sin leer · {archivedItems.length.toLocaleString("es-DO")} archivadas</small>
-            </div>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="dnm-mark-all"
-          onClick={markAllAsRead}
-          disabled={unreadCount === 0 || activeItems.length === 0}
-        >
-          <Icons.Check />
-          Marcar leídas
-        </button>
-      </div>
+      <GreetingBanner
+        icon={<Icons.Bell />}
+        title="Notificaciones"
+        subtitle="Consulta tu bandeja de trabajo y mantén acceso al historial completo de notificaciones."
+        badges={[
+          { icon: <Icons.Bell />, label: "Bandeja activa", variant: "active", ariaLabel: "Bandeja activa" },
+          { icon: <Icons.AlertCircle />, count: unreadCount.toLocaleString("es-DO"), label: "sin leer", variant: "edited", ariaLabel: `${unreadCount.toLocaleString("es-DO")} sin leer` },
+          { icon: <Icons.Archive />, count: archivedItems.length.toLocaleString("es-DO"), label: "archivadas", ariaLabel: `${archivedItems.length.toLocaleString("es-DO")} archivadas` },
+        ]}
+        actions={
+          <button
+            type="button"
+            className="ps-greeting-btn primary"
+            onClick={markAllAsRead}
+            disabled={unreadCount === 0 || activeItems.length === 0}
+          >
+            <Icons.Check />
+            Marcar leídas
+          </button>
+        }
+      />
 
       {actionError && <p className="dnm-action-error" role="alert">{actionError}</p>}
 
@@ -496,31 +492,28 @@ export default function DesignerNotificationsModule({
         </button>
       </section>
 
-      <div className="dnm-summary-grid">
-        <div className="dnm-summary-card">
-          <span className="dnm-summary-icon info"><Icons.Bell /></span>
-          <div>
-            <span className="dnm-badge dnm-badge-status active">Activas</span>
-            <strong>{activeItems.length.toLocaleString("es-DO")}</strong>
-            <small>En bandeja de {moduleLabel.toLowerCase()}</small>
-          </div>
-        </div>
-        <div className="dnm-summary-card unread">
-          <span className="dnm-summary-icon warning"><Icons.AlertCircle /></span>
-          <div>
-            <span className="dnm-badge dnm-badge-status pending">Sin leer</span>
-            <strong>{unreadCount.toLocaleString("es-DO")}</strong>
-            <small>Requieren revisión</small>
-          </div>
-        </div>
-        <div className="dnm-summary-card archived">
-          <span className="dnm-summary-icon muted"><Icons.Archive /></span>
-          <div>
-            <span className="dnm-badge dnm-badge-status archived">Archivadas</span>
-            <strong>{archivedItems.length.toLocaleString("es-DO")}</strong>
-            <small>Solo consulta</small>
-          </div>
-        </div>
+      <div className="ps-metrics">
+        <MetricCard
+          icon={<Icons.Bell />}
+          label="Activas"
+          value={activeItems.length.toLocaleString("es-DO")}
+          sub={`En bandeja de ${moduleLabel.toLowerCase()}`}
+          accentIdx={5}
+        />
+        <MetricCard
+          icon={<Icons.AlertCircle />}
+          label="Sin leer"
+          value={unreadCount.toLocaleString("es-DO")}
+          sub="Requieren revisión"
+          accentIdx={1}
+        />
+        <MetricCard
+          icon={<Icons.Archive />}
+          label="Archivadas"
+          value={archivedItems.length.toLocaleString("es-DO")}
+          sub="Solo consulta"
+          accentIdx={0}
+        />
       </div>
 
       <div className="dnm-filter-bar" aria-label="Filtros de notificaciones">

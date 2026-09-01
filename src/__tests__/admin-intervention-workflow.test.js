@@ -107,12 +107,15 @@ describe("advanced admin order interventions", () => {
     expect(settings).toContain('rpc("admin_get_order_command_catalog"');
     expect(dashboard).toContain("executeAdminOrderCommand");
     expect(settings).toContain("Acciones disponibles");
-    expect(settings).toContain("Registrar o actualizar el pago de la orden");
-    expect(actionModal).toContain("Usuario de Caja (opcional)");
+    expect(settings).toContain('item.key === "register_payment"');
+    expect(settings).toContain("PaymentFormModal");
+    expect(actionModal).toContain("getAdminTargetSelector");
+    expect(actionModal).toContain("selectorConfig.label");
+    expect(actionModal).toContain("Sin asignar — Administración");
     expect(dashboard).toContain("fetchAdvancedOrderForProduction");
     expect(dashboard).toContain('.select("*, order_production_files(*)")');
     expect(dashboard).toContain("openOrderSetters: [setSettingsOrder, setPaymentModalOrder]");
-    expect(hook).toContain('["admin_edited_order", "admin_intervention"]');
+    expect(hook).toContain('["admin_edited_order", "admin_intervention", "admin_intervention_notice"]');
     expect(alert).not.toContain("Revisar luego");
     expect(app).toContain("<AdminInterventionAlert />");
   });

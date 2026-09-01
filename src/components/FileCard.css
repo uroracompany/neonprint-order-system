@@ -8,6 +8,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   transition: border-color 0.15s ease;
+  min-width: 0;
 }
 
 .fc-file-main {
@@ -52,6 +53,28 @@
   white-space: nowrap;
 }
 
+.fc-file-meta {
+  display: block;
+  margin-top: 3px;
+  color: #1E40AF; /* sales blue */
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.designer-order-modal .fc-file-meta,
+.pd-modal .fc-file-meta {
+  color: #1E40AF;
+  font-weight: 600;
+}
+
+.pp-modal .fc-file-meta {
+  color: #1E40AF;
+  font-weight: 600;
+}
+
 .fc-file-secondary {
   display: block;
   margin-top: 3px;
@@ -60,6 +83,7 @@
   font-weight: 500;
 }
 
+.designer-order-modal .fc-file-secondary,
 .pd-modal .fc-file-secondary {
   color: #1E40AF;
   font-weight: 600;
@@ -160,6 +184,7 @@
   text-transform: uppercase;
 }
 
+.designer-order-modal .production-file-field-label,
 .pd-modal .production-file-field-label {
   color: #1E40AF;
 }

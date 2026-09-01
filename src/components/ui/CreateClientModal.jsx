@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Icons } from "../../utils/icons";
+import { Modal, Field } from "../orders/CreateOrderModal";
 import {
-  formatDominicanPhone,
+  formatPhone,
   normalizeClientPhone,
   normalizeClientText,
   searchClients,
@@ -25,7 +26,7 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
       ...Object.fromEntries(
         Object.entries(initialValues || {}).map(([key, value]) => [
           key,
-          key === "phone" ? formatDominicanPhone(value || "") : value || "",
+          key === "phone" ? formatPhone(value || "") : value || "",
         ])
       ),
     });
@@ -139,90 +140,85 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
   };
 
   return (
-    <div className="crm-overlay" onClick={e => e.target === e.currentTarget && handleClose()}>
-      <div className="crm-modal" onClick={e => e.stopPropagation()}>
-        <div className="crm-stripe" />
-        <div className="crm-header">
-          <span className="crm-title">Agregar cliente</span>
-          <button className="crm-close" onClick={handleClose}><Icons.Close /></button>
-        </div>
-        <div className="crm-body">
-          <div className="crm-subtitle">
-            Cliente registrado
-            <strong>Nombre y teléfono son obligatorios</strong>
-          </div>
-
-          {error && <p className="crm-form-error">{error}</p>}
-
-          <label className="crm-field">
-            <span className="crm-field-label">Nombre <strong className="crm-required">*</strong></span>
-            <input
-              className={`crm-input ${fieldErrors.name ? "has-error" : ""}`}
-              value={form.name}
-              onChange={e => set("name", e.target.value)}
-              placeholder="Nombre del cliente"
-              autoComplete="name"
-              autoFocus
-            />
-            {fieldErrors.name && <p className="crm-field-error">{fieldErrors.name}</p>}
-            {!fieldErrors.name && matchingNameClient && (
-              <p className="crm-field-warning">
-                Ya existe un cliente con este nombre: {matchingNameClient.name} - {formatDominicanPhone(matchingNameClient.phone) || "sin telefono"}. Puedes continuar si es otra persona.
-              </p>
-            )}
-          </label>
-          <label className="crm-field">
-            <span className="crm-field-label">Teléfono <strong className="crm-required">*</strong></span>
-            <input
-              type="tel"
-              className={`crm-input ${fieldErrors.phone ? "has-error" : ""}`}
-              value={form.phone}
-              onChange={e => set("phone", formatDominicanPhone(e.target.value))}
-              placeholder="809-555-1234"
-              maxLength="12"
-              autoComplete="tel"
-            />
-            {fieldErrors.phone && <p className="crm-field-error">{fieldErrors.phone}</p>}
-          </label>
-          <label className="crm-field">
-            <span className="crm-field-label">Correo <span className="crm-optional">Opcional</span></span>
-            <input
-              type="email"
-              className="crm-input"
-              value={form.email}
-              onChange={e => set("email", e.target.value)}
-              placeholder="cliente@empresa.com"
-              autoComplete="email"
-            />
-          </label>
-          <label className="crm-field">
-            <span className="crm-field-label">Dirección <span className="crm-optional">Opcional</span></span>
-            <input
-              className="crm-input"
-              value={form.address}
-              onChange={e => set("address", e.target.value)}
-              placeholder="Dirección opcional"
-              autoComplete="street-address"
-            />
-          </label>
-          <label className="crm-field">
-            <span className="crm-field-label">Notas <span className="crm-optional">Opcional</span></span>
-            <textarea
-              className="crm-input crm-textarea"
-              rows={3}
-              value={form.notes}
-              onChange={e => set("notes", e.target.value)}
-              placeholder="Notas internas opcionales"
-            />
-          </label>
-        </div>
-        <div className="crm-footer">
-          <button className="crm-btn crm-btn-secondary" onClick={handleClose}>Cancelar</button>
-          <button className="crm-btn crm-btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? "Guardando..." : "Agregar cliente"}
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Agregar cliente"
+      hideStripe
+      className="ps-file-details-modal"
+      headerContent={
+        <h3 className="ps-file-details-title">Agregar cliente</h3>
+      }
+      footer={
+        <div className="pq-dialog-actions">
+          <button type="button" className="pq-btn pq-btn-secondary" onClick={handleClose} disabled={saving}>Cancelar</button>
+          <button type="button" className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={saving}>
+            {saving ? "Guardando..." : <><Icons.Plus /> Agregar cliente</>}
           </button>
         </div>
+      }
+    >
+      <div className="ps-file-details-content">
+        {error && <p className="ps-form-error-banner" role="alert">{error}</p>}
+
+        <Field label="Nombre" required error={fieldErrors.name}>
+          <input
+            className="ps-form-input"
+            value={form.name}
+            onChange={e => set("name", e.target.value)}
+            placeholder="Nombre del cliente"
+            autoComplete="name"
+            autoFocus
+          />
+          {!fieldErrors.name && matchingNameClient && (
+            <p className="crm-field-warning">
+              Ya existe un cliente con este nombre: {matchingNameClient.name} - {formatPhone(matchingNameClient.phone) || "sin telefono"}. Puedes continuar si es otra persona.
+            </p>
+          )}
+        </Field>
+
+        <Field label="Teléfono" required error={fieldErrors.phone}>
+          <input
+            type="tel"
+            className="ps-form-input"
+            value={form.phone}
+            onChange={e => set("phone", formatPhone(e.target.value))}
+            placeholder="+1 555 123 4567"
+            autoComplete="tel"
+          />
+        </Field>
+
+        <Field label="Correo" optional>
+          <input
+            type="email"
+            className="ps-form-input"
+            value={form.email}
+            onChange={e => set("email", e.target.value)}
+            placeholder="cliente@empresa.com"
+            autoComplete="email"
+          />
+        </Field>
+
+        <Field label="Dirección" optional>
+          <input
+            className="ps-form-input"
+            value={form.address}
+            onChange={e => set("address", e.target.value)}
+            placeholder="Dirección opcional"
+            autoComplete="street-address"
+          />
+        </Field>
+
+        <Field label="Notas" optional>
+          <textarea
+            className="ps-form-input ps-termination-custom-textarea"
+            rows={3}
+            value={form.notes}
+            onChange={e => set("notes", e.target.value)}
+            placeholder="Notas internas opcionales"
+          />
+        </Field>
       </div>
-    </div>
+    </Modal>
   );
 }

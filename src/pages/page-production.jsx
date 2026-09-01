@@ -22,7 +22,7 @@ import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { FilterSelect } from "../components/ui/FilterSelect";
-import { getClientDisplayName, NO_CLIENT_FILTER_VALUE } from "../utils/clients";
+import { NO_CLIENT_FILTER_VALUE } from "../utils/clients";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
 import { AssignModal } from "../components/ui/AssignModal";
 import {
@@ -39,6 +39,8 @@ import {
 import { loadClients, orderMatchesClientFilter } from "../utils/clients";
 import { getReferenceImages } from "../utils/orderAssets";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
+import { SecureImageLink, SecureImageGallery } from "../components/ui/SecureImage";
+import { getFileNameFromUrl } from "../utils/constants";
 import {
   filterProductionOrdersForRoleParticipation,
   filterProductionOrdersByArchiveState,
@@ -52,7 +54,7 @@ import {
   archiveOrder,
   restoreOrder,
 } from "../utils/archive";
-import { sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
+import { isOrderOverdue } from "../utils/orderDeadline";
 
 
 const METRIC_ACCENTS = [
@@ -87,14 +89,18 @@ export function OrderDetailModal({
   order,
   producerRole,
   onUpdateStatus,
+  currentUserId,
   teamRefreshKey = 0,
   pendingReview,
   onAcknowledgeReview,
   reviewAcknowledging,
   reviewError,
+  reworkHandoff,
+  reworkHandoffsReady,
 }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [updateSuccessMessage, setUpdateSuccessMessage] = useState("");
   const [updateError, setUpdateError] = useState("");
   const [showLastFileConfirm, setShowLastFileConfirm] = useState(false);
   const [pendingLastFile, setPendingLastFile] = useState(null);
@@ -106,6 +112,7 @@ export function OrderDetailModal({
   const [teamProgress, setTeamProgress] = useState([]);
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState("");
+  const [deliveryReworkNotes, setDeliveryReworkNotes] = useState({});
 
   const executeFileUpdate = async (fileId, nextStatus, deliveryId = null) => {
     setUpdating(true);
@@ -120,6 +127,11 @@ export function OrderDetailModal({
 
       if (error) throw error;
 
+      setUpdateSuccessMessage(
+        deliveryId
+          ? "La orden se envió correctamente a Delivery."
+          : "Estado actualizado correctamente",
+      );
       setUpdateSuccess(true);
       setTimeout(() => {
         setUpdateSuccess(false);
@@ -164,6 +176,10 @@ export function OrderDetailModal({
 
   const handleConfirmLastFile = () => {
     if (!pendingLastFile) return;
+    if (!reworkHandoffsReady) {
+      setUpdateError("No se pudo verificar la devolución de esta orden. Actualiza e intenta nuevamente.");
+      return;
+    }
     setShowLastFileConfirm(false);
     setAssignDeliveryOpen(true);
   };
@@ -269,6 +285,33 @@ export function OrderDetailModal({
     };
   }, [order?.id, order?.updated_at, teamRefreshKey]);
 
+  useEffect(() => {
+    const fileIds = (order?.order_production_files || []).map((file) => file.id).filter(Boolean);
+    if (!order?.id || !currentUserId || fileIds.length === 0) {
+      setDeliveryReworkNotes({});
+      return undefined;
+    }
+
+    let active = true;
+    setDeliveryReworkNotes({});
+    supabase
+      .from("delivery_rework_event_items")
+      .select("production_file_id, correction_note, created_at")
+      .eq("recipient_id", currentUserId)
+      .in("production_file_id", fileIds)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (!active || error) return;
+        const newestByFile = {};
+        (data || []).forEach((item) => {
+          if (!newestByFile[item.production_file_id]) newestByFile[item.production_file_id] = item;
+        });
+        setDeliveryReworkNotes(newestByFile);
+      });
+
+    return () => { active = false; };
+  }, [order?.id, order?.updated_at, currentUserId]);
+
   if (!order) return null;
 
   const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
@@ -283,6 +326,7 @@ export function OrderDetailModal({
   const referenceImageUrls = getReferenceImages(order);
   const hasAreaFiles = areaFiles.length > 0;
   const teamCompleted = teamProgress.filter((item) => item.summary_status === PRODUCTION_FILE_STATUS.COMPLETED).length;
+  const returnedFiles = Array.isArray(reworkHandoff?.returned_files) ? reworkHandoff.returned_files : [];
 
   return (<>
     <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -291,6 +335,7 @@ export function OrderDetailModal({
           <div>
             <h3>Orden #{order.id?.slice(0, 8).toUpperCase()}</h3>
             <span className="pp-modal-subtitle">Detalles para producción</span>
+            {reworkHandoff && <span className="pp-rework-badge" role="status">Devuelta por entrega</span>}
           </div>
           <button className="pp-modal-close" onClick={onClose}>
             <Icons.Close />
@@ -301,7 +346,7 @@ export function OrderDetailModal({
           {updateSuccess && (
             <div className="pp-modal-alert pp-alert-success">
               <Icons.Check />
-              Estado actualizado correctamente
+              {updateSuccessMessage}
             </div>
           )}
           {updateError && (
@@ -317,6 +362,31 @@ export function OrderDetailModal({
             acknowledging={reviewAcknowledging}
             error={reviewError}
           />
+
+          {reworkHandoff && (
+            <section className="pp-delivery-rework-context" aria-labelledby="pp-delivery-rework-context-title">
+              <div className="pp-delivery-rework-context-heading">
+                <Icons.AlertCircle />
+                <div>
+                  <h4 id="pp-delivery-rework-context-title">Devuelta por entrega</h4>
+                  <p>Esta orden permanece identificada como devuelta hasta que se reenvíe a la misma persona de entrega.</p>
+                </div>
+              </div>
+              {returnedFiles.length > 0 && (
+                <div className="pp-delivery-rework-reasons">
+                  <strong>Contexto de devolución</strong>
+                  <ul>
+                    {returnedFiles.map((item) => (
+                      <li key={item.production_file_id || `${item.filename}-${item.returned_at}`}>
+                        <span>{item.filename || "Archivo de producción"}</span>
+                        <p>{item.reason}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
 
           <div className="pp-modal-grid">
             <div>
@@ -540,9 +610,12 @@ export function OrderDetailModal({
                     <p style={{ fontSize: 12, fontWeight: 600, color: "#F43F5E", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                       <Icons.Eye /> Orden de Trabajo
                     </p>
-                    <a href={order.preview_image} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-                      <img
-                        src={order.preview_image}
+                    <SecureImageLink
+                      url={order.preview_image}
+                      fileName={getFileNameFromUrl(order.preview_image)}
+                    >
+                      {(resolvedUrl) => <img
+                        src={resolvedUrl}
                         alt="preview"
                         style={{
                           width: "100%",
@@ -553,8 +626,8 @@ export function OrderDetailModal({
                         }}
                         onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
                         onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
-                      />
-                    </a>
+                      />}
+                    </SecureImageLink>
                   </div>
                 )}
                 {areaFiles.length > 0 && (
@@ -598,7 +671,17 @@ export function OrderDetailModal({
                             secondaryText={getProductionFileStatusLabel(file.status)}
                             url={file.url}
                             actions={actions}
-                          />
+                          >
+                            {file.status === PRODUCTION_FILE_STATUS.IN_PRODUCTION && deliveryReworkNotes[file.id] && (
+                              <div className="pp-delivery-rework-notice" role="note">
+                                <strong>Requiere corrección</strong>
+                                <p>{deliveryReworkNotes[file.id].correction_note}</p>
+                                <time dateTime={deliveryReworkNotes[file.id].created_at}>
+                                  {formatDate(deliveryReworkNotes[file.id].created_at)}
+                                </time>
+                              </div>
+                            )}
+                          </FileCard>
                         );
                       })}
                     </div>
@@ -610,27 +693,12 @@ export function OrderDetailModal({
                   <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                     <Icons.Image /> Imágenes de referencia
                   </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                    {referenceImageUrls.map((url, i) => (
-                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", flex: "0 0 auto" }}>
-                        <img
-                          src={url}
-                          alt={`Ref ${i + 1}`}
-                          style={{
-                            width: 120,
-                            height: 120,
-                            objectFit: "cover",
-                            borderRadius: "var(--pp-radius-md)",
-                            border: "1px solid var(--pp-border)",
-                            cursor: "pointer",
-                            transition: "transform 0.2s, box-shadow 0.2s",
-                          }}
-                          onMouseEnter={e => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
-                          onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
-                        />
-                      </a>
-                    ))}
-                  </div>
+                  <SecureImageGallery
+                    urls={referenceImageUrls}
+                    fileNames={referenceImageUrls.map(getFileNameFromUrl)}
+                    altPrefix="Referencia"
+                    itemClassName="pp-ref-item"
+                  />
                 </div>
               )}
             </div>
@@ -736,11 +804,18 @@ export function OrderDetailModal({
       onClose={() => { setAssignDeliveryOpen(false); setPendingLastFile(null); }}
       onConfirm={handleAssignDelivery}
       loading={assignDeliveryLoading}
+      filterActive
+      lockedDeliveryId={reworkHandoff?.returning_delivery_id || ""}
     />
   </>);
 }
 
 const getInitials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+
+function DeliveryReworkBadge({ handoff }) {
+  if (!handoff) return null;
+  return <span className="pp-rework-badge" role="status">Devuelta por entrega</span>;
+}
 
 export default function PageProduction() {
   const navigate = useNavigate();
@@ -754,10 +829,13 @@ export default function PageProduction() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterClient, setFilterClient] = useState("all");
+  const [filterOverdue, setFilterOverdue] = useState("all");
   const [page, setPage] = useState(1);
   const PER_PAGE = 15;
   const [viewMode, setViewMode] = useState("table");
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [reworkHandoffs, setReworkHandoffs] = useState({});
+  const [reworkHandoffsReady, setReworkHandoffsReady] = useState(false);
   const [teamRefreshKey, setTeamRefreshKey] = useState(0);
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -781,9 +859,29 @@ export default function PageProduction() {
 
     if (!error && data) {
       applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
+      const orderIds = data.map((order) => order.id).filter(Boolean);
+      setReworkHandoffsReady(false);
+      if (orderIds.length === 0) {
+        setReworkHandoffs({});
+        setReworkHandoffsReady(true);
+      } else {
+        const { data: handoffs, error: handoffError } = await supabase
+          .rpc("get_active_delivery_rework_context", { p_order_ids: orderIds });
+        if (handoffError) {
+          console.error("Error loading active delivery rework handoffs:", handoffError);
+          setReworkHandoffs({});
+          setReworkHandoffsReady(false);
+        } else {
+          setReworkHandoffs(Object.fromEntries((handoffs || []).map((handoff) => [handoff.order_id, handoff])));
+          setReworkHandoffsReady(true);
+        }
+      }
+    } else {
+      setReworkHandoffs({});
+      setReworkHandoffsReady(false);
     }
     if (!silent) setLoading(false);
-  }, [user?.id]);
+   }, [user?.id]);
 
   const refreshOrdersRef = useRef(refreshOrders);
 
@@ -886,13 +984,14 @@ export default function PageProduction() {
 
     const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
     const matchesClient = orderMatchesClientFilter(order, filterClient);
+    const matchesOverdue = filterOverdue === "all" || isOrderOverdue(order);
 
-    return matchesSearch && matchesStatus && matchesClient;
+    return matchesSearch && matchesStatus && matchesClient && matchesOverdue;
   });
 
   const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
-  const paginatedOrders = sortOrdersByDeadlinePriority(filteredOrders).slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
 
   useEffect(() => { setPage(1); }, [filteredOrders.length]);
 
@@ -1062,7 +1161,7 @@ export default function PageProduction() {
                                 ? <span className="acm-badge danger">911</span>
                                 : <span className="acm-badge neutral">Normal</span>}
                             </td>
-                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered order={order} /></td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered order={order} /><DeliveryReworkBadge handoff={reworkHandoffs[order.id]} /></td>
                             <td className="td-pad td-actions" data-row-action>
                               <div className="table-actions acm-row-actions" data-row-action>
                                 <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
@@ -1119,6 +1218,16 @@ export default function PageProduction() {
                     { value: "all", label: "Todos los clientes" },
                     { value: NO_CLIENT_FILTER_VALUE, label: "Sin cliente registrado" },
                     ...clients.map(c => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+
+                <FilterSelect
+                  icon={<Icons.AlertCircle />}
+                  value={filterOverdue}
+                  onChange={value => { setFilterOverdue(value); setPage(1); }}
+                  options={[
+                    { value: "all", label: "Todas las fechas de entrega" },
+                    { value: "overdue", label: "Atrasadas" },
                   ]}
                 />
 
@@ -1201,13 +1310,14 @@ export default function PageProduction() {
                                 <span className="pp-client-cell-main">
                                   <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                                   <span className="pp-client-cell-badges">
-                                    {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
-                                    <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                     {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                     <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                     <DeliveryReworkBadge handoff={reworkHandoffs[order.id]} />
                                   </span>
                                 </span>
                               </div>
                             </td>
-                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered order={order} /></td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered order={order} /><DeliveryReworkBadge handoff={reworkHandoffs[order.id]} /></td>
                             <td className="td-pad">
                               {order.order_type === "orden 911" ? (
                                 <span className="acm-badge danger">911</span>
@@ -1267,13 +1377,15 @@ export default function PageProduction() {
                             <span className="pp-client-cell-main">
                               <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                               <span className="pp-client-cell-badges">
-                                {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
-                                <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                 {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                 <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                 <DeliveryReworkBadge handoff={reworkHandoffs[order.id]} />
                               </span>
                             </span>
                           </div>
                           <div className="pp-order-card-badges">
                     <StatusBadge status={order.status} className="pp-badge" bordered order={order} />
+                    <DeliveryReworkBadge handoff={reworkHandoffs[order.id]} />
                           </div>
                         </div>
                         <div className="pp-order-card-meta">
@@ -1362,11 +1474,14 @@ export default function PageProduction() {
         order={selectedOrder}
         producerRole={profileRole}
         onUpdateStatus={refreshOrders}
+        currentUserId={user?.id}
         teamRefreshKey={teamRefreshKey}
         pendingReview={selectedOrderReview}
         onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
         reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
         reviewError={orderReviews.acknowledgeError}
+        reworkHandoff={selectedOrder ? reworkHandoffs[selectedOrder.id] : null}
+        reworkHandoffsReady={reworkHandoffsReady}
       />
 
       <ArchiveOrderModal

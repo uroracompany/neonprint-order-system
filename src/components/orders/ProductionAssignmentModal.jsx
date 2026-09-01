@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../supabaseClient";
-import { getAvatarInitials } from "../../utils/avatar-initials";
 import { PRODUCTION_AREAS } from "../../utils/constants";
 import { getParticipatingProductionAreaCodes, getProductionFiles, hasUnclassifiedProductionFiles } from "../../utils/production";
 import { Icons } from "../../utils/icons";
+import "../../css-components/page-quote.css";
 import "./ProductionAssignmentModal.css";
 
 export default function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading, title }) {
@@ -41,32 +41,94 @@ export default function ProductionAssignmentModal({ open, onClose, onConfirm, or
   if (!open || !order) return null;
   const usersByRole = users.reduce((result, item) => ({ ...result, [item.role]: [...(result[item.role] || []), item] }), {});
   const ready = areas.length > 0 && !unclassified && areas.every((area) => assignments[area.code]);
+
+  const areaIconMap = {
+    dtf: <Icons.Package />,
+    digital: <Icons.Image />,
+    plotter: <Icons.Truck />,
+    ploteo: <Icons.Truck />,
+    serigrafia: <Icons.Brush />,
+    screen: <Icons.Brush />,
+    corte: <Icons.Edit />,
+    cutting: <Icons.Edit />,
+    laminado: <Icons.File />,
+    lamination: <Icons.File />,
+    terminacion: <Icons.CheckCircle />,
+    finishing: <Icons.CheckCircle />,
+    sublimacion: <Icons.Paintbrush />,
+    sublimation: <Icons.Paintbrush />,
+    vinil: <Icons.FileText />,
+    vinyl: <Icons.FileText />,
+    impresion: <Icons.Upload />,
+    printing: <Icons.Upload />,
+  };
+  const getAreaIcon = (code) => areaIconMap[String(code).toLowerCase()] || <Icons.Package />;
+  const formatAreaLabel = (label) => {
+    const lower = String(label).toLowerCase();
+    if (lower.startsWith("área") || lower.startsWith("area")) return label;
+    return `Área ${label}`;
+  };
+
   return (
-    <div className="pam-overlay">
-      <section className="pam-modal" role="dialog" aria-modal="true" aria-labelledby="pam-title">
-        <header className="pam-header">
-          <span className="pam-icon"><Icons.Users /></span>
-          <div><span>{title ? "" : "Último paso"}</span><h2 id="pam-title">{title || "Asignar Producción"}</h2><p>Selecciona un responsable por cada área participante.</p></div>
-          <span className="pam-header-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-          <button type="button" onClick={onClose} aria-label="Cerrar"><Icons.Close /></button>
+    <div className="pq-overlay" onClick={(event) => event.target === event.currentTarget && !loading && onClose()}>
+      <div className="pq-dialog pq-dialog--production-assignment pq-dialog--return-designer" role="dialog" aria-modal="true" aria-labelledby="pam-title" aria-describedby="pam-description">
+        <header className="pq-dialog-header pq-dialog-header--delivery">
+          <div className="pq-dialog-header-content">
+            {order.id && <span className="pq-production-header-code">#{order.id.slice(0, 8).toUpperCase()}</span>}
+            <h3 className="pq-dialog-title" id="pam-title">{title || "Asignar Producción"}</h3>
+          </div>
+          <button type="button" className="pq-icon-btn" onClick={onClose} aria-label="Cerrar"><Icons.Close /></button>
         </header>
-        <div className="pam-order">
-          <span className="pam-client-avatar" aria-hidden="true">{getAvatarInitials(order.client_name)}</span>
-          <strong>{order.client_name || order.description || "Orden sin título"}</strong>
+        <div className="pq-production-dialog-body">
+          <p className="pq-dialog-text pq-dialog-text--blue" id="pam-description">Selecciona un responsable por cada área participante.</p>
+          <div className="pq-production-assignment-list">
+            {loadingOptions ? (
+              <div className="pq-production-loading" role="status">Cargando responsables…</div>
+            ) : (
+              areas.map((area) => {
+                const options = usersByRole[area.role] || [];
+                return (
+                  <label className="pq-production-assignment-row" key={area.code}>
+                    <div className="pq-production-area-copy">
+                      <strong><span className="pq-area-icon">{getAreaIcon(area.code)}</span>{formatAreaLabel(area.label)}</strong>
+                      <small className="pq-production-file-count">{counts[area.code] || 0} archivo{counts[area.code] !== 1 ? "s" : ""}</small>
+                    </div>
+                    <div className="pq-select">
+                      <select
+                        value={assignments[area.code] || ""}
+                        onChange={(event) => {
+                          setAssignments((current) => ({ ...current, [area.code]: event.target.value }));
+                          setError("");
+                        }}
+                        disabled={loading || !options.length}
+                        className="pq-input"
+                      >
+                        <option value="">Seleccionar responsable</option>
+                        {options.map((item) => (
+                          <option key={item.id} value={item.id}>{item.name || item.email}</option>
+                        ))}
+                      </select>
+                      <Icons.ChevronDown />
+                    </div>
+                    {!options.length && (
+                      <small className="pq-production-row-error">No hay usuarios activos para esta área.</small>
+                    )}
+                  </label>
+                );
+              })
+            )}
+          </div>
+          {error && <div className="pq-production-error" role="alert"><Icons.AlertCircle />{error}</div>}
         </div>
-        <div className="pam-body">
-          {loadingOptions ? <div className="pam-empty">Cargando responsables…</div> : areas.map((area) => {
-            const options = usersByRole[area.role] || [];
-            return <label className="pam-row" key={area.code}>
-              <span><strong>{area.label}</strong><small>{counts[area.code] || 0} archivo(s)</small></span>
-              <div className="pam-select"><select value={assignments[area.code] || ""} onChange={(event) => { setAssignments((current) => ({ ...current, [area.code]: event.target.value })); setError(""); }} disabled={loading || !options.length}><option value="">Seleccionar responsable</option>{options.map((item) => <option key={item.id} value={item.id}>{item.name || item.email}</option>)}</select><Icons.ChevronDown /></div>
-              {!options.length && <small className="pam-row-error">No hay usuarios activos para esta área.</small>}
-            </label>;
-          })}
-          {error && <div className="pam-error"><Icons.AlertCircle />{error}</div>}
-        </div>
-        <footer><button type="button" className="secondary" onClick={onClose} disabled={loading}>Cancelar</button><button type="button" className="primary" disabled={!ready || loading || loadingOptions} onClick={() => onConfirm(assignments)}>{loading ? "Enviando…" : "Enviar a Producción"}</button></footer>
-      </section>
+        <footer className="pq-production-dialog-footer">
+          <div className="pq-dialog-actions">
+            <button type="button" className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
+            <button type="button" className="pq-btn pq-btn-primary" disabled={!ready || loading || loadingOptions} onClick={() => onConfirm(assignments)}>
+              {loading ? "Enviando…" : <><Icons.Send />Enviar a Producción</>}
+            </button>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }

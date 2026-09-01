@@ -310,6 +310,18 @@
   font-size: 13px;
 }
 
+.acm-contact-phone {
+  color: #0f172a !important;
+  font-weight: 600;
+}
+
+.acm-contact-email {
+  display: block;
+  color: #1E40AF !important;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .acm-avatar {
   display: inline-grid;
   flex: 0 0 auto;

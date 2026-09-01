@@ -4,6 +4,7 @@ import { handleAdminCreateUser } from "../server/admin-create-user-handler.js";
 import { handleAdminUpdateUser } from "../server/admin-update-user-handler.js";
 import { handleAdminSetUserStatus } from "../server/admin-set-user-status-handler.js";
 import { handleAdminEmployeeDetail } from "../server/admin-employee-detail-handler.js";
+import { handleAdminOperationsSummary } from "../server/admin-operations-handler.js";
 import {
   handleAdminRetireClient,
   handleAdminRetireUser,
@@ -20,6 +21,7 @@ const ACTIONS = {
   "update-user": handleAdminUpdateUser,
   "set-user-status": handleAdminSetUserStatus,
   "employee-detail": handleAdminEmployeeDetail,
+  "operations-summary": handleAdminOperationsSummary,
   "retirement-preflight": handleAdminUserRetirementPreflight,
   "retire-user": handleAdminRetireUser,
   "restore-user": handleAdminRestoreUser,

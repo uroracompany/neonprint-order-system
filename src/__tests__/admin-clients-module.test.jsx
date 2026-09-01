@@ -84,6 +84,7 @@ const renderModule = (supabase = createSupabaseMock()) => {
     onAddClient: vi.fn(),
     onEditClient: vi.fn(),
     onDeleteClient: vi.fn(),
+    onRestoreClient: vi.fn(),
     onCreateOrder: vi.fn(),
     onViewOrders: vi.fn(),
     onManageCredit: vi.fn(),
@@ -105,7 +106,7 @@ describe("AdminClientsModule", () => {
     expect(sortSelect.lastElementChild?.tagName).toBe("svg");
     expect(screen.getByText("Registro desde")).toBeInTheDocument();
     expect(screen.getByText("Registro hasta")).toBeInTheDocument();
-    expect(supabase.rpc).toHaveBeenCalledWith("admin_list_clients", expect.objectContaining({
+    expect(supabase.rpc).toHaveBeenCalledWith("admin_list_clients_v2", expect.objectContaining({
       p_page: 1,
       p_page_size: 7,
     }));
@@ -121,7 +122,7 @@ describe("AdminClientsModule", () => {
     await user.click(screen.getByRole("option", { name: "Con crédito" }));
 
     await waitFor(() => {
-      expect(supabase.rpc).toHaveBeenLastCalledWith("admin_list_clients", expect.objectContaining({
+      expect(supabase.rpc).toHaveBeenLastCalledWith("admin_list_clients_v2", expect.objectContaining({
         p_page: 1,
         p_search: "María",
         p_credit_filter: "with_credit",
@@ -139,8 +140,8 @@ describe("AdminClientsModule", () => {
     expect(screen.getByText("Resumen comercial")).toBeInTheDocument();
     expect(screen.getByText("Ordenes 911")).toBeInTheDocument();
     expect(screen.getByText("Ordenes normales")).toBeInTheDocument();
-    expect(screen.getByText("Ordenes diseno interno")).toBeInTheDocument();
-    expect(screen.getByText("Ordenes diseno externo")).toBeInTheDocument();
+    expect(screen.getByText("Órdenes diseño interno")).toBeInTheDocument();
+    expect(screen.getByText("Órdenes diseño externo")).toBeInTheDocument();
     expect(screen.getByText("Actividad reciente")).toBeInTheDocument();
     expect(supabase.rpc).toHaveBeenCalledWith("admin_get_client_detail", {
       p_client_id: listRows[0].id,
@@ -151,5 +152,28 @@ describe("AdminClientsModule", () => {
 
     await user.click(screen.getByRole("button", { name: "Volver a clientes" }));
     expect(await screen.findByText("Clientes registrados")).toBeInTheDocument();
+  });
+
+  it("muestra al cliente retirado y solo permite restaurarlo", async () => {
+    const user = userEvent.setup();
+    const retiredClient = makeClient(8, {
+      deleted_at: "2026-08-31T12:00:00Z",
+      total_count: 1,
+    });
+    const supabase = {
+      rpc: vi.fn(async (name) => {
+        if (name === "admin_list_clients_v2") return { data: [retiredClient], error: null };
+        if (name === "admin_get_client_detail") return { data: { ...detailResponse, client: retiredClient }, error: null };
+        return { data: orderListResponse, error: null };
+      }),
+    };
+    const { props } = renderModule(supabase);
+
+    expect(await screen.findByText("Dado de baja")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: `Editar ${retiredClient.name}` })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: `Eliminar ${retiredClient.name}` })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: `Restaurar ${retiredClient.name}` }));
+    expect(props.onRestoreClient).toHaveBeenCalledWith(retiredClient);
   });
 });

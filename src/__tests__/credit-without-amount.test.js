@@ -22,7 +22,8 @@ describe("pago a credito sin monto interno", () => {
 
     expect(dashboard).toContain('supabase.rpc("settle_credit_orders"');
     expect(dashboard).not.toContain('supabase.rpc("record_client_payment"');
-    expect(quote).toContain('rpc("mark_order_as_credit", { p_order_id: order.id, p_due_date: null })');
+    expect(quote).toContain('rpc("mark_order_as_credit", {');
+    expect(quote).toContain("p_expected_updated_at: order.updated_at,");
     expect(quote).not.toContain("p_amount");
   });
 

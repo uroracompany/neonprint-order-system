@@ -1,2 +1,21 @@
 /* Import Tailwind CSS */
 @import "tailwindcss";
+
+/* Keyframes para componentes SecureImage */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Clases utilitarias para animaciones */
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulse 1.5s ease-in-out infinite;
+}

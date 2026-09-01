@@ -1,28 +1,47 @@
+import { useState } from "react";
 import { Icons } from "../utils/icons";
-import { openOrderAssetUrl } from "../utils/fileAccess";
-import { isR2OrderAssetUrl } from "../utils/uploadOrderAsset";
+import { openOrderAssetUrl, requiresOrderAssetGateway } from "../utils/fileAccess";
 import "./FileCard.css";
 
 export default function FileCard({
   name,
   url,
   secondaryText,
+  detailText,
   onRemove,
+  removeIcon,
+  removeTitle = "Eliminar",
   actions = [],
   children,
   hideDownload = false,
 }) {
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState("");
+
   const handleOpen = async (event) => {
-    if (!isR2OrderAssetUrl(url)) return;
+    if (!requiresOrderAssetGateway(url)) return;
     event.preventDefault();
-    await openOrderAssetUrl({ url, fileName: name, download: true });
+    if (opening) return;
+
+    setOpening(true);
+    setOpenError("");
+    try {
+      await openOrderAssetUrl({ url, fileName: name, download: true });
+    } catch (error) {
+      setOpenError(error?.message || "No se pudo descargar el archivo. Inténtalo nuevamente.");
+    } finally {
+      setOpening(false);
+    }
   };
 
   const hasExtraContent = Boolean(children);
   const hasActions = Boolean(url || actions.length > 0 || onRemove);
 
   return (
-    <div className={`fc-file-item${hasExtraContent ? " fc-file-item-with-extra" : ""}`}>
+    <div
+      className={`fc-file-item${hasExtraContent ? " fc-file-item-with-extra" : ""}`}
+      aria-busy={opening || undefined}
+    >
       <div className="fc-file-main">
         <div className="fc-file-icon">
           <Icons.File />
@@ -30,7 +49,16 @@ export default function FileCard({
         <div className="fc-file-info">
           <span className="fc-file-name">{name}</span>
           {secondaryText && (
-            <span className="fc-file-secondary">{secondaryText}</span>
+            <span className="fc-file-meta">{secondaryText}</span>
+          )}
+          {detailText && (
+            <span className="fc-file-secondary">{detailText}</span>
+          )}
+          {openError && (
+            <span className="fc-file-secondary" role="alert">{openError}</span>
+          )}
+          {opening && (
+            <span className="fc-file-secondary" role="status">Preparando descarga…</span>
           )}
         </div>
         {hasActions && (
@@ -43,6 +71,9 @@ export default function FileCard({
                 rel="noopener noreferrer"
                 className="fc-file-action"
                 title="Descargar"
+                aria-label={opening ? `Preparando descarga de ${name}` : `Descargar ${name}`}
+                aria-disabled={opening || undefined}
+                tabIndex={opening ? -1 : undefined}
               >
                 <Icons.Download />
               </a>
@@ -63,9 +94,10 @@ export default function FileCard({
               <button
                 className="fc-file-action fc-file-action-remove"
                 onClick={onRemove}
-                title="Eliminar"
+                title={removeTitle}
+                aria-label={removeTitle}
               >
-                <Icons.X />
+                {removeIcon || <Icons.X />}
               </button>
             )}
           </div>

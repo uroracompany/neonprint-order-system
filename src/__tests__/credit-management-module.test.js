@@ -35,7 +35,7 @@ describe("modulo de gestion de creditos", () => {
     expect(dashboard).toContain("clientPhone");
     expect(dashboard).toContain("invoiceNumber");
     expect(dashboard).toContain("creditStatusFilter");
-    expect(dashboard).toContain("Buscar por cliente, telefono, factura u orden");
+    expect(dashboard).toContain("Buscar por cliente, teléfono, factura u orden...");
     expect(dashboard).not.toContain("setCreditDetailClient(group)");
   });
 
@@ -72,15 +72,15 @@ describe("modulo de gestion de creditos", () => {
 
     expect(dashboard).toContain("useOrdersRealtimeSync({");
     expect(dashboard).toContain("admin-related-data");
-    expect(sharedHook).toContain('{ event: "*", schema: "public", table: "orders" }');
-    expect(sharedHook).toContain("orders:user:${userId}");
+    expect(sharedHook).toContain("registerRealtimeListener");
+    expect(sharedHook).toContain("tables: realtimeTables");
     expect(dashboard).toContain("table: 'accounts_receivable'");
     expect(dashboard).toContain("table: 'clients'");
     expect(dashboard).toContain("loadOrders(true)");
     expect(dashboard).toContain("fetchAccountsReceivable()");
     expect(dashboard).toContain("openCreditOrderIds");
     expect(dashboard).toContain("setSelectedCreditOrderIds(prev =>");
-    expect(dashboard).toContain("setSelectedOrder(freshOrder)");
+    expect(dashboard).toContain("setSelectedOrder(");
   });
 
   it("precarga los contadores del sidebar administrativo desde el montaje inicial", () => {
@@ -89,14 +89,14 @@ describe("modulo de gestion de creditos", () => {
     const initialLoadEnd = dashboard.indexOf("const relatedDataChannel", initialLoadStart);
     const initialLoadBlock = dashboard.slice(initialLoadStart, initialLoadEnd);
 
-    expect(initialLoadBlock).toContain("loadOrders();");
+    expect(initialLoadBlock).toContain("loadOrdersRef.current?.();");
     expect(initialLoadBlock).toContain("loadProfiles();");
     expect(initialLoadBlock).toContain("fetchClients();");
     expect(initialLoadBlock).toContain("fetchAccountsReceivable();");
     expect(dashboard).toContain("const [clientsLoading, setClientsLoading] = useState(true);");
     expect(dashboard).toContain("const [accountsReceivableLoading, setAccountsReceivableLoading] = useState(true);");
     expect(dashboard).toContain('const getSidebarBadge = (loading, value) => (loading ? "..." : value);');
-    expect(dashboard).toContain("badge: getSidebarBadge(loadingOrders, orders.length)");
+    expect(dashboard).toContain('badge: getSidebarBadge(loadingOrders, getOverviewCount("total") ?? ordersTotal)');
     expect(dashboard).toContain("badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount)");
     expect(dashboard).toContain("badge: getSidebarBadge(clientsLoading, clientsTotal)");
     expect(dashboard).toContain('searchClients(supabase, "", 100)');

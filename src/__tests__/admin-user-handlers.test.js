@@ -130,6 +130,7 @@ const makeAdminCreateClient = ({
   currentProfileError = null,
   duplicateProfiles = [],
   duplicateError = null,
+  createUserError = null,
 } = {}) => {
   const getUserById = vi.fn(async () => ({
     data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
@@ -141,7 +142,10 @@ const makeAdminCreateClient = ({
   }));
   const insert = vi.fn(async () => ({ error: null }));
   const deleteUser = vi.fn(async () => ({ error: null }));
-  const createUser = vi.fn(async () => ({ data: { user: { id: "user-1" } }, error: null }));
+  const createUser = vi.fn(async () => ({
+    data: createUserError ? { user: null } : { user: { id: "user-1" } },
+    error: createUserError,
+  }));
 
   const currentSingle = vi.fn(async () => ({
     data: {
@@ -626,7 +630,7 @@ describe("handleAdminUpdateUser", () => {
     const result = await handleAdminUpdateUser(validPayload, env);
 
     expect(result.status).toBe(409);
-    expect(result.body.error).toMatch(/Ya existe otro usuario/);
+    expect(result.body.error).toBe("Este correo ya está registrado.");
     expect(currentClient.authUpdate).not.toHaveBeenCalled();
   });
 
@@ -661,7 +665,7 @@ describe("handleAdminUpdateUser", () => {
     const result = await handleAdminUpdateUser({ ...validPayload, password: "123" }, env);
 
     expect(result.status).toBe(400);
-    expect(result.body.error).toMatch(/al menos 12/);
+    expect(result.body.error).toMatch(/mas de 12/);
   });
 
   it("rejects invalid roles", async () => {
@@ -709,7 +713,7 @@ describe("handleAdminUpdateUser", () => {
     expect(currentClient.authUpdate).not.toHaveBeenCalled();
   });
 
-  it("rolls back profile when auth update fails", async () => {
+  it("rolls back profile and reports a conflict when Auth already has the email", async () => {
     currentClient = makeAdminUpdateClient({
       authError: { message: "User already registered" },
       previousProfile: {
@@ -723,8 +727,8 @@ describe("handleAdminUpdateUser", () => {
 
     const result = await handleAdminUpdateUser(validPayload, env);
 
-    expect(result.status).toBe(400);
-    expect(result.body.error).toMatch(/cambios se revirtieron/i);
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe("Este correo ya está registrado.");
     expect(currentClient.authUpdate).toHaveBeenCalled();
     expect(currentClient.profileUpdate).toHaveBeenCalledTimes(2);
     expect(currentClient.profileUpdate).toHaveBeenNthCalledWith(2, {
@@ -826,6 +830,22 @@ describe("handleAdminCreateUser", () => {
     expect(currentClient.createUser).not.toHaveBeenCalled();
   });
 
+  it("accepts a password longer than 12 characters without composition requirements", async () => {
+    currentClient = makeAdminCreateClient();
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "carlos@example.com",
+      password: "abcdefghijklm",
+      role: "seller",
+    }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.createUser).toHaveBeenCalledWith(expect.objectContaining({
+      password: "abcdefghijklm",
+    }));
+  });
+
   it("rejects invalid email formats when creating a user", async () => {
     currentClient = makeAdminCreateClient();
 
@@ -852,8 +872,25 @@ describe("handleAdminCreateUser", () => {
     }, env);
 
     expect(result.status).toBe(409);
-    expect(result.body.error).toMatch(/Ya existe/);
+    expect(result.body.error).toBe("Este correo ya está registrado.");
     expect(currentClient.createUser).not.toHaveBeenCalled();
+  });
+
+  it("returns a conflict when Supabase Auth already has the email", async () => {
+    currentClient = makeAdminCreateClient({
+      createUserError: { code: "email_exists", message: "Email already exists" },
+    });
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "carlos@example.com",
+      password: "abcdefghijklm",
+      role: "seller",
+    }, env);
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe("Este correo ya está registrado.");
+    expect(currentClient.insert).not.toHaveBeenCalled();
   });
 });
 
@@ -983,9 +1020,10 @@ describe("handleAdminListOrders", () => {
       }),
     ]);
     expect(result.body.total).toBe(1);
+    expect(result.body.pageSize).toBe(50);
     expect(currentClient.orderSelect).toHaveBeenCalledWith("*", { count: "exact" });
     expect(currentClient.orderBuilder.order).toHaveBeenCalledWith("created_at", { ascending: false });
-    expect(currentClient.orderRange).toHaveBeenCalledWith(0, 499);
+    expect(currentClient.orderRange).toHaveBeenCalledWith(0, 49);
   });
 
   it("returns an empty list when there are no orders", async () => {
@@ -996,6 +1034,7 @@ describe("handleAdminListOrders", () => {
     expect(result.status).toBe(200);
     expect(result.body.orders).toEqual([]);
     expect(result.body.total).toBe(0);
+    expect(result.body.pageSize).toBe(25);
     expect(currentClient.orderRange).toHaveBeenCalledWith(0, 24);
   });
 

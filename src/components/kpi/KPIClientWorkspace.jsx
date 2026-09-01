@@ -22,8 +22,6 @@ const healthTone = (health) => ({
   Excelente: 'excellent', Buena: 'good', Media: 'medium', Riesgo: 'risk',
 }[health] || 'medium')
 
-const activityTone = (activity) => ({ Alta: 'high', Media: 'medium', Baja: 'low' }[activity] || 'low')
-
 const clientKey = (item) => String(item?.client_id || item?.id || item?.client_name || item?.name || '').trim()
 const clientName = (item) => String(item?.client_name || item?.name || '').trim()
 
@@ -465,6 +463,7 @@ export default function KPIClientWorkspace({ clients = [], activityTimeline = []
                 onChange={value => { setCredit(value); setPage(1) }}
                 options={[{ value: 'all', label: 'Todos' }, { value: 'yes', label: 'Con crédito' }]}
                 placeholder="Seleccionar"
+                label="Filtrar clientes con crédito activo"
               />
             </div>
             <div className="kpi-materials-filter-control">

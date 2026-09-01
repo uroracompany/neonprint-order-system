@@ -1,6 +1,7 @@
 import { supabase } from '../../supabaseClient'
 
 const COALESCE_MS = 100
+const DUPLICATE_EVENT_WINDOW_MS = 750
 const FAILURE_STATUSES = new Set(['CHANNEL_ERROR', 'TIMED_OUT'])
 const groups = new Map()
 let visibilityListening = false
@@ -13,28 +14,66 @@ function ensureVisibilityListener() {
   document.addEventListener('visibilitychange', () => {
     if (isHidden()) return
     groups.forEach(group => {
-      if (!group.pendingTables.size && !group.needsReconcile) return
+      if (!group.pendingChanges.size && !group.needsReconcile) return
       group.needsReconcile = false
-      const pendingTables = new Set(group.pendingTables)
-      group.pendingTables.clear()
-      scheduleDispatch(group, pendingTables)
+      const pendingChanges = [...group.pendingChanges.values()]
+      scheduleDispatch(group, pendingChanges)
     })
   })
   visibilityListening = true
 }
 
-function scheduleDispatch(group, tables) {
-  tables.forEach(table => group.pendingTables.add(table))
+function normalizeChange(change) {
+  if (typeof change === 'string') {
+    return { table: change, id: null, operation: 'RECONCILE' }
+  }
+
+  return {
+    table: change?.table,
+    id: change?.id || null,
+    operation: change?.operation || 'UPDATE',
+  }
+}
+
+function getChangeKey(change) {
+  return `${change.table}:${change.id || '*'}:${change.operation}`
+}
+
+function pruneRecentChanges(group, now) {
+  group.recentChanges.forEach((seenAt, key) => {
+    if (now - seenAt > DUPLICATE_EVENT_WINDOW_MS) group.recentChanges.delete(key)
+  })
+}
+
+function scheduleDispatch(group, changes) {
+  const now = Date.now()
+  pruneRecentChanges(group, now)
+
+  changes
+    .map(normalizeChange)
+    .filter(change => Boolean(change.table))
+    .forEach(change => {
+      const key = getChangeKey(change)
+      if (group.recentChanges.has(key)) return
+      group.recentChanges.set(key, now)
+      group.pendingChanges.set(key, change)
+    })
+
+  if (!group.pendingChanges.size) return
   if (isHidden()) return
   if (group.timer !== null) return
 
   group.timer = window.setTimeout(() => {
     group.timer = null
-    const changedTables = new Set(group.pendingTables)
-    group.pendingTables.clear()
+    const changes = [...group.pendingChanges.values()]
+    group.pendingChanges.clear()
+    const changedTables = new Set(changes.map(change => change.table))
     group.listeners.forEach(listener => {
       if ([...changedTables].some(table => listener.tables.has(table))) {
-        listener.onChange({ tables: changedTables })
+        listener.onChange({
+          tables: changedTables,
+          changes: changes.filter(change => listener.tables.has(change.table)),
+        })
       }
     })
   }, COALESCE_MS)
@@ -70,7 +109,7 @@ function rebuildChannels(group) {
     }
     if (status === 'SUBSCRIBED' && group.needsReconcile) {
       group.needsReconcile = false
-      scheduleDispatch(group, new Set(tables))
+      scheduleDispatch(group, tables)
     }
   }
 
@@ -84,15 +123,27 @@ function rebuildChannels(group) {
 
     group.broadcastChannel = supabase
       .channel(`orders:user:${group.userId}`, { config: { private: true } })
-      .on('broadcast', { event: 'order_changed' }, () => {
-        if (generation === group.generation) scheduleDispatch(group, new Set(['orders']))
+      .on('broadcast', { event: 'order_changed' }, (message) => {
+        if (generation !== group.generation) return
+        const payload = message?.payload || message || {}
+        scheduleDispatch(group, [{
+          table: 'orders',
+          id: payload.order_id || null,
+          operation: payload.operation || 'UPDATE',
+        }])
       })
       .subscribe(onStatus)
 
     const fallback = supabase.channel(`realtime:data:${group.userId}:${tables.join('-')}`)
     tables.forEach(table => {
-      fallback.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
-        if (generation === group.generation) scheduleDispatch(group, new Set([table]))
+      fallback.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+        if (generation !== group.generation) return
+        const row = payload?.new || payload?.old || {}
+        scheduleDispatch(group, [{
+          table,
+          id: row.id || null,
+          operation: payload?.eventType || 'UPDATE',
+        }])
       })
     })
     group.fallbackChannel = fallback.subscribe(onStatus)
@@ -107,7 +158,8 @@ function getGroup(userId) {
     group = {
       userId,
       listeners: new Map(),
-      pendingTables: new Set(),
+      pendingChanges: new Map(),
+      recentChanges: new Map(),
       timer: null,
       broadcastChannel: null,
       fallbackChannel: null,

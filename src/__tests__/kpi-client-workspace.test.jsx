@@ -105,7 +105,8 @@ describe('Espacio consolidado de Clientes KPI', () => {
 
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('Alfa')
 
-    fireEvent.change(screen.getByLabelText('Filtrar clientes con crédito activo'), { target: { value: 'yes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar clientes con crédito activo' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Con crédito' }))
     expect(screen.getByText('Beto')).toBeInTheDocument()
     expect(screen.queryByText('Cora')).not.toBeInTheDocument()
 

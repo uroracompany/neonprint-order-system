@@ -60,7 +60,7 @@ describe("secure administrative order command repair", () => {
   });
 
   it("does not leave administrative browser DML or client-side cleanup after an edit", () => {
-    expect(editModal).toContain('supabase.rpc("admin_edit_order_with_assets"');
+    expect(editModal).toContain('supabase.rpc("admin_edit_order_with_file_specifications"');
     expect(editModal).not.toContain('.from("order_production_files")');
     const adminCleanupStart = editModal.indexOf("if (isSellerEdit) {");
     expect(adminCleanupStart).toBeGreaterThan(-1);

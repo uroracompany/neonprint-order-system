@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getOrderDeadlineState, isOrderOverdue, sortOrdersByDeadlinePriority } from "../utils/orderDeadline";
+import { getOrderDeadlineState, isOrderOverdue } from "../utils/orderDeadline";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");
 
@@ -22,13 +22,13 @@ describe("order delivery deadlines", () => {
     expect(isOrderOverdue({ status: "in_Design", delivery_date: "fecha-invalida" }, NOW)).toBe(false);
   });
 
-  it("places the most overdue orders first without mutating the source list", () => {
+  it("identifies overdue orders without changing their source chronology", () => {
     const orders = [
       { id: "future", status: "in_Quote", delivery_date: "2026-08-27" },
       { id: "one-day", status: "in_Quote", delivery_date: "2026-08-24" },
       { id: "three-days", status: "in_Quote", delivery_date: "2026-08-22" },
     ];
-    expect(sortOrdersByDeadlinePriority(orders, NOW).map((order) => order.id)).toEqual(["three-days", "one-day", "future"]);
+    expect(orders.filter((order) => isOrderOverdue(order, NOW)).map((order) => order.id)).toEqual(["one-day", "three-days"]);
     expect(orders.map((order) => order.id)).toEqual(["future", "one-day", "three-days"]);
   });
 });

@@ -35,12 +35,12 @@ const formatDate = (value, includeTime = false) => {
   }).format(date);
 };
 
-const getInitials = (name) => String(name || "?")
-  .split(/\s+/)
-  .filter(Boolean)
-  .slice(0, 2)
-  .map((part) => part[0]?.toUpperCase())
-  .join("") || "?";
+const getInitials = (name) => {
+  const parts = String(name || "").split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  if (parts.length === 1) return (parts[0][0] + parts[0][0]).toUpperCase();
+  return "??";
+};
 
 const getOrderTone = (status) => {
   const normalized = String(status || "").toLowerCase();
@@ -62,7 +62,9 @@ const getPaymentTone = (status) => {
 function ClientStatusBadges({ client }) {
   return (
     <div className="acm-badge-stack">
-      {client.is_inactive ? (
+      {client.deleted_at ? (
+        <span className="acm-badge neutral">Dado de baja</span>
+      ) : client.is_inactive ? (
         <span className="acm-badge neutral">Inactivo</span>
       ) : client.active_orders > 0 ? (
         <span className="acm-badge success">{client.active_orders} activa{client.active_orders === 1 ? "" : "s"}</span>
@@ -80,6 +82,7 @@ function ClientList({
   onAddClient,
   onEditClient,
   onRequestDelete,
+  onRestoreClient,
   onOpenDetail,
 }) {
   const [search, setSearch] = useState("");
@@ -105,7 +108,7 @@ function ClientList({
     setLoading(true);
     setError("");
 
-    const { data, error: rpcError } = await supabase.rpc("admin_list_clients", {
+    const { data, error: rpcError } = await supabase.rpc("admin_list_clients_v2", {
       p_page: page,
       p_page_size: PAGE_SIZE,
       p_search: query || null,
@@ -208,11 +211,41 @@ function ClientList({
       />
 
       <div className="pa-panel acm-table-panel">
-        <div className="pa-panel-stripe" />
-        <div className="pa-panel-head pa-panel-head-results">
+        <div className="pa-panel-head mat-unified-head">
           <div>
+            <span className="mat-kicker">Gestión de clientes</span>
             <h2>Clientes registrados</h2>
-            <p className="acm-panel-description">Frecuente: 5 o más órdenes completadas en su historial.</p>
+          </div>
+          <div className="mat-panel-tools">
+            <div className="mat-tabs" role="tablist" ariaLabel="Filtro de actividad">
+              <button
+                type="button"
+                className={filters.activity === "all" ? "active" : ""}
+                onClick={() => updateFilter("activity", "all")}
+                aria-selected={filters.activity === "all"}
+              >
+                <Icons.Users />
+                <span>Todos</span>
+              </button>
+              <button
+                type="button"
+                className={filters.activity === "with_active" ? "active" : ""}
+                onClick={() => updateFilter("activity", filters.activity === "with_active" ? "all" : "with_active")}
+                aria-selected={filters.activity === "with_active"}
+              >
+                <Icons.Orders />
+                <span>Con órdenes activas</span>
+              </button>
+              <button
+                type="button"
+                className={filters.activity === "without_active" ? "active" : ""}
+                onClick={() => updateFilter("activity", filters.activity === "without_active" ? "all" : "without_active")}
+                aria-selected={filters.activity === "without_active"}
+              >
+                <Icons.Users />
+                <span>Sin órdenes activas</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -274,15 +307,14 @@ function ClientList({
                       <span className="acm-avatar acm-avatar-small">{getInitials(client.name)}</span>
                       <span>
                         <strong>{client.name}</strong>
-                        <small>#{client.id.slice(0, 8).toUpperCase()}</small>
                       </span>
                     </div>
                   </td>
                   <td className="td-pad acm-contact-cell">
-                    <span>{client.phone || "Sin teléfono"}</span>
-                    <small>{client.email || "Sin correo"}</small>
+                    <span className="acm-contact-phone">{client.phone || "Sin teléfono"}</span>
+                    <small className="acm-contact-email">{client.email || "Sin correo"}</small>
                   </td>
-                  <td className="td-pad td-date">{formatDate(client.created_at)}</td>
+                  <td className="td-pad td-date"><span className="acm-badge neutral">{formatDate(client.created_at)}</span></td>
                   <td className="td-pad"><ClientStatusBadges client={client} /></td>
                   <td className="td-pad">
                     {client.active_credit_count > 0 ? (
@@ -295,16 +327,29 @@ function ClientList({
                   </td>
                   <td className="td-pad td-actions" onClick={(event) => event.stopPropagation()}>
                     <div className="table-actions acm-row-actions">
-                      <button className="table-action-btn view" onClick={() => onOpenDetail(client.id)} title="Ver detalle" aria-label={`Ver detalle de ${client.name}`}><Icons.Eye /></button>
-                      <button className="table-action-btn edit" onClick={() => onEditClient(client)} title="Editar cliente" aria-label={`Editar ${client.name}`}><Icons.Edit /></button>
-                      <button
-                        className="table-action-btn cancel"
-                        onClick={() => onRequestDelete(client)}
-                        title="Eliminar cliente"
-                        aria-label={`Eliminar ${client.name}`}
-                      >
-                        <Icons.Trash />
-                      </button>
+                      {client.deleted_at ? (
+                        <button
+                          className="table-action-btn view"
+                          onClick={() => onRestoreClient(client)}
+                          title="Restaurar cliente"
+                          aria-label={`Restaurar ${client.name}`}
+                        >
+                          <Icons.UserCheck />
+                        </button>
+                      ) : (
+                        <>
+                          <button className="table-action-btn view" onClick={() => onOpenDetail(client.id)} title="Ver detalle" aria-label={`Ver detalle de ${client.name}`}><Icons.Eye /></button>
+                          <button className="table-action-btn edit" onClick={() => onEditClient(client)} title="Editar cliente" aria-label={`Editar ${client.name}`}><Icons.Edit /></button>
+                          <button
+                            className="table-action-btn cancel"
+                            onClick={() => onRequestDelete(client)}
+                            title="Eliminar cliente"
+                            aria-label={`Eliminar ${client.name}`}
+                          >
+                            <Icons.Trash />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -514,7 +559,9 @@ function ClientDetail({
               <span><Icons.Mail /> {client.email || "Sin correo"}</span>
             </div>
             <div className="acm-detail-status-line">
-              {stats.is_frequent ? (
+              {client.deleted_at ? (
+                <span className="acm-profile-status inactive">Dado de baja</span>
+              ) : stats.is_frequent ? (
                 <span className="acm-profile-status frequent"><Icons.TrendUp /> Cliente frecuente</span>
               ) : stats.is_inactive ? (
                 <span className="acm-profile-status inactive">Cliente inactivo</span>
@@ -526,26 +573,28 @@ function ClientDetail({
           </div>
         </div>
         <div className="acm-detail-actions">
-          <button className="pa-btn primary acm-detail-action-primary" onClick={() => onCreateOrder(client)}>
-            <Icons.Plus /> Nueva orden
-          </button>
-          <details ref={menuRef} className="acm-more-menu">
-            <summary aria-label="Más acciones"><Icons.Menu /></summary>
-            <div>
-              <button onClick={() => onEditClient(client)}><Icons.Edit /> Editar cliente</button>
-              <button onClick={() => onViewOrders(client.id)}><Icons.Orders /> Ver todas las órdenes</button>
-              <button onClick={() => onManageCredit(client.id)}><Icons.Receipt /> Gestionar crédito</button>
-              {client.deleted_at ? (
-                <button onClick={() => onRestoreClient?.(client)}>
-                  <Icons.UserCheck /> Restaurar cliente
-                </button>
-              ) : (
-                <button className="danger" onClick={confirmDelete}>
-                  <Icons.Trash /> Dar de baja
-                </button>
-              )}
-            </div>
-          </details>
+          {client.deleted_at ? (
+            <button className="pa-btn primary acm-detail-action-primary" onClick={() => onRestoreClient?.(client)}>
+              <Icons.UserCheck /> Restaurar cliente
+            </button>
+          ) : (
+            <>
+              <button className="pa-btn primary acm-detail-action-primary" onClick={() => onCreateOrder(client)}>
+                <Icons.Plus /> Nueva orden
+              </button>
+              <details ref={menuRef} className="acm-more-menu">
+                <summary aria-label="Más acciones"><Icons.Menu /></summary>
+                <div>
+                  <button onClick={() => onEditClient(client)}><Icons.Edit /> Editar cliente</button>
+                  <button onClick={() => onViewOrders(client.id)}><Icons.Orders /> Ver todas las órdenes</button>
+                  <button onClick={() => onManageCredit(client.id)}><Icons.Receipt /> Gestionar crédito</button>
+                  <button className="danger" onClick={confirmDelete}>
+                    <Icons.Trash /> Dar de baja
+                  </button>
+                </div>
+              </details>
+            </>
+          )}
         </div>
       </div>
 
@@ -569,8 +618,8 @@ function ClientDetail({
           <div className="acm-stat-list">
             <StatLine icon={<Icons.AlertCircle />} label="Ordenes 911" value={numberValue(stats.urgent_911_orders)} tone="danger" />
             <StatLine icon={<Icons.FileText />} label="Ordenes normales" value={numberValue(stats.normal_orders)} tone="info" />
-            <StatLine icon={<Icons.Brush />} label="Ordenes diseno interno" value={numberValue(stats.internal_design_orders)} tone="violet" />
-            <StatLine icon={<Icons.ExternalLink />} label="Ordenes diseno externo" value={numberValue(stats.external_design_orders)} tone="warning" />
+            <StatLine icon={<Icons.Brush />} label="Órdenes diseño interno" value={numberValue(stats.internal_design_orders)} tone="violet" />
+            <StatLine icon={<Icons.ExternalLink />} label="Órdenes diseño externo" value={numberValue(stats.external_design_orders)} tone="warning" />
             <StatLine icon={<Icons.Orders />} label="Total de órdenes" value={numberValue(stats.total_orders)} tone="info" />
             <StatLine icon={<Icons.Clock />} label="Órdenes activas / pendientes" value={numberValue(stats.active_orders)} tone="warning" />
             <StatLine icon={<Icons.Check />} label="Órdenes completadas" value={numberValue(stats.completed_orders)} tone="success" />

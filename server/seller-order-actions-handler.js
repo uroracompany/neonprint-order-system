@@ -43,6 +43,26 @@ const SEARCH_FILTER_FIELDS = ["client_name", "description", "material", "invoice
 const DEFAULT_PAGE_SIZE = 15;
 const MAX_PAGE_SIZE = 100;
 
+// The list and dashboard never need the complete order record. Keeping these
+// projections explicit avoids transferring descriptions, assets and other
+// detail-only fields on every refresh while preserving every rendered field.
+const SELLER_LIST_COLUMNS = [
+  "id",
+  "client_id",
+  "client_name",
+  "invoice_number",
+  "status",
+  "payment_status",
+  "order_design_type",
+  "order_type",
+  "created_at",
+  "delivery_date",
+  "is_archived",
+  "return_reason",
+  "updated_at",
+].join(",");
+const SELLER_SUMMARY_COLUMNS = "id,status,created_at,is_archived,return_reason,order_design_type,delivery_date";
+
 const isPaymentPartial = (value) => ["parcial", "partial"].includes(normalizeKey(value));
 const isPaymentPaid = (value) => ["pagado", "paid"].includes(normalizeKey(value));
 const isPaymentCredit = (value) => ["credito", "crédito", "credit"].includes(normalizeKey(value));
@@ -90,6 +110,20 @@ const getDateRange = (dateFilter, nowValue) => {
     default:
       return {};
   }
+};
+
+const getAsuncionDateKey = (nowValue) => {
+  const now = nowValue ? new Date(nowValue) : new Date();
+  if (Number.isNaN(now.getTime())) return null;
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Asuncion",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
 };
 
 const isStatus = (order, status) => normalizeText(order?.status) === status;
@@ -147,6 +181,7 @@ const applySellerListFilters = (query, payload = {}, sellerId) => {
   const archive = normalizeText(payload.archive || payload.filterArchive || "active");
   const search = sanitizeSearch(payload.search);
   const dateRange = getDateRange(payload.dateFilter || payload.filterDate || "all", payload.now);
+  const overdueToday = payload.overdue === true ? getAsuncionDateKey(payload.now) : null;
 
   if (status !== "all") {
     nextQuery = nextQuery.eq("status", status);
@@ -170,6 +205,14 @@ const applySellerListFilters = (query, payload = {}, sellerId) => {
 
   if (dateRange.gte) nextQuery = nextQuery.gte("created_at", dateRange.gte);
   if (dateRange.lt) nextQuery = nextQuery.lt("created_at", dateRange.lt);
+
+  if (overdueToday) {
+    nextQuery = nextQuery
+      .not("delivery_date", "is", null)
+      .lt("delivery_date", overdueToday)
+      .neq("status", ORDER_STATUS.IN_DELIVERED)
+      .neq("status", ORDER_STATUS.CANCELLED);
+  }
 
   if (search) {
     const filters = SEARCH_FILTER_FIELDS.map((field) => `${field}.ilike.%${search}%`);
@@ -275,22 +318,6 @@ async function loadOwnedOrder(supabaseAdmin, orderId, profile, env) {
   return { order };
 }
 
-async function updateOwnedOrder(supabaseAdmin, order, values, env) {
-  const { data, error } = await supabaseAdmin
-    .from("orders")
-    .update(values)
-    .eq("id", order.id)
-    .select("*")
-    .single();
-
-  if (error || !data) {
-    debugSellerOrderAction("update-error", { orderId: order.id, error: error?.message }, env);
-    return { response: jsonResponse(500, { error: "No se pudo actualizar la orden.", code: "ORDER_UPDATE_FAILED" }) };
-  }
-
-  return { order: data };
-}
-
 async function assertAssigneeRole(supabaseAdmin, userId, allowedRole, label, env) {
   const assigneeId = normalizeText(userId);
   if (!assigneeId) {
@@ -339,10 +366,12 @@ async function handleCancel(payload, auth, env) {
     return jsonResponse(400, { error: "Debes indicar el motivo de cancelacion." });
   }
 
-  const updated = await updateOwnedOrder(
-    auth.supabaseAdmin,
+  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
+  const updated = await callSellerOrderCommand(
+    buildAuthenticatedSupabase(auth, env),
+    "seller_cancel_order",
+    { p_order_id: loaded.order.id, p_reason: reason, p_expected_updated_at: expectedUpdatedAt },
     loaded.order,
-    { status: ORDER_STATUS.CANCELLED, cancellation_reason: reason },
     env
   );
   if (updated.response) return updated.response;
@@ -378,33 +407,22 @@ async function handleUpdate(payload, auth, env) {
   );
   const removedFileUrls = sanitizeUrlList(payload.removed_file_urls || payload.removedFileUrls);
 
-  const supabaseWriter = buildAuthenticatedSupabase(auth, env) || auth.supabaseAdmin;
-  const updated = await updateOwnedOrder(supabaseWriter, loaded.order, changes, env);
+  const command = productionFileRows.length || removedFileUrls.length
+    ? "seller_update_order_with_files_and_specifications"
+    : "seller_update_order";
+  const commandArgs = command === "seller_update_order_with_files_and_specifications"
+    ? {
+      p_order_id: loaded.order.id,
+      p_expected_updated_at: expectedUpdatedAt,
+      p_changes: changes,
+      p_new_production_files: productionFileRows,
+      p_removed_file_urls: removedFileUrls,
+    }
+    : { p_order_id: loaded.order.id, p_expected_updated_at: expectedUpdatedAt, p_changes: changes };
+  const updated = await callSellerOrderCommand(
+    buildAuthenticatedSupabase(auth, env), command, commandArgs, loaded.order, env
+  );
   if (updated.response) return updated.response;
-
-  if (productionFileRows.length > 0) {
-    const { error } = await auth.supabaseAdmin
-      .from("order_production_files")
-      .insert(productionFileRows);
-
-    if (error) {
-      debugSellerOrderAction("production-files-insert-error", { orderId: loaded.order.id, error: error.message }, env);
-      return jsonResponse(400, { error: "La orden se actualizo, pero no se pudo guardar la clasificacion de produccion de los archivos." });
-    }
-  }
-
-  if (removedFileUrls.length > 0) {
-    const { error } = await auth.supabaseAdmin
-      .from("order_production_files")
-      .delete()
-      .eq("order_id", loaded.order.id)
-      .in("url", removedFileUrls);
-
-    if (error) {
-      debugSellerOrderAction("production-files-delete-error", { orderId: loaded.order.id, error: error.message }, env);
-      return jsonResponse(400, { error: "La orden se actualizo, pero no se pudieron retirar archivos de produccion." });
-    }
-  }
 
   return jsonResponse(200, { order: updated.order });
 }
@@ -416,19 +434,36 @@ async function handleSendToDesigner(payload, auth, env) {
   const assignee = await assertAssigneeRole(auth.supabaseAdmin, payload.designer_id || payload.designerId, "designer", "un disenador", env);
   if (assignee.response) return assignee.response;
 
-  const updated = await updateOwnedOrder(
-    auth.supabaseAdmin,
+  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
+  const updated = await callSellerOrderCommand(
+    buildAuthenticatedSupabase(auth, env),
+    "seller_send_order_to_designer",
+    { p_order_id: loaded.order.id, p_designer_id: assignee.profile.id, p_expected_updated_at: expectedUpdatedAt },
     loaded.order,
-    {
-      status: ORDER_STATUS.IN_DESIGN,
-      designer_id: assignee.profile.id,
-      return_reason: null,
-      returned_to_designer_at: null,
-    },
     env
   );
   if (updated.response) return updated.response;
   return jsonResponse(200, { order: updated.order });
+}
+
+async function callSellerOrderCommand(supabase, command, args, order, env) {
+  if (!supabase?.rpc) {
+    return { response: jsonResponse(500, { error: "No se pudo preparar el comando seguro de la orden.", code: "ORDER_COMMAND_UNAVAILABLE" }) };
+  }
+  const { data, error } = await supabase.rpc(command, args);
+
+  if (error || !data) {
+    debugSellerOrderAction("command-error", { orderId: order.id, command, error: error?.message }, env);
+    if (/ORDER_STALE|orden cambio mientras/i.test(error?.message || "")) {
+      return { response: jsonResponse(409, { error: "La orden cambio mientras la editabas. Actualiza los datos e intenta nuevamente." }) };
+    }
+    if (/Authentication|required|No tienes acceso|Solo Ventas/i.test(error?.message || "")) {
+      return { response: jsonResponse(403, { error: "No tienes permisos para ejecutar esta accion.", code: "ORDER_COMMAND_FORBIDDEN" }) };
+    }
+    return { response: jsonResponse(400, { error: error?.message || "No se pudo actualizar la orden.", code: "ORDER_UPDATE_FAILED" }) };
+  }
+
+  return { order: data };
 }
 
 async function handleSendToQuote(payload, auth, env) {
@@ -438,15 +473,22 @@ async function handleSendToQuote(payload, auth, env) {
   const assignee = await assertAssigneeRole(auth.supabaseAdmin, payload.quote_user_id || payload.quoteUserId, "quote", "un usuario de caja", env);
   if (assignee.response) return assignee.response;
 
-  const updated = await updateOwnedOrder(
-    auth.supabaseAdmin,
+  if (loaded.order.order_design_type !== "EXTERNAL_DESING") {
+    return jsonResponse(400, { error: "Solo órdenes de Diseño Externo pueden enviarse a Caja directamente desde Ventas." });
+  }
+  if (!isStatus(loaded.order, ORDER_STATUS.PENDING) && normalizeKey(loaded.order.status) !== "pending") {
+    return jsonResponse(400, { error: "La orden debe estar en Ventas antes de enviarse a Caja." });
+  }
+  if (loaded.order.is_archived) return jsonResponse(400, { error: "La orden no puede enviarse a Caja en este estado." });
+  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
+  if (!timestampsMatch(loaded.order.updated_at, expectedUpdatedAt)) {
+    return jsonResponse(409, { error: "La orden cambio mientras la editabas. Actualiza los datos e intenta nuevamente." });
+  }
+  const updated = await callSellerOrderCommand(
+    buildAuthenticatedSupabase(auth, env),
+    "seller_send_order_to_quote",
+    { p_order_id: loaded.order.id, p_quote_id: assignee.profile.id, p_expected_updated_at: expectedUpdatedAt },
     loaded.order,
-    {
-      status: ORDER_STATUS.IN_QUOTE,
-      quote_id: assignee.profile.id,
-      return_reason: null,
-      returned_to_designer_at: null,
-    },
     env
   );
   if (updated.response) return updated.response;
@@ -457,10 +499,6 @@ async function handleArchive(payload, auth, env) {
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
 
-  if (loaded.order.is_archived) {
-    return jsonResponse(200, { order: loaded.order });
-  }
-
   if (isPaymentPartial(loaded.order.payment_status)) {
     return jsonResponse(409, { error: "No se puede archivar una orden con pago parcial." });
   }
@@ -469,7 +507,14 @@ async function handleArchive(payload, auth, env) {
     return jsonResponse(409, { error: "Esta orden aun no puede archivarse en Ventas." });
   }
 
-  const updated = await updateOwnedOrder(auth.supabaseAdmin, loaded.order, { is_archived: true }, env);
+  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
+  const updated = await callSellerOrderCommand(
+    buildAuthenticatedSupabase(auth, env),
+    "seller_set_order_archive",
+    { p_order_id: loaded.order.id, p_archived: true, p_expected_updated_at: expectedUpdatedAt },
+    loaded.order,
+    env
+  );
   if (updated.response) return updated.response;
   return jsonResponse(200, { order: updated.order });
 }
@@ -483,7 +528,7 @@ async function handleList(payload, auth, env) {
 
   let listQuery = auth.supabaseAdmin
     .from("orders")
-    .select("*", { count: "exact" });
+    .select(SELLER_LIST_COLUMNS, { count: "exact" });
   listQuery = applySellerListFilters(listQuery, { ...payload, now: env.now }, sellerId);
 
   const [listResult, summaryResult, recentResult] = await Promise.all([
@@ -493,7 +538,7 @@ async function handleList(payload, auth, env) {
     applySellerOwnershipFilter(
       auth.supabaseAdmin
         .from("orders")
-        .select("id,status,created_at,is_archived,return_reason,order_design_type"),
+        .select(SELLER_SUMMARY_COLUMNS),
       sellerId
     ),
     payload.includeDashboard === false
@@ -501,7 +546,7 @@ async function handleList(payload, auth, env) {
       : applySellerOwnershipFilter(
         auth.supabaseAdmin
           .from("orders")
-          .select("*"),
+          .select(SELLER_LIST_COLUMNS),
         sellerId
       )
         .order("created_at", { ascending: false })

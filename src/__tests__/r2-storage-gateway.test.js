@@ -6,6 +6,7 @@ import {
   buildR2Url,
   getR2Config,
   parseR2Url,
+  parseSupabaseAssetRef,
   presignR2Url,
   shouldUseR2,
 } from "../../server/storage-gateway.js";
@@ -66,6 +67,38 @@ describe("Cloudflare R2 hybrid storage", () => {
       bucket: "neonprint-order-files-dev",
       key: "orders/order-1/design/file.pdf",
     });
+  });
+
+  it("accepts only canonical private asset references", () => {
+    expect(parseR2Url(
+      "r2://neonprint-order-files-dev/orders/order-1/design/file.pdf",
+      { allowedBucket: r2Env.R2_BUCKET },
+    )).toEqual({
+      bucket: r2Env.R2_BUCKET,
+      key: "orders/order-1/design/file.pdf",
+    });
+    expect(parseR2Url(
+      "r2://untrusted-bucket/orders/order-1/design/file.pdf",
+      { allowedBucket: r2Env.R2_BUCKET },
+    )).toBeNull();
+    expect(parseSupabaseAssetRef("supabase://order-docs/orders/order-1/files/archivo%20final.pdf")).toEqual({
+      bucket: "order-docs",
+      key: "orders/order-1/files/archivo final.pdf",
+    });
+    expect(parseSupabaseAssetRef("https://example.test/archivo.pdf")).toBeNull();
+  });
+
+  it("resolves downloads only through the catalogued, authorized gateway path", () => {
+    const gateway = readProjectFile("server/storage-gateway.js");
+    const readCheck = gateway.indexOf('if (action === "read") return null;');
+    const terminalWriteCheck = gateway.indexOf("if (TERMINAL_ORDER_STATUSES.has(order.status)");
+
+    expect(readCheck).toBeGreaterThan(-1);
+    expect(terminalWriteCheck).toBeGreaterThan(readCheck);
+    expect(gateway).toContain('parseR2Url(assetRef, { allowedBucket: r2Bucket })');
+    expect(gateway).toContain('.from("order_files")');
+    expect(gateway).toContain("handleResolveOrderAssetDownload");
+    expect(gateway).not.toContain("if (!r2Ref) return jsonResponse(200, { url })");
   });
 
   it("builds a browser-compatible PUT signature with unsigned payload and content type", () => {
