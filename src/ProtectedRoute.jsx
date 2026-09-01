@@ -67,11 +67,12 @@ const LoadingSession = () => (
 );
 
 export default function ProtectedRoute({ children, allowed = [] }) {
-  const { user, profile, loading, authError, authNotice, mfaLevel, hasVerifiedMfaFactor } = useAuth();
+  const { user, profile, loading, initialLoading, authError, authNotice, mfaLevel, hasVerifiedMfaFactor } = useAuth();
   const allowedRoles = useMemo(() => allowed.filter(Boolean), [allowed]);
+  const isInitialLoading = initialLoading ?? loading;
 
   if (
-    loading
+    isInitialLoading
     || (user && profile === undefined && !authError)
     || (profile?.role === "admin" && (mfaLevel === undefined || hasVerifiedMfaFactor === undefined))
   ) {

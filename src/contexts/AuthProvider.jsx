@@ -12,19 +12,22 @@ import {
   subscribeToAuthInvalidation,
 } from "../utils/authManager";
 import { AUTH_NOTICE, getLoginErrorCode } from "../utils/authFeedback";
-
-const PROFILE_COLUMNS = "id, name, email, role, employment_status, deleted_at, created_at";
+import { getAuthProfile } from "../utils/authProfile";
+import { getAuthMfaState } from "../utils/authMfa";
 
 export function AuthProvider({ children }) {
   const activeRef = useRef(true);
   const userIdRef = useRef(null);
+  const sessionGenerationRef = useRef(0);
+  const mfaRequestGenerationRef = useRef(0);
   const profileRef = useRef(undefined);
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(undefined);
   const [mfaLevel, setMfaLevel] = useState(null);
   const [hasVerifiedMfaFactor, setHasVerifiedMfaFactor] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [authNotice, setAuthNotice] = useState(null);
 
@@ -54,56 +57,56 @@ export function AuthProvider({ children }) {
     if (pendingNotice) setAuthNotice(pendingNotice);
   }, [updateProfile]);
 
-  const loadProfile = useCallback(async (userId) => {
+  const loadProfile = useCallback(async (userId, isCurrent = () => true) => {
     if (!userId) {
       updateProfile(null);
       return null;
     }
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select(PROFILE_COLUMNS)
-      .eq("id", userId)
-      .single();
-
-    if (error) throw Object.assign(error, { code: AUTH_NOTICE.PROFILE_UNAVAILABLE });
-    updateProfile(data || null);
+    let data;
+    try {
+      data = await getAuthProfile(userId);
+    } catch (error) {
+      throw Object.assign(error, { code: AUTH_NOTICE.PROFILE_UNAVAILABLE });
+    }
+    if (isCurrent()) updateProfile(data || null);
     return data || null;
   }, [updateProfile]);
 
-  const loadMfaLevel = useCallback(async (nextSession, { preserveCurrent = false } = {}) => {
+  const loadMfaLevel = useCallback(async (nextSession, {
+    force = false,
+    preserveCurrent = false,
+    isCurrent = () => true,
+  } = {}) => {
     if (!nextSession?.access_token) {
-      if (activeRef.current) {
+      if (isCurrent()) {
         setMfaLevel(null);
         setHasVerifiedMfaFactor(false);
       }
       return null;
     }
 
-    if (activeRef.current && !preserveCurrent) {
+    const requestGeneration = mfaRequestGenerationRef.current + 1;
+    mfaRequestGenerationRef.current = requestGeneration;
+    const isMfaCurrent = () => isCurrent() && mfaRequestGenerationRef.current === requestGeneration;
+
+    if (isMfaCurrent() && !preserveCurrent) {
       setMfaLevel(undefined);
       setHasVerifiedMfaFactor(undefined);
     }
 
-    const [aalResult, factorsResult] = await Promise.all([
-      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-      supabase.auth.mfa.listFactors(),
-    ]);
-
-    if (aalResult.error) throw aalResult.error;
-    if (factorsResult.error) throw factorsResult.error;
-
-    const nextLevel = aalResult.data?.currentLevel || null;
+    const { currentLevel: nextLevel, factors } = await getAuthMfaState(nextSession.user?.id, { force });
+    if (!isMfaCurrent()) return null;
     const factorGroups = [
-      factorsResult.data?.totp,
-      factorsResult.data?.phone,
-      factorsResult.data?.webauthn,
+      factors?.totp,
+      factors?.phone,
+      factors?.webauthn,
     ];
     const hasVerifiedFactor = factorGroups.some((factors) => (
       Array.isArray(factors) && factors.some((factor) => factor.status === "verified")
     ));
 
-    if (activeRef.current) {
+    if (isMfaCurrent()) {
       setMfaLevel(nextLevel);
       setHasVerifiedMfaFactor(hasVerifiedFactor);
     }
@@ -111,13 +114,30 @@ export function AuthProvider({ children }) {
   }, []);
 
   const applySession = useCallback(async (nextSession, event = "UNKNOWN") => {
+    const generation = sessionGenerationRef.current + 1;
+    sessionGenerationRef.current = generation;
+    const nextUserId = nextSession?.user?.id || null;
+    const isCurrent = () => (
+      activeRef.current
+      && sessionGenerationRef.current === generation
+      && userIdRef.current === nextUserId
+    );
     setCachedAuthSession(nextSession);
 
     const nextUser = nextSession?.user || null;
     const previousUserId = userIdRef.current;
-    const nextUserId = nextUser?.id || null;
     const isSameUser = Boolean(nextUserId && previousUserId === nextUserId);
+    // Session events for the same identity are background maintenance. They
+    // must never make the protected route look like a fresh application boot.
+    const isSessionMaintenanceForSameUser = isSameUser && [
+      "TOKEN_REFRESHED",
+      "INITIAL_SESSION",
+      "SIGNED_IN",
+    ].includes(event);
     const isTokenRefreshForSameUser = event === "TOKEN_REFRESHED" && isSameUser;
+    // A redundant sign-in event may still be a useful profile check (for
+    // example, after reconnecting). It is safe because the existing profile
+    // stays rendered until the refreshed value is confirmed.
     const shouldLoadProfile = Boolean(nextUserId && !isTokenRefreshForSameUser);
     const shouldShowProfileLoading = Boolean(nextUserId && (!isSameUser || profileRef.current === undefined));
 
@@ -139,17 +159,37 @@ export function AuthProvider({ children }) {
       }
     }
 
-    const tasks = [];
-    if (shouldLoadProfile) tasks.push(loadProfile(nextUser.id));
-    if (nextUser) tasks.push(loadMfaLevel(nextSession, { preserveCurrent: isTokenRefreshForSameUser }));
+    let nextProfile = profileRef.current;
+    try {
+      if (shouldLoadProfile) {
+        nextProfile = await loadProfile(nextUser.id, isCurrent);
+      }
+      if (!isCurrent()) return;
 
-    if (tasks.length) {
-      await Promise.all(tasks);
+      // MFA is an administrator-only startup dependency. Other roles should
+      // be able to render as soon as their profile has been validated.
+      if (nextUser && nextProfile?.role === "admin") {
+        await loadMfaLevel(nextSession, {
+          preserveCurrent: isSessionMaintenanceForSameUser,
+          isCurrent,
+        });
+      } else if (nextUser && isCurrent()) {
+        setMfaLevel(null);
+        setHasVerifiedMfaFactor(false);
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        updateProfile(undefined);
+        setMfaLevel(null);
+        setHasVerifiedMfaFactor(false);
+        setAuthError({ code: AUTH_NOTICE.PROFILE_UNAVAILABLE, cause: error });
+      }
+      throw error;
     }
   }, [loadMfaLevel, loadProfile, updateProfile]);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
+    setBackgroundRefreshing(true);
     setAuthError(null);
 
     try {
@@ -161,7 +201,7 @@ export function AuthProvider({ children }) {
       clearAuthState({ notice: getLoginErrorCode(error), error });
       return null;
     } finally {
-      if (activeRef.current) setLoading(false);
+      if (activeRef.current) setBackgroundRefreshing(false);
     }
   }, [applySession, clearAuthState]);
 
@@ -174,7 +214,7 @@ export function AuthProvider({ children }) {
     activeRef.current = true;
 
     const initialize = async () => {
-      setLoading(true);
+      setInitialLoading(true);
       setAuthError(null);
 
       try {
@@ -183,7 +223,7 @@ export function AuthProvider({ children }) {
       } catch (error) {
         clearAuthState({ notice: getLoginErrorCode(error), error });
       } finally {
-        if (activeRef.current) setLoading(false);
+        if (activeRef.current) setInitialLoading(false);
       }
     };
 
@@ -195,14 +235,7 @@ export function AuthProvider({ children }) {
     initialize();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      void applySession(nextSession, event).catch((error) => {
-        if (activeRef.current) {
-          updateProfile(undefined);
-          setMfaLevel(null);
-          setHasVerifiedMfaFactor(false);
-          setAuthError({ code: AUTH_NOTICE.PROFILE_UNAVAILABLE, cause: error });
-        }
-      });
+      void applySession(nextSession, event).catch(() => undefined);
     });
 
     return () => {
@@ -212,6 +245,34 @@ export function AuthProvider({ children }) {
       stopSessionMonitor();
     };
   }, [applySession, clearAuthState, updateProfile]);
+
+  useEffect(() => {
+    if (!user?.id || profile?.role !== "admin") return undefined;
+
+    const handleMfaVerified = (event) => {
+      if (event.detail?.userId && event.detail.userId !== user.id) return;
+      if (!session?.access_token) return;
+
+      setMfaLevel(undefined);
+      setHasVerifiedMfaFactor(undefined);
+      const expectedUserId = user.id;
+      void loadMfaLevel(session, {
+        force: true,
+        preserveCurrent: true,
+        isCurrent: () => activeRef.current && userIdRef.current === expectedUserId,
+      }).catch(() => {
+        // Keep the protected route blocked if the post-verification refresh
+        // cannot confirm the new assurance level.
+        if (activeRef.current && userIdRef.current === expectedUserId) {
+          setMfaLevel("aal1");
+          setHasVerifiedMfaFactor(true);
+        }
+      });
+    };
+
+    window.addEventListener("neonprint:mfa-verified", handleMfaVerified);
+    return () => window.removeEventListener("neonprint:mfa-verified", handleMfaVerified);
+  }, [loadMfaLevel, profile?.role, session, user?.id]);
 
   useEffect(() => {
     if (!user?.id) return undefined;
@@ -236,14 +297,18 @@ export function AuthProvider({ children }) {
     session,
     user,
     profile,
-    loading,
+    // `loading` remains as a compatibility alias for consumers that only need
+    // the initial route gate. Background work is deliberately separate.
+    loading: initialLoading,
+    initialLoading,
+    backgroundRefreshing,
     authError,
     authNotice,
     mfaLevel,
     hasVerifiedMfaFactor,
     refresh,
     signOut,
-  }), [authError, authNotice, hasVerifiedMfaFactor, loading, mfaLevel, profile, refresh, session, signOut, user]);
+  }), [authError, authNotice, backgroundRefreshing, hasVerifiedMfaFactor, initialLoading, mfaLevel, profile, refresh, session, signOut, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
