@@ -7,6 +7,7 @@ const read = (file) => fs.readFileSync(path.resolve(process.cwd(), file), "utf8"
 
 const adminMigration = read("supabase/migrations/20260828123000_secure_admin_order_edit_and_lifecycle_commands.sql");
 const repairMigration = read("supabase/migrations/20260828131500_fix_order_edit_delivery_date_text.sql");
+const semiAdminRepairMigration = read("supabase/migrations/20260905121410_fix_semi_admin_text_delivery_date.sql");
 const createMigration = read("supabase/migrations/20260828091500_restore_admin_order_capabilities.sql");
 const editModal = read("src/components/orders/EditOrderModal.jsx");
 
@@ -26,6 +27,13 @@ describe("order editing with textual delivery dates", () => {
     expect(repairMigration).not.toContain("::date else delivery_date");
     expect(repairMigration).not.toContain("coalesce((p_payload#>>'{changes,delivery_date}')::date, delivery_date)");
     expect(createMigration).not.toContain("nullif(p_order->>'delivery_date', '')::date");
+  });
+
+  it("keeps the Semi-Admin file update route text-typed too", () => {
+    expect(semiAdminRepairMigration).toContain("create or replace function public.semi_admin_update_order(");
+    expect(semiAdminRepairMigration).toContain("v_delivery_date text;");
+    expect(semiAdminRepairMigration).toContain("delivery_date=case when p_changes ? 'delivery_date' then v_delivery_date else delivery_date end");
+    expect(semiAdminRepairMigration).not.toContain("::date else delivery_date");
   });
 
   it("does not render asset upload controls for an administrator outside the permitted stage", () => {

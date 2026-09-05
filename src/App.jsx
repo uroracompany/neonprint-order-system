@@ -33,7 +33,7 @@ function App() {
 
                 <Route path="/dashboard" element={<ProtectedRoute allowed={["admin"]}><Dashboard /></ProtectedRoute>} />
                 <Route path="/designer" element={<ProtectedRoute allowed={["designer"]}><PageDesigner /></ProtectedRoute>} />
-                <Route path="/page-seller" element={<ProtectedRoute allowed={["seller"]}><PageSeller /></ProtectedRoute>} />
+                <Route path="/page-seller" element={<ProtectedRoute allowed={["seller", "semi_admin"]}><PageSeller /></ProtectedRoute>} />
                 <Route path="/quote" element={<ProtectedRoute allowed={["quote"]}><PageQuote /></ProtectedRoute>} />
                 <Route path="/production" element={<ProtectedRoute allowed={["digital_producer", "dtf_producer", "ploteo_producer"]}><PageProduction /></ProtectedRoute>} />
                 <Route path="/delivery" element={<ProtectedRoute allowed={["delivery"]}><PageDelivery /></ProtectedRoute>} />

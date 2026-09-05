@@ -304,6 +304,7 @@ const getRoleLabel = (role) => {
     designer: "Diseñador",
     quote: "Caja",
     admin: "Administrador",
+    semi_admin: "Semi-Administrador",
     printer: "Producción",
     digital_producer: "Producción Digital",
     dtf_producer: "Producción DTF",
@@ -1101,6 +1102,7 @@ export function UserFormModal({ open, mode = "create", userForm, setUserForm, on
                 value={userForm.role}
                 onChange={e => updateUserForm(prev => ({ ...prev, role: e.target.value }))}
               >
+                <option value="semi_admin">Semi-Administrador</option>
                 <option value="seller">Vendedor</option>
                 <option value="designer">Diseñador</option>
                 <option value="quote">Caja</option>
@@ -2527,7 +2529,7 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
       await executeAdminOrderCommand(supabase, {
         orderId: assigningOrder.id,
         action: isDesigner ? "route_design" : "route_quote",
-        payload: { target_user_id: userId },
+        payload: userId ? { target_user_id: userId } : {},
         reasonCategory: "assignment_correction",
         reasonDetail: "Asignación realizada por Administración desde el detalle de la orden.",
         expectedUpdatedAt: assigningOrder.updated_at,
@@ -5057,7 +5059,7 @@ const filteredMaterials = useMemo(() => {
                 placeholder: "Buscar por nombre, correo o rol...",
               }}
               controls={[
-                { id: "role", label: "Rol", icon: <Icons.Users />, value: roleFilter, onChange: setRoleFilter, isActive: roleFilter !== "all", options: [{ value: "all", label: "Todos los roles" }, { value: "admin", label: "Administrador" }, { value: "seller", label: "Vendedor" }, { value: "designer", label: "Diseñador" }, { value: "quote", label: "Caja" }, { value: "printer", label: "Producción legacy" }, { value: "digital_producer", label: "Producción Digital" }, { value: "dtf_producer", label: "Producción DTF" }, { value: "ploteo_producer", label: "Producción Ploteo" }, { value: "delivery", label: "Entrega" }] },
+                { id: "role", label: "Rol", icon: <Icons.Users />, value: roleFilter, onChange: setRoleFilter, isActive: roleFilter !== "all", options: [{ value: "all", label: "Todos los roles" }, { value: "admin", label: "Administrador" }, { value: "semi_admin", label: "Semi-Administrador" }, { value: "seller", label: "Vendedor" }, { value: "designer", label: "Diseñador" }, { value: "quote", label: "Caja" }, { value: "printer", label: "Producción legacy" }, { value: "digital_producer", label: "Producción Digital" }, { value: "dtf_producer", label: "Producción DTF" }, { value: "ploteo_producer", label: "Producción Ploteo" }, { value: "delivery", label: "Entrega" }] },
                 { id: "employment", label: "Estado laboral", icon: <Icons.UserCheck />, value: employmentFilter, onChange: setEmploymentFilter, isActive: employmentFilter !== "all", options: [{ value: "all", label: "Todos" }, { value: "active", label: "Activos" }, { value: "inactive", label: "Inactivos" }] },
               ]}
               resultCount={filteredProfiles.length}
@@ -5286,7 +5288,8 @@ const filteredMaterials = useMemo(() => {
       <AssignModal
         open={!!assigningOrder}
         order={assigningOrder}
-        role={assigningRole}
+      role={assigningRole}
+      allowUnassigned={assigningRole === "quote"}
         title={assigningOrder?.order_design_type === "EXTERNAL_DESING" ? "Enviar a Caja" : undefined}
         onClose={() => { setAssigningOrder(null); setAssigningRole(null); }}
         onConfirm={handleAssignOrder}

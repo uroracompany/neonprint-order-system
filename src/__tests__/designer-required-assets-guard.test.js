@@ -46,6 +46,10 @@ describe("designer required assets guard", () => {
     expect(designerPage).toContain("const hasRequiredAssets = effectivePersistedFiles.length + pendingFiles.length > 0 && hasPreview;");
     expect(designerPage).toContain("const hasPersistedRequiredAssets = effectivePersistedFiles.length > 0 && hasPersistedPreview;");
     expect(designerPage).toContain("disabled={!canSaveChanges}");
+    expect(designerPage).toContain("const sendToQuotationBlockReason = !canEditDesignerAssets");
+    expect(designerPage).toContain("Guarda al menos un archivo de diseño antes de enviar a Caja.");
+    expect(designerPage).toContain("Guarda la orden de trabajo antes de enviar a Caja.");
+    expect(designerPage).toContain("disabled={!canSendToQuotation || quotationSending || Boolean(removingFileId)}");
     expect(designerPage).toContain('rpc("designer_remove_order_preview", {');
   });
 });

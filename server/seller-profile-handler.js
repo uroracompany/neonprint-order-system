@@ -288,7 +288,7 @@ const createAnalytics = ({ orders, currentMonthOrders, designerProfiles, now }) 
 });
 
 export async function handleSellerProfile(payload = {}, env = process.env) {
-  const auth = await requireAuthenticated(env.authHeader || "", env, { allowedRoles: ["seller", "admin"] });
+  const auth = await requireAuthenticated(env.authHeader || "", env, { allowedRoles: ["seller", "semi_admin", "admin"] });
   if (!auth.authorized) {
       return { status: auth.status || 401, body: { error: auth.error, code: auth.code } };
   }

@@ -450,8 +450,8 @@ function QuoteOrderDetailModal({
       return;
     }
 
-    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile) {
-      const msg = "Debes subir una imagen del recibo o factura antes de confirmar.";
+    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim()) {
+      const msg = "Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.";
       // Mostramos error inline DENTRO del modal
       setLocalError(msg);
       // Y también mostramos un toast flotante para que el usuario no se lo pierda
@@ -763,7 +763,7 @@ function QuoteOrderDetailModal({
                       inputRef={fileInputRef}
                       buttonLabel="Seleccionar desde el ordenador"
                       hint={PAYMENT_RECEIPT_HINT}
-                      className={paymentStatus === PAYMENT_STATUS.PAID && !receiptFile ? "pq-receipt-required" : ""}
+                      className={paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim() ? "pq-receipt-required" : ""}
                       disabled={!canConfirmPayment || paymentSaving}
                       externalError={receiptZoneError}
                       externalErrorKey={receiptZoneErrorKey}
@@ -836,7 +836,7 @@ function QuoteOrderDetailModal({
                 </button>
               )}
               <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
-              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving || paymentStatus === initialPaymentStatus || (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile)}>
+              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving || paymentStatus === initialPaymentStatus || (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim())}>
                 {getPaymentConfirmButtonLabel(paymentStatus, paymentSaving)}
               </button>
             </div>
@@ -1778,12 +1778,12 @@ export default function PageQuote() {
       return applyCreditToOrder(order);
     }
 
-    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile) {
+    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim()) {
       notif.showActionNotification({
         type: "order_cancelled",
-        label: "Imagen requerida",
+        label: "Comprobante requerido",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-        message: "No puedes confirmar el pago sin subir la imagen del recibo o factura.",
+        message: "Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.",
       });
       return { ok: false };
     }

@@ -58,6 +58,10 @@ export function AssignModal({
   filterActive = false,
   defaultUserId = "",
   lockedDeliveryId = "",
+  allowSelfAssignment = false,
+  currentUserId = "",
+  currentResponsibleId = "",
+  allowUnassigned = false,
   title: customTitle,
   description: customDescription,
 }) {
@@ -71,6 +75,7 @@ export function AssignModal({
   const hasLockedDelivery = role === "delivery" && !!lockedDeliveryId;
   const effectiveDefaultUserId = hasLockedDelivery ? lockedDeliveryId : defaultUserId;
   const hasDefaultUser = !!effectiveDefaultUserId;
+  const isCurrentUserResponsible = Boolean(allowSelfAssignment && currentUserId && currentResponsibleId === currentUserId);
 
   useEffect(() => {
     if (!open) return;
@@ -91,16 +96,31 @@ export function AssignModal({
       query = query.eq("id", lockedDeliveryId);
     }
 
-    query.then(({ data, error: fetchError }) => {
+    const semiAdminQuery = allowSelfAssignment
+      ? supabase
+        .from("profiles")
+        .select("id, name, role")
+        .eq("role", "semi_admin")
+        .eq("employment_status", true)
+        .is("deleted_at", null)
+      : Promise.resolve({ data: [], error: null });
+
+    Promise.all([query, semiAdminQuery]).then(([{ data, error: fetchError }, { data: semiAdmins, error: semiAdminError }]) => {
       setLoadingUsers(false);
-      if (fetchError) {
+      if (fetchError || semiAdminError) {
         setError("Error al cargar usuarios");
         setUsers([]);
         return;
       }
-      const mapped = (data || []).map((p) => ({
+      const candidates = [...(data || [])];
+      (semiAdmins || []).forEach((profile) => {
+        if (!candidates.some((candidate) => candidate.id === profile.id)) candidates.push(profile);
+      });
+      const mapped = candidates.map((p) => ({
         ...p,
-        displayName: p.name || config.label,
+        displayName: p.id === currentUserId && p.role === "semi_admin"
+          ? "Yo (Semi-Administrador)"
+          : (p.name || config.label),
       }));
 
       if (hasDefaultUser) {
@@ -116,10 +136,10 @@ export function AssignModal({
         setSelectedUserId(effectiveDefaultUserId);
       }
     });
-  }, [open, config.filterRole, config.label, filterActive, hasDefaultUser, effectiveDefaultUserId, hasLockedDelivery, lockedDeliveryId]);
+  }, [open, config.filterRole, config.label, filterActive, hasDefaultUser, effectiveDefaultUserId, hasLockedDelivery, lockedDeliveryId, allowSelfAssignment, currentUserId]);
 
   const handleConfirm = () => {
-    if (!selectedUserId) {
+    if (!selectedUserId && !allowUnassigned) {
       setError("Debes seleccionar un usuario.");
       return;
     }
@@ -215,6 +235,22 @@ export function AssignModal({
             </div>
           ) : (
             <div style={{ marginBottom: 16 }}>
+              {allowSelfAssignment && !isCurrentUserResponsible && users.some((user) => user.id === currentUserId) && (
+                <button
+                  type="button"
+                  onClick={() => { setSelectedUserId(currentUserId); setError(""); }}
+                  disabled={loading || hasLockedDelivery}
+                  style={{
+                    width: "100%", marginBottom: 10, padding: "10px 14px", borderRadius: 8,
+                    border: `1.5px solid ${selectedUserId === currentUserId ? config.color : "#C7D2FE"}`,
+                    background: selectedUserId === currentUserId ? `${config.color}12` : "#F8FAFF",
+                    color: config.iconColor, fontSize: 14, fontWeight: 700, cursor: "pointer",
+                    fontFamily: "'Poppins', sans-serif", opacity: loading || hasLockedDelivery ? 0.5 : 1,
+                  }}
+                >
+                  Asignarme a mí como responsable de {config.label}
+                </button>
+              )}
               <select
                 value={selectedUserId}
                 onChange={(e) => { setSelectedUserId(e.target.value); setError(""); }}
@@ -227,7 +263,7 @@ export function AssignModal({
                   cursor: "pointer", outline: "none",
                 }}
               >
-                <option value="">-- Seleccionar {config.label} --</option>
+                <option value="">{allowUnassigned ? "Sin seleccionar — asignarme a mí al enviar" : `-- Seleccionar ${config.label} --`}</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.displayName}{u.id === effectiveDefaultUserId ? " (Original)" : ""}
@@ -262,18 +298,18 @@ export function AssignModal({
             </button>
             <button
               onClick={handleConfirm}
-              disabled={loading || !selectedUserId}
+              disabled={loading || (!selectedUserId && !allowUnassigned)}
               style={{
                 padding: "10px 24px", borderRadius: 8, border: "none",
-                background: !selectedUserId || loading
+                background: (!selectedUserId && !allowUnassigned) || loading
                   ? `${config.color}60`
                   : `linear-gradient(135deg, ${config.color} 0%, ${config.iconColor} 100%)`,
                 color: "#fff", fontSize: 14, fontWeight: 600,
                 cursor: "pointer", fontFamily: "'Poppins', sans-serif",
-                boxShadow: !selectedUserId || loading
+                boxShadow: (!selectedUserId && !allowUnassigned) || loading
                   ? "none"
                   : `0 2px 8px ${config.color}40`,
-                opacity: (!selectedUserId || loading) ? 0.6 : 1,
+                opacity: ((!selectedUserId && !allowUnassigned) || loading) ? 0.6 : 1,
               }}
             >
               {loading ? "Asignando..." : "Asignar Orden"}

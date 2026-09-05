@@ -286,6 +286,12 @@ export default function useNotifications(userId) {
           // Cuando llega una notificación nueva
           const newNotif = payload.new;
           if (!isActiveNotification(newNotif)) return;
+
+          // Realtime can arrive before a post-mutation refresh. Keep the fetch
+          // baseline current so the same database event cannot be toasted twice.
+          if (!notificationsRef.current.some((notification) => notification.id === newNotif.id)) {
+            notificationsRef.current = [newNotif, ...notificationsRef.current].slice(0, MAX_NOTIFICATION_ROWS);
+          }
           
           // Actualizar lista de notificaciones (máximo 50)
           setNotifications((prev) => {

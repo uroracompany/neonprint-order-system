@@ -63,6 +63,25 @@ function FocusRetentionHarness() {
   );
 }
 
+function ThreeLayerHarness() {
+  const [middleOpen, setMiddleOpen] = useState(true);
+  const [topOpen, setTopOpen] = useState(true);
+
+  return (
+    <Modal open onClose={() => {}} title="Orden">
+      {middleOpen && (
+        <Modal open onClose={() => setMiddleOpen(false)} title="Agregar archivo">
+          {topOpen && (
+            <Modal open onClose={() => setTopOpen(false)} title="Detalles de archivo" overlayClassName="ps-file-details-overlay">
+              <button type="button">Guardar detalles</button>
+            </Modal>
+          )}
+        </Modal>
+      )}
+    </Modal>
+  );
+}
+
 function renderReact(ui) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -157,5 +176,29 @@ describe("shared Modal portal behavior", () => {
     expect(document.activeElement).toBe(input);
 
     view.unmount();
+  });
+
+  it("conserva los modales padres y el bloqueo de scroll al cerrar cada nivel anidado", async () => {
+    const user = userEvent.setup();
+    const view = renderReact(<ThreeLayerHarness />);
+    const closeFor = (title) => Array.from(document.body.querySelectorAll("[role='dialog']"))
+      .find((dialog) => dialog.textContent.includes(title))
+      ?.querySelector("[aria-label='Cerrar modal']");
+
+    expect(document.body.querySelectorAll("[role='dialog']")).toHaveLength(3);
+    const fileDetailsOverlay = document.body.querySelector(".ps-file-details-overlay");
+    expect(fileDetailsOverlay).toBeTruthy();
+    await user.click(fileDetailsOverlay);
+    expect(document.body.querySelectorAll("[role='dialog']")).toHaveLength(3);
+    await user.click(closeFor("Detalles de archivo"));
+    expect(document.body.querySelectorAll("[role='dialog']")).toHaveLength(2);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    await user.click(closeFor("Agregar archivo"));
+    expect(document.body.querySelectorAll("[role='dialog']")).toHaveLength(1);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    view.unmount();
+    expect(document.body.style.overflow).toBe("");
   });
 });

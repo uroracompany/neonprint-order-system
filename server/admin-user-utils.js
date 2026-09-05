@@ -1,5 +1,6 @@
 export const ADMIN_USER_ROLES = [
   "admin",
+  "semi_admin",
   "seller",
   "designer",
   "quote",

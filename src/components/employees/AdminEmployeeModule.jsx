@@ -27,6 +27,7 @@ const getRoleLabel = (role) => {
     designer: "Diseñador",
     quote: "Caja",
     admin: "Administrador",
+    semi_admin: "Semi-Administrador",
     printer: "Producción",
     digital_producer: "Producción Digital",
     dtf_producer: "Producción DTF",

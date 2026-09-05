@@ -173,8 +173,8 @@ const buildSummary = (orders = [], nowValue) => {
   });
 };
 
-const applySellerListFilters = (query, payload = {}, sellerId) => {
-  let nextQuery = query.or(`seller_id.eq.${sellerId},created_by.eq.${sellerId}`);
+const applySellerListFilters = (query, payload = {}, sellerId, { global = false } = {}) => {
+  let nextQuery = global ? query : query.or(`seller_id.eq.${sellerId},created_by.eq.${sellerId}`);
   const status = normalizeText(payload.status || payload.filterStatus || "all");
   const paymentStatus = normalizeText(payload.paymentStatus || payload.payment_status || payload.filterPayment || "all");
   const clientId = normalizeText(payload.clientId || payload.client_id || payload.filterClient || "all");
@@ -228,6 +228,8 @@ const applySellerOwnershipFilter = (query, sellerId) => (
 );
 
 const isAdminProfile = (profile) => profile?.role === "admin";
+const isSemiAdminProfile = (profile) => profile?.role === "semi_admin";
+const isOrderOperatorProfile = (profile) => isAdminProfile(profile) || isSemiAdminProfile(profile);
 
 const isOwnedByProfile = (order, profile) =>
   Boolean(order?.seller_id === profile?.id || order?.created_by === profile?.id);
@@ -246,10 +248,11 @@ const buildAuthenticatedSupabase = (auth, env) => {
   });
 };
 
-const sanitizeSellerOrderChanges = (changes = {}) => {
+const sanitizeSellerOrderChanges = (changes = {}, { allowClientIdentity = true } = {}) => {
   const sanitized = {};
   Object.entries(changes || {}).forEach(([field, value]) => {
     if (!SELLER_EDITABLE_ORDER_FIELDS.has(field)) return;
+    if (!allowClientIdentity && ["client_id", "client_name", "client_contact"].includes(field)) return;
     if (value === undefined) return;
     sanitized[field] = value;
   });
@@ -265,6 +268,10 @@ const sanitizeProductionFileRows = (rows = [], order, actorId) => {
       filename: normalizeText(row?.filename) || "Archivo",
       public_label: normalizeText(row?.public_label || row?.publicLabel),
       production_area_code: normalizeText(row?.production_area_code || row?.productionAreaCode),
+      material_names: Array.from(new Set((row?.material_names || row?.materialNames || [])
+        .map(normalizeText)
+        .filter(Boolean))),
+      termination_name: normalizeText(row?.termination_name || row?.terminationName) || null,
       status: normalizeText(row?.status) || "pending",
       created_by: actorId,
       updated_by: actorId,
@@ -310,7 +317,7 @@ async function loadOwnedOrder(supabaseAdmin, orderId, profile, env) {
     return { response: jsonResponse(404, { error: "No se encontro la orden." }) };
   }
 
-  if (!isAdminProfile(profile) && !isOwnedByProfile(order, profile)) {
+  if (!isOrderOperatorProfile(profile) && !isOwnedByProfile(order, profile)) {
     debugSellerOrderAction("ownership-denied", { orderId, profileId: profile?.id }, env);
     return { response: jsonResponse(403, { error: "No tienes acceso a esta orden." }) };
   }
@@ -318,7 +325,8 @@ async function loadOwnedOrder(supabaseAdmin, orderId, profile, env) {
   return { order };
 }
 
-async function assertAssigneeRole(supabaseAdmin, userId, allowedRole, label, env) {
+async function assertAssigneeRole(supabaseAdmin, userId, allowedRoles, label, env) {
+  const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
   const assigneeId = normalizeText(userId);
   if (!assigneeId) {
     return { response: jsonResponse(400, { error: `Debes seleccionar ${label}.` }) };
@@ -331,12 +339,12 @@ async function assertAssigneeRole(supabaseAdmin, userId, allowedRole, label, env
     .single();
 
   if (error || !profile) {
-    debugSellerOrderAction("assignee-not-found", { assigneeId, allowedRole, error: error?.message }, env);
+    debugSellerOrderAction("assignee-not-found", { assigneeId, allowedRoles: roles, error: error?.message }, env);
     return { response: jsonResponse(404, { error: `No se encontro ${label}.` }) };
   }
 
-  if (profile.role !== allowedRole || profile.employment_status === false) {
-    debugSellerOrderAction("assignee-invalid", { assigneeId, role: profile.role, allowedRole }, env);
+  if (!roles.includes(profile.role) || profile.employment_status === false) {
+    debugSellerOrderAction("assignee-invalid", { assigneeId, role: profile.role, allowedRoles: roles }, env);
     return { response: jsonResponse(400, { error: `${label} no esta disponible para esta asignacion.` }) };
   }
 
@@ -346,10 +354,76 @@ async function assertAssigneeRole(supabaseAdmin, userId, allowedRole, label, env
 async function handleDetail(payload, auth, env) {
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
-  return jsonResponse(200, { order: loaded.order });
+
+  if (!isSemiAdminProfile(auth.profile)) {
+    return jsonResponse(200, { order: loaded.order });
+  }
+
+  const [filesResult, operatorsResult, deliveryResult, stageUsersResult, responsibilityEventsResult] = await Promise.all([
+    auth.supabaseAdmin
+      .from("order_production_files")
+      .select("id,url,filename,public_label,production_area_code,material_names,termination_name,status,assigned_to,updated_at")
+      .eq("order_id", loaded.order.id)
+      .order("created_at", { ascending: true }),
+    auth.supabaseAdmin
+      .from("profiles")
+      .select("id,name,role")
+      .in("role", ["digital_producer", "dtf_producer", "ploteo_producer"])
+      .eq("employment_status", true)
+      .is("deleted_at", null)
+      .order("name", { ascending: true }),
+    auth.supabaseAdmin
+      .from("profiles")
+      .select("id,name,role")
+      .in("role", ["delivery", "semi_admin"])
+      .eq("employment_status", true)
+      .is("deleted_at", null)
+      .order("name", { ascending: true }),
+    auth.supabaseAdmin
+      .from("profiles")
+      .select("id,name,role")
+      .in("role", ["designer", "quote", "semi_admin"])
+      .eq("employment_status", true)
+      .is("deleted_at", null)
+      .order("name", { ascending: true }),
+    auth.supabaseAdmin
+      .from("order_events")
+      .select("id,actor_id,event_type,changes,created_at")
+      .eq("order_id", loaded.order.id)
+      .eq("event_type", "semi_admin_stage_responsibility_changed")
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ]);
+
+  if (filesResult.error || operatorsResult.error || deliveryResult.error || stageUsersResult.error || responsibilityEventsResult.error) {
+    debugSellerOrderAction("semi-admin-detail-operational-data-error", {
+      files: filesResult.error?.message,
+      operators: operatorsResult.error?.message,
+      delivery: deliveryResult.error?.message,
+      stageUsers: stageUsersResult.error?.message,
+      responsibilityEvents: responsibilityEventsResult.error?.message,
+    }, env);
+    return jsonResponse(500, { error: "No se pudo cargar la información operativa de la orden." });
+  }
+
+  return jsonResponse(200, {
+    order: {
+      ...loaded.order,
+      order_production_files: filesResult.data || [],
+      semi_admin_operational_users: {
+        production: operatorsResult.data || [],
+        delivery: deliveryResult.data || [],
+        stages: stageUsersResult.data || [],
+      },
+      semi_admin_stage_responsibility_history: responsibilityEventsResult.data || [],
+    },
+  });
 }
 
 async function handleCancel(payload, auth, env) {
+  if (isSemiAdminProfile(auth.profile)) {
+    return jsonResponse(403, { error: "Cancelar órdenes está reservado para Administración.", code: "SEMI_ADMIN_DESTRUCTIVE_ACTION_FORBIDDEN" });
+  }
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
 
@@ -390,12 +464,21 @@ async function handleUpdate(payload, auth, env) {
     return jsonResponse(409, { error: "No se puede editar una orden en cotizacion." });
   }
 
+  if (isSemiAdminProfile(auth.profile) && [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_DELIVERED].includes(loaded.order.status)) {
+    return jsonResponse(409, { error: "No se puede editar una orden cancelada o entregada." });
+  }
+
   const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt;
   if (!timestampsMatch(loaded.order.updated_at, expectedUpdatedAt)) {
     return jsonResponse(409, { error: "La orden cambio mientras la editabas. Actualiza los datos e intenta nuevamente." });
   }
 
-  const changes = sanitizeSellerOrderChanges(payload.changes || payload.payload || payload);
+  const rawChanges = payload.changes || payload.payload || payload;
+  const foreignSemiAdminOrder = isSemiAdminProfile(auth.profile) && !isOwnedByProfile(loaded.order, auth.profile);
+  if (foreignSemiAdminOrder && ["seller_id", "created_by", "client_id", "client_name", "client_contact"].some((field) => Object.prototype.hasOwnProperty.call(rawChanges || {}, field))) {
+    return jsonResponse(403, { error: "No puedes cambiar el vendedor ni el cliente de una orden ajena.", code: "ORDER_PROTECTED_FIELDS" });
+  }
+  const changes = sanitizeSellerOrderChanges(rawChanges, { allowClientIdentity: !foreignSemiAdminOrder });
   if (Object.keys(changes).length === 0) {
     return jsonResponse(400, { error: "No hay cambios permitidos para actualizar." });
   }
@@ -407,10 +490,25 @@ async function handleUpdate(payload, auth, env) {
   );
   const removedFileUrls = sanitizeUrlList(payload.removed_file_urls || payload.removedFileUrls);
 
-  const command = productionFileRows.length || removedFileUrls.length
+  const command = isSemiAdminProfile(auth.profile)
+    ? "semi_admin_update_order"
+    : (productionFileRows.length || removedFileUrls.length
     ? "seller_update_order_with_files_and_specifications"
-    : "seller_update_order";
-  const commandArgs = command === "seller_update_order_with_files_and_specifications"
+    : "seller_update_order");
+  const commandArgs = command === "semi_admin_update_order"
+    ? {
+      p_order_id: loaded.order.id,
+      p_action: "update_order",
+      p_payload: {
+        changes,
+        new_production_files: productionFileRows,
+        removed_file_urls: removedFileUrls,
+        asset_operation: payload.asset_operation === "manage_assets" ? "manage_assets" : null,
+        asset_removal_only: payload.asset_removal_only === true,
+      },
+      p_expected_updated_at: expectedUpdatedAt,
+    }
+    : command === "seller_update_order_with_files_and_specifications"
     ? {
       p_order_id: loaded.order.id,
       p_expected_updated_at: expectedUpdatedAt,
@@ -420,21 +518,38 @@ async function handleUpdate(payload, auth, env) {
     }
     : { p_order_id: loaded.order.id, p_expected_updated_at: expectedUpdatedAt, p_changes: changes };
   const updated = await callSellerOrderCommand(
-    buildAuthenticatedSupabase(auth, env), command, commandArgs, loaded.order, env
+    buildAuthenticatedSupabase(auth, env), command === "semi_admin_update_order" ? "semi_admin_execute_order_command" : command, commandArgs, loaded.order, env
   );
   if (updated.response) return updated.response;
 
-  return jsonResponse(200, { order: updated.order });
+  return jsonResponse(200, { order: updated.order?.order || updated.order });
 }
 
 async function handleSendToDesigner(payload, auth, env) {
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
 
-  const assignee = await assertAssigneeRole(auth.supabaseAdmin, payload.designer_id || payload.designerId, "designer", "un disenador", env);
+  const semiAdminActor = isSemiAdminProfile(auth.profile);
+  const assignee = await assertAssigneeRole(
+    auth.supabaseAdmin,
+    payload.designer_id || payload.designerId,
+    semiAdminActor ? ["designer", "semi_admin"] : "designer",
+    semiAdminActor ? "un disenador o a ti mismo" : "un disenador",
+    env
+  );
   if (assignee.response) return assignee.response;
-
   const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
+  if (semiAdminActor) {
+    const updated = await callSellerOrderCommand(
+      buildAuthenticatedSupabase(auth, env),
+      "semi_admin_execute_order_command",
+      { p_order_id: loaded.order.id, p_action: "send_to_designer", p_payload: { target_user_id: assignee.profile.id }, p_expected_updated_at: expectedUpdatedAt },
+      loaded.order,
+      env
+    );
+    if (updated.response) return updated.response;
+    return jsonResponse(200, { order: updated.order?.order || updated.order });
+  }
   const updated = await callSellerOrderCommand(
     buildAuthenticatedSupabase(auth, env),
     "seller_send_order_to_designer",
@@ -470,7 +585,8 @@ async function handleSendToQuote(payload, auth, env) {
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
 
-  const assignee = await assertAssigneeRole(auth.supabaseAdmin, payload.quote_user_id || payload.quoteUserId, "quote", "un usuario de caja", env);
+  const semiAdminActor = isSemiAdminProfile(auth.profile);
+  const assignee = await assertAssigneeRole(auth.supabaseAdmin, payload.quote_user_id || payload.quoteUserId, semiAdminActor ? ["quote", "semi_admin"] : "quote", "un usuario de caja", env);
   if (assignee.response) return assignee.response;
 
   if (loaded.order.order_design_type !== "EXTERNAL_DESING") {
@@ -486,16 +602,21 @@ async function handleSendToQuote(payload, auth, env) {
   }
   const updated = await callSellerOrderCommand(
     buildAuthenticatedSupabase(auth, env),
-    "seller_send_order_to_quote",
-    { p_order_id: loaded.order.id, p_quote_id: assignee.profile.id, p_expected_updated_at: expectedUpdatedAt },
+    semiAdminActor ? "semi_admin_execute_order_command" : "seller_send_order_to_quote",
+    semiAdminActor
+      ? { p_order_id: loaded.order.id, p_action: "send_to_quote", p_payload: { target_user_id: assignee.profile.id }, p_expected_updated_at: expectedUpdatedAt }
+      : { p_order_id: loaded.order.id, p_quote_id: assignee.profile.id, p_expected_updated_at: expectedUpdatedAt },
     loaded.order,
     env
   );
   if (updated.response) return updated.response;
-  return jsonResponse(200, { order: updated.order });
+  return jsonResponse(200, { order: updated.order?.order || updated.order });
 }
 
 async function handleArchive(payload, auth, env) {
+  if (isSemiAdminProfile(auth.profile)) {
+    return jsonResponse(403, { error: "Archivar órdenes está reservado para Administración.", code: "SEMI_ADMIN_DESTRUCTIVE_ACTION_FORBIDDEN" });
+  }
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
 
@@ -519,6 +640,139 @@ async function handleArchive(payload, auth, env) {
   return jsonResponse(200, { order: updated.order });
 }
 
+const requireSemiAdminAction = (auth) => (
+  isSemiAdminProfile(auth.profile)
+    ? null
+    : jsonResponse(403, { error: "Esta operación está reservada para Semi-Administración.", code: "SEMI_ADMIN_ONLY" })
+);
+
+async function handleSemiAdminOperationalCatalog(payload, auth, env) {
+  const roleError = requireSemiAdminAction(auth);
+  if (roleError) return roleError;
+  const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
+  if (loaded.response) return loaded.response;
+  const { data, error } = await buildAuthenticatedSupabase(auth, env)
+    .rpc("semi_admin_get_order_command_catalog", { p_order_id: loaded.order.id });
+  if (error) return jsonResponse(400, { error: error.message || "No se pudo consultar la configuración operativa." });
+  return jsonResponse(200, { catalog: data || { actions: [], unavailable_actions: [] } });
+}
+
+async function handleSemiAdminOrderCommand(payload, auth, env, command, argsBuilder, resultKey = "order") {
+  const roleError = requireSemiAdminAction(auth);
+  if (roleError) return roleError;
+  const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
+  if (loaded.response) return loaded.response;
+  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
+  const legacyArgs = argsBuilder(loaded.order, expectedUpdatedAt);
+  const commandAction = {
+    semi_admin_mark_order_delivered: "mark_delivered",
+    semi_admin_update_production_file_status: "production_file_status",
+    semi_admin_reassign_file_production_area: "reassign_production_file",
+    semi_admin_save_order_production_file_specifications: "production_specifications",
+    semi_admin_route_order_to_production: "route_production",
+    semi_admin_assign_stage_responsibility: "stage_responsibility",
+  }[command];
+  if (!commandAction) return jsonResponse(500, { error: "Comando operativo Semi-Administrador no configurado." });
+  if (commandAction === "production_file_status" || commandAction === "reassign_production_file" || (commandAction === "stage_responsibility" && normalizeKey(legacyArgs.p_stage) === "production")) {
+    return jsonResponse(403, { error: "Semi-Administrador no puede gestionar Producción.", code: "SEMI_ADMIN_PRODUCTION_FORBIDDEN" });
+  }
+  const commandPayload = Object.fromEntries(Object.entries(legacyArgs)
+    .filter(([key]) => key !== "p_order_id" && key !== "p_expected_updated_at")
+    .map(([key, value]) => [key.replace(/^p_/, ""), value]));
+  const result = await callSellerOrderCommand(
+    buildAuthenticatedSupabase(auth, env),
+    "semi_admin_execute_order_command",
+    { p_order_id: loaded.order.id, p_action: commandAction, p_payload: commandPayload, p_expected_updated_at: expectedUpdatedAt },
+    loaded.order,
+    env
+  );
+  if (result.response) return result.response;
+  return jsonResponse(200, { [resultKey]: result.order?.[resultKey] || result.order });
+}
+
+const handleMarkDelivered = (payload, auth, env) => handleSemiAdminOrderCommand(
+  payload, auth, env, "semi_admin_mark_order_delivered",
+  (order, expectedUpdatedAt) => ({
+    p_order_id: order.id,
+    p_delivery_note: normalizeText(payload.delivery_note || payload.deliveryNote) || null,
+    p_expected_updated_at: expectedUpdatedAt,
+  })
+);
+
+const handleProductionFileStatus = (payload, auth, env) => handleSemiAdminOrderCommand(
+  { ...payload, order_id: payload.order_id || payload.orderId }, auth, env,
+  "semi_admin_update_production_file_status",
+  (order, expectedUpdatedAt) => ({
+    p_file_id: payload.file_id || payload.fileId,
+    p_next_status: normalizeText(payload.next_status || payload.nextStatus),
+    p_expected_updated_at: expectedUpdatedAt,
+    p_delivery_id: payload.delivery_id || payload.deliveryId || null,
+  }), "file"
+);
+
+const handleReassignProductionFile = (payload, auth, env) => handleSemiAdminOrderCommand(
+  { ...payload, order_id: payload.order_id || payload.orderId }, auth, env,
+  "semi_admin_reassign_file_production_area",
+  (order, expectedUpdatedAt) => ({
+    p_file_id: payload.file_id || payload.fileId,
+    p_new_area_code: normalizeText(payload.new_area_code || payload.newAreaCode),
+    p_new_assigned_user_id: payload.new_assigned_user_id || payload.newAssignedUserId,
+    p_expected_updated_at: expectedUpdatedAt,
+  }), "file"
+);
+
+const handleProductionSpecifications = (payload, auth, env) => handleSemiAdminOrderCommand(
+  payload, auth, env, "semi_admin_save_order_production_file_specifications",
+  (order, expectedUpdatedAt) => ({
+    p_order_id: order.id,
+    p_expected_updated_at: expectedUpdatedAt,
+    p_specifications: Array.isArray(payload.specifications) ? payload.specifications : [],
+  })
+);
+
+const handleRouteProduction = (payload, auth, env) => handleSemiAdminOrderCommand(
+  payload, auth, env, "semi_admin_route_order_to_production",
+  (order, expectedUpdatedAt) => ({
+    p_order_id: order.id,
+    p_area_assignments: payload.area_assignments || payload.areaAssignments || {},
+    p_expected_updated_at: expectedUpdatedAt,
+  })
+);
+
+const handleStageResponsibility = (payload, auth, env) => handleSemiAdminOrderCommand(
+  payload, auth, env, "semi_admin_assign_stage_responsibility",
+  (order, expectedUpdatedAt) => ({
+    p_order_id: order.id,
+    p_stage: normalizeKey(payload.stage),
+    p_assignee_id: payload.assignee_id || payload.assigneeId,
+    p_expected_updated_at: expectedUpdatedAt,
+    p_production_area_code: normalizeText(payload.production_area_code || payload.productionAreaCode) || null,
+  })
+);
+
+async function handleSemiAdminCatalogCommand(payload, auth, env, action) {
+  const roleError = requireSemiAdminAction(auth);
+  if (roleError) return roleError;
+  const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
+  if (loaded.response) return loaded.response;
+  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
+  const commandPayload = { ...payload };
+  delete commandPayload.action;
+  delete commandPayload.order_id;
+  delete commandPayload.orderId;
+  delete commandPayload.expected_updated_at;
+  delete commandPayload.expectedUpdatedAt;
+  const result = await callSellerOrderCommand(
+    buildAuthenticatedSupabase(auth, env),
+    "semi_admin_execute_order_command",
+    { p_order_id: loaded.order.id, p_action: action, p_payload: commandPayload, p_expected_updated_at: expectedUpdatedAt },
+    loaded.order,
+    env
+  );
+  if (result.response) return result.response;
+  return jsonResponse(200, { order: result.order?.order || result.order });
+}
+
 async function handleList(payload, auth, env) {
   const page = Math.max(Number.parseInt(payload.page, 10) || 1, 1);
   const pageSize = clampPageSize(payload.pageSize);
@@ -529,13 +783,14 @@ async function handleList(payload, auth, env) {
   let listQuery = auth.supabaseAdmin
     .from("orders")
     .select(SELLER_LIST_COLUMNS, { count: "exact" });
-  listQuery = applySellerListFilters(listQuery, { ...payload, now: env.now }, sellerId);
+  const globalOrderView = isSemiAdminProfile(auth.profile);
+  listQuery = applySellerListFilters(listQuery, { ...payload, now: env.now }, sellerId, { global: globalOrderView });
 
   const [listResult, summaryResult, recentResult] = await Promise.all([
     listQuery
       .order("created_at", { ascending: false })
       .range(from, to),
-    applySellerOwnershipFilter(
+    (globalOrderView ? (query) => query : applySellerOwnershipFilter)(
       auth.supabaseAdmin
         .from("orders")
         .select(SELLER_SUMMARY_COLUMNS),
@@ -543,7 +798,7 @@ async function handleList(payload, auth, env) {
     ),
     payload.includeDashboard === false
       ? Promise.resolve({ data: [], error: null })
-      : applySellerOwnershipFilter(
+      : (globalOrderView ? (query) => query : applySellerOwnershipFilter)(
         auth.supabaseAdmin
           .from("orders")
           .select(SELLER_LIST_COLUMNS),
@@ -588,10 +843,20 @@ const ACTION_HANDLERS = {
   send_to_designer: handleSendToDesigner,
   send_to_quote: handleSendToQuote,
   archive: handleArchive,
+  operational_catalog: handleSemiAdminOperationalCatalog,
+  mark_delivered: handleMarkDelivered,
+  production_file_status: handleProductionFileStatus,
+  reassign_production_file: handleReassignProductionFile,
+  production_specifications: handleProductionSpecifications,
+  route_production: handleRouteProduction,
+  stage_responsibility: handleStageResponsibility,
+  register_payment: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "register_payment"),
+  send_design_to_quote: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "send_design_to_quote"),
+  return_design_to_sales: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "return_design_to_sales"),
 };
 
 export async function handleSellerOrderAction(payload = {}, env = process.env) {
-  const auth = await requireAuthenticated(env.authHeader || "", env, { allowedRoles: ["seller", "admin"] });
+  const auth = await requireAuthenticated(env.authHeader || "", env, { allowedRoles: ["seller", "semi_admin", "admin"] });
   if (!auth.authorized) {
     return jsonResponse(auth.status || 403, { error: auth.error, code: auth.code });
   }

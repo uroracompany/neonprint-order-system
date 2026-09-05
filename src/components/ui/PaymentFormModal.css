@@ -1,28 +1,23 @@
 .pfm-modal {
-  max-width: 600px !important;
-  padding: 0;
-  overflow: hidden;
+  max-width: 560px;
   border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 22px;
-  box-shadow: 0 32px 90px rgba(15, 23, 42, 0.34);
+  box-shadow: 0 20px 52px rgba(15, 23, 42, 0.24);
 }
 
-.pfm-modal::before {
-  z-index: 20;
+.pfm-modal-kicker {
+  display: block;
+  margin-bottom: 4px;
+  color: #1e40af;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.pfm-modal .pa-modal-head {
-  position: relative;
-  padding: 28px 30px 22px;
-  background: var(--surface);
-  border-bottom: 1px solid rgba(216, 226, 243, 0.8);
-}
-
-.pfm-modal .pa-modal-body {
+.pfm-modal-content {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 24px 30px 30px;
 }
 
 .pfm-order-summary {
@@ -163,6 +158,59 @@
   background: #fbfdff;
 }
 
+.pfm-receipt-number-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #dbe5f2;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.pfm-receipt-number-field .pfm-label {
+  margin: 0;
+}
+
+.pfm-receipt-number-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: 500 13px "Poppins", sans-serif;
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.pfm-receipt-number-input::placeholder {
+  color: var(--text-muted);
+}
+
+.pfm-receipt-number-input:hover {
+  border-color: var(--border-hov);
+}
+
+.pfm-receipt-number-input:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.12);
+}
+
+.pfm-receipt-number-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.pfm-receipt-number-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .pfm-receipt-card {
   border: 1.5px solid var(--border);
   border-radius: 12px;
@@ -284,56 +332,24 @@
   height: 16px;
 }
 
-.pfm-actions {
+.pfm-modal .pfm-actions {
   display: flex;
+  flex-direction: row;
+  align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 2px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-.pfm-btn {
+.pfm-modal .pfm-actions .pq-btn {
   flex: 0 1 auto;
-  min-width: 142px;
+  width: auto;
+  height: 44px;
   min-height: 44px;
-  padding: 0 22px;
-  border-radius: 11px;
-  font: 700 12px "Poppins", sans-serif;
-  cursor: pointer;
-  transition: all 0.15s ease;
 }
 
-.pfm-btn--secondary {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-sub);
-}
-
-.pfm-btn--secondary:hover {
-  border-color: var(--border-hov);
-  background: var(--surface-hov);
-}
-
-.pfm-btn--primary {
-  min-width: 210px;
-  border: 1px solid var(--cyan);
-  background: var(--cyan);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.2);
-}
-
-.pfm-btn--primary:hover {
-  background: #0ba5c3;
-  border-color: #0ba5c3;
-}
-
-.pfm-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.pfm-btn:focus-visible,
 .pfm-receipt-btn:focus-visible {
   outline: 3px solid rgba(6, 182, 212, 0.2);
   outline-offset: 2px;
@@ -341,12 +357,11 @@
 
 @media (max-width: 640px) {
   .pfm-modal {
-    max-height: 94vh;
-    border-radius: 22px 22px 0 0;
+    max-height: calc(100dvh - 32px);
   }
 
-  .pfm-modal .pa-modal-head,
-  .pfm-modal .pa-modal-body {
+  .pfm-modal .ps-modal-header,
+  .pfm-modal .ps-modal-body {
     padding-inline: 20px;
   }
 
@@ -364,18 +379,13 @@
     border-top: 1px solid var(--border);
   }
 
-  .pfm-actions {
-    display: grid;
-    grid-template-columns: 1fr;
+  .pfm-modal .pfm-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 
-  .pfm-btn,
-  .pfm-btn--primary {
-    width: 100%;
-    min-width: 0;
+  .pfm-modal .pfm-actions .pq-btn {
+    flex: 1 1 120px;
+    width: auto;
   }
-}
-
-.pfm-btn--primary:disabled {
-  box-shadow: none;
 }

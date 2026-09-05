@@ -37,6 +37,37 @@ const EMPTY_FORM = {
 };
 
 const ORDER_DRAFT_STORAGE_PREFIX = "neonprint:create-order-draft:v1";
+const modalStack = [];
+let modalScrollLockDepth = 0;
+let modalScrollRestore = null;
+
+const isTopModal = (modalId) => modalStack[modalStack.length - 1] === modalId;
+
+const acquireModalLayer = (modalId) => {
+  modalStack.push(modalId);
+  if (modalScrollLockDepth === 0) {
+    modalScrollRestore = {
+      body: document.body.style.overflow,
+      html: document.documentElement.style.overflow,
+    };
+  }
+  modalScrollLockDepth += 1;
+  document.body.style.overflow = "hidden";
+  document.documentElement.style.overflow = "hidden";
+};
+
+const releaseModalLayer = (modalId) => {
+  const index = modalStack.lastIndexOf(modalId);
+  if (index === -1) return;
+  modalStack.splice(index, 1);
+  modalScrollLockDepth = Math.max(0, modalScrollLockDepth - 1);
+
+  if (modalScrollLockDepth === 0 && modalScrollRestore) {
+    document.body.style.overflow = modalScrollRestore.body;
+    document.documentElement.style.overflow = modalScrollRestore.html;
+    modalScrollRestore = null;
+  }
+};
 
 const getOrderDraftStorageKey = (userId) => (
   userId ? `${ORDER_DRAFT_STORAGE_PREFIX}:${userId}` : null
@@ -72,6 +103,7 @@ export function Modal({
   const overlayRef = useRef(null);
   const modalRef = useRef(null);
   const closeButtonRef = useRef(null);
+  const modalIdRef = useRef(Symbol("neonprint-modal"));
   const onCloseRef = useRef(onClose);
   const closeOnBackdropRef = useRef(closeOnBackdrop);
   const closeOnEscapeRef = useRef(closeOnEscape);
@@ -85,17 +117,17 @@ export function Modal({
   useEffect(() => {
     if (!open) return undefined;
 
+    const modalId = modalIdRef.current;
     const previousActiveElement = document.activeElement;
-    const previousBodyOverflow = document.body.style.overflow;
-    const previousHtmlOverflow = document.documentElement.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
+    acquireModalLayer(modalId);
 
     const focusCloseButton = window.requestAnimationFrame(() => {
       closeButtonRef.current?.focus({ preventScroll: true });
     });
 
     const handleKeyDown = (event) => {
+      if (!isTopModal(modalId)) return;
+
       if (event.key === "Escape" && closeOnEscapeRef.current) {
         event.preventDefault();
         onCloseRef.current?.();
@@ -144,8 +176,7 @@ export function Modal({
       window.cancelAnimationFrame(focusCloseButton);
       document.removeEventListener("keydown", handleKeyDown);
       overlayNode?.removeEventListener("pointerdown", handleNativeBackdropPointerDown);
-      document.body.style.overflow = previousBodyOverflow;
-      document.documentElement.style.overflow = previousHtmlOverflow;
+      releaseModalLayer(modalId);
       if (previousActiveElement && typeof previousActiveElement.focus === "function") {
         previousActiveElement.focus({ preventScroll: true });
       }
@@ -571,6 +602,7 @@ export function ProductionFileDetailsModal({
       title={`Detalles: ${fileName || "archivo"}`}
       hideStripe
       className="ps-file-details-modal"
+      overlayClassName="ps-file-details-overlay"
       headerContent={
         <>
           {orderId && <span className="ps-file-details-order-code">#{String(orderId).slice(0, 8).toUpperCase()}</span>}
@@ -636,6 +668,7 @@ export default function CreateOrderModal({
   clientToSelect = null,
   onClientToSelectConsumed,
   clientFieldDisabled = false,
+  isSemiAdmin = false,
 }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
@@ -648,6 +681,8 @@ export default function CreateOrderModal({
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
   const [detailsFileIndex, setDetailsFileIndex] = useState(null);
+  const [newClientMode, setNewClientMode] = useState(false);
+  const [newClient, setNewClient] = useState({ name: "", phone: "", email: "", address: "", notes: "" });
   // A retry after an uncertain network response must address the same command.
   const createRequestIdRef = useRef(null);
 
@@ -660,6 +695,8 @@ export default function CreateOrderModal({
     setMissingLabelIndices([]);
     setMissingAreaIndices([]);
     setDetailsFileIndex(null);
+    setNewClientMode(false);
+    setNewClient({ name: "", phone: "", email: "", address: "", notes: "" });
   }, [userId]);
 
   useEffect(() => {
@@ -683,6 +720,8 @@ export default function CreateOrderModal({
       return;
     }
 
+    setNewClientMode(false);
+
     const fields = getSelectedClientOrderFields(client, "client_phone");
     if (fields.client_phone) fields.client_phone = formatPhone(fields.client_phone);
 
@@ -703,16 +742,19 @@ export default function CreateOrderModal({
 
   const validateForm = () => {
     const errors = {};
+    const hasNewClient = isSemiAdmin && newClientMode;
 
-    if (!form.client_id) {
+    if (!form.client_id && !hasNewClient) {
       errors.client_id = "Debes seleccionar un cliente registrado.";
     }
-    if (!form.client_name.trim()) {
+    if (!form.client_name.trim() && !(hasNewClient && newClient.name.trim())) {
       errors.client_name = "Selecciona un cliente registrado para completar el nombre.";
     }
-    if (!form.client_phone.trim()) {
+    if (!form.client_phone.trim() && !(hasNewClient && newClient.phone.trim())) {
       errors.client_phone = "Selecciona un cliente registrado con telefono.";
     }
+    if (hasNewClient && !newClient.name.trim()) errors.new_client_name = "El nombre del cliente es requerido.";
+    if (hasNewClient && !newClient.phone.trim()) errors.new_client_phone = "El telefono del cliente es requerido.";
     if (!form.description.trim()) {
       errors.description = "La descripción del trabajo es requerida.";
     }
@@ -903,9 +945,9 @@ export default function CreateOrderModal({
 
         const payload = {
           id: orderId,
-          client_id: form.client_id,
-          client_name: form.client_name.trim(),
-          client_contact: form.client_phone.trim() || null,
+          client_id: newClientMode ? null : form.client_id,
+          client_name: (newClientMode ? newClient.name : form.client_name).trim(),
+          client_contact: (newClientMode ? newClient.phone : form.client_phone).trim() || null,
           invoice_number: form.invoice_number.trim(),
           description: form.description.trim(),
           material: "",
@@ -936,9 +978,19 @@ export default function CreateOrderModal({
           userId,
         });
         payload.order_file_url = fileUrls.length > 0 ? JSON.stringify(fileUrls.filter(Boolean)) : null;
-        const { data: createdOrder, error: createError } = await supabase.rpc("create_seller_order_with_file_specifications", {
+        const createCommand = isSemiAdmin
+          ? "semi_admin_create_order_with_client"
+          : "create_seller_order_with_file_specifications";
+        const { data: createdOrder, error: createError } = await supabase.rpc(createCommand, {
           p_idempotency_key: orderId,
           p_order: payload,
+          ...(isSemiAdmin ? { p_client: newClientMode ? {
+            name: newClient.name.trim(),
+            phone: newClient.phone.trim(),
+            email: newClient.email.trim() || null,
+            address: newClient.address.trim() || null,
+            notes: newClient.notes.trim() || null,
+          } : null } : {}),
           p_production_files: productionRows,
           p_asset_refs: preorderAssets.map((asset) => ({
             ...(asset.descriptor?.preorder || asset.descriptor),
@@ -995,24 +1047,57 @@ export default function CreateOrderModal({
               value={form.client_id}
               onSelect={applySelectedClient}
               onSearch={onClientSearch}
-              onAddNewClient={onAddNewClient}
+              onAddNewClient={isSemiAdmin ? () => {
+                setNewClientMode(true);
+                setForm(previous => ({ ...previous, client_id: null, client_name: "", client_phone: "" }));
+              } : onAddNewClient}
               disabled={clientFieldDisabled}
               placeholder="Seleccionar cliente registrado"
             />
           </Field>
         </div>
+        {isSemiAdmin && newClientMode && (
+          <div className="col-full ps-inline-client-form" role="group" aria-label="Nuevo cliente para esta orden">
+            <div className="ps-form-section-title" style={{ marginTop: 8 }}>
+              <span className="ps-form-section-num">+</span> Registrar cliente junto con la orden
+            </div>
+            <div className="ps-form-grid">
+              <div className="col-half">
+                <Field label="Nombre" required error={fieldErrors.new_client_name}>
+                  <input className="ps-form-input" value={newClient.name} onChange={event => setNewClient(previous => ({ ...previous, name: event.target.value }))} />
+                </Field>
+              </div>
+              <div className="col-half">
+                <Field label="Teléfono" required error={fieldErrors.new_client_phone}>
+                  <input className="ps-form-input" value={newClient.phone} onChange={event => setNewClient(previous => ({ ...previous, phone: event.target.value }))} />
+                </Field>
+              </div>
+              <div className="col-half">
+                <Field label="Correo electrónico">
+                  <input className="ps-form-input" type="email" value={newClient.email} onChange={event => setNewClient(previous => ({ ...previous, email: event.target.value }))} />
+                </Field>
+              </div>
+              <div className="col-half">
+                <Field label="Dirección">
+                  <input className="ps-form-input" value={newClient.address} onChange={event => setNewClient(previous => ({ ...previous, address: event.target.value }))} />
+                </Field>
+              </div>
+            </div>
+            <button type="button" className="ps-text-btn" onClick={() => setNewClientMode(false)}>Elegir un cliente registrado</button>
+          </div>
+        )}
         <div className="col-full">
           <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
             <input className="ps-form-input" placeholder="Seleccionar cliente"
-              value={form.client_name} readOnly disabled />
+              value={newClientMode ? newClient.name : form.client_name} readOnly disabled />
           </Field>
         </div>
         <div className="col-full">
           <Field label="Telefono / Contacto" required hint="Se completa desde el cliente registrado" error={fieldErrors.client_phone}>
             <div className="ps-input-icon-wrap">
               <span className="ps-input-icon"><Icons.Phone /></span>
-              <input className="ps-form-input with-icon" placeholder={PHONE_PLACEHOLDER}
-                value={form.client_phone} readOnly disabled maxLength="12" />
+                <input className="ps-form-input with-icon" placeholder={PHONE_PLACEHOLDER}
+                value={newClientMode ? newClient.phone : form.client_phone} readOnly disabled maxLength="12" />
             </div>
           </Field>
         </div>

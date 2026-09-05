@@ -858,6 +858,19 @@ export function OrderDetailModal({
     && !hasChanges
     && !removingFileId
     && !removingPreview;
+  const sendToQuotationBlockReason = !canEditDesignerAssets
+    ? readonlyMessage
+    : effectivePersistedFiles.length === 0
+      ? "Guarda al menos un archivo de diseño antes de enviar a Caja."
+      : !hasPersistedPreview
+        ? "Guarda la orden de trabajo antes de enviar a Caja."
+        : hasChanges
+          ? "Guarda los cambios pendientes de los archivos y de la orden de trabajo antes de enviar a Caja."
+          : !persistedFilesAreConfigured
+            ? "Completa y guarda los detalles de cada archivo antes de enviar a Caja."
+            : removingFileId || removingPreview
+              ? "Espera a que termine la actualización de archivos antes de enviar a Caja."
+              : "";
   const workSummary = hasChanges
     ? { label: "Pendiente", icon: <Icons.Clock />, tone: "is-warning" }
     : canSendToQuotation
@@ -867,20 +880,10 @@ export function OrderDetailModal({
         : isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)
           ? { label: "En revisión", icon: <Icons.Search />, tone: "is-review" }
           : { label: "Completado", icon: <Icons.Check />, tone: "is-ready" };
-  const footerNote = !canEditDesignerAssets
-    ? readonlyMessage
-    : !hasRequiredAssets
-      ? "Adjunta un archivo de diseño y la orden de trabajo para continuar."
-    : hasChanges
-      ? "Completa los datos de los archivos y guarda los cambios."
-      : !persistedFilesAreConfigured
-        ? "Completa los detalles de cada archivo antes de enviar a caja."
-      : canSendToQuotation
-        ? "La orden tiene archivos y preview. Lista para enviar a caja."
-        : "Agrega archivos y preview para completar el trabajo de diseño.";
-  const footerNoteClass = !canEditDesignerAssets || hasChanges || canSendToQuotation
-    ? "designer-order-modal__footer-note"
-    : "designer-order-modal__footer-note designer-order-modal__footer-note--accent";
+  const footerNote = canSendToQuotation
+    ? "La orden tiene archivos y orden de trabajo guardados. Lista para enviar a Caja."
+    : sendToQuotationBlockReason || "Agrega archivos y orden de trabajo para completar el trabajo de diseño.";
+  const footerNoteClass = "designer-order-modal__footer-note";
 
   return (
     <div className="designer-order-modal-overlay">
@@ -1356,11 +1359,13 @@ export function OrderDetailModal({
           <button className="designer-order-modal__button designer-order-modal__button--secondary" onClick={handleClose}>
             Cerrar
           </button>
-          {canSendToQuotation && (
+          {canEditDesignerAssets && (
             <button
               className="designer-order-modal__button designer-order-modal__button--quotation"
               onClick={() => returnHandoff ? onReturnToCashier?.(returnHandoff) : onSendToQuotation?.(order)}
-              disabled={quotationSending || Boolean(removingFileId)}
+              disabled={!canSendToQuotation || quotationSending || Boolean(removingFileId)}
+              title={canSendToQuotation ? undefined : sendToQuotationBlockReason}
+              aria-describedby={canSendToQuotation ? undefined : "designer-send-to-cashier-requirements"}
             >
               {quotationSending ? (
                 <>
@@ -1374,6 +1379,9 @@ export function OrderDetailModal({
                 </>
               )}
             </button>
+          )}
+          {!canSendToQuotation && canEditDesignerAssets && (
+            <p id="designer-send-to-cashier-requirements" className="sr-only">{sendToQuotationBlockReason}</p>
           )}
           {/* Boton para guardar cambios   */}
           <button 

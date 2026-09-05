@@ -6,6 +6,7 @@ import { Icons } from "../../utils/icons";
 import { ORDER_STATUS, PAYMENT_STATUS } from "../../utils/constants";
 import { PaymentBadge } from "./Badge";
 import FileUploadZone from "./FileUploadZone";
+import { Modal } from "../orders/CreateOrderModal";
 import "./PaymentFormModal.css";
 
 export default function PaymentFormModal({
@@ -14,6 +15,7 @@ export default function PaymentFormModal({
   loading = false,
   onClose,
   onConfirm,
+  allowReceiptNumber = false,
 }) {
   const [paymentStatus, setPaymentStatus] = useState("Pending_Payment");
   const [receiptFile, setReceiptFile] = useState(null);
@@ -23,6 +25,7 @@ export default function PaymentFormModal({
   const [receiptZoneError, setReceiptZoneError] = useState("");
   const [receiptZoneErrorKey, setReceiptZoneErrorKey] = useState(0);
   const [internalError, setInternalError] = useState("");
+  const [receiptNumber, setReceiptNumber] = useState("");
   const orderId = order?.id;
   const orderPaymentStatus = order?.payment_status;
 
@@ -34,8 +37,9 @@ export default function PaymentFormModal({
     setReceiptZoneError("");
     setReceiptZoneErrorKey(0);
     setInternalError("");
+    setReceiptNumber(order?.invoice_number || "");
     if (receiptInputRef.current) receiptInputRef.current.value = "";
-  }, [open, orderId, orderPaymentStatus]);
+  }, [open, orderId, orderPaymentStatus, order?.invoice_number]);
 
   useEffect(() => {
     let active = true;
@@ -103,6 +107,7 @@ export default function PaymentFormModal({
 
   const handleSubmit = async () => {
     setInternalError("");
+    const hasPaymentEvidence = Boolean(receiptFile || order?.invoice_payment || receiptNumber.trim());
 
     if (paymentStatus === PAYMENT_STATUS.CREDIT) {
       if (!String(order?.invoice_number || "").trim()) {
@@ -113,12 +118,12 @@ export default function PaymentFormModal({
       }
     }
 
-    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !order?.invoice_payment) {
-      return setInternalError("Debe subir la imagen de pago para marcar como pagado.");
+    if (paymentStatus === PAYMENT_STATUS.PAID && !hasPaymentEvidence) {
+      return setInternalError("Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.");
     }
 
     try {
-      await onConfirm({ paymentStatus, receiptFile });
+      await onConfirm({ paymentStatus, receiptFile, receiptNumber: receiptNumber.trim() });
     } catch (err) {
       setInternalError(err?.message || "No se pudo procesar el pago.");
     }
@@ -126,34 +131,57 @@ export default function PaymentFormModal({
 
   if (!open || !order) return null;
 
+  const paymentFooter = (
+    <div className="pq-dialog-actions pfm-actions">
+      <button type="button" className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>
+        Cancelar
+      </button>
+      <button
+        type="button"
+        className="pq-btn pq-btn-primary"
+        onClick={handleSubmit}
+        disabled={
+          loading ||
+          (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !order?.invoice_payment && !receiptNumber.trim())
+        }
+      >
+        {confirmLabel}
+      </button>
+    </div>
+  );
+
   return (
-    <div className="pa-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="pa-modal compact pfm-modal" role="dialog" aria-modal="true" aria-labelledby="pfm-title">
-        <div className="pa-modal-head">
-          <div className="pa-modal-copy">
-            <span className="pa-modal-kicker">Registro de pago</span>
-            <h3 id="pfm-title">Gestionar pago</h3>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Gestionar pago"
+      hideStripe
+      className="ps-file-details-modal pfm-modal"
+      overlayClassName="ps-file-details-overlay pfm-file-details-overlay"
+      headerContent={
+        <>
+          <span className="pfm-modal-kicker">Registro de pago</span>
+          <h3 className="ps-file-details-title">Gestionar pago</h3>
+        </>
+      }
+      footer={paymentFooter}
+    >
+      <div className="pfm-modal-content">
+        <div className="pfm-order-summary">
+          <span className="pfm-summary-icon"><Icons.Receipt /></span>
+          <div className="pfm-order-info">
+            <span className="pfm-client-name">{order.client_name}</span>
+            {order.description && (
+              <span className="pfm-desc">
+                {order.description.length > 60 ? `${order.description.slice(0, 60)}…` : order.description}
+              </span>
+            )}
           </div>
-          <button className="pa-icon-btn pa-modal-close" onClick={onClose} aria-label="Cerrar">
-            <Icons.Close />
-          </button>
+          <div className="pfm-current-badge">
+            <span className="pfm-label">Estado actual</span>
+            <PaymentBadge status={order.payment_status} className="ps-badge" bordered />
+          </div>
         </div>
-        <div className="pa-modal-body">
-          <div className="pfm-order-summary">
-            <span className="pfm-summary-icon"><Icons.Receipt /></span>
-            <div className="pfm-order-info">
-              <span className="pfm-client-name">{order.client_name}</span>
-              {order.description && (
-                <span className="pfm-desc">
-                  {order.description.length > 60 ? `${order.description.slice(0, 60)}…` : order.description}
-                </span>
-              )}
-            </div>
-            <div className="pfm-current-badge">
-              <span className="pfm-label">Estado actual</span>
-              <PaymentBadge status={order.payment_status} className="ps-badge" bordered />
-            </div>
-          </div>
 
           <div className="pfm-field">
             <span className="pfm-label">Estado de pago</span>
@@ -178,6 +206,23 @@ export default function PaymentFormModal({
 
           {paymentStatus === PAYMENT_STATUS.PAID && (
             <div className="pfm-receipt-section">
+              {allowReceiptNumber && (
+                <div className="pfm-receipt-number-field">
+                  <label className="pfm-label" htmlFor="pfm-receipt-number">Número de comprobante</label>
+                  <input
+                    id="pfm-receipt-number"
+                    className="pfm-receipt-number-input"
+                    value={receiptNumber}
+                    onChange={(event) => setReceiptNumber(event.target.value)}
+                    disabled={loading}
+                    placeholder="Ingresa el número de comprobante"
+                    aria-describedby="pfm-receipt-number-hint"
+                  />
+                  <small id="pfm-receipt-number-hint" className="pfm-receipt-number-hint">
+                    Adjunta un comprobante o registra este número para confirmar el pago.
+                  </small>
+                </div>
+              )}
               <span className="pfm-label">Comprobante de pago</span>
               {receiptFile ? (
                 <div className="pfm-receipt-card">
@@ -250,23 +295,7 @@ export default function PaymentFormModal({
             </div>
           )}
 
-          <div className="pfm-actions">
-            <button className="pfm-btn pfm-btn--secondary" onClick={onClose} disabled={loading}>
-              Cancelar
-            </button>
-            <button
-              className="pfm-btn pfm-btn--primary"
-              onClick={handleSubmit}
-              disabled={
-                loading ||
-                (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !order?.invoice_payment)
-              }
-            >
-              {confirmLabel}
-            </button>
-          </div>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

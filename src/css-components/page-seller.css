@@ -1256,6 +1256,23 @@
   overflow: hidden;
 }
 
+/* The file details editor is opened from an order modal. Keep both portal
+   layers visible: the editor receives the next visual layer and only a light
+   backdrop, while its own body remains the scroll container. */
+.ps-file-details-overlay {
+  z-index: 1100;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(15, 30, 64, 0.18);
+  backdrop-filter: none;
+}
+
+.ps-file-details-overlay .ps-file-details-modal {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 32px);
+}
+
 .ps-file-details-modal .ps-file-details-content {
   display: flex;
   flex-direction: column;
@@ -1655,6 +1672,18 @@
 }
 .ps-preview-card:hover .ps-preview-img-main {
   transform: scale(1.02);
+}
+.ps-preview-resolution-state {
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
 }
 .ps-preview-card-overlay {
   position: absolute;

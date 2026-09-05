@@ -17,6 +17,7 @@ const MFA_GENERIC_ERROR = "No se pudo validar el segundo factor.";
 const ROLE_ROUTES = {
   admin: "/dashboard",
   seller: "/page-seller",
+  semi_admin: "/page-seller",
   designer: "/designer",
   quote: "/quote",
   digital_producer: "/production",

@@ -174,6 +174,8 @@ export default function OrderDetailModal({
   onReturnToCashier,
   adminIntervention = null,
   adminActions = null,
+  closeOnBackdrop = true,
+  closeOnEscape = true,
 }) {
   const hasOrder = Boolean(order);
   const created = hasOrder ? new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" }) : "";
@@ -263,8 +265,8 @@ export default function OrderDetailModal({
       title={`Orden #${order.id?.slice(0, 8).toUpperCase()}`}
       wide
       className="order-detail-modal"
-      closeOnBackdrop
-      closeOnEscape
+      closeOnBackdrop={closeOnBackdrop}
+      closeOnEscape={closeOnEscape}
       hideStripe
       overlayClassName="order-detail-modal-overlay"
     >
