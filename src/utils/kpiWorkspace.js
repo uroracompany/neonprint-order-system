@@ -3,7 +3,7 @@ export const KPI_DEFAULT_TAB = 'overview'
 
 const STORAGE_VERSION = 1
 const MAX_AGE_MS = 12 * 60 * 60 * 1000
-const KPI_TABS = new Set(['overview', 'orders', 'clients', 'materials', 'users', 'production'])
+const KPI_TABS = new Set(['overview', 'orders', 'clients', 'users', 'production'])
 const DETAIL_TYPES = new Set(['seller', 'designer', 'quote', 'production-area', 'production-employee', 'delivery-user'])
 
 const storageKey = userId => `neonprint:kpi-workspace:v${STORAGE_VERSION}:${userId}`

@@ -71,7 +71,7 @@ const DESIGNER_ORDER_SELECT = [
   "is_archived_designer",
   "quote_id",
   "quantity",
-  "order_production_files(id, order_id, url, public_label, production_area_code, material_names, termination_name)",
+  "order_production_files(id, order_id, url, filename, public_label, production_area_code, material_names, termination_name)",
   "order_files(id, provider, bucket, object_key, original_filename, content_type, category, status, deleted_at, uploaded_by)",
 ].join(", ");
 const isReturnedOrder = isReturnedDesignerOrder;
@@ -141,13 +141,51 @@ const getOrderFileAssetRef = (file) => {
 const DESIGNER_FILES_BUCKET = "order-docs";
 const DESIGNER_PREVIEW_BUCKET = "order-previews";
 const EMPTY_REFERENCE_MANIFEST = [];
-
-const getDesignerFilesFromOrder = (order) => (
-  getOrderFiles(order).map((url) => ({
-    name: getFileNameFromUrl(url),
-    url,
-  }))
+const getDesignerFileStableKey = (file) => [
+  file?.url || getOrderFileAssetRef(file),
+  file?.filename || file?.public_label || file?.original_filename,
+  file?.id,
+].map((value) => String(value || "").trim()).join("\u0000");
+const sortDesignerFilesByStableKey = (files) => (
+  [...files].sort((left, right) => (
+    getDesignerFileStableKey(left).localeCompare(getDesignerFileStableKey(right))
+  ))
 );
+
+const getDesignerFilesFromOrder = (order) => {
+  const seenUrls = new Set();
+  const files = [];
+  const addFile = (url, name) => {
+    const normalizedUrl = String(url || "").trim();
+    if (!normalizedUrl || seenUrls.has(normalizedUrl)) return;
+
+    seenUrls.add(normalizedUrl);
+    files.push({
+      name: String(name || "").trim() || getFileNameFromUrl(normalizedUrl),
+      url: normalizedUrl,
+    });
+  };
+
+  getOrderFiles(order).forEach((url) => addFile(url, getFileNameFromUrl(url)));
+
+  sortDesignerFilesByStableKey(order?.order_production_files || [])
+    .filter((file) => file?.order_id === order?.id && file?.url)
+    .forEach((file) => addFile(file.url, file.filename || file.public_label || getFileNameFromUrl(file.url)));
+
+  sortDesignerFilesByStableKey(order?.order_files || [])
+    .filter((file) => (
+      file?.status === "uploaded"
+      && !file.deleted_at
+      && ["design", "production"].includes(file.category)
+      && file.bucket !== "payment-invoice"
+    ))
+    .forEach((file) => {
+      const assetRef = getOrderFileAssetRef(file);
+      addFile(assetRef, file.original_filename || getFileNameFromUrl(assetRef));
+    });
+
+  return files;
+};
 
 const CARD_ACCENTS = [
   { color: "#0f1e40", bg: "#F1F5F9", glow: "#F1F5F9" },
@@ -2020,7 +2058,7 @@ export default function PageDesigner() {
                             </td>
                             <td className="td-pad">
                               {(() => {
-                                const count = getOrderFiles(order).length + (orderFiles?.[order.id]?.length || 0);
+                                const count = (orderFiles?.[order.id] || getDesignerFilesFromOrder(order)).length;
                                 return count > 0
                                   ? <span className="acm-badge info">{count} {count === 1 ? "Archivo" : "Archivos"}</span>
                                   : <span className="acm-badge neutral">Sin archivos</span>;
@@ -2238,7 +2276,7 @@ export default function PageDesigner() {
                           </tr>
                         ) : (
                           paginatedOrders.map(order => {
-                            const fileCount = getOrderFiles(order).length + (orderFiles?.[order.id]?.length || 0);
+                            const fileCount = (orderFiles?.[order.id] || getDesignerFilesFromOrder(order)).length;
                             return (
                             <tr
                               key={order.id}
@@ -2298,7 +2336,7 @@ export default function PageDesigner() {
                 ) : (
                   <div className="ps-cards-grid">
                     {paginatedOrders.map(order => {
-                      const fileCount = getOrderFiles(order).length + (orderFiles?.[order.id]?.length || 0);
+                      const fileCount = (orderFiles?.[order.id] || getDesignerFilesFromOrder(order)).length;
                       const isUrgent = String(order.order_type || "").toLowerCase().includes("911");
                       return (
                       <div

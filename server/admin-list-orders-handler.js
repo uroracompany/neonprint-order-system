@@ -11,6 +11,70 @@ const ORDER_ASSIGNMENT_FIELDS = [
   "delivery_id",
 ];
 
+// Keep the admin list payload explicit. These fields cover the table, filters,
+// actions and the existing order detail/edit flows without pulling legacy
+// columns that are not consumed by the dashboard list.
+const ADMIN_ORDER_LIST_SELECT = [
+  "id",
+  "client_name",
+  "description",
+  "material",
+  "size",
+  "quantity",
+  "price",
+  "status",
+  "payment_status",
+  "created_at",
+  "created_by",
+  "designer_id",
+  "production_id",
+  "delivery_id",
+  "order_type",
+  "seller_id",
+  "quote_id",
+  "preview_image",
+  "client_contact",
+  "delivery_date",
+  "order_file_url",
+  "order_design_type",
+  "order_code",
+  "is_archived",
+  "termination_type",
+  "is_archived_designer",
+  "is_archived_quote",
+  "invoice_payment",
+  "is_archived_admin",
+  "return_reason",
+  "returned_to_designer_at",
+  "cancellation_reason",
+  "updated_at",
+  "updated_by",
+  "is_archived_delivery",
+  "tracking_token",
+  "is_archived_production",
+  "client_id",
+  "reference_images",
+  "invoice_number",
+  "invoice_assignment_mode",
+  "last_admin_intervention_at",
+  "last_admin_intervention_by",
+  "last_admin_intervention_kind",
+  "operational_status",
+  "blocked_reason_category",
+  "blocked_reason_detail",
+  "blocked_owner_id",
+  "blocked_by",
+  "blocked_at",
+  "blocked_expected_resolution_at",
+  "status_changed_at",
+  "cancelled_from_status",
+  "cancelled_at",
+  "cancelled_by",
+  "commercial_review_required",
+  "delivered_at",
+  "delivery_note",
+].join(",");
+
 const clampPageSize = (value) => {
   const size = Number.parseInt(value, 10);
   if (!Number.isFinite(size)) return 50;
@@ -122,7 +186,7 @@ export async function handleAdminListOrders(payload = {}, env = process.env) {
 
   let query = supabaseAdmin
     .from("orders")
-    .select("*", { count: "exact" });
+    .select(ADMIN_ORDER_LIST_SELECT, { count: "exact" });
 
   if (status !== "all") {
     query = query.eq("status", status);

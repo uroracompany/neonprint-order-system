@@ -48,9 +48,12 @@ const MAX_PAGE_SIZE = 100;
 // detail-only fields on every refresh while preserving every rendered field.
 const SELLER_LIST_COLUMNS = [
   "id",
+  "seller_id",
+  "created_by",
   "client_id",
   "client_name",
   "invoice_number",
+  "invoice_assignment_mode",
   "status",
   "payment_status",
   "order_design_type",
@@ -66,6 +69,14 @@ const SELLER_SUMMARY_COLUMNS = "id,status,created_at,is_archived,return_reason,o
 const isPaymentPartial = (value) => ["parcial", "partial"].includes(normalizeKey(value));
 const isPaymentPaid = (value) => ["pagado", "paid"].includes(normalizeKey(value));
 const isPaymentCredit = (value) => ["credito", "crédito", "credit"].includes(normalizeKey(value));
+const SEMI_ADMIN_CANCELLABLE_STATUSES = new Set(["Pending", "in_Design", "in_Quote"]);
+const isSemiAdminCancellableOrder = (order, profile) => (
+  isOwnedByProfile(order, profile)
+  && !order?.is_archived
+  && order?.operational_status !== "blocked"
+  && SEMI_ADMIN_CANCELLABLE_STATUSES.has(normalizeText(order?.status))
+  && normalizeText(order?.payment_status) === "Pending_Payment"
+);
 
 const getOrderId = (payload = {}) =>
   normalizeText(payload.order_id || payload.orderId || payload.id);
@@ -359,7 +370,7 @@ async function handleDetail(payload, auth, env) {
     return jsonResponse(200, { order: loaded.order });
   }
 
-  const [filesResult, operatorsResult, deliveryResult, stageUsersResult, responsibilityEventsResult] = await Promise.all([
+  const [filesResult, operatorsResult, deliveryResult, stageUsersResult, operationalEventsResult] = await Promise.all([
     auth.supabaseAdmin
       .from("order_production_files")
       .select("id,url,filename,public_label,production_area_code,material_names,termination_name,status,assigned_to,updated_at")
@@ -388,23 +399,51 @@ async function handleDetail(payload, auth, env) {
       .order("name", { ascending: true }),
     auth.supabaseAdmin
       .from("order_events")
-      .select("id,actor_id,event_type,changes,created_at")
+      .select("id,actor_id,event_type,old_status,new_status,old_payment_status,new_payment_status,changes,created_at")
       .eq("order_id", loaded.order.id)
-      .eq("event_type", "semi_admin_stage_responsibility_changed")
+      .in("event_type", ["semi_admin_payment_updated", "semi_admin_stage_responsibility_changed", "semi_admin_return_quote_to_design"])
       .order("created_at", { ascending: false })
       .limit(20),
   ]);
 
-  if (filesResult.error || operatorsResult.error || deliveryResult.error || stageUsersResult.error || responsibilityEventsResult.error) {
+  if (filesResult.error || operatorsResult.error || deliveryResult.error || stageUsersResult.error || operationalEventsResult.error) {
     debugSellerOrderAction("semi-admin-detail-operational-data-error", {
       files: filesResult.error?.message,
       operators: operatorsResult.error?.message,
       delivery: deliveryResult.error?.message,
       stageUsers: stageUsersResult.error?.message,
-      responsibilityEvents: responsibilityEventsResult.error?.message,
+      operationalEvents: operationalEventsResult.error?.message,
     }, env);
     return jsonResponse(500, { error: "No se pudo cargar la información operativa de la orden." });
   }
+
+  const events = operationalEventsResult.data || [];
+  const actorIds = [...new Set(events.map((event) => event.actor_id).filter(Boolean))];
+  let actors = [];
+  if (actorIds.length > 0) {
+    const actorResult = await auth.supabaseAdmin.from("profiles").select("id,name,role").in("id", actorIds);
+    if (actorResult.error) {
+      debugSellerOrderAction("semi-admin-detail-actor-data-error", { actors: actorResult.error?.message }, env);
+      return jsonResponse(500, { error: "No se pudo cargar la auditoría operativa de la orden." });
+    }
+    actors = actorResult.data || [];
+  }
+  const actorById = new Map(actors.map((actor) => [actor.id, actor]));
+  const history = events.map((event) => {
+    const actor = actorById.get(event.actor_id);
+    const stage = event.changes?.stage;
+    const oldValue = event.old_payment_status || event.old_status || event.changes?.previous_responsible_id || null;
+    const newValue = event.new_payment_status || event.new_status || event.changes?.responsible_id || null;
+    return {
+      id: event.id,
+      event_type: event.event_type,
+      created_at: event.created_at,
+      actor: { id: event.actor_id || null, name: actor?.name || "Actor no disponible", role: actor?.role || null },
+      label: event.event_type === "semi_admin_payment_updated" ? "Pago actualizado" : event.event_type === "semi_admin_return_quote_to_design" ? "Regresó a Diseño" : `Responsabilidad ${stage || "operativa"}`,
+      old_value: oldValue,
+      new_value: newValue,
+    };
+  });
 
   return jsonResponse(200, {
     order: {
@@ -415,17 +454,40 @@ async function handleDetail(payload, auth, env) {
         delivery: deliveryResult.data || [],
         stages: stageUsersResult.data || [],
       },
-      semi_admin_stage_responsibility_history: responsibilityEventsResult.data || [],
+      semi_admin_stage_responsibility_history: events.filter((event) => event.event_type === "semi_admin_stage_responsibility_changed"),
+      semi_admin_operational_history: history,
     },
   });
 }
 
 async function handleCancel(payload, auth, env) {
-  if (isSemiAdminProfile(auth.profile)) {
-    return jsonResponse(403, { error: "Cancelar órdenes está reservado para Administración.", code: "SEMI_ADMIN_DESTRUCTIVE_ACTION_FORBIDDEN" });
-  }
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
+
+  const reason = normalizeText(payload.reason || payload.cancellation_reason);
+  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
+
+  if (isSemiAdminProfile(auth.profile)) {
+    if (!isOwnedByProfile(loaded.order, auth.profile)) {
+      return jsonResponse(403, { error: "Solo puedes cancelar órdenes propias.", code: "ORDER_COMMAND_FORBIDDEN" });
+    }
+    if (!reason) return jsonResponse(400, { error: "Debes indicar el motivo de cancelacion." });
+    if (!timestampsMatch(loaded.order.updated_at, expectedUpdatedAt)) {
+      return jsonResponse(409, { error: "La orden cambio mientras la editabas. Actualiza los datos e intenta nuevamente." });
+    }
+    if (!isSemiAdminCancellableOrder(loaded.order, auth.profile)) {
+      return jsonResponse(409, { error: "Semi-Administración solo puede cancelar órdenes propias, activas, preproducción y con pago pendiente." });
+    }
+    const updated = await callSellerOrderCommand(
+      buildAuthenticatedSupabase(auth, env),
+      "semi_admin_cancel_owned_unpaid_order",
+      { p_order_id: loaded.order.id, p_reason: reason, p_expected_updated_at: expectedUpdatedAt },
+      loaded.order,
+      env
+    );
+    if (updated.response) return updated.response;
+    return jsonResponse(200, { order: updated.order });
+  }
 
   if (isPaymentPartial(loaded.order.payment_status)) {
     return jsonResponse(409, { error: "No se puede cancelar una orden con pago parcial." });
@@ -435,12 +497,10 @@ async function handleCancel(payload, auth, env) {
     return jsonResponse(409, { error: "No se puede cancelar una orden pagada o a credito." });
   }
 
-  const reason = normalizeText(payload.reason || payload.cancellation_reason);
   if (!reason) {
     return jsonResponse(400, { error: "Debes indicar el motivo de cancelacion." });
   }
 
-  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
   const updated = await callSellerOrderCommand(
     buildAuthenticatedSupabase(auth, env),
     "seller_cancel_order",
@@ -654,7 +714,22 @@ async function handleSemiAdminOperationalCatalog(payload, auth, env) {
   const { data, error } = await buildAuthenticatedSupabase(auth, env)
     .rpc("semi_admin_get_order_command_catalog", { p_order_id: loaded.order.id });
   if (error) return jsonResponse(400, { error: error.message || "No se pudo consultar la configuración operativa." });
-  return jsonResponse(200, { catalog: data || { actions: [], unavailable_actions: [] } });
+  const catalog = data || { actions: [], unavailable_actions: [] };
+  const invoicePending = loaded.order.invoice_assignment_mode === "cashier"
+    && !String(loaded.order.invoice_number || "").trim();
+  if (invoicePending) {
+    const blockedKeys = new Set(["route_production", "mark_delivered"]);
+    catalog.actions = (catalog.actions || []).filter((action) => !blockedKeys.has(action?.key));
+    catalog.unavailable_actions = [
+      ...(catalog.unavailable_actions || []).filter((action) => !blockedKeys.has(action?.key)),
+      {
+        key: "invoice_code_required",
+        title: "Código de facturación pendiente",
+        next_safe_step: "Caja debe registrar el código de facturación antes de continuar la orden.",
+      },
+    ];
+  }
+  return jsonResponse(200, { catalog });
 }
 
 async function handleSemiAdminOrderCommand(payload, auth, env, command, argsBuilder, resultKey = "order") {
@@ -755,6 +830,13 @@ async function handleSemiAdminCatalogCommand(payload, auth, env, action) {
   if (roleError) return roleError;
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
+  const isResponsible = [loaded.order.designer_id, loaded.order.quote_id, loaded.order.seller_id, loaded.order.created_by].includes(auth.profile.id);
+  if (action === "register_payment" && (loaded.order.status !== ORDER_STATUS.IN_QUOTE || !isResponsible)) {
+    return jsonResponse(isResponsible ? 409 : 403, { error: "El pago de Semi-Administración solo se gestiona por el responsable en Caja.", code: "SEMI_ADMIN_PAYMENT_FORBIDDEN" });
+  }
+  if (action === "return_quote_to_design" && (loaded.order.status !== ORDER_STATUS.IN_QUOTE || loaded.order.payment_status !== "Pending_Payment" || !loaded.order.designer_id || !isResponsible)) {
+    return jsonResponse(isResponsible ? 409 : 403, { error: "El regreso a Diseño requiere Caja, pago pendiente y un diseñador asignado.", code: "SEMI_ADMIN_RETURN_FORBIDDEN" });
+  }
   const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
   const commandPayload = { ...payload };
   delete commandPayload.action;
@@ -851,6 +933,7 @@ const ACTION_HANDLERS = {
   route_production: handleRouteProduction,
   stage_responsibility: handleStageResponsibility,
   register_payment: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "register_payment"),
+  return_quote_to_design: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "return_quote_to_design"),
   send_design_to_quote: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "send_design_to_quote"),
   return_design_to_sales: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "return_design_to_sales"),
 };

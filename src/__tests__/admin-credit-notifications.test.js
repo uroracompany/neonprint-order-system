@@ -19,16 +19,24 @@ describe("notificaciones administrativas de crédito", () => {
     expect(migration).toContain("dispatch-daily-admin-credit-summary");
   });
 
-  it("integra la bandeja y el perfil en Administración", () => {
+  it("integra la bandeja sin exponer perfil en Administración", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
-    const profile = readProjectFile("src/components/admin/AdminProfileModule.jsx");
 
     expect(dashboard).toContain('id: "notifications"');
-    expect(dashboard).toContain('id: "profile"');
     expect(dashboard).toContain("DesignerNotificationsModule");
     expect(dashboard).toContain("handleOpenCreditNotification");
-    expect(dashboard).toContain("AdminProfileModule");
-    expect(profile).toContain("Actividad administrativa reciente");
-    expect(profile).toContain("Cambios auditados en órdenes");
+    expect(dashboard).not.toContain('id: "profile"');
+    expect(dashboard).not.toContain("AdminProfileModule");
+  });
+
+  it("suprime la franja superior sólo en los modales de materiales solicitados", () => {
+    const dashboard = readProjectFile("src/pages/dashboard.jsx");
+    const materialModal = dashboard.slice(dashboard.indexOf("{showMaterialModal && ("), dashboard.indexOf("{showTerminationModal && ("));
+    const terminationModal = dashboard.slice(dashboard.indexOf("{showTerminationModal && ("), dashboard.indexOf("{activeTab === \"users\""));
+
+    expect(materialModal).toContain('className="pa-modal pa-modal--hide-top-accent"');
+    expect(materialModal).toContain("handleSaveMaterial");
+    expect(terminationModal).toContain('className="pa-modal pa-modal--hide-top-accent"');
+    expect(terminationModal).toContain("handleSaveTermination");
   });
 });

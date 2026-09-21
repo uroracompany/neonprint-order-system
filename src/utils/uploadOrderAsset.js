@@ -257,6 +257,5 @@ export const createSignedOrderAssetUrlFromStoredUrl = async ({ bucket, url, expi
 
 
 export const buildPaymentReceiptPath = (orderId, fileName) => {
-  const timestamp = Date.now();
-  return `orders/${orderId}/payment-${timestamp}-${fileName}`;
+  return `orders/${orderId}/${buildStorageSafeFileName({ name: fileName }, "payment-")}`;
 };

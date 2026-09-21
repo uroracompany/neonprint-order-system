@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPaymentConfirmButtonLabel } from "../../utils/paymentUi";
 import { validateReceiptFile, PAYMENT_RECEIPT_HINT } from "../../utils/receiptValidation";
+import { PAYMENT_RECEIPT_ACCEPT } from "../../utils/fileValidation";
 import { createSignedOrderAssetUrlFromStoredUrl } from "../../utils/uploadOrderAsset";
 import { Icons } from "../../utils/icons";
 import { ORDER_STATUS, PAYMENT_STATUS } from "../../utils/constants";
@@ -16,6 +17,7 @@ export default function PaymentFormModal({
   onClose,
   onConfirm,
   allowReceiptNumber = false,
+  canAssignInvoiceCode = false,
 }) {
   const [paymentStatus, setPaymentStatus] = useState("Pending_Payment");
   const [receiptFile, setReceiptFile] = useState(null);
@@ -26,8 +28,10 @@ export default function PaymentFormModal({
   const [receiptZoneErrorKey, setReceiptZoneErrorKey] = useState(0);
   const [internalError, setInternalError] = useState("");
   const [receiptNumber, setReceiptNumber] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const orderId = order?.id;
   const orderPaymentStatus = order?.payment_status;
+  const requiresCashierInvoiceCode = order?.invoice_assignment_mode === "cashier";
 
   useEffect(() => {
     if (!open || !orderId) return;
@@ -38,6 +42,7 @@ export default function PaymentFormModal({
     setReceiptZoneErrorKey(0);
     setInternalError("");
     setReceiptNumber(order?.invoice_number || "");
+    setInvoiceNumber(order?.invoice_number || "");
     if (receiptInputRef.current) receiptInputRef.current.value = "";
   }, [open, orderId, orderPaymentStatus, order?.invoice_number]);
 
@@ -108,9 +113,10 @@ export default function PaymentFormModal({
   const handleSubmit = async () => {
     setInternalError("");
     const hasPaymentEvidence = Boolean(receiptFile || order?.invoice_payment || receiptNumber.trim());
+    const hasInvoiceCode = Boolean(invoiceNumber.trim() || order?.invoice_number?.trim());
 
     if (paymentStatus === PAYMENT_STATUS.CREDIT) {
-      if (!String(order?.invoice_number || "").trim()) {
+      if (!hasInvoiceCode) {
         return setInternalError("La orden debe tener un número de facturación para vender a crédito.");
       }
       if (!order?.client_id) {
@@ -118,12 +124,25 @@ export default function PaymentFormModal({
       }
     }
 
+    if (requiresCashierInvoiceCode && paymentStatus === PAYMENT_STATUS.PAID && !hasInvoiceCode) {
+      return setInternalError("Caja debe registrar el código de facturación antes de marcar la orden como pagada.");
+    }
+
+    if (requiresCashierInvoiceCode && paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !order?.invoice_payment) {
+      return setInternalError("Caja debe adjuntar y verificar el comprobante de pago para marcar la orden como pagada.");
+    }
+
     if (paymentStatus === PAYMENT_STATUS.PAID && !hasPaymentEvidence) {
       return setInternalError("Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.");
     }
 
     try {
-      await onConfirm({ paymentStatus, receiptFile, receiptNumber: receiptNumber.trim() });
+      await onConfirm({
+        paymentStatus,
+        receiptFile,
+        receiptNumber: receiptNumber.trim(),
+        invoiceNumber: invoiceNumber.trim(),
+      });
     } catch (err) {
       setInternalError(err?.message || "No se pudo procesar el pago.");
     }
@@ -142,6 +161,7 @@ export default function PaymentFormModal({
         onClick={handleSubmit}
         disabled={
           loading ||
+          (requiresCashierInvoiceCode && paymentStatus === PAYMENT_STATUS.PAID && (!invoiceNumber.trim() && !order?.invoice_number?.trim() || !receiptFile && !order?.invoice_payment)) ||
           (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !order?.invoice_payment && !receiptNumber.trim())
         }
       >
@@ -204,6 +224,24 @@ export default function PaymentFormModal({
             </div>
           )}
 
+          {requiresCashierInvoiceCode && (
+            <div className="pfm-receipt-number-field">
+              <label className="pfm-label" htmlFor="pfm-invoice-number">Código de facturación</label>
+              <input
+                id="pfm-invoice-number"
+                className="pfm-receipt-number-input"
+                value={invoiceNumber}
+                onChange={(event) => setInvoiceNumber(event.target.value)}
+                disabled={loading || !canAssignInvoiceCode}
+                placeholder="Código asignado por Caja"
+                aria-describedby="pfm-invoice-number-hint"
+              />
+              <small id="pfm-invoice-number-hint" className="pfm-receipt-number-hint">
+                {canAssignInvoiceCode ? "Guarda el código antes de completar el pago." : "Caja debe registrar este código antes de completar el pago."}
+              </small>
+            </div>
+          )}
+
           {paymentStatus === PAYMENT_STATUS.PAID && (
             <div className="pfm-receipt-section">
               {allowReceiptNumber && (
@@ -227,6 +265,7 @@ export default function PaymentFormModal({
               {receiptFile ? (
                 <div className="pfm-receipt-card">
                   <FileUploadZone
+                    accept={PAYMENT_RECEIPT_ACCEPT}
                     mode="image"
                     replaceMode
                     inputRef={receiptInputRef}
@@ -266,6 +305,7 @@ export default function PaymentFormModal({
                 </div>
               ) : (
                 <FileUploadZone
+                  accept={PAYMENT_RECEIPT_ACCEPT}
                   mode="image"
                   replaceMode
                   inputRef={receiptInputRef}

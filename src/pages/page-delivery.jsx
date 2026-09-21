@@ -43,6 +43,7 @@ import {
 import { isOrderOverdue } from "../utils/orderDeadline";
 import { SecureImageLink } from "../components/ui/SecureImage";
 import { getFileNameFromUrl } from "../utils/constants";
+import { OPERATIONAL_ORDER_COLUMNS } from "../utils/orderListSelect";
 
 const PAYMENT_DELIVERY_BLOCKED_MESSAGE = "No se puede entregar la orden hasta que esté totalmente pagada o aprobada a crédito.";
 const PER_PAGE = 15;
@@ -700,6 +701,7 @@ export default function PageDelivery() {
   const [page, setPage] = useState(1);
   const [sellerDirectory, setSellerDirectory] = useState({});
   const [returnedFromProduction, setReturnedFromProduction] = useState({});
+  const clientsLoadedRef = useRef(false);
   const notif = useNotifications(user?.id);
   const newOrderAssignments = useNewOrderAssignments(user?.id, "delivery");
   const pendingNewAssignments = newOrderAssignments.pendingByOrder;
@@ -709,7 +711,7 @@ export default function PageDelivery() {
     if (!silent) setLoading(true);
     const { data, error } = await supabase
       .from("orders")
-      .select("*")
+      .select(OPERATIONAL_ORDER_COLUMNS)
       .in("status", DELIVERY_STATUS_OPTIONS)
       .eq("delivery_id", user.id)
       .order("created_at", { ascending: false });
@@ -739,8 +741,10 @@ export default function PageDelivery() {
   }, [authUser]);
 
   useEffect(() => {
+    if (activeTab !== "orders" || clientsLoadedRef.current) return;
+    clientsLoadedRef.current = true;
     loadClients(supabase).then(setClients);
-  }, []);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -878,7 +882,7 @@ export default function PageDelivery() {
 
       const { data, error: fetchError } = await supabase
         .from("orders")
-        .select("*")
+        .select(OPERATIONAL_ORDER_COLUMNS)
         .in("status", DELIVERY_STATUS_OPTIONS)
         .eq("delivery_id", user.id)
         .order("created_at", { ascending: false });
@@ -1146,7 +1150,7 @@ export default function PageDelivery() {
             <button className="pd-icon-btn" type="button" onClick={() => refreshOrders()} aria-label="Actualizar">
               <Icons.Refresh />
             </button>
-            <button className="pd-dark-btn" type="button" onClick={() => setActiveTab("orders")}>
+            <button className="pd-dark-btn" type="button" onClick={() => setActiveTab("orders")} aria-label="Gestionar órdenes">
               <Icons.Orders /> Gestionar Órdenes
             </button>
             <NotificationCenter

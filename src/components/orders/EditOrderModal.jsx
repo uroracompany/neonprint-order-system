@@ -21,12 +21,14 @@ import { formatPhone, getSelectedClientOrderFields } from "../../utils/clients";
 import { getMinimumDeliveryDate, isPastDeliveryDateChange } from "../../utils/deliveryDate";
 import { adminApiFetch } from "../../utils/adminApi";
 import { resolveOrderAssetUrl } from "../../utils/fileAccess";
+import { SecureImage } from "../ui/SecureImage";
 import {
   Field,
   Modal,
   PHONE_PLACEHOLDER,
   ProductionFileDetailsModal,
 } from "./CreateOrderModal";
+import "./EditOrderModal.css";
 
 export default function EditOrderModal({
   open,
@@ -42,6 +44,8 @@ export default function EditOrderModal({
   lockClientIdentity = false,
   assetsOnly = false,
   requireWorkOrder = false,
+  semiAdminVariant = false,
+  keepOpenAfterAssetSave = false,
 }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
@@ -575,6 +579,22 @@ export default function EditOrderModal({
       onAssetSaved?.({ order: updatedOrder, addedAssetCount });
     }
     await parentUpdate;
+    if (assetsOnly && keepOpenAfterAssetSave) {
+      // Keep the editor mounted for Semi-Administración: the parent has already
+      // reconciled the confirmed order, while this local state is reset below.
+      setExistingFiles(fileUrls);
+      setExistingPreview(previewUrl);
+      setExistingRefImages(refImageUrls);
+      setAssetVersion(updatedOrder?.updated_at || assetVersion);
+      setNewFiles([]);
+      setNewFileAreas([]);
+      setNewFileLabels([]);
+      setNewFileMaterials([]);
+      setNewFileTerminations([]);
+      setNewPreview(null);
+      setNewRefImages([]);
+      return;
+    }
     onClose();
   };
 
@@ -593,7 +613,13 @@ export default function EditOrderModal({
 
   return (
     <>
-    <Modal open={open} onClose={onClose} title={assetsOnly ? `Gestionar archivos #${order?.id?.slice(0, 8).toUpperCase()}` : `Editar Orden #${order?.id?.slice(0, 8).toUpperCase()}`}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={assetsOnly ? `Gestionar archivos #${order?.id?.slice(0, 8).toUpperCase()}` : `Editar Orden #${order?.id?.slice(0, 8).toUpperCase()}`}
+      hideStripe={semiAdminVariant}
+      className={semiAdminVariant ? "ps-edit-order-modal--semi-admin" : ""}
+    >
       {error && <div className="ps-form-error">{error}</div>}
 
       {!assetsOnly && (
@@ -751,7 +777,7 @@ export default function EditOrderModal({
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
                 {existingRefImages.map((url, index) => (
                   <div key={`${url}-${index}`} className="ps-file-item">
-                    <img src={url} alt={parseFileName(url)} className="ps-ref-thumb" />
+                    <SecureImage url={url} alt={parseFileName(url)} className="ps-ref-thumb" compact />
                     <span className="ps-file-name">{parseFileName(url)}</span>
                     <button className="ps-file-remove" onClick={() => {
                       if (!canEditAssets) {

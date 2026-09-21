@@ -219,4 +219,46 @@ describe("registro de cliente desde credito en cotizacion", () => {
     }));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("usa la RPC limitada para Semi-Administración sin enviar created_by", async () => {
+    const createdClient = { id: "client-semi-1", name: "Cliente Semi", phone: "8295551111" };
+    const searchBuilder = {
+      select: vi.fn(() => searchBuilder),
+      is: vi.fn(() => searchBuilder),
+      order: vi.fn(() => searchBuilder),
+      limit: vi.fn(() => searchBuilder),
+      or: vi.fn(async () => ({ data: [], error: null })),
+      insert: vi.fn(),
+    };
+    const supabase = {
+      from: vi.fn(() => searchBuilder),
+      rpc: vi.fn(async () => ({ data: createdClient, error: null })),
+    };
+    const onCreated = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <CreateClientModal
+        open
+        onClose={onClose}
+        onCreated={onCreated}
+        supabase={supabase}
+        userId="actor-controlled-by-server"
+        createWithSemiAdminCommand
+        initialValues={{ name: "Cliente Semi", phone: "8295551111" }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Agregar cliente" }));
+
+    await waitFor(() => {
+      expect(supabase.rpc).toHaveBeenCalledWith("semi_admin_create_client", {
+        p_client: expect.objectContaining({ name: "Cliente Semi", phone: "8295551111" }),
+      });
+    });
+    expect(supabase.rpc.mock.calls[0][1].p_client).not.toHaveProperty("created_by");
+    expect(searchBuilder.insert).not.toHaveBeenCalled();
+    expect(onCreated).toHaveBeenCalledWith(createdClient, { reusedExisting: false });
+    expect(onClose).toHaveBeenCalled();
+  });
 });

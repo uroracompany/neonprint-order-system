@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import EditOrderModal from "../components/orders/EditOrderModal";
 import { adminApiFetch } from "../utils/adminApi";
 
-const { resolveOrderAssetUrl, uploadOrderAsset } = vi.hoisted(() => ({
+const { resolveOrderAssetUrl, uploadOrderAsset, canDecodeAsImage, compressImage } = vi.hoisted(() => ({
   resolveOrderAssetUrl: vi.fn(),
   uploadOrderAsset: vi.fn(),
+  canDecodeAsImage: vi.fn(),
+  compressImage: vi.fn(),
 }));
 
 vi.mock("../utils/adminApi", () => ({
@@ -15,11 +17,19 @@ vi.mock("../utils/adminApi", () => ({
 
 vi.mock("../utils/fileAccess", () => ({
   resolveOrderAssetUrl,
+  requiresOrderAssetGateway: () => true,
+  openOrderAssetUrl: vi.fn(),
 }));
 
 vi.mock("../utils/uploadOrderAsset", async (importOriginal) => ({
   ...(await importOriginal()),
   uploadOrderAsset,
+}));
+
+vi.mock("../utils/imageValidation", async (importOriginal) => ({
+  ...(await importOriginal()),
+  canDecodeAsImage,
+  compressImage,
 }));
 
 const completeOrder = {
@@ -60,9 +70,13 @@ describe("EditOrderModal seller hydration", () => {
     adminApiFetch.mockReset();
     resolveOrderAssetUrl.mockReset();
     uploadOrderAsset.mockReset();
+    canDecodeAsImage.mockReset();
+    compressImage.mockReset();
     adminApiFetch.mockResolvedValue({ response: { ok: true }, result: {} });
     resolveOrderAssetUrl.mockResolvedValue("https://signed.example.test/preview.webp");
     uploadOrderAsset.mockResolvedValue("supabase://order-previews/orders/order-1/preview/work-order.webp");
+    canDecodeAsImage.mockResolvedValue({ valid: true });
+    compressImage.mockImplementation((file) => Promise.resolve(file));
   });
 
   it("keeps legacy order-wide material and termination summaries out of the form", () => {
@@ -169,6 +183,78 @@ describe("EditOrderModal seller hydration", () => {
     const preview = await screen.findByAltText("Orden de Trabajo");
     expect(preview).toHaveAttribute("src", "https://signed.example.test/preview.webp");
     expect(resolveOrderAssetUrl).toHaveBeenCalledWith("supabase://order-previews/orders/order-1/preview.webp");
+  });
+
+  it("resolves one or several persisted reference images through the shared asset gateway", async () => {
+    const references = [
+      "supabase://order-docs/orders/order-1/ref-images/first.webp",
+      "supabase://order-docs/orders/order-1/ref-images/second.webp",
+    ];
+    resolveOrderAssetUrl.mockImplementation(async (assetRef) => `https://signed.example.test/${assetRef.split("/").pop()}`);
+
+    renderModal({ ...completeOrder, reference_images: references }, { assetsOnly: true });
+
+    expect(await screen.findByAltText("first.webp")).toHaveAttribute("src", "https://signed.example.test/first.webp");
+    expect(await screen.findByAltText("second.webp")).toHaveAttribute("src", "https://signed.example.test/second.webp");
+    expect(resolveOrderAssetUrl).toHaveBeenCalledWith(references[0], { expiresIn: 600, download: false });
+    expect(resolveOrderAssetUrl).toHaveBeenCalledWith(references[1], { expiresIn: 600, download: false });
+  });
+
+  it("preserves persisted reference images when saving without asset changes", async () => {
+    const user = userEvent.setup();
+    const existingReference = "supabase://order-docs/orders/order-1/ref-images/existing.webp";
+    renderModal({ ...completeOrder, reference_images: [existingReference] }, { assetsOnly: true });
+
+    await user.click(screen.getByRole("button", { name: "Guardar archivos ->" }));
+
+    await waitFor(() => expect(adminApiFetch).toHaveBeenCalledWith("/api/seller-orders", expect.objectContaining({
+      action: "update",
+      changes: expect.objectContaining({ reference_images: [existingReference] }),
+    })));
+    expect(uploadOrderAsset).not.toHaveBeenCalled();
+  });
+
+  it("preserves existing reference images when saving unchanged and appends a new upload", async () => {
+    const user = userEvent.setup();
+    const existingReference = "supabase://order-docs/orders/order-1/ref-images/existing.webp";
+    const newReference = "supabase://order-docs/orders/order-1/ref-images/new.webp";
+    uploadOrderAsset.mockResolvedValue(newReference);
+    renderModal({ ...completeOrder, reference_images: [existingReference] }, { assetsOnly: true });
+
+    const input = screen.getByRole("group", { name: "Subir imagenes" }).querySelector('input[type="file"]');
+    await user.upload(input, new File(["reference"], "new.webp", { type: "image/webp" }));
+    await user.click(screen.getByRole("button", { name: "Guardar archivos ->" }));
+
+    await waitFor(() => expect(adminApiFetch).toHaveBeenCalledWith("/api/seller-orders", expect.objectContaining({
+      action: "update",
+      changes: expect.objectContaining({ reference_images: [existingReference, newReference] }),
+    })));
+    expect(uploadOrderAsset).toHaveBeenCalledWith(expect.objectContaining({
+      bucket: "order-docs",
+      path: expect.stringContaining("orders/order-1/ref-images/"),
+    }));
+  });
+
+  it("removes only the selected persisted reference image", async () => {
+    const user = userEvent.setup();
+    const firstReference = "supabase://order-docs/orders/order-1/ref-images/first.webp";
+    const secondReference = "supabase://order-docs/orders/order-1/ref-images/second.webp";
+    adminApiFetch.mockResolvedValue({
+      response: { ok: true },
+      result: { order: { ...completeOrder, reference_images: [secondReference], updated_at: "2026-09-07T02:00:00.000Z" } },
+    });
+    renderModal({ ...completeOrder, reference_images: [firstReference, secondReference], updated_at: "2026-09-07T01:00:00.000Z" }, { assetsOnly: true });
+
+    await screen.findByAltText("first.webp");
+    await user.click(document.querySelector(".ps-files-list .ps-file-remove"));
+
+    await waitFor(() => expect(adminApiFetch).toHaveBeenCalledWith("/api/seller-orders", expect.objectContaining({
+      action: "update",
+      changes: expect.objectContaining({ reference_images: [secondReference] }),
+      removed_file_urls: [firstReference],
+      asset_operation: "manage_assets",
+      asset_removal_only: true,
+    })));
   });
 
   it("elimina de forma persistente la Orden de Trabajo guardada", async () => {

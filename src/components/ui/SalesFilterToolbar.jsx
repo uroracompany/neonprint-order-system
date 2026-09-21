@@ -10,6 +10,7 @@ export function SalesFilterToolbar({
   resultLabel = "resultados",
   activeFilters = 0,
   onReset,
+  actions = null,
   className = "",
 }) {
   const hasActiveFilters = activeFilters > 0;
@@ -68,6 +69,12 @@ export function SalesFilterToolbar({
           />
         )
       ))}
+
+      {actions && (
+        <div className="pp-filter-actions">
+          {actions}
+        </div>
+      )}
 
       {typeof resultCount === "number" && (
         <span className="pp-filters-count" aria-live="polite">

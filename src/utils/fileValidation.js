@@ -1,4 +1,7 @@
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif", "heic", "heif"]);
+export const PAYMENT_RECEIPT_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+export const PAYMENT_RECEIPT_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]);
+export const PAYMENT_RECEIPT_ACCEPT = ".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif";
 const IMAGE_MIME_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -156,8 +159,9 @@ export const validateUploadPolicy = ({ bucket, category, fileName, contentType }
 
   const extension = getFileExtension(fileName);
   const type = String(contentType || "").toLowerCase();
-  const validExtension = mode === "image" ? IMAGE_EXTENSIONS.has(extension) : ATTACHMENT_EXTENSIONS.has(extension);
-  const validMime = mode === "image" ? IMAGE_MIME_TYPES.has(type) : ATTACHMENT_MIME_TYPES.has(type);
+  const payment = String(bucket || "").trim() === "payment-invoice" || String(category || "").trim().toLowerCase() === "payment";
+  const validExtension = payment ? PAYMENT_RECEIPT_EXTENSIONS.has(extension) : mode === "image" ? IMAGE_EXTENSIONS.has(extension) : ATTACHMENT_EXTENSIONS.has(extension);
+  const validMime = payment ? PAYMENT_RECEIPT_MIME_TYPES.has(type) : mode === "image" ? IMAGE_MIME_TYPES.has(type) : ATTACHMENT_MIME_TYPES.has(type);
 
   // The gateway only accepts a declared MIME type from its allow-list. This
   // prevents an executable/HTML payload from being uploaded under a familiar

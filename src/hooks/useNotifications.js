@@ -22,6 +22,22 @@ const NOTIFICATION_DURATION = 5000; // Toast desaparece después de 5 segundos
 const MAX_TOASTS = 3; // Máximo de toasts visibles simultáneamente
 const LOCAL_TOAST_PREFIX = "local-toast";
 const MAX_NOTIFICATION_ROWS = 300;
+const NOTIFICATION_SELECT_COLUMNS = [
+  "id",
+  "user_id",
+  "type",
+  "title",
+  "message",
+  "order_id",
+  "metadata",
+  "is_read",
+  "is_archived",
+  "created_at",
+  "deleted_at",
+  "order_event_id",
+  "read_at",
+  "archived_at",
+].join(",");
 
 const getNotificationEventKind = (notification) =>
   notification?.metadata?.event_kind || "";
@@ -193,7 +209,7 @@ export default function useNotifications(userId) {
     setLoading(true);
     const { data, error } = await supabase
       .from("notifications")
-      .select("*")
+      .select(NOTIFICATION_SELECT_COLUMNS)
       .eq("user_id", userId)
       .or("is_archived.is.false,is_archived.is.null")
       .is("deleted_at", null)
@@ -229,7 +245,7 @@ export default function useNotifications(userId) {
     setArchivedLoading(true);
     const { data, error } = await supabase
       .from("notifications")
-      .select("*")
+      .select(NOTIFICATION_SELECT_COLUMNS)
       .eq("user_id", userId)
       .eq("is_archived", true)
       .is("deleted_at", null)

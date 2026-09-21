@@ -161,6 +161,7 @@ const makeSellerOrderClient = ({
     }
     if (name === "seller_update_order") Object.assign(order, args.p_changes, { updated_at: order.updated_at || "updated" });
     if (name === "seller_cancel_order") Object.assign(order, { status: "cancelled", cancellation_reason: args.p_reason });
+    if (name === "semi_admin_cancel_owned_unpaid_order") Object.assign(order, { status: "cancelled", cancellation_reason: args.p_reason });
     if (name === "seller_send_order_to_designer") Object.assign(order, { status: "in_Design", designer_id: args.p_designer_id, return_reason: null, returned_to_designer_at: null });
     if (name === "seller_send_order_to_quote") Object.assign(order, { status: "in_Quote", quote_id: args.p_quote_id, return_reason: null, returned_to_designer_at: null });
     if (name === "seller_set_order_archive") Object.assign(order, { is_archived: args.p_archived });
@@ -232,6 +233,27 @@ describe("handleSellerOrderAction", () => {
       active: 4,
       unarchived: 5,
     });
+  });
+
+  it("retains ownership fields in Semi-Admin list and recent-order projections", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [
+        { id: "owned", seller_id: "semi-1", created_by: "seller-2", status: "Pending", payment_status: "Pending_Payment", created_at: "2026-09-06T10:00:00.000Z", is_archived: false },
+      ],
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: true }, env);
+    const orderSelects = currentClient.from.mock.results
+      .filter(({ value }) => value?.select)
+      .map(({ value }) => value.select.mock.calls[0]?.[0]);
+
+    expect(result.status).toBe(200);
+    expect(result.body.orders[0]).toMatchObject({ seller_id: "semi-1", created_by: "seller-2" });
+    expect(result.body.recent_orders[0]).toMatchObject({ seller_id: "semi-1", created_by: "seller-2" });
+    expect(orderSelects.filter((columns) => String(columns).includes("seller_id")).length).toBeGreaterThanOrEqual(2);
+    expect(orderSelects.filter((columns) => String(columns).includes("created_by")).length).toBeGreaterThanOrEqual(2);
   });
 
   it("applies combined server-side filters for seller order lists", async () => {
@@ -437,6 +459,41 @@ describe("handleSellerOrderAction", () => {
     expect(cancelled.body.order.cancellation_reason).toBe("Cliente cancela");
     expect(paid.status).toBe(409);
     expect(partial.status).toBe(409);
+  });
+
+  it("allows Semi-Administración to cancel only its owned unpaid pre-production orders", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [
+        { id: "pending", seller_id: "semi-1", status: "Pending", payment_status: "Pending_Payment", updated_at: "2026-09-06T10:00:00.000Z" },
+        { id: "design", created_by: "semi-1", status: "in_Design", payment_status: "Pending_Payment", updated_at: "2026-09-06T10:00:00.000Z" },
+        { id: "quote", seller_id: "semi-1", status: "in_Quote", payment_status: "Pending_Payment", updated_at: "2026-09-06T10:00:00.000Z" },
+        { id: "foreign", seller_id: "seller-2", status: "Pending", payment_status: "Pending_Payment", updated_at: "2026-09-06T10:00:00.000Z" },
+        { id: "production", seller_id: "semi-1", status: "in_Production", payment_status: "Pending_Payment", updated_at: "2026-09-06T10:00:00.000Z" },
+        { id: "paid", seller_id: "semi-1", status: "Pending", payment_status: "pagado", updated_at: "2026-09-06T10:00:00.000Z" },
+      ],
+    });
+
+    for (const id of ["pending", "design", "quote"]) {
+      const result = await handleSellerOrderAction({ action: "cancel", order_id: id, reason: "Cliente desistió" }, env);
+      expect(result.status).toBe(200);
+      expect(result.body.order.status).toBe("cancelled");
+    }
+
+    const foreign = await handleSellerOrderAction({ action: "cancel", order_id: "foreign", reason: "No autorizado" }, env);
+    const production = await handleSellerOrderAction({ action: "cancel", order_id: "production", reason: "Ya inició" }, env);
+    const paid = await handleSellerOrderAction({ action: "cancel", order_id: "paid", reason: "Pagada" }, env);
+    const missingReason = await handleSellerOrderAction({ action: "cancel", order_id: "pending", reason: "" }, env);
+
+    expect(foreign.status).toBe(403);
+    expect(production.status).toBe(409);
+    expect(paid.status).toBe(409);
+    expect(missingReason.status).toBe(400);
+    expect(currentClient.rpc).toHaveBeenCalledWith("semi_admin_cancel_owned_unpaid_order", expect.objectContaining({
+      p_order_id: "pending",
+      p_expected_updated_at: "2026-09-06T10:00:00.000Z",
+    }));
   });
 
   it("assigns only active profiles with the expected role", async () => {

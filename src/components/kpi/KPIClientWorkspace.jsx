@@ -53,7 +53,7 @@ function buildLegacyClientWorkspace({ client = {}, kpis = {}, paymentSummary = {
       cancelled_orders: 0, normal_orders: 0, urgent_911_orders: 0,
       internal_design_orders: 0, external_design_orders: 0, payment: {
         credit_active: 0, partial_active: 0, pending_active: 0,
-      }, materials: {}, months: {}, on_time: 0, late: 0, total_delivered: 0,
+      }, months: {}, on_time: 0, late: 0, total_delivered: 0,
     })
     return records.get(key)
   }
@@ -68,13 +68,6 @@ function buildLegacyClientWorkspace({ client = {}, kpis = {}, paymentSummary = {
     const entry = ensure(item)
     entry.total_orders = Math.max(entry.total_orders, Number(item.total_orders || 0))
     entry.cancelled_orders = Math.max(entry.cancelled_orders, Number(item.cancelled_orders || 0))
-  })
-  ;(kpis.materials_by_client || []).forEach(item => {
-    const entry = ensure(item)
-    ;(item.materials || []).forEach(material => {
-      const name = typeof material === 'string' ? material : material.name
-      if (name) entry.materials[name] = (entry.materials[name] || 0) + Number(material.count || 1)
-    })
   })
   ;(kpis.order_type_by_client || []).forEach(item => {
     const entry = ensure(item)
@@ -105,8 +98,6 @@ function buildLegacyClientWorkspace({ client = {}, kpis = {}, paymentSummary = {
   return [...records.values()].map(entry => {
     const activeMonths = Object.keys(entry.months).length
     const cancel_rate = entry.total_orders ? Math.round((entry.cancelled_orders / entry.total_orders) * 1000) / 10 : 0
-    const favorite_material = Object.entries(entry.materials)
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))[0]?.[0] || 'Sin material'
     const avg_orders_per_month = entry.avg_orders_per_month || (activeMonths ? Math.round((entry.total_orders / activeMonths) * 10) / 10 : 0)
     const activity = entry.activity === 'Alta' || entry.activity === 'Media' || entry.activity === 'Baja'
       ? entry.activity
@@ -114,7 +105,7 @@ function buildLegacyClientWorkspace({ client = {}, kpis = {}, paymentSummary = {
     const deliveryScore = entry.total_delivered ? (entry.on_time / entry.total_delivered) * 100 : 50
     const health_score = Math.round(Math.min(100, avg_orders_per_month * 10) * 0.4 + (100 - cancel_rate) * 0.3 + deliveryScore * 0.3)
     return {
-      ...entry, favorite_material, avg_orders_per_month, cancel_rate, activity, health_score,
+      ...entry, avg_orders_per_month, cancel_rate, activity, health_score,
       health: health_score >= 80 ? 'Excelente' : health_score >= 60 ? 'Buena' : health_score >= 40 ? 'Media' : 'Riesgo',
       monthly_activity: Object.entries(entry.months).sort((a, b) => a[0].localeCompare(b[0])).map(([month, orders]) => ({ month, orders })),
     }
@@ -237,7 +228,6 @@ function ClientDetailModal({ client, onClose }) {
 
         <div className="kpi-client-detail-metrics">
           <Metric label="Órdenes totales" value={client.total_orders} detail="Histórico" />
-          <Metric label="Material favorito" value={client.favorite_material} detail="Mayor consumo" tone="cyan" />
           <Metric label="Cancelación" value={`${client.cancel_rate}%`} detail={`${client.cancelled_orders} órdenes`} tone={client.cancel_rate > 10 ? 'rose' : 'green'} />
           <Metric label="Promedio / mes" value={client.avg_orders_per_month} detail="Meses con actividad" tone="violet" />
         </div>
@@ -374,7 +364,7 @@ export default function KPIClientWorkspace({ clients = [], activityTimeline = []
     const text = deferredSearch.trim().toLocaleLowerCase('es')
     const filtered = workspaceClients.filter(client => {
       const payment = client.payment || {}
-      return (!text || `${client.client_name} ${client.favorite_material}`.toLocaleLowerCase('es').includes(text))
+      return (!text || client.client_name.toLocaleLowerCase('es').includes(text))
         && (credit === 'all' || (payment.credit_active || 0) > 0)
         && (partial === 'all' || (payment.partial_active || 0) > 0)
         && (pending === 'all' || (payment.pending_active || 0) > 0)
@@ -451,11 +441,11 @@ export default function KPIClientWorkspace({ clients = [], activityTimeline = []
               value={search}
               onChange={value => { setSearch(value); setPage(1) }}
               onClear={() => { setSearch(''); setPage(1) }}
-              placeholder="Buscar cliente o material…"
+              placeholder="Buscar cliente…"
               resultCount={rows.length}
               totalCount={visibleClients.length}
             />
-            <div className="kpi-materials-filter-control">
+            <div className="kpi-client-filter-control">
               <span>Crédito activo</span>
               <FilterSelect
                 icon={<Icons.Money size={14} />}
@@ -466,7 +456,7 @@ export default function KPIClientWorkspace({ clients = [], activityTimeline = []
                 label="Filtrar clientes con crédito activo"
               />
             </div>
-            <div className="kpi-materials-filter-control">
+            <div className="kpi-client-filter-control">
               <span>Pago parcial</span>
               <FilterSelect
                 icon={<Icons.Money size={14} />}
@@ -476,7 +466,7 @@ export default function KPIClientWorkspace({ clients = [], activityTimeline = []
                 placeholder="Seleccionar"
               />
             </div>
-            <div className="kpi-materials-filter-control">
+            <div className="kpi-client-filter-control">
               <span>Pago pendiente</span>
               <FilterSelect
                 icon={<Icons.AlertCircle size={14} />}
@@ -486,7 +476,7 @@ export default function KPIClientWorkspace({ clients = [], activityTimeline = []
                 placeholder="Seleccionar"
               />
             </div>
-            <div className="kpi-materials-filter-control">
+            <div className="kpi-client-filter-control">
               <span>Ordenar</span>
               <FilterSelect
                 icon={<Icons.Hash size={14} />}
@@ -508,7 +498,6 @@ export default function KPIClientWorkspace({ clients = [], activityTimeline = []
                 <tr>
                   <th>#</th>
                   <th>Cliente</th>
-                  <th>Material favorito</th>
                   <th>Actividad</th>
                   <th>Cancelación</th>
                   <th>Promedio/mes</th>
@@ -534,12 +523,6 @@ export default function KPIClientWorkspace({ clients = [], activityTimeline = []
                           <small>{client.total_orders} órdenes</small>
                         </div>
                       </div>
-                    </td>
-                    <td>
-                      <span className="kpi-client-material">
-                        <Icons.Package size={14} />
-                        {client.favorite_material}
-                      </span>
                     </td>
                     <td>
                       <span className={`kpi-badge ${activityBadgeClass(client.activity)}`}>{client.activity}</span>

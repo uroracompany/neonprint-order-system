@@ -63,11 +63,7 @@ export default function ProductionAssignmentModal({ open, onClose, onConfirm, or
     printing: <Icons.Upload />,
   };
   const getAreaIcon = (code) => areaIconMap[String(code).toLowerCase()] || <Icons.Package />;
-  const formatAreaLabel = (label) => {
-    const lower = String(label).toLowerCase();
-    if (lower.startsWith("área") || lower.startsWith("area")) return label;
-    return `Área ${label}`;
-  };
+  const formatAreaLabel = (label) => label;
 
   return (
     <div className="pq-overlay" onClick={(event) => event.target === event.currentTarget && !loading && onClose()}>

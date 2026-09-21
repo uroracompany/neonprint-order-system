@@ -29,11 +29,9 @@ const CLIENT_SEARCH_FIELDS = [
   'client_name',
   'name',
   'invoice_number',
-  item => item?.materials?.map(material => material.name).join(' '),
   item => item?.orders?.map(order => [
     order.invoice_number,
     order.description,
-    order.material,
     order.payment_status,
   ].join(' ')).join(' '),
   item => Object.keys(item?.months || {}).join(' '),
@@ -44,7 +42,7 @@ const findKpiClientByKey = (items, key) => items.find(item => getClientKey(item)
 const getSelectedKpiClient = (items, key) => (key === ALL_KEY ? null : findKpiClientByKey(items, key) || items[0] || null)
 const getKpiSearchEmptyText = (query, entity = 'resultados') => (
   query
-    ? `No encontramos ${entity} para "${query}". Prueba con cliente, factura, material, orden o estado.`
+    ? `No encontramos ${entity} para "${query}". Prueba con cliente, factura, orden o estado.`
     : 'No hay datos disponibles para este periodo.'
 )
 
@@ -156,9 +154,6 @@ export default function KPIClientAnalytics({ data }) {
   const [freqKey, setFreqKey] = useState(ALL_KEY)
   const [freqSearch, setFreqSearch] = useState('')
   const deferredFreqSearch = useDeferredValue(freqSearch)
-  const [matKey, setMatKey] = useState(ALL_KEY)
-  const [matSearch, setMatSearch] = useState('')
-  const deferredMatSearch = useDeferredValue(matSearch)
   const [healthKey, setHealthKey] = useState(ALL_KEY)
   const [healthSearch, setHealthSearch] = useState('')
   const deferredHealthSearch = useDeferredValue(healthSearch)
@@ -1135,135 +1130,6 @@ export default function KPIClientAnalytics({ data }) {
                 </div>
               </div>
             )}
-          </div>
-        )
-      })()}
-
-      {(() => {
-        const materialsByClient = kpis.materials_by_client || []
-        if (materialsByClient.length === 0) return null
-        const filteredMatClients = filterKpiClients(materialsByClient, deferredMatSearch)
-        const isAllMat = matKey === ALL_KEY
-        let matClient, matMaterials, matTotal
-        if (isAllMat) {
-          const globalMats = {}
-          filteredMatClients.forEach(cl => {
-            cl.materials.forEach(m => {
-              globalMats[m.name] = (globalMats[m.name] || 0) + m.count
-            })
-          })
-          matMaterials = Object.entries(globalMats)
-            .map(([name, count]) => ({ name, count }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 8)
-          matTotal = matMaterials.reduce((s, m) => s + m.count, 0)
-          matClient = { client_name: 'Todos los clientes' }
-        } else {
-          const cl = findKpiClientByKey(materialsByClient, matKey) || filteredMatClients[0]
-          if (!cl) {
-            matClient = { client_name: 'Sin resultados' }
-            matMaterials = []
-            matTotal = 0
-          } else {
-          matClient = cl
-          matMaterials = cl.materials || []
-          matTotal = matMaterials.reduce((s, m) => s + m.count, 0)
-          }
-        }
-        const matPie = matMaterials.slice(0, 6).map((m, i) => ({
-          name: m.name?.length > 16 ? m.name.slice(0, 16) + '...' : m.name,
-          value: m.count,
-          color: PALETTE.pie[i % PALETTE.pie.length],
-        }))
-        const maxMatCount = matMaterials.length > 0 ? matMaterials[0].count : 1
-        return (
-          <div className="kpi-section">
-            <div className="kpi-section-header">
-              <div>
-                <span className="kpi-section-kicker">Materiales</span>
-                <h2 className="kpi-section-title">Materiales Preferidos por Cliente</h2>
-                <p className="kpi-section-subtitle">Materiales que más consume cada cliente.</p>
-              </div>
-              <div className="kpi-filter-row" style={{ flex: '0 0 auto' }}>
-                <KPISearchBox
-                  value={matSearch}
-                  onChange={value => {
-                    setMatSearch(value)
-                    if (matKey !== ALL_KEY && !filterKpiClients(materialsByClient, value).some(cl => getClientKey(cl) === matKey)) setMatKey(ALL_KEY)
-                  }}
-                  onClear={() => setMatSearch('')}
-                  placeholder="Buscar cliente, material o tipo de orden..."
-                  resultCount={filteredMatClients.length}
-                  totalCount={materialsByClient.length}
-                />
-                <label>
-                  <span>Cliente</span>
-                  <select value={matKey} onChange={e => setMatKey(e.target.value)}>
-                    <option value={ALL_KEY}>Todos</option>
-                    {filteredMatClients.map((cl, i) => <option key={`${getClientKey(cl)}-${i}`} value={getClientKey(cl)}>{getClientName(cl)}</option>)}
-                  </select>
-                </label>
-              </div>
-            </div>
-            {filteredMatClients.length === 0 && (
-              <div className="kpi-search-empty-hint">{getKpiSearchEmptyText(matSearch, 'clientes')}</div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'stretch' }}>
-              <div className="kpi-card" style={{ padding: '32px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-                <div style={{ width: '100%', height: 260, position: 'relative' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie key={matKey} data={matPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={4} stroke="none">
-                        {matPie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                      </Pie>
-                      <Tooltip wrapperStyle={{ zIndex: 9999 }} content={({ active, payload }) => {
-                        if (!active || !payload?.length) return null
-                        const d = payload[0].payload
-                        return (
-                          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10, padding: '10px 14px', boxShadow: '0 4px 16px rgba(15,30,64,0.1)', fontSize: 13 }}>
-                            <p style={{ margin: 0, fontWeight: 600, color: '#091127' }}>{d.name}</p>
-                            <p style={{ margin: '4px 0 0', color: '#64748b' }}>{d.value} órdenes — {matTotal > 0 ? Math.round((d.value / matTotal) * 100) : 0}%</p>
-                          </div>
-                        )
-                      }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-                    <div style={{ fontSize: 36, fontWeight: 800, color: '#091127', lineHeight: 1 }}><AnimatedNumber key={matKey} value={matTotal} /></div>
-                    <div style={{ fontSize: 11, fontWeight: 500, color: '#94A3B8', marginTop: 4, letterSpacing: '0.03em' }}>usos</div>
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#091127' }}>{matClient.client_name}</div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{matMaterials.length} material{matMaterials.length !== 1 ? 'es' : ''}</div>
-                </div>
-              </div>
-
-              <div className="kpi-card" style={{ padding: '32px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Ranking de Materiales</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, overflow: 'auto' }}>
-                  {matMaterials.length === 0 ? (
-                    <div className="kpi-empty-state" style={{ padding: 16 }}><div className="kpi-empty-title">Sin datos</div></div>
-                  ) : matMaterials.map((m, i) => {
-                    const pct = maxMatCount > 0 ? (m.count / maxMatCount) * 100 : 0
-                    return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ width: 20, fontSize: 12, fontWeight: 600, color: '#94A3B8', textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: '#091127', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: PALETTE.pie[i % PALETTE.pie.length], marginLeft: 8, flexShrink: 0 }}>{m.count}</span>
-                          </div>
-                          <div style={{ width: '100%', height: 5, background: '#E8EDF8', borderRadius: 3, overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: PALETTE.pie[i % PALETTE.pie.length], borderRadius: 3, transition: 'width 0.4s ease' }} />
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
           </div>
         )
       })()}

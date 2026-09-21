@@ -15,6 +15,11 @@ describe('KPI workspace persistence', () => {
     expect(getAdminTabSearch(kpiSearch, 'materials')).toBe('?tab=materials')
   })
 
+  it('normalizes the removed materials KPI tab to the executive overview', () => {
+    expect(getKpiTabFromSearch('?tab=kpi&kpiTab=materials')).toBe('overview')
+    expect(getKpiTabSearch('?tab=kpi&kpiTab=materials', 'materials')).toBe('?tab=kpi')
+  })
+
   it('restores period, filters, detail and scroll for the same user session', () => {
     const storage = createStorage()
     writeKpiWorkspace('user-1', {

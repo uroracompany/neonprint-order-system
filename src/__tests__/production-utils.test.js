@@ -147,6 +147,26 @@ describe("production file helpers", () => {
     expect(isOrderAssignedToProductionRole(order, "dtf_producer", "other-user")).toBe(false);
   });
 
+  it("uses file ownership after a partial transfer within the same area", () => {
+    const order = {
+      order_production_assignments: [
+        { order_id: "order-1", production_area_code: "digital", assigned_to: "luis" },
+      ],
+      order_production_files: [
+        { id: "luis-file", url: "https://example.com/luis.pdf", production_area_code: "digital", assigned_to: "luis" },
+        { id: "jose-file", url: "https://example.com/jose.pdf", production_area_code: "digital", assigned_to: "jose" },
+      ],
+    };
+
+    expect(filterProductionFilesForRole(order, "digital_producer", "luis").map((file) => file.id))
+      .toEqual(["luis-file"]);
+    expect(filterProductionFilesForRole(order, "digital_producer", "jose").map((file) => file.id))
+      .toEqual(["jose-file"]);
+    expect(isOrderParticipatingInProductionRole(order, "digital_producer", "luis")).toBe(true);
+    expect(isOrderParticipatingInProductionRole(order, "digital_producer", "jose")).toBe(true);
+    expect(isOrderAssignedToProductionRole(order, "digital_producer", "otro-operador")).toBe(false);
+  });
+
   it("detects production archives only for the current user", () => {
     const order = {
       order_production_user_archives: [

@@ -388,4 +388,28 @@ describe("FileUploadZone", () => {
     expect(clickSpy).toHaveBeenCalledTimes(1);
     clickSpy.mockRestore();
   });
+
+  it("propaga requerido y descripcion al control de carga cuando se solicitan", () => {
+    const { container } = render(
+      <>
+        <p id="receipt-requirement">Adjunta una imagen del comprobante.</p>
+        <FileUploadZone
+          mode="image"
+          buttonLabel="Seleccionar comprobante"
+          required
+          aria-describedby="receipt-requirement"
+          onFilesAccepted={vi.fn()}
+        />
+      </>
+    );
+
+    const group = screen.getByRole("group", { name: "Seleccionar comprobante" });
+    const button = screen.getByRole("button", { name: "Seleccionar comprobante" });
+    const input = container.querySelector("input[type='file']");
+    expect(group).toHaveAttribute("aria-required", "true");
+    expect(group).toHaveAttribute("aria-describedby", "receipt-requirement");
+    expect(button).toHaveAttribute("aria-describedby", "receipt-requirement");
+    expect(input).toBeRequired();
+    expect(input).toHaveAttribute("aria-describedby", "receipt-requirement");
+  });
 });

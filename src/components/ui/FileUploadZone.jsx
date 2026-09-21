@@ -58,6 +58,7 @@ export default function FileUploadZone({
   replaceMode = false,
   buttonLabel,
   hint,
+  accept,
   disabled = false,
   variant = "standard",
   onFilesAccepted,
@@ -68,7 +69,9 @@ export default function FileUploadZone({
   maxFiles,
   existingCount = 0,
   inputRef: externalInputRef,
+  required = false,
   "aria-label": ariaLabel,
+  "aria-describedby": ariaDescribedBy,
 }) {
   const inputId = useId();
   const inputRef = useRef(null);
@@ -200,6 +203,8 @@ export default function FileUploadZone({
       tabIndex={disabled ? -1 : 0}
       role="group"
       aria-label={ariaLabel || label}
+      aria-required={required || undefined}
+      aria-describedby={ariaDescribedBy}
       onClick={() => zoneRef.current?.focus()}
       onFocus={() => setIsFocused(true)}
       onBlur={() => {
@@ -238,8 +243,10 @@ export default function FileUploadZone({
         }}
         type="file"
         multiple={multiple}
-        accept={getAcceptForMode(mode)}
+        accept={accept || getAcceptForMode(mode)}
         disabled={disabled}
+        required={required}
+        aria-describedby={ariaDescribedBy}
         onChange={(event) => {
           handleFiles(event.target.files, "picker");
           event.target.value = "";
@@ -250,6 +257,7 @@ export default function FileUploadZone({
         type="button"
         className="file-upload-zone__button"
         disabled={disabled}
+        aria-describedby={ariaDescribedBy}
         onClick={(event) => {
           event.stopPropagation();
           openPicker();

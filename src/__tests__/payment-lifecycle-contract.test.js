@@ -6,6 +6,7 @@ const projectFile = (file) => readFileSync(resolve(file), "utf8");
 
 describe("global payment lifecycle contract", () => {
   const migration = projectFile("supabase/migrations/20260905185147_global_payment_lifecycle_and_semi_admin_access.sql");
+  const reconciliation = projectFile("supabase/migrations/20260906110000_semi_admin_client_cancel_payment.sql");
 
   it("requires receipt or registered receipt number when marking paid", () => {
     expect(migration).toContain("new.invoice_payment");
@@ -30,6 +31,11 @@ describe("global payment lifecycle contract", () => {
     expect(migration).toContain("or v_order.created_by = v_actor");
     expect(migration).toContain("old.payment_status = 'parcial' and new.payment_status = 'pagado'");
     expect(migration).toContain("'semi_admin_payment_updated'");
+    expect(reconciliation).toContain("current_setting('app.neonprint_order_command', true) = 'on'");
+    expect(reconciliation).toContain("v_role not in ('admin', 'quote') and not v_authorized_semi_admin_credit");
+    expect(reconciliation).toContain("accounts_receivable ar where ar.order_id = new.id and ar.status = 'resolved'");
+    expect(reconciliation).toContain("new.client_id is null");
+    expect(reconciliation).toContain("new.invoice_number");
   });
 
   it("keeps client payment uploads and commands behind the Semi-Admin flow", () => {

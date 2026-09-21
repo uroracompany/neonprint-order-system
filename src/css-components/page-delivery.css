@@ -1692,6 +1692,160 @@ select.pd-input,
   }
 }
 
+/* ── Responsive hardening: Delivery ─────────────────────────────── */
+.pd-header-title,
+.pd-header-title > * {
+  min-width: 0;
+}
+
+.pd-page-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pd-rework-file-toggle > span {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.pd-modal,
+.pd-rework-modal {
+  max-height: min(92dvh, 860px);
+}
+
+.pd-modal-body,
+.pd-rework-body {
+  min-width: 0;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 1024px) {
+  .pd-header-left > .pd-icon-btn {
+    display: none;
+  }
+
+  .pd-content {
+    padding: 20px;
+  }
+
+  .dlv-greeting {
+    align-items: flex-start;
+    padding: 22px 24px;
+  }
+
+  .dlv-greeting-actions {
+    min-width: max-content;
+  }
+
+  .pd-panel-header > * {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 820px) {
+  .pd-header-left {
+    flex: 1 1 auto;
+  }
+
+  .pd-header-right {
+    flex: 0 0 auto;
+  }
+
+  .pd-mobile-nav {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .pd-order-card-identity,
+  .pd-order-card-body,
+  .pd-order-card-meta span,
+  .pd-order-card-badges {
+    min-width: 0;
+  }
+
+  .pd-order-card-meta span {
+    overflow-wrap: anywhere;
+  }
+
+  .pd-modal-footer {
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 560px) {
+  .pd-header {
+    gap: 8px;
+    padding: 0 10px;
+  }
+
+  .pd-header-left,
+  .pd-header-right {
+    gap: 6px;
+  }
+
+  .pd-page-title {
+    max-width: 128px;
+  }
+
+  .pd-header-right .pd-dark-btn {
+    width: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .pd-header-right .pd-dark-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .pd-mobile-nav-btn,
+  .pd-mobile-nav-icon {
+    min-height: 48px;
+  }
+
+  .pd-mobile-nav-btn {
+    min-width: 0;
+  }
+
+  .pd-panel,
+  .pd-filters {
+    border-radius: 12px;
+  }
+
+  .pd-panel-header,
+  .pd-panel .pd-empty,
+  .pd-filters {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .pd-rework-filename,
+  .pd-rework-filename-green {
+    max-width: min(100%, 220px);
+  }
+
+  .pd-rework-note,
+  .pd-rework-correct {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .pd-page-title {
+    max-width: 92px;
+  }
+
+  .pd-mobile-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pd-mobile-nav-btn {
+    min-height: 58px;
+  }
+}
+
 @keyframes pdFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

@@ -48,10 +48,15 @@
 .sa-op-button { min-height: 38px; border: 1px solid transparent; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 12px; font-weight: 750; line-height: 1.2; cursor: pointer; transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, border-color 150ms ease; }
 .sa-op-button--primary { color: #fff; background: var(--primary); box-shadow: 0 2px 5px color-mix(in srgb, var(--primary) 22%, transparent); }
 .sa-op-button--soft { color: #1e40af; background: #eff6ff; border-color: #bfdbfe; }
+.sa-op-button--payment { display: inline-flex; align-items: center; gap: 7px; color: #fff; background: #047857; border-color: #047857; box-shadow: 0 2px 5px rgba(4, 120, 87, .18); }
+.sa-op-button--advanced { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; color: #fff; background: var(--primary); border-color: var(--primary); box-shadow: 0 2px 5px color-mix(in srgb, var(--primary) 24%, transparent); }
+.sa-op-button--advanced svg { flex: 0 0 auto; }
+.sa-op-button--payment:hover:not(:disabled) { background: #065f46; }
 .sa-op-button--delivery { color: #fff; background: #047857; box-shadow: 0 2px 5px rgba(4, 120, 87, .18); }
 .sa-op-button:hover:not(:disabled) { transform: translateY(-1px); }
 .sa-op-button--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 88%, #000); }
 .sa-op-button--soft:hover:not(:disabled) { background: #dbeafe; }
+.sa-op-button--advanced:hover:not(:disabled) { color: #fff; background: color-mix(in srgb, var(--primary) 88%, #000); border-color: color-mix(in srgb, var(--primary) 88%, #000); }
 .sa-op-button--delivery:hover:not(:disabled) { background: #065f46; }
 .sa-op-button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 28%, transparent); outline-offset: 2px; }
 .sa-op-button:disabled { cursor: not-allowed; opacity: .52; box-shadow: none; }
@@ -71,6 +76,9 @@
 .sa-op-responsibility-row select { min-height: 38px; max-width: 190px; padding: 8px; border: 1px solid #d8e0ef; border-radius: 8px; background: var(--surface); color: var(--text); }
 .sa-op-history { color: var(--text-muted); font-size: 11px; line-height: 1.6; }
 .sa-op-history summary { cursor: pointer; color: var(--text-sub); font-weight: 700; }
+.sa-op-audit-history ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.sa-op-audit-history li { display: grid; gap: 2px; padding: 9px 10px; border: 1px solid #d8e0ef; border-radius: 8px; color: var(--text-sub); font-size: 12px; }
+.sa-op-audit-history li span, .sa-op-audit-history li small { color: var(--text-muted); font-size: 11px; }
 .sa-op-boundary { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid #bfdbfe; border-radius: 14px; background: #eff6ff; }
 .sa-op-boundary h4 { margin: 0; color: #1e3a8a; font-size: 14px; }
 .sa-op-boundary p { margin: 0; color: #1e40af; font-size: 12px; line-height: 1.5; }

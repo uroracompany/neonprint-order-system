@@ -1,6 +1,7 @@
 import { createHmac, createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import sharp from "sharp";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "./auth-middleware.js";
 import { getEnvValue, getSupabaseAdminEnv, internalError, jsonResponse } from "./admin-user-utils.js";
@@ -51,6 +52,43 @@ const IMAGE_EXTENSION_BY_TYPE = {
   "image/gif": "gif",
   "image/heic": "heic",
   "image/heif": "heif",
+};
+
+const PAYMENT_IMAGE_MAX_BYTES = 10 * MB;
+const PAYMENT_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+const normalizePaymentImageType = (value = "") => {
+  const type = String(value || "").split(";", 1)[0].trim().toLowerCase();
+  return type === "image/jpg" ? "image/jpeg" : type;
+};
+
+const PAYMENT_IMAGE_MAX_PIXELS = 12_000_000;
+const PAYMENT_IMAGE_MAX_OUTPUT_BYTES = 48 * MB;
+const PAYMENT_IMAGE_ERROR = "No se pudo verificar la imagen del comprobante. Usa PNG, JPG/JPEG, WebP o GIF de hasta 10 MB y 12 megapíxeles.";
+const PAYMENT_FORMAT_TYPES = { png: "image/png", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
+
+export const verifyPaymentReceiptBytes = async ({ bytes, declaredContentType } = {}) => {
+  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  const declared = normalizePaymentImageType(declaredContentType);
+  if (!data.byteLength || data.byteLength > PAYMENT_IMAGE_MAX_BYTES || !PAYMENT_IMAGE_TYPES.has(declared)) {
+    return { valid: false, error: PAYMENT_IMAGE_ERROR };
+  }
+  let decoder;
+  try {
+    decoder = sharp(data, { failOn: "warning", limitInputPixels: PAYMENT_IMAGE_MAX_PIXELS, page: 0, pages: 1 });
+    const metadata = await decoder.metadata();
+    const detected = PAYMENT_FORMAT_TYPES[metadata.format];
+    if (!detected || detected !== declared) return { valid: false, error: PAYMENT_IMAGE_ERROR };
+    // PNG output forces the entire first frame through the decoder. Metadata
+    // and signatures alone cannot establish that compressed pixels are valid.
+    const output = await decoder.ensureAlpha().png().toBuffer();
+    if (output.byteLength > PAYMENT_IMAGE_MAX_OUTPUT_BYTES) return { valid: false, error: PAYMENT_IMAGE_ERROR };
+    return { valid: true, contentType: detected };
+  } catch {
+    return { valid: false, error: PAYMENT_IMAGE_ERROR };
+  } finally {
+    decoder?.destroy();
+  }
 };
 
 const encodeRfc3986 = (value) =>
@@ -129,6 +167,19 @@ const inferCategory = ({ bucket, path, category }) => {
   return "design";
 };
 
+const isCanonicalPaymentPath = ({ orderId, path, fileName }) => {
+  const rawName = String(fileName || "");
+  const safeName = safeFileName(rawName);
+  const expectedPrefix = `orders/${orderId}/payment-`;
+  const value = String(path || "");
+  if (!value.startsWith(expectedPrefix) || value.includes("?") || value.includes("#") || value.includes("%")) return false;
+  const suffix = value.slice(expectedPrefix.length);
+  const separator = suffix.indexOf("-");
+  return /^[0-9]+$/.test(suffix.slice(0, separator))
+    && suffix.slice(separator + 1) === safeName
+    && /^[a-z0-9._-]+$/.test(safeName);
+};
+
 export const getR2Config = (env = process.env) => {
   const accountId = getEnvValue(env, "R2_ACCOUNT_ID");
   const accessKeyId = getEnvValue(env, "R2_ACCESS_KEY_ID");
@@ -188,7 +239,18 @@ const getStoragePathFromSupabaseUrl = ({ bucket, url }) => {
 export const isR2Url = (url = "") => String(url || "").startsWith(R2_SCHEME);
 export const isSupabaseAssetRef = (value = "") => String(value || "").startsWith(SUPABASE_SCHEME);
 
-export const buildSupabaseAssetRef = ({ bucket, key }) => `${SUPABASE_SCHEME}${bucket}/${encodeURI(key)}`;
+const encodeAssetReferenceKey = (key = "") => String(key || "").split("/").map(encodeURIComponent).join("/");
+const decodeAssetReferenceKey = (key = "") => {
+  const segments = String(key || "").split("/");
+  if (!segments.length || segments.some((segment) => !segment || segment === "." || segment === "..")) return null;
+  try {
+    return segments.map(decodeURIComponent).join("/");
+  } catch {
+    return null;
+  }
+};
+
+export const buildSupabaseAssetRef = ({ bucket, key }) => `${SUPABASE_SCHEME}${bucket}/${encodeAssetReferenceKey(key)}`;
 
 export const parseSupabaseAssetRef = (value = "") => {
   if (!isSupabaseAssetRef(value)) return null;
@@ -196,7 +258,7 @@ export const parseSupabaseAssetRef = (value = "") => {
   const slashIndex = rest.indexOf("/");
   if (slashIndex <= 0) return null;
   const bucket = rest.slice(0, slashIndex);
-  const key = decodeURIComponent(rest.slice(slashIndex + 1));
+  const key = decodeAssetReferenceKey(rest.slice(slashIndex + 1));
   if (!ORDER_ASSET_BUCKETS.has(bucket) || !key) return null;
   return { bucket, key };
 };
@@ -207,7 +269,7 @@ export const parseR2Url = (url = "", { allowedBucket } = {}) => {
   const slashIndex = rest.indexOf("/");
   if (slashIndex <= 0) return null;
   const bucket = rest.slice(0, slashIndex);
-  const key = decodeURIComponent(rest.slice(slashIndex + 1));
+  const key = decodeAssetReferenceKey(rest.slice(slashIndex + 1));
   if (!key || (allowedBucket && bucket !== allowedBucket)) return null;
   return {
     bucket,
@@ -215,7 +277,7 @@ export const parseR2Url = (url = "", { allowedBucket } = {}) => {
   };
 };
 
-export const buildR2Url = ({ bucket, key }) => `${R2_SCHEME}${bucket}/${encodeURI(key)}`;
+export const buildR2Url = ({ bucket, key }) => `${R2_SCHEME}${bucket}/${encodeAssetReferenceKey(key)}`;
 
 export const presignR2Url = ({
   method,
@@ -870,7 +932,8 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
   const orderId = String(payload?.orderId || getOrderIdFromPath(payload?.path) || "").trim();
   const bucket = String(payload?.bucket || "order-docs").trim();
   const path = String(payload?.path || "").trim();
-  const fileName = safeFileName(payload?.fileName || path.split("/").pop());
+  const rawFileName = String(payload?.fileName || path.split("/").pop() || "");
+  const fileName = safeFileName(rawFileName);
   const sizeBytes = Number(payload?.sizeBytes || payload?.size || 0);
   const contentType = String(payload?.contentType || "application/octet-stream").trim();
   const category = inferCategory({ bucket, path, category: payload?.category });
@@ -882,6 +945,9 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
 
   const policyError = validateUploadRequestPolicy({ bucket, category, fileName, contentType });
   if (policyError) return policyError;
+  if (category === "payment" && !isCanonicalPaymentPath({ orderId, path, fileName: rawFileName })) {
+    return jsonResponse(400, { error: "La ruta del comprobante de pago no es canónica." });
+  }
 
   const limit = ORDER_FILE_BUCKET_LIMITS[bucket];
   if (limit && sizeBytes > limit && !shouldUseR2({ bucket, sizeBytes, env })) {
@@ -1002,7 +1068,7 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
   }
 
   const r2 = getR2Config(env);
-  const objectKey = `orders/${orderId}/${category}/${Date.now()}-${fileName}`;
+  const objectKey = category === "payment" ? path : `orders/${orderId}/${category}/${Date.now()}-${fileName}`;
 
   const reservation = await reserveOrderAsset({
     supabaseAdmin, orderId, provider: "r2", bucket: r2.bucket, objectKey,
@@ -1022,6 +1088,109 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
   }));
 }
 
+const updateCompletedOrderFile = async ({ supabaseAdmin, fileRecord, fields }) => {
+  const { data, error } = await supabaseAdmin
+    .from("order_files")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("id", fileRecord.id)
+    .eq("order_id", fileRecord.order_id)
+    .eq("provider", fileRecord.provider)
+    .eq("bucket", fileRecord.bucket)
+    .eq("object_key", fileRecord.object_key)
+    .eq("uploaded_by", fileRecord.uploaded_by)
+    .select("*")
+    .single();
+  return { data, error };
+};
+
+const readPaymentReceiptBytes = async ({ supabaseAdmin, fileRecord, env }) => {
+  let signedUrl;
+  if (fileRecord.provider === "supabase") {
+    const { data, error } = await supabaseAdmin.storage.from(fileRecord.bucket)
+      .createSignedUrl(fileRecord.object_key, DEFAULT_SIGNED_URL_TTL);
+    if (error || !data?.signedUrl) throw new Error(PAYMENT_IMAGE_ERROR);
+    signedUrl = data.signedUrl;
+  } else if (fileRecord.provider === "r2") {
+    signedUrl = presignR2Url({
+      method: "GET", bucket: fileRecord.bucket, key: fileRecord.object_key,
+      expiresIn: DEFAULT_SIGNED_URL_TTL, env,
+    });
+  } else {
+    throw new Error(PAYMENT_IMAGE_ERROR);
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  let reader;
+  try {
+    const response = await fetch(signedUrl, { signal: controller.signal });
+    if (!response.ok || Number(response.headers.get("content-length") || 0) > PAYMENT_IMAGE_MAX_BYTES) {
+      throw new Error(PAYMENT_IMAGE_ERROR);
+    }
+    reader = response.body?.getReader();
+    if (!reader) throw new Error(PAYMENT_IMAGE_ERROR);
+    const chunks = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > PAYMENT_IMAGE_MAX_BYTES) throw new Error(PAYMENT_IMAGE_ERROR);
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return bytes;
+  } finally {
+    controller.abort();
+    await reader?.cancel().catch(() => {});
+    clearTimeout(timeout);
+  }
+};
+
+export const finalizeOrderFileCompletion = async ({ supabaseAdmin, fileRecord, failed, env }) => {
+  if (fileRecord.category !== "payment") {
+    return updateCompletedOrderFile({
+      supabaseAdmin,
+      fileRecord,
+      fields: { status: failed ? "failed" : "uploaded" },
+    });
+  }
+
+  if (failed) {
+    return updateCompletedOrderFile({
+      supabaseAdmin,
+      fileRecord,
+      fields: { status: "failed", payment_image_verified_at: null },
+    });
+  }
+
+  try {
+    const bytes = await readPaymentReceiptBytes({ supabaseAdmin, fileRecord, env });
+    const verification = await verifyPaymentReceiptBytes({ bytes, declaredContentType: fileRecord.content_type });
+    if (!verification.valid) throw new Error(verification.error);
+    return updateCompletedOrderFile({
+      supabaseAdmin,
+      fileRecord,
+      fields: {
+        status: "uploaded",
+        content_type: verification.contentType,
+        payment_image_verified_at: new Date().toISOString(),
+      },
+    });
+  } catch {
+    const failedResult = await updateCompletedOrderFile({
+      supabaseAdmin,
+      fileRecord,
+      fields: { status: "failed", payment_image_verified_at: null },
+    });
+    return { ...failedResult, validationError: PAYMENT_IMAGE_ERROR };
+  }
+};
+
 export async function handleBindPreorderFileUpload(payload = {}, env = process.env) {
   const auth = await requireAuthenticated(env.authHeader, env);
   if (!auth.authorized) return auth.response;
@@ -1031,7 +1200,8 @@ export async function handleBindPreorderFileUpload(payload = {}, env = process.e
   const provider = String(payload?.provider || "").trim();
   const bucket = String(payload?.bucket || "").trim();
   const objectKey = String(payload?.objectKey || "").trim();
-  const fileName = safeFileName(payload?.fileName || objectKey.split("/").pop());
+  const rawFileName = String(payload?.fileName || objectKey.split("/").pop() || "");
+  const fileName = safeFileName(rawFileName);
   const contentType = String(payload?.contentType || "application/octet-stream").trim();
   const sizeBytes = Number(payload?.sizeBytes || 0);
   const category = inferCategory({ bucket, path: objectKey, category: payload?.category });
@@ -1045,6 +1215,9 @@ export async function handleBindPreorderFileUpload(payload = {}, env = process.e
 
   const policyError = validateUploadRequestPolicy({ bucket, category, fileName, contentType });
   if (policyError) return policyError;
+  if (category === "payment" && !isCanonicalPaymentPath({ orderId, path: objectKey, fileName: rawFileName })) {
+    return jsonResponse(400, { error: "La ruta del comprobante de pago no es canónica." });
+  }
   const r2 = getR2Config(env);
   if (provider === "r2" && (!r2.configured || bucket !== r2.bucket)) {
     return jsonResponse(400, { error: "El bucket R2 indicado no es valido." });
@@ -1064,14 +1237,15 @@ export async function handleBindPreorderFileUpload(payload = {}, env = process.e
       ? jsonResponse(409, { error: "Este archivo ya fue asociado a una orden." })
       : internalError("No se pudo asociar el archivo previo a la orden.", "PREORDER_FILE_BIND_FAILED");
   }
-  const { data: fileRecord, error } = await supabaseAdmin
-    .from("order_files")
-    .update({ status: "uploaded", updated_at: new Date().toISOString() })
-    .eq("id", reservation.fileRecord.id)
-    .eq("uploaded_by", user.id)
-    .select("*")
-    .single();
-  if (error || !fileRecord) return internalError("No se pudo completar el archivo previo.", "PREORDER_FILE_BIND_FAILED");
+  const completed = await finalizeOrderFileCompletion({
+    supabaseAdmin,
+    fileRecord: reservation.fileRecord,
+    failed: false,
+    env,
+  });
+  if (completed.error || !completed.data) return internalError("No se pudo completar el archivo previo.", "PREORDER_FILE_BIND_FAILED");
+  if (completed.validationError) return jsonResponse(422, { error: "El comprobante no contiene una imagen compatible verificada." });
+  const fileRecord = completed.data;
 
   return jsonResponse(200, {
     file: fileRecord,
@@ -1088,53 +1262,41 @@ export async function handleCompleteFileUpload(payload = {}, env = process.env) 
   const orderId = String(payload?.orderId || getOrderIdFromPath(payload?.path || payload?.objectKey) || "").trim();
   if (!orderId) return jsonResponse(400, { error: "Falta orderId." });
 
-  const access = await loadOrderForAccess({ supabaseAdmin, orderId, userId: user.id, role: profile.role });
-  if (access.error) return access.error;
-  const category = inferCategory({ bucket: payload?.bucket, path: payload?.path || payload?.objectKey, category: payload?.category });
-  const writeAccessError = validateOrderAssetAction({ order: access.order, role: profile.role, userId: user.id, category, action: "complete" });
-  if (writeAccessError) return writeAccessError;
-
-  if (provider === "r2") {
-    const fileId = String(payload?.fileId || payload?.file?.id || "").trim();
-    if (!fileId) return jsonResponse(400, { error: "Falta fileId." });
-    const nextStatus = payload?.status === "failed" ? "failed" : "uploaded";
-
-    const { data, error } = await supabaseAdmin
-      .from("order_files")
-      .update({ status: nextStatus, updated_at: new Date().toISOString() })
-      .eq("id", fileId)
-      .eq("order_id", orderId)
-      .eq("uploaded_by", user.id)
-      .select("*")
-      .single();
-
-    if (error) return internalError("No se pudo actualizar el archivo.", "FILE_RECORD_UPDATE_FAILED");
-    return jsonResponse(200, { file: data, storedUrl: buildR2Url({ bucket: data.bucket, key: data.object_key }) });
-  }
-
-  const bucket = String(payload?.bucket || "").trim();
-  const path = String(payload?.path || "").trim();
   const fileId = String(payload?.fileId || payload?.file?.id || "").trim();
-  if (!ORDER_ASSET_BUCKETS.has(bucket) || !path || !fileId) return jsonResponse(400, { error: "Faltan datos de la reserva del archivo." });
-  const fileName = payload?.fileName || path.split("/").pop();
-  const contentType = payload?.contentType || null;
-  const policyError = validateUploadRequestPolicy({ bucket, category, fileName, contentType });
-  if (policyError) return policyError;
+  if (!fileId || !["supabase", "r2"].includes(provider)) return jsonResponse(400, { error: "Faltan datos de la reserva del archivo." });
 
-  const { data, error } = await supabaseAdmin
+  let recordQuery = supabaseAdmin
     .from("order_files")
-    .update({ status: payload?.status === "failed" ? "failed" : "uploaded", updated_at: new Date().toISOString() })
+    .select("*")
     .eq("id", fileId)
     .eq("order_id", orderId)
-    .eq("provider", "supabase")
-    .eq("bucket", bucket)
-    .eq("object_key", path)
-    .eq("uploaded_by", user.id)
-    .select("*")
-    .single();
+    .eq("provider", provider)
+    .eq("uploaded_by", user.id);
+  if (provider === "supabase") {
+    const bucket = String(payload?.bucket || "").trim();
+    const path = String(payload?.path || "").trim();
+    if (!ORDER_ASSET_BUCKETS.has(bucket) || !path) return jsonResponse(400, { error: "Faltan datos de la reserva del archivo." });
+    recordQuery = recordQuery.eq("bucket", bucket).eq("object_key", path);
+  }
+  const { data: fileRecord, error: recordError } = await recordQuery.maybeSingle();
+  if (recordError || !fileRecord) return jsonResponse(404, { error: "No se encontró la reserva del archivo." });
 
-  if (error) return internalError("No se pudo registrar el archivo.", "FILE_RECORD_CREATE_FAILED");
-  return jsonResponse(200, { file: data, storedUrl: buildSupabaseAssetRef({ bucket: data.bucket, key: data.object_key }) });
+  const access = await loadOrderForAccess({ supabaseAdmin, orderId, userId: user.id, role: profile.role });
+  if (access.error) return access.error;
+  const writeAccessError = validateOrderAssetAction({ order: access.order, role: profile.role, userId: user.id, category: fileRecord.category, action: "complete" });
+  if (writeAccessError) return writeAccessError;
+
+  const completed = await finalizeOrderFileCompletion({
+    supabaseAdmin,
+    fileRecord,
+    failed: payload?.status === "failed",
+    env,
+  });
+  if (completed.error || !completed.data) return internalError("No se pudo registrar el archivo.", "FILE_RECORD_CREATE_FAILED");
+  if (completed.validationError) return jsonResponse(422, { error: "El comprobante no contiene una imagen compatible verificada." });
+  if (completed.data.status === "failed") return jsonResponse(200, { file: completed.data });
+  const storedUrl = buildAssetReference({ provider: completed.data.provider, bucket: completed.data.bucket, objectKey: completed.data.object_key });
+  return jsonResponse(200, { file: completed.data, storedUrl });
 }
 
 export async function handleImportRemoteFile(payload = {}, env = process.env) {

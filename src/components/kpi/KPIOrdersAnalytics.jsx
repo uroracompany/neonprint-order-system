@@ -193,118 +193,6 @@ function MiniPieChart({ data, title, subtitle, insight, colors }) {
   )
 }
 
-const MATERIAL_COLORS = ['#091127', '#8B5CF6', '#F97316']
-
-function MaterialsRanking({ materials }) {
-  const ranking = useMemo(() => {
-    if (!materials || materials.length === 0) return []
-    const total = materials.reduce((s, d) => s + d.count, 0)
-    return materials.slice(0, 3).map((d, i) => ({
-      ...d,
-      rank: i + 1,
-      pct: total > 0 ? (d.count / total) * 100 : 0,
-      pctLabel: total > 0 ? ((d.count / total) * 100).toFixed(0) : '0',
-    }))
-  }, [materials])
-
-  if (ranking.length === 0) {
-    return (
-      <div style={{
-        flex: '1 1 300px', background: '#fff', borderRadius: 14,
-        border: '1px solid #dbe3ef', boxShadow: '0 10px 28px rgba(15,30,64,.055)',
-        overflow: 'hidden',
-      }}>
-        <div style={{ padding: '18px 22px 0' }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#091127' }}>Top 3 Materiales</h3>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748B' }}>Materiales más utilizados en órdenes</p>
-        </div>
-        <div style={{ padding: '32px 22px', textAlign: 'center' }}>
-          <p style={{ margin: 0, fontSize: 13, color: '#9CA3AF', fontStyle: 'italic' }}>Sin datos disponibles</p>
-        </div>
-      </div>
-    )
-  }
-
-  const medals = ['🥇', '🥈', '🥉']
-
-  return (
-    <div style={{
-      flex: '1 1 300px', background: '#fff', borderRadius: 14,
-      border: '1px solid #dbe3ef', boxShadow: '0 10px 28px rgba(15,30,64,.055)',
-      overflow: 'hidden',
-    }}>
-      <div style={{ padding: '18px 22px 0' }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#091127' }}>Top 3 Materiales Más Utilizados</h3>
-        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748B' }}>Distribución por uso en órdenes del período</p>
-      </div>
-
-      <div style={{ padding: '20px 22px 12px' }}>
-        <div style={{
-          position: 'relative', height: 36, background: '#F1F5F9', borderRadius: 8,
-          overflow: 'hidden', display: 'flex',
-        }}>
-          {ranking.map((item) => {
-            const isFirst = item.rank === 1
-            const isLast = item.rank === ranking.length
-
-            return (
-              <div
-                key={item.rank}
-                className="material-bar-segment"
-                style={{
-                  width: `${item.pct}%`,
-                  background: MATERIAL_COLORS[item.rank - 1],
-                  borderRadius: isFirst && isLast ? 8
-                    : isFirst ? '8px 0 0 8px'
-                    : isLast ? `0 8px 8px 0`
-                    : 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  '--seg-delay': `${(item.rank - 1) * 200}ms`,
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                {item.pct >= 12 && (
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, color: '#fff',
-                    textShadow: '0 1px 2px rgba(0,0,0,.2)',
-                    whiteSpace: 'nowrap', zIndex: 1,
-                  }}>
-                    {item.pctLabel}%
-                  </span>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <div style={{ padding: '8px 22px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {ranking.map((item) => (
-          <div key={item.rank} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{
-              width: 12, height: 12, borderRadius: 3, flexShrink: 0,
-              background: MATERIAL_COLORS[item.rank - 1],
-            }} />
-            <span style={{ fontSize: 14 }}>{medals[item.rank - 1]}</span>
-            <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#091127' }}>{item.name}</span>
-            <span style={{ fontSize: 12, color: '#64748B' }}>{item.count} usos</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#091127', minWidth: 42, textAlign: 'right' }}>{item.pctLabel}%</span>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ padding: '12px 22px', borderTop: '1px solid #E8EDF8', background: '#F8FAFC' }}>
-        <p style={{ margin: 0, fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
-          <strong>{ranking[0]?.name}</strong> es el material más demandado con {ranking[0]?.count} órdenes ({ranking[0]?.pctLabel}% del total).
-        </p>
-      </div>
-    </div>
-  )
-}
-
 export default function KPIOrdersAnalytics({ data }) {
   const [chartMode, setChartMode] = useState('line')
   const [delayedPage, setDelayedPage] = useState(1)
@@ -590,7 +478,6 @@ export default function KPIOrdersAnalytics({ data }) {
               colors={designColors}
               insight={designInsight}
             />
-            <MaterialsRanking materials={data.top_materials || []} />
           </div>
         </div>
       )}

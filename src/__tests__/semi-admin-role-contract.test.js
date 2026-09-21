@@ -10,6 +10,7 @@ const namedTransitionRpcMigration = read("supabase/migrations/20260905051828_sem
 const stageTriggerCompatibilityMigration = read("supabase/migrations/20260905052746_semi_admin_stage_assignment_trigger_compatibility.sql");
 const compositeResultFixMigration = read("supabase/migrations/20260905112523_fix_semi_admin_command_composite_results.sql");
 const orderFlowReconciliation = read("supabase/migrations/20260905131848_reconcile_admin_semi_admin_order_flow.sql");
+const clientCancelPaymentReconciliation = read("supabase/migrations/20260906110000_semi_admin_client_cancel_payment.sql");
 const sellerActions = read("server/seller-order-actions-handler.js");
 const sellerWorkbench = read("src/pages/pages-seller.jsx");
 const assignModal = read("src/components/ui/AssignModal.jsx");
@@ -82,7 +83,8 @@ describe("Semi-Administrador authorization contract", () => {
     expect(sellerWorkbench).toContain("lockClientIdentity={isSemiAdmin");
     expect(operationalPanel).toContain('run("mark_delivered"');
     expect(operationalPanel).toContain("onOpenProductionAssignment");
-    expect(operationalPanel).toContain("onOpenOrderAssets");
+    expect(operationalPanel).not.toContain("onOpenOrderAssets");
+    expect(operationalPanel).not.toContain('hasAction("manage_specifications")');
     expect(operationalPanel).toContain("onLoadCatalog");
     expect(operationalPanel).toContain('run("stage_responsibility"');
   });
@@ -131,7 +133,12 @@ describe("Semi-Administrador authorization contract", () => {
     expect(reconciliation).toContain("revoke all on function public.semi_admin_send_design_to_quote");
     expect(reconciliation).toContain("La orden no tiene archivos de Producción.");
     expect(reconciliation).toContain("La edición comercial no está disponible en esta etapa.");
-    expect(sellerActions).toContain("SEMI_ADMIN_DESTRUCTIVE_ACTION_FORBIDDEN");
+    expect(sellerActions).toContain("semi_admin_cancel_owned_unpaid_order");
+    expect(sellerActions).toContain("isSemiAdminCancellableOrder");
+    expect(sellerActions).toContain('"seller_id",');
+    expect(sellerActions).toContain('"created_by",');
+    expect(sellerWorkbench).toContain("canSemiAdminCancelOrder");
+    expect(sellerWorkbench).toContain("order?.seller_id === actorId || order?.created_by === actorId");
     expect(operationalPanel).toContain("const isResponsible = Boolean(currentUserId && responsibleId === currentUserId)");
     expect(operationalPanel).toContain('hasAction("manage_design_assets")');
     expect(operationalPanel).toContain("const candidates = catalog?.candidates || {}");
@@ -172,6 +179,10 @@ describe("Semi-Administrador authorization contract", () => {
     expect(migration).toContain("No INSERT privilege on");
     expect(migration).toContain("clients_insert_admin");
     expect(migration).not.toContain("current_profile_role() IN ('seller', 'quote', 'semi_admin')");
+    expect(clientCancelPaymentReconciliation).toContain("semi_admin_create_client(p_client jsonb)");
+    expect(clientCancelPaymentReconciliation).toContain("created_by)");
+    expect(clientCancelPaymentReconciliation).toContain("v_actor)");
+    expect(clientCancelPaymentReconciliation).toContain("revoke all on function public.semi_admin_create_client(jsonb) from public, anon");
   });
 
   it("offers every active Semi-Administrador as a compatible stage candidate", () => {

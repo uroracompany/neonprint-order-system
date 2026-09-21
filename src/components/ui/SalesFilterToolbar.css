@@ -147,6 +147,19 @@
   white-space: nowrap;
 }
 
+.pp-filters--sales-standard .pp-filter-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.pp-filters--sales-standard .pp-filter-actions .pa-btn,
+.pp-filters--sales-standard .pp-filter-actions .pa-action-btn {
+  min-height: 40px;
+}
+
 .pp-filters--sales-standard .pp-filters-count {
   display: inline-flex;
   align-items: center;
@@ -210,7 +223,17 @@
   }
 
   .pp-filters--sales-standard .pp-filters-count,
+  .pp-filters--sales-standard .pp-filter-actions,
   .pp-filters--sales-standard .pp-filter-reset {
     justify-content: center;
+  }
+
+  .pp-filters--sales-standard .pp-filter-actions {
+    width: 100%;
+  }
+
+  .pp-filters--sales-standard .pp-filter-actions .pa-btn,
+  .pp-filters--sales-standard .pp-filter-actions .pa-action-btn {
+    flex: 1 1 190px;
   }
 }

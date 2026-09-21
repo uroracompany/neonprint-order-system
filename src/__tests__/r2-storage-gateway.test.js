@@ -160,7 +160,8 @@ describe("Cloudflare R2 hybrid storage", () => {
     const designer = readProjectFile("src/pages/page-designer.jsx");
 
     expect(designer).toContain("const getDesignerFilesFromOrder = (order) =>");
-    expect(designer).toContain("getOrderFiles(order).map");
+    expect(designer).toContain("getOrderFiles(order).forEach");
+    expect(designer).toContain("const seenUrls = new Set()");
     expect(designer).toContain("const preview = getPreviewImage(order)");
     expect(designer).not.toContain("fetchOrderFiles");
     expect(designer).not.toContain("fetchOrderPreview");

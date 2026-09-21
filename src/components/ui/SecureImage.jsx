@@ -6,22 +6,24 @@ import { Icons } from '../../utils/icons';
  * Componente para mostrar una imagen segura (legacy o referencia segura)
  * Maneja loading, error y resolución automática
  */
-export function SecureImage({ url, alt, className, onLoad, onError, ...props }) {
+export function SecureImage({ url, alt, className, onLoad, onError, compact = false, ...props }) {
   const { resolvedUrl, loading, error } = useSecureFileUrl(url);
   
   if (loading) return (
-    <div className={`secure-image-loading ${className || ''}`} aria-busy="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100px', background: '#f5f5f5', borderRadius: '8px' }}>
-      <Icons.Refresh aria-hidden="true" className="spinning" style={{ width: '24px', height: '24px', color: '#888', animation: 'spin 1s linear infinite' }} />
-      <span style={{ marginLeft: 8, color: '#888', fontSize: '14px' }}>Cargando...</span>
+    <div className={`secure-image-loading ${className || ''}`} aria-busy="true" aria-label={compact ? "Cargando imagen" : undefined} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: compact ? '60px' : '100px', background: '#f5f5f5', borderRadius: '8px' }}>
+      <Icons.Refresh aria-hidden="true" className="spinning" style={{ width: compact ? '16px' : '24px', height: compact ? '16px' : '24px', color: '#888', animation: 'spin 1s linear infinite' }} />
+      {!compact && <span style={{ marginLeft: 8, color: '#888', fontSize: '14px' }}>Cargando...</span>}
     </div>
   );
   
   if (error || !resolvedUrl) return (
-    <div className={`secure-image-error ${className || ''}`} role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#dc2626', padding: '16px', textAlign: 'center' }}>
+    <div className={`secure-image-error ${className || ''}`} role="alert" aria-label={compact ? "Imagen no disponible" : undefined} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: compact ? '60px' : '100px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#dc2626', padding: compact ? '6px' : '16px', textAlign: 'center' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-        <Icons.AlertCircle style={{ width: '24px', height: '24px' }} />
-        <span>No disponible</span>
-        {error && <small style={{ opacity: 0.8 }}>{error}</small>}
+        <Icons.AlertCircle aria-hidden="true" style={{ width: compact ? '16px' : '24px', height: compact ? '16px' : '24px' }} />
+        {!compact && <>
+          <span>No disponible</span>
+          {error && <small style={{ opacity: 0.8 }}>{error}</small>}
+        </>}
       </div>
     </div>
   );

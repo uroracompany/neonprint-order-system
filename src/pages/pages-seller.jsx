@@ -39,6 +39,7 @@ import SharedEditOrderModal from "../components/orders/EditOrderModal";
 import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
 import SemiAdminOperationalPanel from "../components/orders/SemiAdminOperationalPanel";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
+import ReturnToDesignerModal from "../components/orders/ReturnToDesignerModal";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
 import SellerProfileModule from "../components/seller/SellerProfileModule";
@@ -70,6 +71,22 @@ const canSellerEditOrder = (order, isSemiAdmin = false) => (
   !order.is_archived &&
   !isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE) &&
   (!isSemiAdmin || isOrderStatus(order.status, ORDER_STATUS.PENDING))
+);
+
+const canSemiAdminCancelOrder = (order, actorId) => (
+  Boolean(actorId) &&
+  (order?.seller_id === actorId || order?.created_by === actorId) &&
+  !order?.is_archived &&
+  !isOrderStatus(order?.status, ORDER_STATUS.CANCELLED) &&
+  isOrderStatusIn(order?.status, [ORDER_STATUS.PENDING, ORDER_STATUS.IN_DESIGN, ORDER_STATUS.IN_QUOTE]) &&
+  String(order?.payment_status || "").trim() === "Pending_Payment"
+);
+
+const canCancelOrder = (order, { isSemiAdmin = false, actorId } = {}) => (
+  isSemiAdmin
+    ? canSemiAdminCancelOrder(order, actorId)
+    : Boolean(order) && !isOrderStatus(order.status, ORDER_STATUS.CANCELLED) && !order.is_archived
+      && !isPaymentPaid(order.payment_status) && !isPaymentPartial(order.payment_status) && !isPaymentCredit(order.payment_status)
 );
 
 const isInteractiveOrderRowTarget = (target) => Boolean(
@@ -290,6 +307,7 @@ export default function PageSeller() {
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
   const [semiAdminQuoteAssignment, setSemiAdminQuoteAssignment] = useState(null);
   const [semiAdminQuoteResponsibilityReassignment, setSemiAdminQuoteResponsibilityReassignment] = useState(null);
+  const [semiAdminQuoteReturn, setSemiAdminQuoteReturn] = useState(null);
   const [semiAdminDesignReassignment, setSemiAdminDesignReassignment] = useState(null);
   const [sendingLoading, setSendingLoading] = useState(false);
   const [returningToCashier, setReturningToCashier] = useState(null);
@@ -361,6 +379,15 @@ export default function PageSeller() {
 
     try {
       const isReturnedFilter = filterArchive === "returned";
+      const dashboardEligible = !isReturnedFilter
+        && nextPage === 1
+        && !debouncedSearch
+        && filterStatus === "all"
+        && filterPayment === "all"
+        && filterClient === "all"
+        && filterDate === "all"
+        && filterOverdue !== "overdue";
+      const includeDashboardRequest = includeDashboard && dashboardEligible;
       const result = await runSellerOrderAction("list", {
         page: isReturnedFilter ? 1 : nextPage,
         pageSize: isReturnedFilter ? 500 : (viewMode === "cards" ? SELLER_CARD_PAGE_SIZE : SELLER_ORDER_PAGE_SIZE),
@@ -371,7 +398,7 @@ export default function PageSeller() {
         archive: isReturnedFilter ? "all" : filterArchive,
         dateFilter: filterDate,
         overdue: filterOverdue === "overdue",
-        includeDashboard,
+        includeDashboard: includeDashboardRequest,
       });
 
       if (requestId !== ordersRequestIdRef.current) return;
@@ -397,10 +424,14 @@ export default function PageSeller() {
         setSelectedOrder,
         preserveMissingOpenOrders: silent,
       });
-      setRecentOrders(Array.isArray(result?.recent_orders) ? result.recent_orders : []);
+      if (Object.prototype.hasOwnProperty.call(result || {}, "recent_orders")) {
+        setRecentOrders(Array.isArray(result.recent_orders) ? result.recent_orders : []);
+      }
       setOrdersTotal(filteredTotal);
       setTotalPages(resolvedTotalPages);
-      setSellerSummary({ ...EMPTY_SELLER_SUMMARY, ...(result?.summary || {}) });
+      if (Object.prototype.hasOwnProperty.call(result || {}, "summary")) {
+        setSellerSummary({ ...EMPTY_SELLER_SUMMARY, ...(result.summary || {}) });
+      }
       if (Number(result?.page) && Number(result.page) !== page) setPage(Number(result.page));
       setSelectedOrder((current) => {
         if (!current?.id) return current;
@@ -485,16 +516,32 @@ export default function PageSeller() {
 
   // SincronizaciÃ³n en tiempo real + refresco al volver a la pÃ¡gina
   const sellerUserId = user?.id;
-  const refreshSellerOrdersSilently = useCallback(async () => {
+  const refreshSellerOrdersSilently = useCallback(async (changeSet) => {
     if (!sellerUserId) return;
     if (visibleOrdersLoadingRef.current) return;
     await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
-  }, [fetchOrders, page, sellerUserId]);
+    const changedTables = changeSet?.tables;
+    const productionFilesChanged = changedTables instanceof Set
+      ? changedTables.has("order_production_files")
+      : Array.isArray(changedTables) && changedTables.includes("order_production_files");
+    const openOrderId = selectedOrder?.id;
+    if (!productionFilesChanged || !openOrderId) return;
+
+    try {
+      const result = await runSellerOrderAction("detail", { order_id: openOrderId });
+      if (!result?.order) return;
+      setSelectedOrder((current) => current?.id === openOrderId ? result.order : current);
+      setEditingOrder((current) => current?.id === openOrderId ? { ...current, ...result.order } : current);
+    } catch (error) {
+      console.warn("No se pudo refrescar el detalle tras un cambio de archivos:", error?.message || error);
+    }
+  }, [fetchOrders, page, runSellerOrderAction, selectedOrder?.id, sellerUserId]);
 
   useOrdersRealtimeSync({
     userId: sellerUserId,
     scope: "seller",
     refreshOrders: refreshSellerOrdersSilently,
+    tables: ["orders", "order_production_files"],
   });
 
   const loadSellerCatalogs = useCallback(() => {
@@ -536,7 +583,7 @@ export default function PageSeller() {
 
   const handleLogout = async () => { await signOut(); navigate("/"); };
 
-  const handleNewClientCreated = async (newClient) => {
+  const handleNewClientCreated = async (newClient, options = {}) => {
     setClients(prev => {
       const exists = prev.some(c => c.id === newClient.id);
       return exists ? prev : [...prev, newClient].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
@@ -544,11 +591,28 @@ export default function PageSeller() {
     if (showCreate) {
       setClientToSelectInOrderForm(newClient);
     }
-    showToast("Cliente creado correctamente.");
+    notif.showActionNotification({
+      type: "info",
+      title: options.reusedExisting ? "Cliente vinculado" : "Cliente registrado",
+      message: options.reusedExisting
+        ? `Cliente "${newClient.name}" encontrado y vinculado correctamente.`
+        : `Cliente "${newClient.name}" registrado correctamente.`,
+      metadata: {
+        variant: "success",
+        event_kind: options.reusedExisting ? "client_reused" : "client_created",
+        client_id: newClient.id,
+      },
+    });
   };
 
   // â”€â”€ Funcion para cancelar orden â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleCancelOrder = (order) => {
+    if (!canCancelOrder(order, { isSemiAdmin, actorId: authUser?.id })) {
+      showToast(isSemiAdmin
+        ? "Solo puedes cancelar tus órdenes activas previas a Producción con pago pendiente."
+        : "La orden no está disponible para cancelar.", "error");
+      return;
+    }
     if (isPaymentPartial(order?.payment_status)) {
       showToast("No se puede cancelar una orden con pago parcial", "error");
       return;
@@ -564,6 +628,11 @@ export default function PageSeller() {
 
   const handleConfirmCancel = async (reason) => {
     if (!cancelingOrder) return;
+    if (!canCancelOrder(cancelingOrder, { isSemiAdmin, actorId: authUser?.id })) {
+      showToast("La orden ya no está disponible para cancelar.", "error");
+      setCancelingOrder(null);
+      return;
+    }
     
     // ValidaciÃ³n adicional: Verificar nuevamente que no estÃ© pagada
     if (isPaymentPartial(cancelingOrder?.payment_status)) {
@@ -661,6 +730,7 @@ export default function PageSeller() {
           const detail = await runSellerOrderAction("detail", { order_id: operationOrderId });
           if (detail?.order) {
             setSelectedOrder((current) => mergeConfirmedOrder(current, detail.order));
+            setEditingOrder((current) => mergeConfirmedOrder(current, detail.order));
           }
         } catch (refreshError) {
           console.warn("No se pudo reconciliar el detalle tras la operación operativa:", refreshError?.message || refreshError);
@@ -715,10 +785,18 @@ export default function PageSeller() {
 
   const handleConfirmSemiAdminProductionAssignment = useCallback(async (assignments) => {
     const result = await handleSemiAdminOperation("route_production", { area_assignments: assignments });
-    if (result) setSemiAdminProductionOrder(null);
+    if (result?.order) setSemiAdminProductionOrder((current) => current?.id === result.order.id ? { ...current, ...result.order } : current);
   }, [handleSemiAdminOperation]);
 
-  const handleConfirmSemiAdminPayment = useCallback(async ({ paymentStatus, receiptFile, receiptNumber }) => {
+  const handleConfirmSemiAdminQuoteReturn = useCallback(async (reason) => {
+    if (!semiAdminQuoteReturn || reason.length < 10) return;
+    const result = await handleSemiAdminOperation("return_quote_to_design", { reason });
+    if (result) {
+      setSemiAdminQuoteReturn(null);
+    }
+  }, [handleSemiAdminOperation, semiAdminQuoteReturn]);
+
+  const handleConfirmSemiAdminPayment = useCallback(async ({ paymentStatus, receiptFile, receiptNumber, invoiceNumber }) => {
     if (!semiAdminPaymentOrder) return;
     let invoicePayment = null;
     if (receiptFile) {
@@ -734,7 +812,7 @@ export default function PageSeller() {
     const result = await handleSemiAdminOperation("register_payment", {
       payment_status: paymentStatus,
       invoice_payment: invoicePayment,
-      invoice_number: receiptNumber || undefined,
+      invoice_number: invoiceNumber || receiptNumber || undefined,
     });
     if (result) setSemiAdminPaymentOrder(null);
   }, [handleSemiAdminOperation, semiAdminPaymentOrder]);
@@ -981,13 +1059,13 @@ export default function PageSeller() {
             </div>
           </div>
           <div className="ps-topbar-right">
-            <button className="ps-icon-btn" onClick={() => fetchOrders({ nextPage: page, includeDashboard: true })}><Icons.Refresh /></button>
+            <button className="ps-icon-btn" type="button" onClick={() => fetchOrders({ nextPage: page, includeDashboard: true })} aria-label="Actualizar órdenes"><Icons.Refresh /></button>
             {/* Boton para agregar  registrar Nuevo Cliente */}
-    {!isSemiAdmin && <button className="ps-topbar-client-btn" onClick={() => setShowNewClientModal(true)}>
+    <button className="ps-topbar-client-btn" type="button" onClick={() => setShowNewClientModal(true)} aria-label="Nuevo cliente">
       <div className="ps-topbar-client-inner"><Icons.Users /> Nuevo Cliente</div>
-    </button>}
+    </button>
             {/* Boton para regitrar Nueva Orden */}
-             <button className="ps-topbar-new-btn" onClick={() => setShowCreate(true)}>
+             <button className="ps-topbar-new-btn" type="button" onClick={() => setShowCreate(true)} aria-label="Nueva orden">
               <div className="ps-topbar-new-inner"><Icons.Plus /> Nueva Orden</div>
               <div className="ps-topbar-new-stripe" />
             </button>
@@ -1023,10 +1101,10 @@ export default function PageSeller() {
                       <Icons.Plus />
                       Crear Ordenes
                     </button>
-                    {!isSemiAdmin && <button type="button" className="ps-greeting-btn secondary" onClick={() => setShowNewClientModal(true)}>
+                    <button type="button" className="ps-greeting-btn secondary" onClick={() => setShowNewClientModal(true)}>
                       <Icons.Users />
                       Nuevo Cliente
-                    </button>}
+                    </button>
                   </>
                 }
               />
@@ -1289,7 +1367,7 @@ export default function PageSeller() {
                                       <Icons.Edit />
                                     </button>
                                   )}
-                                  {!isSemiAdmin && !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && !isPaymentCredit(o.payment_status) && (
+                                  {canCancelOrder(o, { isSemiAdmin, actorId: authUser?.id }) && (
                                     <button 
                                       className="table-action-btn cancel" 
                                       onClick={() => handleCancelOrder(o)} 
@@ -1397,7 +1475,7 @@ export default function PageSeller() {
                                 <Icons.Edit />
                               </button>
                             )}
-                            {!isSemiAdmin && !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && !isPaymentCredit(o.payment_status) && (
+                            {canCancelOrder(o, { isSemiAdmin, actorId: authUser?.id }) && (
                               <button className="card-action-btn cancel" onClick={(event) => { event.stopPropagation(); handleCancelOrder(o); }} title="Cancelar">
                                 <Icons.Trash />
                               </button>
@@ -1457,7 +1535,7 @@ export default function PageSeller() {
         clients={clients}
         clientsLoading={clientsLoading}
         onClientSearch={handleClientSearch}
-        onAddNewClient={isSemiAdmin ? undefined : () => setShowNewClientModal(true)}
+        onAddNewClient={() => setShowNewClientModal(true)}
         clientToSelect={clientToSelectInOrderForm}
         onClientToSelectConsumed={() => setClientToSelectInOrderForm(null)}
         isSemiAdmin={isSemiAdmin}
@@ -1477,6 +1555,8 @@ export default function PageSeller() {
         onClientSearch={handleClientSearch}
         editMode="seller"
         assetsOnly={editingAssetsOnly}
+        semiAdminVariant={isSemiAdmin && editingAssetsOnly}
+        keepOpenAfterAssetSave={isSemiAdmin && editingAssetsOnly}
         requireWorkOrder={isSemiAdmin && editingAssetsOnly}
         lockClientIdentity={isSemiAdmin && editingOrder?.seller_id !== authUser?.id && editingOrder?.created_by !== authUser?.id}
       />
@@ -1509,6 +1589,7 @@ export default function PageSeller() {
             onOpenDesignReassignment={() => setSemiAdminDesignReassignment(selectedOrder)}
             onOpenQuoteAssignment={() => setSemiAdminQuoteAssignment(selectedOrder)}
             onOpenQuoteResponsibilityReassignment={() => setSemiAdminQuoteResponsibilityReassignment(selectedOrder)}
+            onOpenQuoteReturn={() => setSemiAdminQuoteReturn(selectedOrder)}
             onOpenOrderAssets={() => {
               setEditingAssetsOnly(true);
               setEditingOrder(selectedOrder);
@@ -1560,6 +1641,15 @@ export default function PageSeller() {
         onClose={() => setSemiAdminProductionOrder(null)}
         onConfirm={handleConfirmSemiAdminProductionAssignment}
       />
+      <ReturnToDesignerModal
+        open={!!semiAdminQuoteReturn}
+        onClose={() => { if (!semiAdminOperationLoading) setSemiAdminQuoteReturn(null); }}
+        onConfirm={handleConfirmSemiAdminQuoteReturn}
+        order={semiAdminQuoteReturn}
+        loading={semiAdminOperationLoading}
+        targetOverride="designer"
+        minReasonLength={10}
+      />
       <PaymentFormModal
         open={!!semiAdminPaymentOrder}
         order={semiAdminPaymentOrder}
@@ -1609,13 +1699,14 @@ export default function PageSeller() {
       <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
       <ArchiveOrderModal open={!!archivingOrder} onClose={() => setArchivingOrder(null)} order={archivingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />
       
-      {!isSemiAdmin && <CreateClientModal
+      <CreateClientModal
         open={showNewClientModal}
         onClose={() => setShowNewClientModal(false)}
         onCreated={handleNewClientCreated}
         supabase={supabase}
         userId={user?.id}
-      />}
+        createWithSemiAdminCommand={isSemiAdmin}
+      />
 
       {toastMsg && (
         <div className="ps-toast">

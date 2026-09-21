@@ -106,16 +106,34 @@ export const getProductionAssignmentForRole = (order, role) => {
 };
 
 export const isOrderAssignedToProductionRole = (order, role, userId) => {
+  if (!userId) return false;
+  const areaFiles = filterProductionFilesForRole(order, role);
+  // A transferred file has an explicit operational owner. Do not let the
+  // original area assignment keep the former owner responsible for it.
+  if (areaFiles.some((file) => file.assigned_to)) {
+    return areaFiles.some((file) => file.assigned_to === userId);
+  }
   const assignment = getProductionAssignmentForRole(order, role);
-  return Boolean(assignment && userId && assignment.assigned_to === userId);
+  return Boolean(assignment && assignment.assigned_to === userId);
 };
 
-export const filterProductionFilesForRole = (orderOrFiles, role) => {
+export const filterProductionFilesForRole = (orderOrFiles, role, userId = null) => {
   const areaCode = getProductionAreaForRole(role);
   if (!areaCode) return [];
 
   const files = Array.isArray(orderOrFiles) ? orderOrFiles : getProductionFiles(orderOrFiles);
-  return files.filter((file) => file.production_area_code === areaCode);
+  const areaFiles = files.filter((file) => file.production_area_code === areaCode);
+  if (!userId) return areaFiles;
+
+  const assignment = Array.isArray(orderOrFiles)
+    ? null
+    : getProductionAssignmentForRole(orderOrFiles, role);
+
+  return areaFiles.filter((file) => (
+    file.assigned_to
+      ? file.assigned_to === userId
+      : assignment?.assigned_to === userId
+  ));
 };
 
 export const getParticipatingProductionAreaCodes = (orderOrFiles) => {
@@ -131,8 +149,7 @@ export const hasUnclassifiedProductionFiles = (orderOrFiles) => {
 };
 
 export const isOrderParticipatingInProductionRole = (order, role, userId) => {
-  const areaFiles = filterProductionFilesForRole(order, role);
-  return areaFiles.length > 0 && isOrderAssignedToProductionRole(order, role, userId);
+  return filterProductionFilesForRole(order, role, userId).length > 0;
 };
 
 export const filterProductionOrdersForRoleParticipation = (orders, role, userId) => {

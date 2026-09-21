@@ -24,6 +24,7 @@ const EMPTY_FORM = {
   client_name: "",
   client_phone: "",
   invoice_number: "",
+  invoice_assignment_mode: "seller",
   description: "",
   materials: [],
   termination_type: "",
@@ -287,27 +288,116 @@ function CatalogOption({ children, selected = false, onClick, className = "" }) 
   );
 }
 
-export function MultiMaterialSelector({ selected = [], onChange, options = [], disabled = false, ariaLabel = "Materiales", ariaLabelledBy }) {
+const areCatalogValuesEqual = (left = [], right = []) => (
+  left.length === right.length && left.every((value, index) => value === right[index])
+);
+
+export function CatalogSelector({
+  value,
+  onChange,
+  options = [],
+  multiple = false,
+  disabled = false,
+  ariaLabel,
+  ariaLabelledBy,
+  placeholder,
+  listboxLabel,
+  emptyMessage = "No hay elementos registrados",
+  customActionLabel,
+  customInputPlaceholder,
+  customInputAriaLabel,
+}) {
   const [customMode, setCustomMode] = useState(false);
   const [customValue, setCustomValue] = useState("");
+  const normalizeValue = useCallback((nextValue) => {
+    if (multiple) return Array.isArray(nextValue) ? nextValue : [];
+    return nextValue ? [nextValue] : [];
+  }, [multiple]);
+  const initialValue = normalizeValue(value);
+  const [committedSelected, setCommittedSelected] = useState(initialValue);
+  const [draftSelected, setDraftSelected] = useState(initialValue);
+  const [draftActive, setDraftActive] = useState(false);
   const customInputRef = useRef(null);
-  const { open, setOpen, ref, toggle: toggleDropdown } = useCatalogDropdown(disabled);
+  const selectedRef = useRef(initialValue);
+  const pendingCommitRef = useRef(null);
+  const { open, setOpen, ref } = useCatalogDropdown(disabled);
 
-  const toggleMaterial = (mat) => {
-    if (disabled) return;
-    onChange(selected.includes(mat) ? selected.filter(m => m !== mat) : [...selected, mat]);
+  useEffect(() => {
+    const nextValue = normalizeValue(value);
+    if (pendingCommitRef.current) {
+      if (areCatalogValuesEqual(nextValue, pendingCommitRef.current)) {
+        pendingCommitRef.current = null;
+      } else if (!draftActive) {
+        return;
+      }
+    }
+    selectedRef.current = nextValue;
+    if (!draftActive) {
+      setCommittedSelected(nextValue);
+      setDraftSelected(nextValue);
+    }
+  }, [draftActive, normalizeValue, value]);
+
+  const startDraftSession = () => {
+    if (draftActive) return;
+    setDraftActive(true);
+    setDraftSelected([...selectedRef.current]);
+    setCustomMode(false);
+    setCustomValue("");
   };
-  const remove = (mat) => {
+
+  const toggleDropdown = () => {
     if (disabled) return;
-    onChange(selected.filter(m => m !== mat));
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    startDraftSession();
+    setOpen(true);
+  };
+
+  const displayedSelected = draftActive ? draftSelected : committedSelected;
+
+  const selectOption = (option) => {
+    if (disabled) return;
+    setDraftSelected((current) => {
+      if (multiple) return current.includes(option) ? current : [...current, option];
+      return [option];
+    });
+  };
+  const remove = (option) => {
+    if (disabled) return;
+    const currentValues = draftActive ? draftSelected : selectedRef.current;
+    setDraftActive(true);
+    setCustomMode(false);
+    setCustomValue("");
+    setDraftSelected(currentValues.filter((valueItem) => valueItem !== option));
+    setOpen(true);
+  };
+
+  const openCustomMode = () => {
+    if (disabled) return;
+    const currentValue = draftSelected[0] || "";
+    const customDraft = currentValue && !options.includes(currentValue) ? currentValue : "";
+    setCustomValue(customDraft);
+    if (!multiple && !customDraft) setDraftSelected([]);
+    setCustomMode(true);
+  };
+
+  const handleCustomInputChange = (event) => {
+    const nextValue = event.target.value;
+    setCustomValue(nextValue);
+    if (!multiple) setDraftSelected(nextValue.trim() ? [nextValue] : []);
   };
 
   const handleAddCustom = () => {
     if (disabled) return;
-    const val = customValue.trim();
-    if (val && !selected.includes(val)) {
-      onChange([...selected, val]);
-    }
+    const nextValue = customValue.trim();
+    if (!nextValue) return;
+    setDraftSelected((current) => {
+      if (!multiple) return [nextValue];
+      return current.includes(nextValue) ? current : [...current, nextValue];
+    });
     setCustomValue("");
     setCustomMode(false);
   };
@@ -323,63 +413,109 @@ export function MultiMaterialSelector({ selected = [], onChange, options = [], d
     }
   };
 
+  const handleCancel = () => {
+    setDraftActive(false);
+    setCommittedSelected([...selectedRef.current]);
+    setDraftSelected([...selectedRef.current]);
+    setCustomMode(false);
+    setCustomValue("");
+    setOpen(false);
+  };
+
+  const handleCommit = () => {
+    const nextSelected = draftSelected
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    if (disabled || nextSelected.length === 0) return;
+    pendingCommitRef.current = nextSelected;
+    selectedRef.current = nextSelected;
+    setCommittedSelected(nextSelected);
+    setDraftSelected(nextSelected);
+    onChange(multiple ? nextSelected : nextSelected[0]);
+    setDraftActive(false);
+    setOpen(false);
+  };
+
   useEffect(() => {
     if (customMode && customInputRef.current) customInputRef.current.focus();
   }, [customMode]);
 
-  const isCustomMaterial = (mat) => !options.includes(mat);
+  const isCustomValue = (item) => !options.includes(item);
+  const hasDraftValue = draftSelected.some((item) => String(item || "").trim());
+  const triggerProps = {
+    className: `ps-multimat-box ${open ? "focused" : ""}`,
+    role: multiple ? "combobox" : "button",
+    "aria-label": ariaLabelledBy ? undefined : ariaLabel,
+    "aria-labelledby": ariaLabelledBy,
+    "aria-expanded": open,
+    "aria-haspopup": "listbox",
+    tabIndex: disabled ? -1 : 0,
+    onClick: toggleDropdown,
+    onKeyDown: (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleDropdown();
+      }
+      if (event.key === "Escape" && open) handleCancel();
+    },
+  };
+  const triggerContent = (
+    <>
+      {displayedSelected.length === 0
+        ? <span className="ps-multimat-placeholder">{placeholder}</span>
+        : displayedSelected.map((item) => (
+          <span key={item} className={`ps-chip ${isCustomValue(item) ? "ps-chip--custom" : ""}`}>
+            {isCustomValue(item) && <span className="ps-chip-custom-icon"><Icons.Plus /></span>}
+            {item}
+            {multiple ? (
+              <button type="button" className="ps-chip-remove" aria-label={`Quitar ${item}`} onClick={(event) => { event.stopPropagation(); remove(item); }}><Icons.X /></button>
+            ) : (
+              <span
+                className="ps-chip-remove"
+                role="button"
+                tabIndex={disabled ? -1 : 0}
+                aria-label={`Quitar ${item}`}
+                onClick={(event) => { event.stopPropagation(); remove(item); }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    remove(item);
+                  }
+                }}
+              ><Icons.X /></span>
+            )}
+          </span>
+        ))
+      }
+      <span className="ps-multimat-arrow"><Icons.ChevronDown /></span>
+    </>
+  );
 
   return (
     <div className={`ps-multimat${disabled ? " ps-multimat--disabled" : ""}`} ref={ref}>
-      <div
-        className={`ps-multimat-box ${open ? "focused" : ""}`}
-        role="combobox"
-        aria-label={ariaLabelledBy ? undefined : ariaLabel}
-        aria-labelledby={ariaLabelledBy}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        tabIndex={disabled ? -1 : 0}
-        onClick={toggleDropdown}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            toggleDropdown();
-          }
-          if (event.key === "Escape") setOpen(false);
-        }}
-      >
-        {selected.length === 0
-          ? <span className="ps-multimat-placeholder">Seleccionar materiales...</span>
-          : selected.map(m => (
-            <span key={m} className={`ps-chip ${isCustomMaterial(m) ? "ps-chip--custom" : ""}`}>
-              {isCustomMaterial(m) && <span className="ps-chip-custom-icon"><Icons.Plus /></span>}
-              {m}
-              <button type="button" className="ps-chip-remove" aria-label={`Quitar ${m}`} onClick={e => { e.stopPropagation(); remove(m); }}><Icons.X /></button>
-            </span>
-          ))
-        }
-        <span className="ps-multimat-arrow"><Icons.ChevronDown /></span>
-      </div>
+      {multiple ? <div {...triggerProps}>{triggerContent}</div> : <button type="button" disabled={disabled} {...triggerProps}>{triggerContent}</button>}
 
       {open && !disabled && (
-        <div className="ps-multimat-dropdown" role="listbox" aria-label="Materiales disponibles" aria-multiselectable="true">
+        <div className="ps-multimat-dropdown" role="listbox" aria-label={listboxLabel} aria-multiselectable={multiple ? "true" : undefined} onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") handleCancel(); }}>
           {!customMode ? (
-            <button type="button" className="ps-multimat-option ps-multimat-add" onClick={() => setCustomMode(true)}>
+            <button type="button" className="ps-multimat-option ps-multimat-add" onClick={openCustomMode}>
               <span className="ps-multimat-add-icon"><Icons.Plus /></span>
-              Agregar material personalizado
+              {customActionLabel}
             </button>
           ) : (
             <div className="ps-multimat-custom-form">
               <input
                 ref={customInputRef}
                 className="ps-multimat-custom-input"
-                placeholder="Escribe el nombre del material..."
+                placeholder={customInputPlaceholder}
+                aria-label={customInputAriaLabel}
                 value={customValue}
-                onChange={e => setCustomValue(e.target.value)}
+                onChange={handleCustomInputChange}
                 onKeyDown={handleCustomKeyDown}
               />
               <button type="button" className="ps-multimat-custom-btn" onClick={handleAddCustom} disabled={!customValue.trim()}>
-                Agregar
+                Preparar
               </button>
             </div>
           )}
@@ -387,92 +523,57 @@ export function MultiMaterialSelector({ selected = [], onChange, options = [], d
           <div className="ps-multimat-divider" />
 
           {options.length === 0 ? (
-            <div className="ps-multimat-option ps-multimat-empty">No hay elementos registrados</div>
+            <div className="ps-multimat-option ps-multimat-empty">{emptyMessage}</div>
           ) : (
-            options.map(mat => (
-              <CatalogOption key={mat} selected={selected.includes(mat)} onClick={() => toggleMaterial(mat)}>{mat}</CatalogOption>
+            options.map((option) => (
+              <CatalogOption key={option} selected={draftSelected.includes(option)} onClick={() => selectOption(option)}>{option}</CatalogOption>
             ))
           )}
+          <div className="ps-multimat-actions">
+            <button type="button" className="ps-multimat-cancel" onClick={handleCancel}>Cancelar</button>
+            <button type="button" className="ps-multimat-confirm" onClick={handleCommit} disabled={!hasDraftValue}>Agregar</button>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-export function TerminationSelector({ value = "", onChange, options = [], disabled = false, ariaLabel = "Terminación", ariaLabelledBy, emptyMessage = "Sin terminaciones disponibles" }) {
-  const [customMode, setCustomMode] = useState(false);
-  const { open, setOpen, ref, toggle } = useCatalogDropdown(disabled);
-
-  const selectOption = (option) => {
-    if (disabled) return;
-    if (option === "__custom__") {
-      setCustomMode(true);
-      onChange("");
-      setOpen(false);
-      return;
-    }
-    setCustomMode(false);
-    onChange(option);
-    setOpen(false);
-  };
-
-  const isCustomValue = Boolean(value) && !options.includes(value);
-  const displayValue = customMode || isCustomValue ? "Terminación personalizada..." : value || "";
-
+export function MultiMaterialSelector({ selected = [], onChange, options = [], disabled = false, ariaLabel = "Materiales", ariaLabelledBy }) {
   return (
-    <div className={`ps-multimat ps-termination-selector${disabled ? " ps-termination-selector--disabled" : ""}`} ref={ref}>
-      <button
-        type="button"
-        className={`ps-multimat-box${open ? " focused" : ""}`}
-        aria-label={ariaLabelledBy ? undefined : ariaLabel}
-        aria-labelledby={ariaLabelledBy}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        onClick={toggle}
-        disabled={disabled}
-      >
-        {displayValue ? (
-          <span className="ps-termination-display">{displayValue}</span>
-        ) : (
-          <span className="ps-multimat-placeholder">Seleccionar terminación</span>
-        )}
-        <span className="ps-multimat-arrow"><Icons.ChevronDown /></span>
-      </button>
+    <CatalogSelector
+      value={selected}
+      onChange={onChange}
+      options={options}
+      multiple
+      disabled={disabled}
+      ariaLabel={ariaLabel}
+      ariaLabelledBy={ariaLabelledBy}
+      placeholder="Seleccionar materiales..."
+      listboxLabel="Materiales disponibles"
+      customActionLabel="Agregar material personalizado"
+      customInputPlaceholder="Escribe el nombre del material..."
+      customInputAriaLabel="Material personalizado"
+    />
+  );
+}
 
-      {open && !disabled && (
-        <div className="ps-multimat-dropdown" role="listbox" aria-label="Terminaciones disponibles">
-          <button type="button" className="ps-multimat-option ps-multimat-add" onClick={() => selectOption("__custom__")}>
-            <span className="ps-multimat-add-icon"><Icons.Plus /></span>
-            Agregar terminación personalizada
-          </button>
-
-          <div className="ps-multimat-divider" />
-
-          {options.length === 0 ? (
-            <div className="ps-multimat-option ps-multimat-empty">{emptyMessage}</div>
-          ) : (
-            options.map((option) => (
-              <CatalogOption
-                key={option}
-                selected={value === option}
-                onClick={() => selectOption(option)}
-              >{option}</CatalogOption>
-            ))
-          )}
-        </div>
-      )}
-
-      {(customMode || isCustomValue) && !disabled && (
-        <textarea
-          className="ps-form-input ps-termination-custom-textarea"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="Describe la terminación personalizada..."
-          aria-label="Terminación personalizada"
-          rows={2}
-        />
-      )}
-    </div>
+export function TerminationSelector({ value = "", onChange, options = [], disabled = false, ariaLabel = "Terminación", ariaLabelledBy, emptyMessage = "Sin terminaciones disponibles" }) {
+  return (
+    <CatalogSelector
+      value={value}
+      onChange={onChange}
+      options={options}
+      disabled={disabled}
+      ariaLabel={ariaLabel}
+      ariaLabelledBy={ariaLabelledBy}
+      placeholder="Seleccionar terminación"
+      listboxLabel="Terminaciones disponibles"
+      emptyMessage={emptyMessage}
+      customActionLabel="Agregar terminación personalizada"
+      customInputPlaceholder="Describe la terminación personalizada..."
+      customInputAriaLabel="Terminación personalizada"
+    />
   );
 }
 
@@ -681,8 +782,6 @@ export default function CreateOrderModal({
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
   const [detailsFileIndex, setDetailsFileIndex] = useState(null);
-  const [newClientMode, setNewClientMode] = useState(false);
-  const [newClient, setNewClient] = useState({ name: "", phone: "", email: "", address: "", notes: "" });
   // A retry after an uncertain network response must address the same command.
   const createRequestIdRef = useRef(null);
 
@@ -695,8 +794,6 @@ export default function CreateOrderModal({
     setMissingLabelIndices([]);
     setMissingAreaIndices([]);
     setDetailsFileIndex(null);
-    setNewClientMode(false);
-    setNewClient({ name: "", phone: "", email: "", address: "", notes: "" });
   }, [userId]);
 
   useEffect(() => {
@@ -720,8 +817,6 @@ export default function CreateOrderModal({
       return;
     }
 
-    setNewClientMode(false);
-
     const fields = getSelectedClientOrderFields(client, "client_phone");
     if (fields.client_phone) fields.client_phone = formatPhone(fields.client_phone);
 
@@ -742,19 +837,15 @@ export default function CreateOrderModal({
 
   const validateForm = () => {
     const errors = {};
-    const hasNewClient = isSemiAdmin && newClientMode;
-
-    if (!form.client_id && !hasNewClient) {
+    if (!form.client_id) {
       errors.client_id = "Debes seleccionar un cliente registrado.";
     }
-    if (!form.client_name.trim() && !(hasNewClient && newClient.name.trim())) {
+    if (!form.client_name.trim()) {
       errors.client_name = "Selecciona un cliente registrado para completar el nombre.";
     }
-    if (!form.client_phone.trim() && !(hasNewClient && newClient.phone.trim())) {
+    if (!form.client_phone.trim()) {
       errors.client_phone = "Selecciona un cliente registrado con telefono.";
     }
-    if (hasNewClient && !newClient.name.trim()) errors.new_client_name = "El nombre del cliente es requerido.";
-    if (hasNewClient && !newClient.phone.trim()) errors.new_client_phone = "El telefono del cliente es requerido.";
     if (!form.description.trim()) {
       errors.description = "La descripción del trabajo es requerida.";
     }
@@ -764,7 +855,7 @@ export default function CreateOrderModal({
     if (!form.design_type) {
       errors.design_type = "Indica si el diseño es interno o externo.";
     }
-    if (!form.invoice_number.trim()) {
+    if (form.invoice_assignment_mode !== "cashier" && !form.invoice_number.trim()) {
       errors.invoice_number = "El número de facturación es requerido.";
     }
     if (!form.indefinido && !form.delivery_date) {
@@ -945,10 +1036,11 @@ export default function CreateOrderModal({
 
         const payload = {
           id: orderId,
-          client_id: newClientMode ? null : form.client_id,
-          client_name: (newClientMode ? newClient.name : form.client_name).trim(),
-          client_contact: (newClientMode ? newClient.phone : form.client_phone).trim() || null,
+          client_id: form.client_id,
+          client_name: form.client_name.trim(),
+          client_contact: form.client_phone.trim() || null,
           invoice_number: form.invoice_number.trim(),
+          invoice_assignment_mode: form.invoice_assignment_mode === "cashier" ? "cashier" : "seller",
           description: form.description.trim(),
           material: "",
           termination_type: null,
@@ -984,13 +1076,7 @@ export default function CreateOrderModal({
         const { data: createdOrder, error: createError } = await supabase.rpc(createCommand, {
           p_idempotency_key: orderId,
           p_order: payload,
-          ...(isSemiAdmin ? { p_client: newClientMode ? {
-            name: newClient.name.trim(),
-            phone: newClient.phone.trim(),
-            email: newClient.email.trim() || null,
-            address: newClient.address.trim() || null,
-            notes: newClient.notes.trim() || null,
-          } : null } : {}),
+          ...(isSemiAdmin ? { p_client: null } : {}),
           p_production_files: productionRows,
           p_asset_refs: preorderAssets.map((asset) => ({
             ...(asset.descriptor?.preorder || asset.descriptor),
@@ -1047,49 +1133,16 @@ export default function CreateOrderModal({
               value={form.client_id}
               onSelect={applySelectedClient}
               onSearch={onClientSearch}
-              onAddNewClient={isSemiAdmin ? () => {
-                setNewClientMode(true);
-                setForm(previous => ({ ...previous, client_id: null, client_name: "", client_phone: "" }));
-              } : onAddNewClient}
+              onAddNewClient={onAddNewClient}
               disabled={clientFieldDisabled}
               placeholder="Seleccionar cliente registrado"
             />
           </Field>
         </div>
-        {isSemiAdmin && newClientMode && (
-          <div className="col-full ps-inline-client-form" role="group" aria-label="Nuevo cliente para esta orden">
-            <div className="ps-form-section-title" style={{ marginTop: 8 }}>
-              <span className="ps-form-section-num">+</span> Registrar cliente junto con la orden
-            </div>
-            <div className="ps-form-grid">
-              <div className="col-half">
-                <Field label="Nombre" required error={fieldErrors.new_client_name}>
-                  <input className="ps-form-input" value={newClient.name} onChange={event => setNewClient(previous => ({ ...previous, name: event.target.value }))} />
-                </Field>
-              </div>
-              <div className="col-half">
-                <Field label="Teléfono" required error={fieldErrors.new_client_phone}>
-                  <input className="ps-form-input" value={newClient.phone} onChange={event => setNewClient(previous => ({ ...previous, phone: event.target.value }))} />
-                </Field>
-              </div>
-              <div className="col-half">
-                <Field label="Correo electrónico">
-                  <input className="ps-form-input" type="email" value={newClient.email} onChange={event => setNewClient(previous => ({ ...previous, email: event.target.value }))} />
-                </Field>
-              </div>
-              <div className="col-half">
-                <Field label="Dirección">
-                  <input className="ps-form-input" value={newClient.address} onChange={event => setNewClient(previous => ({ ...previous, address: event.target.value }))} />
-                </Field>
-              </div>
-            </div>
-            <button type="button" className="ps-text-btn" onClick={() => setNewClientMode(false)}>Elegir un cliente registrado</button>
-          </div>
-        )}
         <div className="col-full">
           <Field label="Nombre del cliente" required error={fieldErrors.client_name}>
             <input className="ps-form-input" placeholder="Seleccionar cliente"
-              value={newClientMode ? newClient.name : form.client_name} readOnly disabled />
+              value={form.client_name} readOnly disabled />
           </Field>
         </div>
         <div className="col-full">
@@ -1097,15 +1150,35 @@ export default function CreateOrderModal({
             <div className="ps-input-icon-wrap">
               <span className="ps-input-icon"><Icons.Phone /></span>
                 <input className="ps-form-input with-icon" placeholder={PHONE_PLACEHOLDER}
-                value={newClientMode ? newClient.phone : form.client_phone} readOnly disabled maxLength="12" />
+                value={form.client_phone} readOnly disabled maxLength="12" />
             </div>
           </Field>
         </div>
         <div className="col-full">
-          <Field label="Número de Facturación" required error={fieldErrors.invoice_number}>
+          <Field
+            label="Número de Facturación"
+            required={form.invoice_assignment_mode !== "cashier"}
+            hint={form.invoice_assignment_mode === "cashier" ? "Caja asignará el código antes de completar el pago." : undefined}
+            error={fieldErrors.invoice_number}
+          >
             <input className="ps-form-input" placeholder="Ej: FAC-001-2024"
-              value={form.invoice_number} onChange={event => set("invoice_number", event.target.value)} />
+              value={form.invoice_number}
+              onChange={event => set("invoice_number", event.target.value)}
+              disabled={form.invoice_assignment_mode === "cashier"}
+            />
           </Field>
+          <label className="ps-invoice-assignment-toggle">
+            <input
+              type="checkbox"
+              checked={form.invoice_assignment_mode === "cashier"}
+              onChange={(event) => {
+                const nextMode = event.target.checked ? "cashier" : "seller";
+                set("invoice_assignment_mode", nextMode);
+                if (nextMode === "cashier") set("invoice_number", "");
+              }}
+            />
+            <span>Asignar código de facturación en Caja</span>
+          </label>
         </div>
       </div>
 

@@ -12,7 +12,7 @@ import "./CreateClientModal.css";
 
 const EMPTY_FORM = { name: "", phone: "", email: "", address: "", notes: "" };
 
-export default function CreateClientModal({ open, onClose, onCreated, supabase, userId, initialValues = null }) {
+export default function CreateClientModal({ open, onClose, onCreated, supabase, userId, initialValues = null, createWithSemiAdminCommand = false }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -88,7 +88,7 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
   const handleSubmit = async () => {
     const { payload, errors } = validateClientForm(form, {
       userId,
-      includeCreatedBy: true,
+      includeCreatedBy: !createWithSemiAdminCommand,
     });
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -113,11 +113,21 @@ export default function CreateClientModal({ open, onClose, onCreated, supabase, 
         }
       }
 
-      const { data, error: insertError } = await supabase
-        .from("clients")
-        .insert(payload)
-        .select()
-        .single();
+      const { data, error: insertError } = createWithSemiAdminCommand
+        ? await supabase.rpc("semi_admin_create_client", {
+          p_client: {
+            name: payload.name,
+            phone: payload.phone,
+            email: payload.email,
+            address: payload.address,
+            notes: payload.notes,
+          },
+        })
+        : await supabase
+          .from("clients")
+          .insert(payload)
+          .select()
+          .single();
 
       if (insertError) throw insertError;
 

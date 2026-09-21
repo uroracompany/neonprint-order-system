@@ -19,6 +19,20 @@ describe("payment receipt upload path", () => {
     vi.restoreAllMocks();
   });
 
+  it("normalizes payment filenames into an unambiguous canonical object key", () => {
+    vi.spyOn(Date, "now").mockReturnValue(1788060343974);
+
+    expect(buildPaymentReceiptPath(orderId, "Recibo ñandú ? # 50%.PNG"))
+      .toBe(`orders/${orderId}/payment-1788060343974-recibo-nandu---50.png`);
+    expect(buildPaymentReceiptPath(orderId, "../../comprobante final.jpg"))
+      .toBe(`orders/${orderId}/payment-1788060343974-....comprobante-final.jpg`);
+    expect(gateway).toContain("isCanonicalPaymentPath");
+    expect(gateway).toContain("La ruta del comprobante de pago no es canónica.");
+    expect(gateway).toContain("const encodeAssetReferenceKey");
+
+    vi.restoreAllMocks();
+  });
+
   it("keeps the gateway policy and every payment caller on the shared path helper", () => {
     expect(gateway).toContain('=== `orders/${orderId}`');
     expect(quotePage).toContain("buildPaymentReceiptPath(order.id, receiptFile.name)");

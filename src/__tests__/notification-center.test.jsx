@@ -38,6 +38,12 @@ const variantToasts = [
   { id: "variant-info", type: "info", title: "Info variant", message: "Info controlada.", metadata: { variant: "info" } },
 ];
 
+const orderSuccessToasts = [
+  { id: "created", type: "new_order", title: "Orden creada", message: "La orden fue creada correctamente.", metadata: { event_kind: "order_created", variant: "success" } },
+  { id: "routed", type: "order_assigned", title: "Enviada a Diseño", message: "La orden fue enviada a Diseño exitosamente a Ana.", metadata: { event_kind: "designer_assigned_confirmation", variant: "success" } },
+  { id: "paid", type: "order_updated", title: "Pago confirmado", message: "La orden fue marcada como pagada.", metadata: { event_kind: "payment_confirmed", variant: "payment_confirmed" } },
+];
+
 describe("NotificationCenter", () => {
   afterEach(() => {
     cleanup();
@@ -253,5 +259,46 @@ describe("NotificationCenter", () => {
     expect(screen.getByText("Warning variant").closest(".nc-toast")).toHaveClass("returned");
     expect(screen.getByText("Info variant").closest(".nc-toast")).toHaveClass("info");
     expect(screen.getByText("Success variant").closest(".nc-toast").querySelector(".nc-toast-icon polyline")).toBeInTheDocument();
+  });
+
+  it("uses order, check, and money icons for the canonical success event kinds", () => {
+    render(
+      <NotificationCenter
+        {...baseProps}
+        toasts={orderSuccessToasts}
+        onDismissToast={vi.fn()}
+      />
+    );
+
+    const created = screen.getByText("Orden creada").closest(".nc-toast");
+    const routed = screen.getByText("Enviada a Diseño").closest(".nc-toast");
+    const paid = screen.getByText("Pago confirmado").closest(".nc-toast");
+
+    expect(created).toHaveClass("completed");
+    expect(created.querySelector(".nc-toast-icon rect")).toBeInTheDocument();
+    expect(routed).toHaveClass("completed");
+    expect(routed.querySelector(".nc-toast-icon polyline")).toBeInTheDocument();
+    expect(paid).toHaveClass("payment");
+    expect(paid.querySelector(".nc-toast-icon circle")).toBeInTheDocument();
+  });
+
+  it("renders the Caja to Producción confirmation once in green", () => {
+    render(
+      <NotificationCenter
+        {...baseProps}
+        toasts={[{
+          id: "cash-to-production",
+          type: "info",
+          title: "Orden enviada a Producción",
+          message: "Orden enviada a producción exitosamente",
+          metadata: { event_kind: "production_assignment_confirmation", variant: "success" },
+        }]}
+        onDismissToast={vi.fn()}
+      />
+    );
+
+    const confirmation = screen.getByText("Orden enviada a producción exitosamente");
+    expect(screen.getAllByText("Orden enviada a producción exitosamente")).toHaveLength(1);
+    expect(confirmation.closest(".nc-toast")).toHaveClass("completed");
   });
 });

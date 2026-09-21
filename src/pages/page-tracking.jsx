@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { FlowTrackClient } from "../components/FlowTrackClient";
+import useFlowTrackerRealtime from "../hooks/useFlowTrackerRealtime";
 import NeonLogo from "../assets/images/logo-neonprint.jpg";
 import {
   getOrderStatusConfig,
@@ -58,6 +59,8 @@ export default function PageTracking() {
       inFlightRef.current = false;
     }
   }, [token]);
+
+  useFlowTrackerRealtime({ token, onChange: fetchData });
 
   useEffect(() => {
     hasLoadedRef.current = false;
@@ -233,7 +236,7 @@ export default function PageTracking() {
               events={events}
               order={order}
               designType={order.order_design_type}
-              productionFiles={[]}
+              productionFiles={order.production_files}
             />
           </div>
 

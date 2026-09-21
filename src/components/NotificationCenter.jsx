@@ -17,7 +17,26 @@ const TYPE_CONFIG = {
   system:          { label: "Sistema", icon: "system" },
 };
 
+const SUCCESS_EVENT_KINDS = new Set([
+  "designer_assigned_confirmation",
+  "designer_assigned",
+  "quote_assignment_confirmation",
+  "quote_assigned",
+  "design_routed_confirmation",
+  "quote_routed_confirmation",
+  "stage_assignment_confirmation",
+  "stage_responsibility_assigned",
+  "production_assigned",
+  "production_reassigned",
+  "production_file_sent_to_termination",
+  "production_file_sent_to_termination_assigned",
+  "production_file_transfer_confirmation",
+  "production_file_transfer_assigned",
+  "semi_admin_confirmation",
+]);
+
 function getTypeClass(type, variant) {
+  if (type === "payment_confirmed" || variant === "payment_confirmed") return "payment";
   const variantMap = {
     success: "completed",
     error: "cancelled",
@@ -32,6 +51,36 @@ function getTypeClass(type, variant) {
     order_assigned: "assigned", info: "info", system: "system",
   };
   return map[type] || "info";
+}
+
+function getToastPresentation(notification) {
+  const metadata = notification.metadata || {};
+  const eventKind = metadata.event_kind;
+
+  if (eventKind === "order_created") {
+    return { typeClass: "completed", icon: <Icons.Clipboard /> };
+  }
+
+  if (notification.type === "payment_confirmed" || metadata.variant === "payment_confirmed" || eventKind === "payment_confirmed") {
+    return { typeClass: "payment", icon: <Icons.Money /> };
+  }
+
+  if (
+    eventKind === "production_file_sent_to_termination"
+    || eventKind === "production_file_sent_to_termination_assigned"
+  ) {
+    return { typeClass: "info", icon: <Icons.Check /> };
+  }
+
+  if (metadata.variant === "success" || SUCCESS_EVENT_KINDS.has(eventKind)) {
+    return { typeClass: "completed", icon: <Icons.Check /> };
+  }
+
+  const typeClass = getTypeClass(notification.type, notification.metadata?.variant);
+  return {
+    typeClass,
+    icon: typeClass === "payment" ? <Icons.Money /> : typeClass === "completed" ? <Icons.Check /> : typeClass === "cancelled" ? <Icons.X /> : <Icons.Bell />,
+  };
 }
 
 function NotificationToast({ notification, onDismiss }) {
@@ -49,14 +98,12 @@ function NotificationToast({ notification, onDismiss }) {
     return () => clearInterval(interval);
   }, []);
 
-  const typeClass = getTypeClass(notification.type, notification.metadata?.variant);
+  const { typeClass, icon } = getToastPresentation(notification);
 
   return (
     <div className={`nc-toast ${typeClass}`} role="alert" aria-live="polite">
       <div className="nc-toast-main">
-        <div className="nc-toast-icon">
-          {typeClass === "completed" ? <Icons.Check /> : typeClass === "cancelled" ? <Icons.X /> : <Icons.Bell />}
-        </div>
+        <div className="nc-toast-icon">{icon}</div>
         <div className="nc-toast-content">
           <span className="nc-toast-title">{formatUiTerms(notification.title)}</span>
           <span className="nc-toast-text">{formatUiTerms(notification.message)}</span>

@@ -28,6 +28,8 @@ describe("TerminationSelector", () => {
     await user.click(screen.getByRole("button", { name: "Terminación" }));
     await user.click(screen.getByRole("option", { name: "Ojales" }));
 
+    expect(onChange).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Agregar" }));
     expect(onChange).toHaveBeenCalledWith("Ojales");
     expect(screen.getByRole("button", { name: "Terminación" })).toHaveTextContent("Ojales");
   });
@@ -43,6 +45,8 @@ describe("TerminationSelector", () => {
     const input = screen.getByLabelText("Terminación personalizada");
     await user.type(input, "Laminado mate especial");
 
+    expect(onChange).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Agregar" }));
     expect(onChange).toHaveBeenLastCalledWith("Laminado mate especial");
     expect(onChange).not.toHaveBeenCalledWith("__custom__");
   });
@@ -63,6 +67,35 @@ describe("TerminationSelector", () => {
     await user.click(screen.getByRole("button", { name: "Agregar terminación personalizada" }));
     await user.type(screen.getByLabelText("Terminación personalizada"), "Laminado sin catálogo");
 
+    await user.click(screen.getByRole("button", { name: "Agregar" }));
     expect(onChange).toHaveBeenLastCalledWith("Laminado sin catálogo");
+  });
+
+  it("conserva la terminación preparada al cerrar y reabrir el selector", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ControlledSelector onChange={onChange} />);
+
+    await user.click(screen.getByRole("button", { name: "Terminación" }));
+    await user.click(screen.getByRole("option", { name: "Ojales" }));
+    await user.click(document.body);
+    await user.click(screen.getByRole("button", { name: "Terminación" }));
+
+    expect(screen.getByRole("option", { name: /Ojales/ })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("button", { name: "Agregar" }));
+    expect(onChange).toHaveBeenLastCalledWith("Ojales");
+  });
+
+  it("solo elimina la terminación mediante su X y confirma el cambio con Agregar", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ControlledSelector onChange={onChange} initialValue="Ojales" />);
+
+    await user.click(screen.getByRole("button", { name: "Quitar Ojales" }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Agregar" })).toBeDisabled();
+    await user.click(screen.getByRole("option", { name: "Corte" }));
+    await user.click(screen.getByRole("button", { name: "Agregar" }));
+    expect(onChange).toHaveBeenLastCalledWith("Corte");
   });
 });

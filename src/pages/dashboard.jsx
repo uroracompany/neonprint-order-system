@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
-import CreateOrderModal from "../components/orders/CreateOrderModal";
+import CreateOrderModal, { Field, Modal } from "../components/orders/CreateOrderModal";
 import SharedEditOrderModal from "../components/orders/EditOrderModal";
 import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
 import AdminAdvancedSettings from "../components/orders/AdminAdvancedSettings";
@@ -75,6 +75,7 @@ import { adminApiFetch, isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "../util
 import { filterActiveNotifications, getActiveUnreadCount, showCreditActionFeedback } from "../utils/notifications";
 import { buildProductionCatalogs } from "../utils/production";
 import { getAdminTabFromSearch, getAdminTabSearch } from "../utils/adminTabRoute";
+import { getMaterialGlobalBounds } from "../utils/kpiHelpers";
 import { getAdminPasswordPolicyError, getEmployeeFormValidationMessage, validateEmployeeForm } from "../utils/employeeFormValidation";
 import {
   buildAdminWorkspaceRecovery,
@@ -89,12 +90,14 @@ import useNotifications from "../hooks/useNotifications";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import NotificationCenter from "../components/NotificationCenter";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
-import AdminProfileModule from "../components/admin/AdminProfileModule";
 import FileCard from "../components/FileCard";
 import "../css-components/page-seller.css";
 import "../css-components/page-admin.css";
 
 const KPIModule = lazy(() => import("../components/kpi/KPIModule"));
+const MaterialDetailModal = lazy(() => import("../components/kpi/MaterialDetailModal"));
+const MaterialAnalyticsOverviewModal = lazy(() => import("../components/kpi/MaterialAnalyticsOverviewModal"));
+const OrderStatisticsModal = lazy(() => import("../components/orders/OrderStatisticsModal"));
 
 const DEFAULT_ORDER_FORM = {
   id: "",
@@ -1523,7 +1526,6 @@ const getAdminTabTitle = (tab) => {
     case "notifications": return "Notificaciones";
     case "clients": return "Gestión de Clientes";
     case "materials": return "Gestión de Materiales";
-    case "profile": return "Mi Perfil";
     case "users": return "Gestión de Empleados";
     default: return "Administración";
   }
@@ -1639,6 +1641,9 @@ export default function Dashboard() {
   const [materialFormError, setMaterialFormError] = useState("");
   const [materialToDelete, setMaterialToDelete] = useState(null);
   const [materialDeleteLoading, setMaterialDeleteLoading] = useState(false);
+  const [selectedMaterialAnalytics, setSelectedMaterialAnalytics] = useState(null);
+const [showMaterialAnalyticsOverview, setShowMaterialAnalyticsOverview] = useState(false);
+  const [showOrderStatisticsModal, setShowOrderStatisticsModal] = useState(false);
   const [materialSearch, setMaterialSearch] = useState("");
   const [materialsPage, setMaterialsPage] = useState(1);
   const [materialViewMode, setMaterialViewMode] = useState("materials");
@@ -1686,6 +1691,8 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
   const [creditReminderCompletingId, setCreditReminderCompletingId] = useState(null);
   const [creditReminderNow, setCreditReminderNow] = useState(null);
   const creditReminderServerClockRef = useRef(null);
+  const materialAnalyticsTriggerRef = useRef(null);
+  const materialAnalyticsOverviewTriggerRef = useRef(null);
   const [showClientModal, setShowClientModal] = useState(false);
   const [showOrderClientModal, setShowOrderClientModal] = useState(false);
   const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
@@ -1748,6 +1755,7 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
   const adminVisibleNotifications = useMemo(() => filterActiveNotifications(notif.notifications), [notif.notifications]);
   const adminVisibleToasts = useMemo(() => filterActiveNotifications(notif.toasts), [notif.toasts]);
   const adminUnreadCount = useMemo(() => getActiveUnreadCount(adminVisibleNotifications), [adminVisibleNotifications]);
+  const isMaterialCreateReady = Boolean(materialFormName.trim() && materialFormAreaCode);
   const creditAlertPeriodKey = useMemo(() => getCreditAlertPeriodKey(), []);
   const minimumCreditReminderAt = useMemo(() => getMinimumCreditReminderAt(creditReminderNow), [creditReminderNow]);
   const feedbackIdRef = useRef(0);
@@ -1968,8 +1976,8 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
     setMaterialsLoading(true);
     try {
       const [materialsResult, terminationsResult, areasResult] = await Promise.all([
-        supabase.from("materials").select("*").order("name", { ascending: true }),
-        supabase.from("production_terminations").select("*").order("name", { ascending: true }),
+        supabase.from("materials").select("id,name,production_area_code,created_at,updated_at").order("name", { ascending: true }),
+        supabase.from("production_terminations").select("id,name,production_area_code,created_at,updated_at").order("name", { ascending: true }),
         supabase.from("production_areas").select("code,label").eq("is_active", true).order("label", { ascending: true }),
       ]);
       if (materialsResult.error || terminationsResult.error || areasResult.error) {
@@ -2016,7 +2024,7 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
     try {
       const { data, error } = await supabase
         .from("accounts_receivable")
-        .select("*, client:clients(id,name,phone,email,address,notes,created_at,updated_at)")
+        .select("id,order_id,client_id,original_amount,balance,status,issued_at,due_date,created_by,created_at,updated_at,invoice_number,resolved_at,resolved_by,resolution_note,voided_at,voided_by,void_reason,client:clients(id,name,phone,email,address,notes,created_at,updated_at)")
         .order("issued_at", { ascending: false });
 
       if (error) {
@@ -2103,8 +2111,6 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
         break;
       case "kpi":
         break;
-      case "profile":
-        break;
       default:
         await loadOrders();
         await fetchAccountsReceivable();
@@ -2118,11 +2124,7 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
     if (!authUser?.id) return undefined;
 
     loadOrdersRef.current?.();
-    loadProfiles();
-    fetchClients();
-    fetchAccountsReceivable();
     dispatchDueCreditReminderNotifications();
-    fetchCreditCustomReminders();
 
     const relatedDataChannel = supabase
       .channel(`admin-related-data-${authUser.id}`)
@@ -2144,7 +2146,7 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
     return () => {
       supabase.removeChannel(relatedDataChannel);
     };
-  }, [authUser?.id, dispatchDueCreditReminderNotifications, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, loadProfiles]);
+  }, [authUser?.id, dispatchDueCreditReminderNotifications, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders]);
 
   // The server is the source of truth for operational filtering.  Debouncing
   // search avoids a full request for every keystroke while changing a filter
@@ -2269,16 +2271,17 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
     if (activeTab === "materials") {
       fetchMaterials();
     }
-    if (activeTab === "clients" || activeTab === "orders" || activeTab === "credits") {
+    if (activeTab === "overview" || activeTab === "clients" || activeTab === "orders" || activeTab === "credits") {
       fetchClients();
       fetchAccountsReceivable();
+    }
+    if (activeTab === "credits") {
       fetchCreditCustomReminders();
     }
-  }, [activeTab, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, fetchMaterials]);
-
-  useEffect(() => {
-    fetchCreditCustomReminders();
-  }, [fetchCreditCustomReminders]);
+    if (activeTab === "users" || activeTab === "orders") {
+      loadProfiles();
+    }
+  }, [activeTab, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, fetchMaterials, loadProfiles]);
 
   const handleLogout = async () => {
     await signOut();
@@ -2555,9 +2558,27 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
     setPaymentModalOrder(order);
   };
 
-  const handlePaymentConfirm = async ({ paymentStatus, receiptFile }) => {
-    const currentOrder = paymentModalOrder;
+  const handlePaymentConfirm = async ({ paymentStatus, receiptFile, invoiceNumber }) => {
+    let currentOrder = paymentModalOrder;
     if (!currentOrder) return;
+
+    const requestedInvoiceNumber = String(invoiceNumber || "").trim();
+    if (currentOrder.invoice_assignment_mode === "cashier"
+      && requestedInvoiceNumber
+      && requestedInvoiceNumber !== String(currentOrder.invoice_number || "").trim()) {
+      setPaymentModalLoading(true);
+      const { data: assignedOrder, error: assignError } = await supabase.rpc("quote_assign_invoice_code", {
+        p_order_id: currentOrder.id,
+        p_invoice_number: requestedInvoiceNumber,
+        p_expected_updated_at: currentOrder.updated_at,
+      });
+      setPaymentModalLoading(false);
+      if (assignError || !assignedOrder) {
+        throw new Error(assignError?.message || "No se pudo guardar el código de facturación.");
+      }
+      currentOrder = { ...currentOrder, ...assignedOrder };
+      setPaymentModalOrder(currentOrder);
+    }
 
     if (paymentStatus === PAYMENT_STATUS.CREDIT) {
       setPaymentModalLoading(true);
@@ -2612,7 +2633,11 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
       await executeAdminOrderCommand(supabase, {
         orderId: currentOrder.id,
         action: "register_payment",
-        payload: { payment_status: paymentStatus, invoice_payment: paymentInvoiceUrl },
+        payload: {
+          payment_status: paymentStatus,
+          invoice_payment: paymentInvoiceUrl,
+          invoice_number: requestedInvoiceNumber || undefined,
+        },
         reasonCategory: "workflow_correction",
         reasonDetail: "Pago registrado por Administración desde el listado de órdenes.",
         expectedUpdatedAt: currentOrder.updated_at,
@@ -3950,7 +3975,6 @@ const filteredMaterials = useMemo(() => {
     { id: "materials", label: "Materiales", icon: <Icons.Package /> },
     { id: "users", label: "Empleados", icon: <Icons.Users />, badge: getSidebarBadge(loadingUsers, profiles.length) },
     { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: getSidebarBadge(notif.loading, adminUnreadCount) },
-    { id: "profile", label: "Mi perfil", icon: <Icons.User /> },
   ];
 
   const handleAdminTabChange = (nextTab) => {
@@ -4041,10 +4065,6 @@ const filteredMaterials = useMemo(() => {
             moduleTone="admin"
             onOpenCreditTracking={handleOpenCreditNotification}
           />
-        )}
-
-        {activeTab === "profile" && (
-          <AdminProfileModule authUser={authUser} profile={profile || authProfile} />
         )}
 
         {activeTab === "overview" &&
@@ -4159,7 +4179,7 @@ const filteredMaterials = useMemo(() => {
 
         {activeTab === "orders" && !advancedSettingsOpen &&
           <section className="pa-section">
-            <div className="pa-section-heading acm-heading">
+<div className="pa-section-heading acm-heading">
               <div>
                 <h2>Gestión de Órdenes</h2>
                 <p>Supervisa, filtra y administra las órdenes del sistema.</p>
@@ -4170,10 +4190,16 @@ const filteredMaterials = useMemo(() => {
                   </div>
                 )}
               </div>
-              <button className="pa-btn primary" onClick={openCreateOrder}>
-                <Icons.Plus />
-                Nueva orden
-              </button>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <button className="pa-btn primary" onClick={() => setShowOrderStatisticsModal(true)}>
+                  <Icons.BarChart />
+                  Estadísticas
+                </button>
+                <button className="pa-btn primary" onClick={openCreateOrder}>
+                  <Icons.Plus />
+                  Nueva orden
+                </button>
+              </div>
             </div>
             <SalesFilterToolbar
               ariaLabel="Filtros de órdenes"
@@ -4691,27 +4717,30 @@ const filteredMaterials = useMemo(() => {
 
         {activeTab === "materials" && (
           <section className="pa-section">
-            <div className="pa-section-heading acm-heading">
+            <div className="pa-section-heading acm-heading acm-heading--materials">
               <div>
                 <h2>Gestión de Materiales</h2>
                 <p>Administra los materiales y terminaciones disponibles para las órdenes de producción.</p>
-                <div className="acm-total-badge">
-                  <Icons.Package />
-                  <strong>{materials.length.toLocaleString("es-PE")}</strong> materiales registrados
-                </div>
-                <div className="acm-total-badge">
-                  <Icons.Paintbrush />
-                  <strong>{productionTerminations.length.toLocaleString("es-PE")}</strong> terminaciones registradas
+                <div className="acm-materials-badges">
+                  <div className="acm-total-badge acm-material-badge" data-tone="materials">
+                    <Icons.Package />
+                    <strong>{materials.length.toLocaleString("es-PE")}</strong> materiales registrados
+                  </div>
+                  <div className="acm-total-badge acm-termination-badge" data-tone="terminations">
+                    <Icons.Paintbrush />
+                    <strong>{productionTerminations.length.toLocaleString("es-PE")}</strong> terminaciones registradas
+                  </div>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button className="pa-btn primary" onClick={handleAddMaterial}>
-                  <Icons.Plus />
-                  Registrar material
-                </button>
-                <button className="pa-btn primary" onClick={() => openTerminationModal()}>
-                  <Icons.Paintbrush />
-                  Registrar terminación
+              <div className="acm-heading-actions">
+                <button
+                  type="button"
+                  className="pa-btn primary"
+                  ref={materialAnalyticsOverviewTriggerRef}
+                  onClick={() => setShowMaterialAnalyticsOverview(true)}
+                >
+                  <Icons.ChartArea />
+                  Estadísticas generales
                 </button>
               </div>
             </div>
@@ -4727,6 +4756,26 @@ const filteredMaterials = useMemo(() => {
               resultLabel="resultados"
               activeFilters={materialSearch ? 1 : 0}
               onReset={() => setMaterialSearch("")}
+              actions={(
+                <>
+                  <button
+                    type="button"
+                    className="pa-btn primary acm-materials-registration-action"
+                    onClick={handleAddMaterial}
+                  >
+                    <Icons.Plus />
+                    Registrar material
+                  </button>
+                  <button
+                    type="button"
+                    className="pa-btn primary acm-materials-registration-action"
+                    onClick={() => openTerminationModal()}
+                  >
+                    <Icons.Paintbrush />
+                    Registrar terminación
+                  </button>
+                </>
+              )}
             />
             <div className="pa-panel mat-table-panel">
               <div className="pa-panel-head mat-unified-head">
@@ -4834,10 +4883,24 @@ const filteredMaterials = useMemo(() => {
                               </td>
                               <td className="td-pad td-actions" onClick={(e) => e.stopPropagation()}>
                                 <div className="table-actions mat-row-actions">
-                                  <button className="table-action-btn edit" onClick={() => handleEditMaterial(mat)} title="Editar material">
+                                  <button
+                                    type="button"
+                                    className="table-action-btn view"
+                                    title={`Ver actividad de ${mat.name}`}
+                                    aria-label={`Ver actividad de ${mat.name}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      materialAnalyticsTriggerRef.current = event.currentTarget;
+                                      setSelectedMaterialAnalytics({ material_id: mat.id, name: mat.name });
+                                    }}
+                                  >
+                                    <Icons.Eye />
+                                  </button>
+                                  <button type="button" className="table-action-btn edit" onClick={() => handleEditMaterial(mat)} title="Editar material">
                                     <Icons.Edit />
                                   </button>
                                   <button
+                                    type="button"
                                     className="table-action-btn cancel"
                                     onClick={() => handleDeleteMaterial(mat)}
                                     title="Eliminar material"
@@ -4890,55 +4953,93 @@ const filteredMaterials = useMemo(() => {
           </section>
         )}
 
-        {showMaterialModal && (
-          <div className="pa-overlay" onClick={() => setShowMaterialModal(false)}>
-            <div className="pa-modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
-              <div className="pa-modal-head">
-                <h3>{editingMaterial ? "Editar material" : "Agregar material"}</h3>
-                <button className="pa-close-btn" onClick={() => setShowMaterialModal(false)}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
-              <div className="pa-modal-body" style={{ paddingBottom: 44 }}>
-                <div className="pa-field">
-                  <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "13px", color: "#0f1e40" }}>Nombre del material</label>
-                  <input
-                    className="pa-input"
-                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1.5px solid #DDE3EF", fontSize: "14px" }}
-                    value={materialFormName}
-                    onChange={e => { setMaterialFormName(e.target.value); setMaterialFormError(""); }}
-                    placeholder="Ej. Vinilo, Banner, Lona..."
-                    autoFocus
-                    onKeyDown={e => { if (e.key === "Enter") handleSaveMaterial(); }}
-                  />
-                  <label style={{ display: "block", margin: "14px 0 6px", fontWeight: 600, fontSize: "13px", color: "#0f1e40" }}>Área de producción</label>
-                  <select
-                    className="pa-input"
-                    style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1.5px solid #DDE3EF", fontSize: "14px" }}
-                    value={materialFormAreaCode}
-                    onChange={e => { setMaterialFormAreaCode(e.target.value); setMaterialFormError(""); }}
-                  >
-                    <option value="">Seleccionar área</option>
-                    {productionAreas.map((area) => <option key={area.code} value={area.code}>{area.label}</option>)}
-                  </select>
-                  {materialFormError && (
-                    <p style={{ color: "#EF4444", fontSize: "12px", marginTop: 6 }}>{materialFormError}</p>
-                  )}
-                </div>
-              </div>
-              <div className="pa-modal-actions">
-                <button className="pa-btn secondary" onClick={() => setShowMaterialModal(false)}>Cancelar</button>
-                <button className="pa-btn primary" onClick={handleSaveMaterial}>
-                  {editingMaterial ? "Guardar cambios" : "Agregar material"}
-                </button>
-              </div>
+        {(selectedMaterialAnalytics || showMaterialAnalyticsOverview) && (
+          <Suspense fallback={null}>
+            {selectedMaterialAnalytics && (
+              <MaterialDetailModal
+                material={selectedMaterialAnalytics}
+                previousMaterial={null}
+                totalReferences={0}
+                userId={authUser?.id}
+                source="catalog"
+                periodMeta={getMaterialGlobalBounds()}
+                returnFocusRef={materialAnalyticsTriggerRef}
+                onClose={() => setSelectedMaterialAnalytics(null)}
+              />
+            )}
+            {showMaterialAnalyticsOverview && (
+              <MaterialAnalyticsOverviewModal
+                open={showMaterialAnalyticsOverview}
+                userId={authUser?.id}
+                returnFocusRef={materialAnalyticsOverviewTriggerRef}
+                onClose={() => setShowMaterialAnalyticsOverview(false)}
+              />
+            )}
+          </Suspense>
+        )}
+
+        {showOrderStatisticsModal && (
+          <Suspense fallback={null}>
+            <OrderStatisticsModal
+              open={showOrderStatisticsModal}
+              userId={authUser?.id}
+              onClose={() => setShowOrderStatisticsModal(false)}
+              initialPeriod={dateFilter}
+            />
+          </Suspense>
+        )}
+
+        <Modal
+          open={showMaterialModal}
+          onClose={() => setShowMaterialModal(false)}
+          title={editingMaterial ? "Editar material" : "Agregar material"}
+          closeOnBackdrop
+          closeOnEscape={false}
+          hideStripe
+          className="ps-file-details-modal"
+          overlayClassName="ps-file-details-overlay"
+          headerContent={<h3 className="ps-file-details-title">{editingMaterial ? "Editar material" : "Agregar material"}</h3>}
+        >
+          <div className="ps-file-details-content">
+            {materialFormError && <p className="ps-form-error-banner" role="alert">{materialFormError}</p>}
+            <Field label="Nombre del material" required>
+              <input
+                className="ps-form-input"
+                value={materialFormName}
+                onChange={e => { setMaterialFormName(e.target.value); setMaterialFormError(""); }}
+                placeholder="Ej. Vinilo, Banner, Lona..."
+                autoFocus
+                onKeyDown={e => { if (e.key === "Enter") handleSaveMaterial(); }}
+              />
+            </Field>
+            <Field label="Área de producción" required>
+              <select
+                className="ps-form-input"
+                value={materialFormAreaCode}
+                onChange={e => { setMaterialFormAreaCode(e.target.value); setMaterialFormError(""); }}
+              >
+                <option value="">Seleccionar área</option>
+                {productionAreas.map((area) => <option key={area.code} value={area.code}>{area.label}</option>)}
+              </select>
+            </Field>
+            <div className="ps-form-actions ps-file-details-actions">
+              <button type="button" className="ps-btn-cancel ps-file-details-btn-cancel" onClick={() => setShowMaterialModal(false)}>Cancelar</button>
+              <button
+                type="button"
+                className="ps-btn-submit ps-file-details-btn-save"
+                onClick={handleSaveMaterial}
+                disabled={!editingMaterial && !isMaterialCreateReady}
+              >
+                <Icons.Check />
+                {editingMaterial ? "Guardar cambios" : "Agregar material"}
+              </button>
             </div>
           </div>
-        )}
+        </Modal>
 
         {showTerminationModal && (
           <div className="pa-overlay" onClick={() => setShowTerminationModal(false)}>
-            <div className="pa-modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal pa-modal--hide-top-accent" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
               <div className="pa-modal-head">
                 <h3>{editingTermination ? "Editar terminación" : "Agregar terminación"}</h3>
                 <button className="pa-close-btn" onClick={() => setShowTerminationModal(false)} aria-label="Cerrar"><Icons.X /></button>
@@ -5307,6 +5408,7 @@ const filteredMaterials = useMemo(() => {
         open={!!paymentModalOrder}
         order={paymentModalOrder}
         loading={paymentModalLoading}
+        canAssignInvoiceCode
         onClose={() => setPaymentModalOrder(null)}
         onConfirm={handlePaymentConfirm}
       />

@@ -37,20 +37,13 @@ describe("KPI search design-system contract", () => {
     expect(css).toContain("box-shadow: none;");
   });
 
-  it("uses normalized KPI search in client and material analytics", () => {
+  it("uses normalized KPI search in client analytics", () => {
     const clientAnalytics = readProjectFile("src/components/kpi/KPIClientAnalytics.jsx");
-    const materialAnalytics = readProjectFile("src/components/kpi/KPIMaterialsAnalytics.jsx");
 
     expect(clientAnalytics).toContain("import KPISearchBox from './KPISearchBox'");
     expect(clientAnalytics).toContain("matchesKpiSearch");
     expect(clientAnalytics).toContain("filterKpiClients");
     expect(clientAnalytics).not.toContain("setSelectedClientIdx");
-
-    expect(materialAnalytics).toContain("import KPISearchBox from './KPISearchBox'");
-    expect(materialAnalytics).toContain("matchesKpiSearch");
-    expect(materialAnalytics).toContain("filterKpiMaterials");
-    expect(materialAnalytics).not.toContain("setSelectedMaterial(");
-    expect(materialAnalytics).not.toContain("setEvoMatIdx");
   });
 
   it("aligns seller, designer and quote timelines to the shared search pattern", () => {

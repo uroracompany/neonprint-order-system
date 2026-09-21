@@ -70,6 +70,7 @@ export default function useNewOrderAssignments(userId, assignmentModule) {
       .select("id, order_id, assignment_module, assignment_source, source_assignment_id, assigned_at")
       .eq("user_id", userId)
       .eq("assignment_module", assignmentModule)
+      .neq("assignment_source", "production_file_transfer")
       .is("seen_at", null)
       .order("assigned_at", { ascending: false });
 

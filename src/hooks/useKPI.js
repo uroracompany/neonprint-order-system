@@ -23,7 +23,7 @@ async function fetchKpi(action, params) {
   throw error
 }
 
-function getKpiBounds(period, customDateFrom, customDateTo) {
+export function getKpiBounds(period, customDateFrom, customDateTo) {
   if (period === 'custom') {
     if (!customDateFrom || !customDateTo || customDateFrom > customDateTo) return null
 

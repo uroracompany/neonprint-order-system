@@ -2045,6 +2045,21 @@ select option { background: var(--surface); color: var(--text); }
 }
 .ps-form-input.with-icon { padding-left: 36px; }
 
+.ps-invoice-assignment-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--text-sub);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ps-invoice-assignment-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
 /* ── Multi-material selector ──────────────────────────────────── */
 .ps-multimat {
   position: relative; width: 100%;
@@ -2212,6 +2227,34 @@ button.ps-multimat-option {
 }
 .ps-multimat-custom-btn:hover { opacity: 0.9; }
 .ps-multimat-custom-btn:disabled { opacity: 0.5; cursor: default; }
+
+.ps-multimat-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+.ps-multimat-actions button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  font: 600 12px 'Poppins', sans-serif;
+  cursor: pointer;
+}
+.ps-multimat-cancel {
+  color: var(--text-sub);
+  background: var(--surface);
+}
+.ps-multimat-cancel:hover { background: var(--surface-alt); }
+.ps-multimat-confirm {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary) !important;
+}
+.ps-multimat-confirm:hover { opacity: 0.9; }
+.ps-multimat-confirm:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Tipo de orden / diseño — cards radio ─────────────────────── */
 .ps-order-type-group {
@@ -3800,5 +3843,261 @@ button.ps-multimat-option {
   .ps-greeting-leading {
     width: 42px;
     height: 42px;
+  }
+}
+
+/* ── Responsive hardening: Sales workspaces ─────────────────────── */
+.ps-topbar,
+.ps-topbar-left,
+.ps-topbar-right,
+.ps-main,
+.ps-greeting-main,
+.ps-panel-header,
+.ps-client-cell-main,
+.ps-order-card-client-main {
+  min-width: 0;
+}
+
+.ps-page-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ps-table-wrap {
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable both-edges;
+}
+
+.ps-table {
+  min-width: 760px;
+}
+
+@media (max-width: 1040px) {
+  .ps-topbar {
+    gap: 12px;
+    padding: 0 20px;
+  }
+
+  .ps-main {
+    padding: 20px;
+  }
+
+  .ps-greeting {
+    padding: 22px 24px;
+  }
+
+  .ps-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  .ps-main .pp-workbench-heading,
+  .ps-main .pp-workbench-tools {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .ps-root,
+  .ps-main-wrap {
+    min-width: 0;
+  }
+
+  .ps-topbar {
+    min-height: 62px;
+    height: auto;
+    align-items: center;
+    padding: 10px 14px;
+  }
+
+  .ps-topbar-left {
+    flex: 1 1 auto;
+    gap: 10px;
+  }
+
+  .ps-topbar-right {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .ps-page-date,
+  .ps-topbar-divider {
+    display: none;
+  }
+
+  .ps-topbar-client-inner,
+  .ps-topbar-new-inner {
+    width: 42px;
+    min-height: 42px;
+    justify-content: center;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .ps-topbar-client-inner svg,
+  .ps-topbar-new-inner svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .ps-topbar-client-btn,
+  .ps-topbar-new-btn {
+    flex: 0 0 auto;
+  }
+
+  .ps-topbar-new-stripe {
+    width: 3px;
+  }
+
+  .ps-icon-btn {
+    width: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .ps-main {
+    padding: 16px;
+  }
+
+  .ps-greeting,
+  .ps-panel-header {
+    gap: 14px;
+  }
+
+  .ps-greeting-actions,
+  .ps-panel-header {
+    align-items: stretch;
+  }
+
+  .ps-greeting-actions .ps-greeting-btn {
+    min-height: 44px;
+  }
+
+  .ps-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .ps-card {
+    min-width: 0;
+    padding: 16px;
+  }
+
+  .ps-main .pp-workbench-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ps-main .pp-workbench-tools {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .ps-main .pp-workbench-tabs {
+    max-width: calc(100vw - 108px);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .ps-main .pp-workbench-tabs button {
+    min-height: 42px;
+    white-space: nowrap;
+  }
+
+  .ps-cards-grid {
+    padding: 0 0 16px;
+  }
+
+  .ps-order-card-actions .card-action-btn {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 560px) {
+  .ps-topbar {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .ps-topbar-left,
+  .ps-topbar-right {
+    gap: 5px;
+  }
+
+  .ps-page-title {
+    max-width: 106px;
+    font-size: 14px;
+  }
+
+  .ps-main {
+    padding: 12px;
+  }
+
+  .ps-greeting {
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .ps-greeting h2 {
+    font-size: 18px;
+  }
+
+  .ps-greeting-btn {
+    flex-basis: 100%;
+  }
+
+  .ps-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .ps-card-value {
+    font-size: 24px;
+  }
+
+  .ps-panel {
+    border-radius: 12px;
+  }
+
+  .ps-main .pp-workbench-tools {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .ps-main .pp-workbench-tabs {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .ps-main .pp-workbench-view-toggle {
+    align-self: flex-end;
+  }
+
+  .ps-order-card-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ps-order-card-date {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 390px) {
+  .ps-page-title {
+    max-width: 72px;
+  }
+
+  .ps-topbar-client-inner,
+  .ps-topbar-new-inner,
+  .ps-icon-btn {
+    width: 38px;
+    min-width: 38px;
+    min-height: 38px;
   }
 }

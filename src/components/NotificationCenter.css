@@ -311,6 +311,7 @@
 .nc-toast.cancelled { --nc-accent: #ef4444; }
 .nc-toast.returned  { --nc-accent: #f59e0b; }
 .nc-toast.completed { --nc-accent: #22c55e; }
+.nc-toast.payment   { --nc-accent: #16a34a; }
 .nc-toast.updated   { --nc-accent: #0ea5e9; }
 .nc-toast.assigned  { --nc-accent: #8b5cf6; }
 .nc-toast.archived  { --nc-accent: #64748b; }

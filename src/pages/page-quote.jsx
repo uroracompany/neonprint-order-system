@@ -4,6 +4,7 @@ import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
 import { uploadOrderAsset, buildPaymentReceiptPath, createSignedOrderAssetUrlFromStoredUrl } from "../utils/uploadOrderAsset";
 import { PAYMENT_RECEIPT_HINT, validateReceiptFile } from "../utils/receiptValidation";
+import { PAYMENT_RECEIPT_ACCEPT } from "../utils/fileValidation";
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
@@ -34,6 +35,7 @@ import {
 import { SecureImageLink, SecureImageGallery } from "../components/ui/SecureImage";
 import { getReferenceImages } from "../utils/orderAssets";
 import { isOrderOverdue } from "../utils/orderDeadline";
+import { QUOTE_ORDER_SELECT } from "../utils/orderListSelect";
 import { getProductionFiles } from "../utils/production";
 import { useAuth } from "../hooks/useAuth";
 import { showCreditActionFeedback } from "../utils/notifications";
@@ -53,6 +55,8 @@ import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import NewOrderBadge from "../components/orders/NewOrderBadge";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
+import ReturnToDesignerModal from "../components/orders/ReturnToDesignerModal";
+import { getReturnTargetLabel } from "../components/orders/returnToDesignerPresentation";
 import FileCard from "../components/FileCard";
 import { OrderReturnHandoffPanel, ReturnedToCashierBadge } from "../components/orders/OrderReturnHandoff";
 import { loadClients, orderMatchesClientFilter, searchClients, formatPhone, NO_CLIENT_FILTER_VALUE } from "../utils/clients";
@@ -73,6 +77,31 @@ import {
 // Normaliza texto a minúsculas y sin espacios para comparaciones seguras
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
 const INVOICE_PAYMENT_FIELD = "invoice_payment";
+const PAYMENT_RECEIPT_REQUIRED_MESSAGE = "Caja requiere una imagen del comprobante para marcar la orden como pagada; un número de recibo o factura no la reemplaza.";
+const CANONICAL_PAYMENT_KEY_PATTERN = /^orders\/[0-9a-f-]{36}\/payment-\d+-[a-z0-9._-]+$/;
+const getCanonicalPaymentReceiptCandidate = (order) => {
+  const reference = String(order?.invoice_payment || "").trim();
+  const scheme = reference.startsWith("supabase://")
+    ? "supabase://"
+    : reference.startsWith("r2://")
+      ? "r2://"
+      : "";
+  if (!scheme || reference.includes("?") || reference.includes("#")) return "";
+
+  const path = reference.slice(scheme.length);
+  const separator = path.indexOf("/");
+  const bucket = separator > 0 ? path.slice(0, separator) : "";
+  const key = separator > 0 ? path.slice(separator + 1) : "";
+  const isSupabasePaymentBucket = scheme === "supabase://" && bucket === "payment-invoice";
+  const isR2Bucket = scheme === "r2://" && /^[a-z0-9][a-z0-9.-]*$/.test(bucket);
+
+  return (isSupabasePaymentBucket || isR2Bucket)
+    && order?.id
+    && CANONICAL_PAYMENT_KEY_PATTERN.test(key)
+    && key.startsWith(`orders/${order.id}/`)
+    ? reference
+    : "";
+};
 const PER_PAGE = 15;
 // Verifica si una orden está asignada a un usuario específico de cotización
 const hasQuoteAssignment = (order, quoteUserId) => QUOTE_ASSIGNMENT_FIELDS.some(field => order?.[field] === quoteUserId);
@@ -221,59 +250,6 @@ function ReturnedBadge({ compact = false }) {
 // Este modal determina automáticamente si la devuelve al diseñador o vendedor
 // basándose en el tipo de diseño (interno vs. externo)
 
-const getReturnTargetLabel = (order) => (
-  order?.order_design_type === "EXTERNAL_DESING" ? "Vendedor" : "Diseñador"
-);
-
-function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
-  const [reason, setReason] = useState("");
-  const targetLabel = getReturnTargetLabel(order);
-  const nextStatusLabel = order?.order_design_type === "EXTERNAL_DESING" ? "Pendiente" : "En Diseño";
-
-  const handleConfirm = () => {
-    if (!reason.trim()) return;
-    onConfirm(reason);
-  };
-
-  if (!open || !order) return null;
-
-  return (
-    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-      <div className="pq-dialog pq-dialog--return-designer">
-        <div className="pq-dialog-icon return pq-dialog-icon--return-designer">
-          <Icons.ArrowLeft />
-        </div>
-        <h3 className="pq-dialog-title">{`Devolver al ${targetLabel}`}</h3>
-        <p className="pq-dialog-text">
-          {`¿Estás seguro de que deseas devolver esta orden al ${targetLabel.toLowerCase()} para correcciones?`}
-          {` El estado cambiará a "${nextStatusLabel}".`}
-        </p>
-        <div className="pq-dialog-order pq-dialog-order--return-designer">
-          <span className="pq-dialog-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
-          <span className="pq-dialog-order-name">{order.client_name || order.description || "Orden sin título"}</span>
-        </div>
-        <div className="pq-form-group pq-form-group--return-designer">
-          <label className="pq-input-label">Razón de la devolución</label>
-          <textarea
-            className="pq-input pq-textarea"
-            placeholder="Describe los cambios o correcciones necesarias..."
-            value={reason}
-            onChange={event => setReason(event.target.value)}
-            disabled={loading}
-            rows={3}
-          />
-        </div>
-        <div className="pq-dialog-actions pq-dialog-actions--return-designer">
-          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
-          <button className="pq-btn pq-btn-return" onClick={handleConfirm} disabled={loading || !reason.trim()}>
-            {loading ? "Devolviendo..." : `Devolver al ${targetLabel}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // MODAL PARA ENVIAR ÓRDENES A PRODUCCIÓN
 // Cuando una orden está cotizada y pagada, se envía a un impresor para que produzca
 // Este modal:
@@ -297,6 +273,7 @@ function QuoteOrderDetailModal({
   onClose,
   order,
   onConfirmPayment,
+  onAssignInvoiceCode,
   paymentSaving,
   sellerDirectory,
   onOpenReturnModal,
@@ -321,6 +298,8 @@ function QuoteOrderDetailModal({
   const [creditClientRequired, setCreditClientRequired] = useState(false);
   const [initialPaymentStatus, setInitialPaymentStatus] = useState(null);
   const [receiptUrl, setReceiptUrl] = useState("");
+  const [invoiceCodeDraft, setInvoiceCodeDraft] = useState("");
+  const [invoiceCodeSaving, setInvoiceCodeSaving] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -331,12 +310,14 @@ function QuoteOrderDetailModal({
       setReceiptZoneErrorKey(0);
       const defaultStatus = isPaymentPartial(order?.payment_status) ? PAYMENT_STATUS.PAID : order?.payment_status || PAYMENT_STATUS.PENDING;
       setPaymentStatus(defaultStatus);
-      setInitialPaymentStatus(defaultStatus);
+      setInitialPaymentStatus(order?.payment_status || PAYMENT_STATUS.PENDING);
       setLocalError("");
       setCreditClientRequired(false);
       setReceiptUrl("");
+      setInvoiceCodeDraft(order?.invoice_number || "");
+      setInvoiceCodeSaving(false);
     }
-  }, [open, order?.id, order?.payment_status]);
+  }, [open, order?.id, order?.payment_status, order?.invoice_number]);
 
   useEffect(() => {
     if (paymentStatus !== PAYMENT_STATUS.CREDIT || order?.client_id) {
@@ -388,8 +369,18 @@ function QuoteOrderDetailModal({
   const canConfirmPayment = isQuoteEditable(order);
   const canSelectPendingPayment = !isPaymentPartial(order.payment_status);
   const isCompletingPartialPayment = isPaymentPartial(order.payment_status);
+  const persistedReceiptReference = getCanonicalPaymentReceiptCandidate(order);
+  const hasPaidReceiptEvidence = Boolean(receiptFile || persistedReceiptReference);
+  const requiresCashierInvoiceCode = order.invoice_assignment_mode === "cashier";
+  const hasInvoiceCode = Boolean(String(order.invoice_number || "").trim());
+  const hasInvoiceCodeDraft = Boolean(String(invoiceCodeDraft || "").trim());
+  const paymentReceiptRequired = paymentStatus === PAYMENT_STATUS.PAID && !hasPaidReceiptEvidence;
+  const paymentReceiptRequirementId = `pq-payment-receipt-required-${order.id}`;
   const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && !isPaymentPaid(order?.payment_status) && !order?.is_archived_quote;
-  const canMoveToProduction = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && isPaymentProductionEligible(order?.payment_status) && !order?.is_archived_quote;
+  const canMoveToProduction = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE)
+    && isPaymentProductionEligible(order?.payment_status)
+    && !order?.is_archived_quote
+    && (!requiresCashierInvoiceCode || hasInvoiceCode);
   const returnedReason = String(order?.return_reason || "").trim();
   const readonlyMessage =
     order.is_archived_quote
@@ -435,7 +426,16 @@ function QuoteOrderDetailModal({
       return;
     }
 
-    if (paymentStatus === PAYMENT_STATUS.CREDIT && !String(order.invoice_number || "").trim()) {
+    if ((paymentStatus === PAYMENT_STATUS.CREDIT || paymentStatus === PAYMENT_STATUS.PAID)
+      && requiresCashierInvoiceCode
+      && !hasInvoiceCode) {
+      const msg = "Caja debe registrar el código de facturación antes de completar esta acción.";
+      setLocalError(msg);
+      if (onValidationError) onValidationError(order, msg);
+      return;
+    }
+
+    if (paymentStatus === PAYMENT_STATUS.CREDIT && !hasInvoiceCode) {
       const msg = "La orden debe tener un numero de facturacion para vender a credito.";
       setLocalError(msg);
       if (onValidationError) onValidationError(order, msg);
@@ -450,8 +450,8 @@ function QuoteOrderDetailModal({
       return;
     }
 
-    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim()) {
-      const msg = "Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.";
+    if (paymentStatus === PAYMENT_STATUS.PAID && (!hasPaidReceiptEvidence || (requiresCashierInvoiceCode && !hasPaidReceiptEvidence))) {
+      const msg = PAYMENT_RECEIPT_REQUIRED_MESSAGE;
       // Mostramos error inline DENTRO del modal
       setLocalError(msg);
       // Y también mostramos un toast flotante para que el usuario no se lo pierda
@@ -460,7 +460,12 @@ function QuoteOrderDetailModal({
     }
 
     setLocalError("");
-    const result = await onConfirmPayment({ order, receiptFile, paymentStatus });
+    const result = await onConfirmPayment({
+      order,
+      receiptFile,
+      paymentStatus,
+      invoiceNumber: invoiceCodeDraft.trim(),
+    });
     if (result?.receiptError) {
       showReceiptZoneError(result.receiptError);
     }
@@ -694,12 +699,47 @@ function QuoteOrderDetailModal({
                 </select>
               </div>
 
+              {requiresCashierInvoiceCode && (
+                <div className="pq-payment-field">
+                  <label><Icons.FileText /> Código de facturación</label>
+                  <input
+                    className="pq-input"
+                    value={invoiceCodeDraft}
+                    onChange={(event) => setInvoiceCodeDraft(event.target.value)}
+                    placeholder="Código asignado por Caja"
+                    disabled={!canConfirmPayment || paymentSaving || invoiceCodeSaving}
+                  />
+                  <button
+                    type="button"
+                    className="pq-btn pq-btn-secondary pq-invoice-code-save"
+                    onClick={async () => {
+                      if (!hasInvoiceCodeDraft || !onAssignInvoiceCode) return;
+                      setInvoiceCodeSaving(true);
+                      try {
+                        const updated = await onAssignInvoiceCode(order, invoiceCodeDraft.trim());
+                        if (updated?.invoice_number) setInvoiceCodeDraft(updated.invoice_number);
+                        setLocalError("");
+                      } catch (error) {
+                        setLocalError(error?.message || "No se pudo guardar el código de facturación.");
+                      } finally {
+                        setInvoiceCodeSaving(false);
+                      }
+                    }}
+                    disabled={!canConfirmPayment || paymentSaving || invoiceCodeSaving || !hasInvoiceCodeDraft || invoiceCodeDraft.trim() === String(order.invoice_number || "").trim()}
+                  >
+                    {invoiceCodeSaving ? "Guardando..." : "Guardar código"}
+                  </button>
+                  <span className="pq-upload-hint">El código se guarda por separado antes de completar el pago.</span>
+                </div>
+              )}
+
               <div className="pq-payment-field">
                 <label><Icons.Receipt /> Recibo de factura</label>
                 {paymentStatus === PAYMENT_STATUS.PAID ? (
                   receiptFile ? (
                     <div className="pq-receipt-preview-card">
                       <FileUploadZone
+                        accept={PAYMENT_RECEIPT_ACCEPT}
                         mode="image"
                         replaceMode
                         inputRef={fileInputRef}
@@ -758,13 +798,16 @@ function QuoteOrderDetailModal({
                     </div>
                   ) : (
                     <FileUploadZone
+                      accept={PAYMENT_RECEIPT_ACCEPT}
                       mode="image"
                       replaceMode
                       inputRef={fileInputRef}
                       buttonLabel="Seleccionar desde el ordenador"
                       hint={PAYMENT_RECEIPT_HINT}
-                      className={paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim() ? "pq-receipt-required" : ""}
+                      className={paymentReceiptRequired ? "pq-receipt-required" : ""}
                       disabled={!canConfirmPayment || paymentSaving}
+                      required={paymentReceiptRequired}
+                      aria-describedby={paymentReceiptRequired ? paymentReceiptRequirementId : undefined}
                       externalError={receiptZoneError}
                       externalErrorKey={receiptZoneErrorKey}
                       onFilesAccepted={handleReceiptAccepted}
@@ -772,6 +815,9 @@ function QuoteOrderDetailModal({
                   )
                 ) : (
                   <span className="pq-upload-hint">El campo de recibo solo se muestra cuando el estado es "Pagado". En pago parcial o crédito no se adjunta comprobante final.</span>
+                )}
+                {paymentReceiptRequired && (
+                  <p id={paymentReceiptRequirementId} className="pq-upload-hint" role="alert">{PAYMENT_RECEIPT_REQUIRED_MESSAGE}</p>
                 )}
               </div>
             </div>
@@ -836,7 +882,7 @@ function QuoteOrderDetailModal({
                 </button>
               )}
               <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
-              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving || paymentStatus === initialPaymentStatus || (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim())}>
+              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving || paymentStatus === initialPaymentStatus || (paymentStatus === PAYMENT_STATUS.PAID && (!hasPaidReceiptEvidence || (requiresCashierInvoiceCode && !hasInvoiceCode)))}>
                 {getPaymentConfirmButtonLabel(paymentStatus, paymentSaving)}
               </button>
             </div>
@@ -1304,7 +1350,7 @@ export default function PageQuote() {
     try {
       const { data, error } = await supabase
         .from("accounts_receivable")
-        .select("*")
+        .select("id,order_id,client_id,original_amount,balance,status,issued_at,due_date,created_by,created_at,updated_at,invoice_number,resolved_at,resolved_by,resolution_note,voided_at,voided_by,void_reason")
         .order("issued_at", { ascending: false });
 
       if (error) throw error;
@@ -1320,7 +1366,7 @@ export default function PageQuote() {
 
       const { data: creditOrderData, error: creditOrdersError } = await supabase
         .from("orders")
-        .select("*, order_production_files(*)")
+        .select(QUOTE_ORDER_SELECT)
         .in("id", orderIds);
 
       if (creditOrdersError) {
@@ -1348,7 +1394,7 @@ export default function PageQuote() {
     try {
       const { data: reminders, error: remindersError } = await supabase
         .from("credit_custom_reminders")
-        .select("*")
+        .select("id,created_by,client_id,remind_at,note,status,last_shown_at,acknowledged_at,created_at,updated_at,visibility_scope,notified_at,acknowledged_by")
         .in("status", ["scheduled", "due"])
         .order("remind_at", { ascending: true });
       if (remindersError) throw remindersError;
@@ -1486,7 +1532,7 @@ export default function PageQuote() {
 
     const { data, error } = await supabase
       .from("orders")
-      .select("*, order_production_files(*)")
+      .select(QUOTE_ORDER_SELECT)
       .eq("id", orderId)
       .single();
 
@@ -1674,7 +1720,7 @@ export default function PageQuote() {
 
     const { data, error } = await supabase
       .from("orders")
-      .select("*, order_production_files(*)")
+      .select(QUOTE_ORDER_SELECT)
       .eq("quote_id", quoteUserId)
       .order("created_at", { ascending: false });
 
@@ -1682,15 +1728,6 @@ export default function PageQuote() {
       fetchedOrders = (data || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
     } else {
       fetchError = error;
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from("orders")
-        .select("*, order_production_files(*)")
-        .order("created_at", { ascending: false });
-
-      if (!fallbackError) {
-        fetchedOrders = (fallbackData || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
-        fetchError = null;
-      }
     }
 
     if (fetchError) {
@@ -1723,7 +1760,7 @@ export default function PageQuote() {
   const handleViewOrder = async (order) => {
     const { data } = await supabase
       .from("orders")
-      .select("*, order_production_files(*)")
+      .select(QUOTE_ORDER_SELECT)
       .eq("id", order.id)
       .single();
 
@@ -1743,6 +1780,9 @@ export default function PageQuote() {
   // 4. Actualiza la BD con el nuevo estado de pago y URL del recibo
   // 5. Notifica al usuario del resultado
   const handleConfirmPayment = async ({ order, receiptFile, paymentStatus }) => {
+    const persistedReceiptReference = getCanonicalPaymentReceiptCandidate(order);
+    const requiresCashierInvoiceCode = order?.invoice_assignment_mode === "cashier";
+    const hasInvoiceCode = Boolean(String(order?.invoice_number || "").trim());
     // Validación inicial: si es pagado, debe haber recibo
     if (isPaymentPartial(order?.payment_status) && paymentStatus === PAYMENT_STATUS.PENDING) {
       notif.showActionNotification({
@@ -1755,7 +1795,7 @@ export default function PageQuote() {
     }
 
     if (paymentStatus === PAYMENT_STATUS.CREDIT) {
-      if (!String(order?.invoice_number || "").trim()) {
+      if (!hasInvoiceCode) {
         notif.showActionNotification({
           type: "order_cancelled",
           label: "Facturacion requerida",
@@ -1778,19 +1818,29 @@ export default function PageQuote() {
       return applyCreditToOrder(order);
     }
 
-    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim()) {
+    if (requiresCashierInvoiceCode && paymentStatus === PAYMENT_STATUS.PAID && !hasInvoiceCode) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Facturación requerida",
+        orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+        message: "Caja debe registrar el código de facturación antes de marcar la orden como pagada.",
+      });
+      return { ok: false };
+    }
+
+    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !persistedReceiptReference) {
       notif.showActionNotification({
         type: "order_cancelled",
         label: "Comprobante requerido",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-        message: "Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.",
+        message: PAYMENT_RECEIPT_REQUIRED_MESSAGE,
       });
       return { ok: false };
     }
 
     setPaymentSaving(true);
 
-    let invoicePaymentUrl = null;
+    let invoicePaymentUrl = paymentStatus === PAYMENT_STATUS.PAID ? persistedReceiptReference : null;
 
     // PASO 1: Si hay archivo, validar formato y subir a Storage
     if (receiptFile) {
@@ -1888,6 +1938,20 @@ export default function PageQuote() {
     return { ok: true };
 
   };
+
+  const handleAssignInvoiceCode = useCallback(async (order, invoiceNumber) => {
+    const { data, error } = await supabase.rpc("quote_assign_invoice_code", {
+      p_order_id: order.id,
+      p_invoice_number: invoiceNumber,
+      p_expected_updated_at: order.updated_at,
+    });
+    if (error || !data) {
+      throw new Error(error?.message || "No se pudo guardar el código de facturación.");
+    }
+    setOrders((previous) => previous.map((item) => item.id === data.id ? data : item));
+    setSelectedOrder((previous) => previous?.id === data.id ? data : previous);
+    return data;
+  }, []);
 
   // Muestra un toast de error cuando el usuario intenta confirmar el pago
   // sin haber seleccionado una imagen de comprobante.
@@ -3301,6 +3365,7 @@ export default function PageQuote() {
         onClose={() => setSelectedOrder(null)}
         order={selectedOrder}
         onConfirmPayment={handleConfirmPayment}
+        onAssignInvoiceCode={handleAssignInvoiceCode}
         paymentSaving={paymentSaving}
         sellerDirectory={sellerDirectory}
         onOpenReturnModal={setReturningOrder}

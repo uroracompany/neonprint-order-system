@@ -1,0 +1,95 @@
+.transferred-order-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid #0369a1;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-family: "Poppins", sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.transferred-order-badge--compact {
+  min-height: 20px;
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.production-transfer-receipt-card {
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  background: #f0f9ff;
+  color: #0c4a6e;
+  font-family: "Poppins", sans-serif;
+}
+
+.production-transfer-receipt-card h3,
+.production-transfer-receipt-card p {
+  margin: 0;
+}
+
+.production-transfer-receipt-card h3 {
+  font-size: 15px;
+}
+
+.production-transfer-receipt-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.production-transfer-receipt-list li {
+  padding: 10px;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.production-transfer-receipt-list span {
+  display: block;
+  margin-top: 3px;
+  color: #475569;
+  font-size: 11px;
+}
+
+.production-transfer-receipt-error {
+  margin-top: 12px !important;
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.production-transfer-receipt-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.production-transfer-receipt-actions button {
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #0369a1;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.production-transfer-receipt-actions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}

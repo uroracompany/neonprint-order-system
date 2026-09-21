@@ -90,11 +90,82 @@ export function getComparePeriodBounds(period, current = getPeriodBounds(period)
 }
 
 export const MATERIAL_GLOBAL_START = '1970-01-01T00:00:00.000Z'
+export const MATERIAL_TIMEZONE = 'America/Asuncion'
 
-export function getMaterialGlobalBounds() {
-  const end = new Date()
-  end.setHours(0, 0, 0, 0)
-  end.setDate(end.getDate() + 1)
+const MATERIAL_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: MATERIAL_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
+
+function zonedParts(date) {
+  return Object.fromEntries(
+    MATERIAL_DATE_FORMATTER.formatToParts(date)
+      .filter(part => part.type !== 'literal')
+      .map(part => [part.type, Number(part.value)]),
+  )
+}
+
+function zonedMidnightToUtc({ year, month, day }) {
+  const expected = Date.UTC(year, month - 1, day)
+  let instant = expected
+
+  // La fecha local de Asunción puede tener un desplazamiento distinto al UTC;
+  // dos pasadas también cubren una transición de horario de verano.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const actual = zonedParts(new Date(instant))
+    const actualAsUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second)
+    instant -= actualAsUtc - expected
+  }
+
+  return new Date(instant)
+}
+
+function monthStart(parts, offset = 0) {
+  const date = new Date(Date.UTC(parts.year, parts.month - 1 + offset, 1))
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: 1 }
+}
+
+function materialBoundsFromMonths(months, now) {
+  const parts = zonedParts(now)
+  const start = zonedMidnightToUtc(monthStart(parts, -(months - 1)))
+  const end = zonedMidnightToUtc(monthStart(parts, 1))
+  const compareTo = start
+  const compareFrom = zonedMidnightToUtc(monthStart(parts, -((months * 2) - 1)))
+
+  return {
+    date_from: start.toISOString(),
+    date_to: end.toISOString(),
+    compare_from: compareFrom.toISOString(),
+    compare_to: compareTo.toISOString(),
+  }
+}
+
+export function getMaterialPeriodBounds(mode = 'current', now = new Date()) {
+  switch (mode) {
+    case '2months':
+      return materialBoundsFromMonths(2, now)
+    case '3months':
+      return materialBoundsFromMonths(3, now)
+    case 'current':
+    default:
+      return materialBoundsFromMonths(1, now)
+  }
+}
+
+export function getMaterialGlobalBounds(now = new Date()) {
+  const parts = zonedParts(now)
+  const tomorrow = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1))
+  const end = zonedMidnightToUtc({
+    year: tomorrow.getUTCFullYear(),
+    month: tomorrow.getUTCMonth() + 1,
+    day: tomorrow.getUTCDate(),
+  })
   return {
     date_from: MATERIAL_GLOBAL_START,
     date_to: end.toISOString(),

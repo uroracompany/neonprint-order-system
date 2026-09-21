@@ -11,7 +11,6 @@ import KPICreditsSummary from './KPICreditsSummary'
 import KPIQualityMetrics from './KPIQualityMetrics'
 import KPIOrdersAnalytics from './KPIOrdersAnalytics'
 import KPIClientAnalytics from './KPIClientAnalytics'
-import KPIMaterialsAnalytics from './KPIMaterialsAnalytics'
 import KPIUserAnalytics from './KPIUserAnalytics'
 import KPIProductionInsights from './KPIProductionInsights'
 import { SellerDetailView } from './KPISellerIntelligence'
@@ -26,7 +25,6 @@ const TABS = [
   { id: 'overview', label: 'Resumen Ejecutivo', icon: <Icons.Dashboard /> },
   { id: 'orders', label: 'Órdenes', icon: <Icons.Orders /> },
   { id: 'clients', label: 'Clientes', icon: <Icons.User /> },
-  { id: 'materials', label: 'Materiales', icon: <Icons.Package /> },
   { id: 'users', label: 'Empleados', icon: <Icons.Users /> },
   { id: 'production', label: 'Producción', icon: <Icons.Brush /> },
 ]
@@ -271,7 +269,6 @@ export default function KPIModule({ userId }) {
 
           {activeTab === 'orders' && <div className="kpi-tab-content" key="orders"><KPIOrdersAnalytics data={data} /></div>}
           {activeTab === 'clients' && <div className="kpi-tab-content" key="clients"><KPIClientAnalytics data={data} /></div>}
-          {activeTab === 'materials' && <div className="kpi-tab-content" key="materials"><KPIMaterialsAnalytics data={data} userId={userId} /></div>}
           {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={handleSellerClick} onDesignerClick={handleDesignerClick} onQuoteClick={handleQuoteClick} onProductionAreaClick={handleProductionAreaClick} onProductionEmployeeClick={handleProductionEmployeeClick} onDeliveryUserClick={handleDeliveryUserClick} /></div>}
           {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} onAreaClick={handleProductionAreaClick} /></div>}
         </>

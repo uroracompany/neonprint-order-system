@@ -1,0 +1,13 @@
+.ps-modal.ps-edit-order-modal--semi-admin {
+  background: #fff;
+}
+
+.ps-modal.ps-edit-order-modal--semi-admin .ps-modal-header {
+  border-top: 0;
+}
+
+.ps-modal.ps-edit-order-modal--semi-admin .ps-btn-submit:focus-visible,
+.ps-modal.ps-edit-order-modal--semi-admin .ps-btn-cancel:focus-visible {
+  outline: 3px solid rgba(4, 120, 87, .28);
+  outline-offset: 2px;
+}

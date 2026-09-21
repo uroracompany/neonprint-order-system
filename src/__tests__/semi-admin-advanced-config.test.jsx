@@ -47,6 +47,18 @@ const renderPanel = (nextOrder = order, props = {}) => render(
 );
 
 describe("Semi-Admin advanced configuration", () => {
+  it("renders the eligible Design actions with the shared advanced button treatment", async () => {
+    const { container } = renderPanel(order);
+
+    await screen.findByText("Continuar a Caja");
+    ["Reasignar Diseño", "Gestionar diseños y archivos", "Enviar a Caja"].forEach((name) => {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveClass("sa-op-button--advanced");
+      expect(button.querySelector("svg")).not.toBeNull();
+    });
+    expect(container.querySelectorAll(".sa-op-button--advanced")).toHaveLength(3);
+  });
+
   it("keeps Caja hidden until both Design assets and the work order exist", async () => {
     renderPanel({ ...order, preview_image: null, order_production_files: [] });
 
@@ -66,6 +78,37 @@ describe("Semi-Admin advanced configuration", () => {
     await user.click(button);
     expect(onOpenQuoteAssignment).toHaveBeenCalledOnce();
     expect(screen.queryByLabelText("Responsable de Caja")).not.toBeInTheDocument();
+  });
+
+  it("refreshes eligible actions when design assets change without a timestamp update", async () => {
+    const onLoadCatalog = vi.fn()
+      .mockResolvedValueOnce({ actions: [{ key: "manage_design_assets" }], unavailable_actions: [] })
+      .mockResolvedValueOnce(catalog);
+    const { rerender } = renderPanel({
+      ...order,
+      order_file_url: [],
+      preview_image: null,
+      order_production_files: [],
+    }, { onLoadCatalog });
+
+    await screen.findByRole("button", { name: "Gestionar diseños y archivos" });
+    expect(screen.queryByRole("button", { name: "Enviar a Caja" })).not.toBeInTheDocument();
+
+    rerender(<SemiAdminOperationalPanel
+      order={order}
+      currentUserId="semi-1"
+      onAction={vi.fn()}
+      onLoadCatalog={onLoadCatalog}
+      onOpenDesignEditor={vi.fn()}
+      onOpenDesignReassignment={vi.fn()}
+      onOpenQuoteAssignment={vi.fn()}
+      onOpenQuoteResponsibilityReassignment={vi.fn()}
+      onOpenOrderAssets={vi.fn()}
+      onOpenProductionAssignment={vi.fn()}
+    />);
+
+    await waitFor(() => expect(onLoadCatalog).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("button", { name: "Enviar a Caja" })).toBeVisible();
   });
 
   it("derives the attachment count from the shared order data without reopening details", async () => {
@@ -138,11 +181,12 @@ describe("Semi-Admin advanced configuration", () => {
     renderPanel({
       ...order,
       status: "in_Quote",
+      payment_status: "Pending_Payment",
       order_design_type: "EXTERNAL_DESING",
       quote_id: "quote-1",
     }, {
       onLoadCatalog: vi.fn().mockResolvedValue({
-        actions: [],
+        actions: [{ key: "stage_responsibility" }],
         unavailable_actions: [],
         candidates: { quote: [{ id: "quote-1", name: "Caja Uno" }] },
       }),
@@ -159,7 +203,7 @@ describe("Semi-Admin advanced configuration", () => {
 
   it("reflects successive responsibility changes in the open advanced panel", async () => {
     const onLoadCatalog = vi.fn().mockResolvedValue({
-      actions: [],
+      actions: [{ key: "stage_responsibility" }],
       unavailable_actions: [],
       candidates: {
         quote: [
@@ -183,6 +227,7 @@ describe("Semi-Admin advanced configuration", () => {
     const externalQuoteOrder = {
       ...order,
       status: "in_Quote",
+      payment_status: "Pending_Payment",
       order_design_type: "EXTERNAL_DESING",
       quote_id: "quote-1",
     };

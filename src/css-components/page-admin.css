@@ -1081,6 +1081,11 @@
   background: var(--gradient);
 }
 
+/* Oculta sólo la franja superior sin heredar variantes de otros modales. */
+.pa-modal--hide-top-accent::before {
+  display: none;
+}
+
 .pa-modal-head {
   display: flex;
   justify-content: space-between;
@@ -4260,6 +4265,78 @@
   min-width: 200px;
   flex: 1 1 0;
   margin-bottom: 0;
+}
+
+.acm-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.acm-heading--materials .acm-materials-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.acm-heading--materials .acm-materials-badges .acm-total-badge {
+  margin-top: 0;
+}
+
+/* Material catalog counters use local tones; other admin badges stay neutral. */
+.acm-heading--materials .acm-material-badge {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.acm-heading--materials .acm-material-badge svg,
+.acm-heading--materials .acm-material-badge strong {
+  color: #9a3412;
+}
+
+.acm-heading--materials .acm-termination-badge {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+.acm-heading--materials .acm-termination-badge svg,
+.acm-heading--materials .acm-termination-badge strong {
+  color: #047857;
+}
+
+/* Only the registration actions beside Materiales results use the compact
+   toolbar treatment; primary buttons elsewhere retain their accent stripe. */
+.pp-filter-actions .acm-materials-registration-action {
+  background: var(--primary);
+  border-radius: 8px;
+}
+
+.pp-filter-actions .acm-materials-registration-action::after {
+  display: none;
+}
+
+.pp-filter-actions .acm-materials-registration-action:hover {
+  background: var(--primary-mid);
+}
+
+@media (max-width: 768px) {
+  .pa-section-heading.acm-heading {
+    flex-direction: column;
+  }
+
+  .acm-heading-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .acm-heading-actions .pa-btn {
+    width: auto;
+    flex: 1 1 190px;
+  }
 }
 
 .pa-credit-filter-panel .acm-filter-row .acm-search input {

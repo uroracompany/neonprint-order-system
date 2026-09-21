@@ -10,7 +10,6 @@ const adminTabs = new Set([
   "materials",
   "users",
   "notifications",
-  "profile",
 ]);
 
 export const getAdminTabFromSearch = (search = "") => {

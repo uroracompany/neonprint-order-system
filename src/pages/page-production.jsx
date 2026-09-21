@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import "../css-components/page-production.css";
@@ -8,15 +8,18 @@ import Sidebar from "../components/Sidebar";
 import NotificationCenter from "../components/NotificationCenter";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
 import ProductionProfileModule from "../components/production/ProductionProfileModule";
+import ProductionFileTransferModal from "../components/production/ProductionFileTransferModal";
 import FileCard from "../components/FileCard";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
 import useOrderEventReviews from "../hooks/useOrderEventReviews";
 import useNewOrderAssignments from "../hooks/useNewOrderAssignments";
+import useProductionTransferReceipts from "../hooks/useProductionTransferReceipts";
 import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
 import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import NewOrderBadge from "../components/orders/NewOrderBadge";
+import TransferredOrderBadge from "../components/orders/TransferredOrderBadge";
 import { Icons } from "../utils/icons";
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
@@ -55,6 +58,7 @@ import {
   restoreOrder,
 } from "../utils/archive";
 import { isOrderOverdue } from "../utils/orderDeadline";
+import { PRODUCTION_ORDER_SELECT } from "../utils/orderListSelect";
 
 
 const METRIC_ACCENTS = [
@@ -84,6 +88,46 @@ function getProductionTeamStatusLabel(status) {
   return "Pendiente";
 }
 
+function ProductionTransferReceiptCard({
+  receipts = [],
+  onAcknowledge,
+  acknowledging = false,
+  error = "",
+}) {
+  if (receipts.length === 0) return null;
+
+  return (
+    <section className="production-transfer-receipt-card" aria-label="Traspasos pendientes de la orden">
+      <h3>{receipts.length === 1 ? "Orden traspasada" : "Traspasos pendientes"}</h3>
+      <ul className="production-transfer-receipt-list">
+        {receipts.map((receipt) => {
+          const files = Array.isArray(receipt.files) ? receipt.files : [];
+          const fileNames = files
+            .map((file) => file?.name || file?.filename)
+            .filter(Boolean)
+            .join(", ");
+          return (
+            <li key={receipt.receipt_id || receipt.event_id}>
+              Esta orden fue traspasada por <strong>{receipt.sender_name || "un usuario de Producción"}</strong>.
+              {(receipt.production_area_label || fileNames) && (
+                <span>{[receipt.production_area_label, fileNames].filter(Boolean).join(" · ")}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {error ? <p className="production-transfer-receipt-error" role="alert">{error}</p> : null}
+      {onAcknowledge ? (
+        <div className="production-transfer-receipt-actions">
+          <button type="button" onClick={onAcknowledge} disabled={acknowledging}>
+            {acknowledging ? "Confirmando..." : "Entendido"}
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function OrderDetailModal({
   onClose,
   order,
@@ -95,8 +139,13 @@ export function OrderDetailModal({
   onAcknowledgeReview,
   reviewAcknowledging,
   reviewError,
+  pendingTransferReceipts = [],
+  onAcknowledgeTransfer,
+  transferAcknowledging,
+  transferError,
   reworkHandoff,
   reworkHandoffsReady,
+  onTransferComplete,
 }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
@@ -113,6 +162,17 @@ export function OrderDetailModal({
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState("");
   const [deliveryReworkNotes, setDeliveryReworkNotes] = useState({});
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferHistory, setTransferHistory] = useState([]);
+  const [transferHistoryError, setTransferHistoryError] = useState("");
+  const fileOwnershipSignature = (order?.order_production_files || [])
+    .map((file) => `${file.id}:${file.assigned_to || ""}:${file.updated_at || ""}`)
+    .sort()
+    .join("|");
+  const productionFileIds = useMemo(
+    () => (order?.order_production_files || []).map((file) => file.id).filter(Boolean),
+    [order?.order_production_files],
+  );
 
   const executeFileUpdate = async (fileId, nextStatus, deliveryId = null) => {
     setUpdating(true);
@@ -283,11 +343,34 @@ export function OrderDetailModal({
     return () => {
       active = false;
     };
-  }, [order?.id, order?.updated_at, teamRefreshKey]);
+  }, [order?.id, fileOwnershipSignature, teamRefreshKey]);
 
   useEffect(() => {
-    const fileIds = (order?.order_production_files || []).map((file) => file.id).filter(Boolean);
-    if (!order?.id || !currentUserId || fileIds.length === 0) {
+    if (!order?.id) {
+      setTransferHistory([]);
+      setTransferHistoryError("");
+      return undefined;
+    }
+
+    let active = true;
+    setTransferHistoryError("");
+    supabase
+      .rpc("get_production_file_transfer_history", { p_order_id: order.id })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setTransferHistory([]);
+          setTransferHistoryError("No se pudo cargar el historial de traspasos.");
+          return;
+        }
+        setTransferHistory(Array.isArray(data) ? data : []);
+      });
+
+    return () => { active = false; };
+  }, [order?.id, fileOwnershipSignature, teamRefreshKey]);
+
+  useEffect(() => {
+    if (!order?.id || !currentUserId || productionFileIds.length === 0) {
       setDeliveryReworkNotes({});
       return undefined;
     }
@@ -298,7 +381,7 @@ export function OrderDetailModal({
       .from("delivery_rework_event_items")
       .select("production_file_id, correction_note, created_at")
       .eq("recipient_id", currentUserId)
-      .in("production_file_id", fileIds)
+      .in("production_file_id", productionFileIds)
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (!active || error) return;
@@ -310,7 +393,7 @@ export function OrderDetailModal({
       });
 
     return () => { active = false; };
-  }, [order?.id, order?.updated_at, currentUserId]);
+  }, [order?.id, productionFileIds, currentUserId]);
 
   if (!order) return null;
 
@@ -321,10 +404,14 @@ export function OrderDetailModal({
 
   const isExternal = order?.order_design_type === "EXTERNAL_DESING";
   const areaCode = getProductionAreaForRole(producerRole);
-  const areaFiles = filterProductionFilesForRole(order, producerRole);
+  const areaFiles = filterProductionFilesForRole(order, producerRole, currentUserId);
   const areaSummary = getProductionSummary(areaFiles);
   const referenceImageUrls = getReferenceImages(order);
   const hasAreaFiles = areaFiles.length > 0;
+  const hasTransferableFiles = areaFiles.some((file) => (
+    file.status === PRODUCTION_FILE_STATUS.PENDING
+    || file.status === PRODUCTION_FILE_STATUS.IN_PRODUCTION
+  ));
   const teamCompleted = teamProgress.filter((item) => item.summary_status === PRODUCTION_FILE_STATUS.COMPLETED).length;
   const returnedFiles = Array.isArray(reworkHandoff?.returned_files) ? reworkHandoff.returned_files : [];
 
@@ -361,6 +448,13 @@ export function OrderDetailModal({
             onAcknowledge={onAcknowledgeReview}
             acknowledging={reviewAcknowledging}
             error={reviewError}
+          />
+
+          <ProductionTransferReceiptCard
+            receipts={pendingTransferReceipts}
+            onAcknowledge={onAcknowledgeTransfer}
+            acknowledging={transferAcknowledging}
+            error={transferError}
           />
 
           {reworkHandoff && (
@@ -569,13 +663,13 @@ export function OrderDetailModal({
             ) : (
               <>
                 <div className="pp-team-progress-summary">
-                  {teamCompleted}/{teamProgress.length} areas completadas
+                  {teamCompleted}/{teamProgress.length} responsables completaron sus archivos
                 </div>
                 <div className="pp-team-progress-grid">
                   {teamProgress.map((member) => {
                     const isCurrentArea = member.production_area_code === areaCode;
                     return (
-                      <div className={`pp-team-progress-item ${isCurrentArea ? "current" : ""}`} key={member.production_area_code}>
+                      <div className={`pp-team-progress-item ${isCurrentArea ? "current" : ""}`} key={`${member.production_area_code}-${member.assigned_to}`}>
                         <div className="pp-team-progress-head">
                           <div>
                             <strong>{member.production_area_label || getProductionAreaLabel(member.production_area_code)}</strong>
@@ -598,11 +692,43 @@ export function OrderDetailModal({
             )}
           </div>
 
+          <div className="pp-modal-card pp-transfer-history-card" style={{ marginTop: 18 }}>
+            <div className="pp-modal-card-title">
+              <Icons.Refresh />
+              <h4>Historial de traspasos</h4>
+            </div>
+            {transferHistoryError ? (
+              <p className="pp-transfer-history-empty">{transferHistoryError}</p>
+            ) : transferHistory.length === 0 ? (
+              <p className="pp-transfer-history-empty">Aún no se han traspasado archivos de esta orden.</p>
+            ) : (
+              <ol className="pp-transfer-history-list">
+                {transferHistory.map((event) => {
+                  const transferredFiles = Array.isArray(event.files) ? event.files : [];
+                  return (
+                    <li key={event.event_id}>
+                      <div>
+                        <strong>{event.actor_name || "Operador"} <Icons.ArrowRight /> {event.recipient_name || "Operador"}</strong>
+                        <span>{event.production_area_label || getProductionAreaLabel(event.production_area_code)}</span>
+                      </div>
+                      <p>{transferredFiles.map((file) => file.filename || "Archivo de producción").join(", ")}</p>
+                      <time dateTime={event.transferred_at}>{formatDate(event.transferred_at)}</time>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+
           {hasAreaFiles ? (
             <div className="pp-files-section" style={{ marginTop: 18 }}>
-              <div className="pp-files-title">
-                <Icons.File />
-                Archivos Adjuntos
+              <div className="pp-files-title pp-files-title-with-action">
+                <span><Icons.File /> Archivos Adjuntos</span>
+                {hasTransferableFiles && (
+                  <button type="button" className="pp-transfer-button" onClick={() => setTransferOpen(true)} disabled={updating}>
+                    <Icons.ArrowRight /> Traspasar archivos
+                  </button>
+                )}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: order.preview_image && areaFiles.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
                 {order.preview_image && (
@@ -807,6 +933,15 @@ export function OrderDetailModal({
       filterActive
       lockedDeliveryId={reworkHandoff?.returning_delivery_id || ""}
     />
+    <ProductionFileTransferModal
+      open={transferOpen}
+      order={order}
+      files={areaFiles}
+      onClose={() => setTransferOpen(false)}
+      onTransferred={async () => {
+        await onTransferComplete?.();
+      }}
+    />
   </>);
 }
 
@@ -841,24 +976,33 @@ export default function PageProduction() {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [filterArchive, setFilterArchive] = useState("active");
   const [clients, setClients] = useState([]);
+  const clientsLoadedRef = useRef(false);
   const notif = useNotifications(user?.id);
   const orderReviews = useOrderEventReviews(user?.id);
   const newOrderAssignments = useNewOrderAssignments(user?.id, "production");
+  const productionTransferReceipts = useProductionTransferReceipts(user?.id);
   const pendingOrderReviews = orderReviews.pendingByOrder;
   const pendingNewAssignments = newOrderAssignments.pendingByOrder;
+  const pendingTransferReceipts = productionTransferReceipts.pendingByOrder;
   const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
+  const selectedTransferReceipts = selectedOrder ? pendingTransferReceipts[selectedOrder.id] || [] : [];
 
-  const refreshOrders = useCallback(async (silent = false) => {
+  const refreshOrders = useCallback(async (silent = false, { reconcileSelection = false } = {}) => {
     if (!user?.id) return;
     if (!silent) setLoading(true);
     const { data, error } = await supabase
       .from("orders")
-      .select("*, order_production_files(*), order_production_assignments(*), order_production_user_archives(*)")
+      .select(PRODUCTION_ORDER_SELECT)
       .in("status", PRODUCTION_TRACKING_STATUS_OPTIONS)
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
+      applyOrdersSnapshot({
+        orders: data,
+        setOrders,
+        setSelectedOrder,
+        preserveOpenOrderState: !reconcileSelection,
+      });
       const orderIds = data.map((order) => order.id).filter(Boolean);
       setReworkHandoffsReady(false);
       if (orderIds.length === 0) {
@@ -957,8 +1101,10 @@ export default function PageProduction() {
   }, [authProfile?.role, authUser]);
 
   useEffect(() => {
+    if (activeTab !== "orders" || clientsLoadedRef.current) return;
+    clientsLoadedRef.current = true;
     loadClients(supabase).then(setClients);
-  }, []);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!user?.id || !profileRole) return;
@@ -1079,6 +1225,13 @@ export default function PageProduction() {
         </header>
 
         <div className="pp-content">
+          {productionTransferReceipts.loadError && (
+            <div className="pp-modal-alert pp-alert-error" role="alert">
+              <Icons.AlertCircle />
+              {productionTransferReceipts.loadError}
+            </div>
+          )}
+
           {activeTab === "dashboard" && (
             <>
               <div className="pq-greeting">
@@ -1153,6 +1306,7 @@ export default function PageProduction() {
                                 <span>
                                   <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                                   {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                  {pendingTransferReceipts[order.id] && <TransferredOrderBadge compact />}
                                 </span>
                               </div>
                             </td>
@@ -1311,6 +1465,7 @@ export default function PageProduction() {
                                   <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                                   <span className="pp-client-cell-badges">
                                      {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                     {pendingTransferReceipts[order.id] && <TransferredOrderBadge compact />}
                                      <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                                      <DeliveryReworkBadge handoff={reworkHandoffs[order.id]} />
                                   </span>
@@ -1378,6 +1533,7 @@ export default function PageProduction() {
                               <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                               <span className="pp-client-cell-badges">
                                  {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                 {pendingTransferReceipts[order.id] && <TransferredOrderBadge compact />}
                                  <OrderReviewBadge review={pendingOrderReviews[order.id]} />
                                  <DeliveryReworkBadge handoff={reworkHandoffs[order.id]} />
                               </span>
@@ -1480,8 +1636,13 @@ export default function PageProduction() {
         onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
         reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
         reviewError={orderReviews.acknowledgeError}
+        pendingTransferReceipts={selectedTransferReceipts}
+        onAcknowledgeTransfer={selectedTransferReceipts.length > 0 ? () => productionTransferReceipts.acknowledgeOrder(selectedOrder.id) : undefined}
+        transferAcknowledging={productionTransferReceipts.acknowledgingOrderId === selectedOrder?.id}
+        transferError={productionTransferReceipts.acknowledgeError}
         reworkHandoff={selectedOrder ? reworkHandoffs[selectedOrder.id] : null}
         reworkHandoffsReady={reworkHandoffsReady}
+        onTransferComplete={() => refreshOrders(true, { reconcileSelection: true })}
       />
 
       <ArchiveOrderModal
