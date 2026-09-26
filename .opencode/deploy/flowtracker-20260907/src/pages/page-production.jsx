@@ -1,0 +1,1498 @@
+import { useCallback, useState, useEffect, useRef } from "react";
+import { supabase } from "../../supabaseClient";
+import { useNavigate } from "react-router-dom";
+import "../css-components/page-production.css";
+import "../components/clients/AdminClientsModule.css";
+import "../components/production/ProductionProfileModule.css";
+import Sidebar from "../components/Sidebar";
+import NotificationCenter from "../components/NotificationCenter";
+import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
+import ProductionProfileModule from "../components/production/ProductionProfileModule";
+import FileCard from "../components/FileCard";
+import { useAuth } from "../hooks/useAuth";
+import useNotifications from "../hooks/useNotifications";
+import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useNewOrderAssignments from "../hooks/useNewOrderAssignments";
+import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
+import OrderReviewCard from "../components/orders/OrderReviewCard";
+import OrderReviewBadge from "../components/orders/OrderReviewBadge";
+import NewOrderBadge from "../components/orders/NewOrderBadge";
+import { Icons } from "../utils/icons";
+import { StatusBadge } from "../components/ui/Badge";
+import { Pagination } from "../components/ui/Pagination";
+import { ClientFilterSelect } from "../components/ui/ClientCombobox";
+import { FilterSelect } from "../components/ui/FilterSelect";
+import { NO_CLIENT_FILTER_VALUE } from "../utils/clients";
+import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import { AssignModal } from "../components/ui/AssignModal";
+import {
+  ORDER_STATUS,
+  PRODUCTION_TRACKING_STATUS_OPTIONS,
+  PRODUCTION_FILE_STATUS,
+  getProductionAreaForRole,
+  getProductionAreaLabel,
+  getOrderStatusConfig,
+  isOrderStatus,
+  formatDate,
+  ARCHIVE_MODULES,
+} from "../utils/constants";
+import { loadClients, orderMatchesClientFilter } from "../utils/clients";
+import { getReferenceImages } from "../utils/orderAssets";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
+import { SecureImageLink, SecureImageGallery } from "../components/ui/SecureImage";
+import { getFileNameFromUrl } from "../utils/constants";
+import {
+  filterProductionOrdersForRoleParticipation,
+  filterProductionOrdersByArchiveState,
+  filterProductionFilesForRole,
+  getProductionFileStatusLabel,
+  getProductionSummary,
+} from "../utils/production";
+import {
+  canArchiveOrder,
+  canRestoreOrder,
+  archiveOrder,
+  restoreOrder,
+} from "../utils/archive";
+import { isOrderOverdue } from "../utils/orderDeadline";
+
+
+const METRIC_ACCENTS = [
+  { color: "#F97316", bg: "#FFF7ED", glow: "#FFF7ED" },
+  { color: "#0284C7", bg: "#E0F2FE", glow: "#E0F2FE" },
+  { color: "#059669", bg: "#ECFDF5", glow: "#ECFDF5" },
+  { color: "#14532D", bg: "#DCFCE7", glow: "#DCFCE7" },
+];
+
+function MetricCard({ icon, label, value, sub, accentIdx = 0, subColor }) {
+  const acc = METRIC_ACCENTS[accentIdx];
+  return (
+    <div className="pp-card">
+      <div className="pp-card-glow" style={{ background: acc.glow }} />
+      <div className="pp-card-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
+      <div className="pp-card-value">{value}</div>
+      <div className="pp-card-label">{label}</div>
+      {sub && <div className="pp-card-sub" style={{ color: subColor || acc.color }}>{sub}</div>}
+    </div>
+  );
+}
+
+function getProductionTeamStatusLabel(status) {
+  if (status === PRODUCTION_FILE_STATUS.COMPLETED) return "Completado";
+  if (status === PRODUCTION_FILE_STATUS.IN_TERMINATION) return "En terminacion";
+  if (status === PRODUCTION_FILE_STATUS.IN_PRODUCTION) return "En progreso";
+  return "Pendiente";
+}
+
+export function OrderDetailModal({
+  onClose,
+  order,
+  producerRole,
+  onUpdateStatus,
+  currentUserId,
+  teamRefreshKey = 0,
+  pendingReview,
+  onAcknowledgeReview,
+  reviewAcknowledging,
+  reviewError,
+  reworkHandoff,
+  reworkHandoffsReady,
+}) {
+  const [updating, setUpdating] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [updateSuccessMessage, setUpdateSuccessMessage] = useState("");
+  const [updateError, setUpdateError] = useState("");
+  const [showLastFileConfirm, setShowLastFileConfirm] = useState(false);
+  const [pendingLastFile, setPendingLastFile] = useState(null);
+  const [assignDeliveryOpen, setAssignDeliveryOpen] = useState(false);
+  const [assignDeliveryLoading, setAssignDeliveryLoading] = useState(false);
+  const [designerName, setDesignerName] = useState("");
+  const [quoteName, setQuoteName] = useState("");
+  const [sellerName, setSellerName] = useState("");
+  const [teamProgress, setTeamProgress] = useState([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState("");
+  const [deliveryReworkNotes, setDeliveryReworkNotes] = useState({});
+
+  const executeFileUpdate = async (fileId, nextStatus, deliveryId = null) => {
+    setUpdating(true);
+    setUpdateError("");
+    try {
+      const { error } = await supabase
+        .rpc("update_production_file_status", {
+          p_file_id: fileId,
+          p_next_status: nextStatus,
+          p_delivery_id: deliveryId,
+        });
+
+      if (error) throw error;
+
+      setUpdateSuccessMessage(
+        deliveryId
+          ? "La orden se envió correctamente a Delivery."
+          : "Estado actualizado correctamente",
+      );
+      setUpdateSuccess(true);
+      setTimeout(() => {
+        setUpdateSuccess(false);
+        onUpdateStatus?.();
+        onClose();
+      }, 1500);
+    } catch (err) {
+      console.error("Error updating status:", err);
+      setUpdateError("No se pudo actualizar el estado del archivo. Intenta nuevamente.");
+    }
+    setUpdating(false);
+  };
+
+  const handleUpdateFileStatus = async (fileId, nextStatus) => {
+    if (nextStatus !== PRODUCTION_FILE_STATUS.COMPLETED) {
+      executeFileUpdate(fileId, nextStatus);
+      return;
+    }
+
+    setUpdating(true);
+    setUpdateError("");
+    try {
+      const { data: willCompleteOrder, error } = await supabase
+        .rpc("will_complete_production_order", { p_file_id: fileId });
+
+      if (error) throw error;
+
+      if (willCompleteOrder) {
+        setPendingLastFile({ fileId, nextStatus });
+        setShowLastFileConfirm(true);
+        setUpdating(false);
+        return;
+      }
+      setUpdating(false);
+      executeFileUpdate(fileId, nextStatus);
+    } catch (err) {
+      console.error("Error checking last pending file:", err);
+      setUpdateError("No se pudo verificar si este es el ultimo archivo pendiente. Intenta nuevamente.");
+      setUpdating(false);
+    }
+  };
+
+  const handleConfirmLastFile = () => {
+    if (!pendingLastFile) return;
+    if (!reworkHandoffsReady) {
+      setUpdateError("No se pudo verificar la devolución de esta orden. Actualiza e intenta nuevamente.");
+      return;
+    }
+    setShowLastFileConfirm(false);
+    setAssignDeliveryOpen(true);
+  };
+
+  const handleAssignDelivery = async (userId) => {
+    if (!pendingLastFile || !order) return;
+    setAssignDeliveryLoading(true);
+    try {
+      setAssignDeliveryOpen(false);
+      setAssignDeliveryLoading(false);
+      executeFileUpdate(pendingLastFile.fileId, pendingLastFile.nextStatus, userId);
+    } catch (err) {
+      console.error("Error assigning delivery:", err);
+      setAssignDeliveryOpen(false);
+      setAssignDeliveryLoading(false);
+      setUpdateError("No se pudo asignar el delivery.");
+    }
+  };
+  const handleUpdateStatus = () => {};
+  const onCompleteOrder = null;
+
+  useEffect(() => {
+    if (!order?.designer_id) {
+      setDesignerName("");
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", order.designer_id)
+      .single()
+      .then(({ data }) => {
+        setDesignerName(data?.name || "");
+      });
+  }, [order?.designer_id]);
+
+  useEffect(() => {
+    const quoteId = order?.quote_id || order?.quotation_id || order?.quote_user_id;
+    if (!quoteId) {
+      setQuoteName("");
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", quoteId)
+      .single()
+      .then(({ data }) => {
+        setQuoteName(data?.name || "");
+      });
+  }, [order?.quote_id, order?.quotation_id, order?.quote_user_id]);
+
+  useEffect(() => {
+    if (order?.seller_name) {
+      setSellerName(order.seller_name);
+      return;
+    }
+    const sellerId = order?.seller_id || order?.created_by;
+    if (!sellerId) {
+      setSellerName("");
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", sellerId)
+      .single()
+      .then(({ data }) => {
+        setSellerName(data?.name || "");
+      });
+  }, [order?.seller_name, order?.seller_id, order?.created_by]);
+
+  useEffect(() => {
+    if (!order?.id) {
+      setTeamProgress([]);
+      setTeamError("");
+      return;
+    }
+
+    let active = true;
+    setTeamLoading(true);
+    setTeamError("");
+
+    supabase
+      .rpc("get_production_order_team", { p_order_id: order.id })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          console.error("Error loading production team:", error);
+          setTeamProgress([]);
+          setTeamError("No se pudo cargar el progreso del equipo.");
+        } else {
+          const raw = Array.isArray(data) ? data : [];
+          setTeamProgress(raw.filter((m) => (m.total_files || 0) > 0));
+        }
+      })
+      .finally(() => {
+        if (active) setTeamLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [order?.id, order?.updated_at, teamRefreshKey]);
+
+  useEffect(() => {
+    const fileIds = (order?.order_production_files || []).map((file) => file.id).filter(Boolean);
+    if (!order?.id || !currentUserId || fileIds.length === 0) {
+      setDeliveryReworkNotes({});
+      return undefined;
+    }
+
+    let active = true;
+    setDeliveryReworkNotes({});
+    supabase
+      .from("delivery_rework_event_items")
+      .select("production_file_id, correction_note, created_at")
+      .eq("recipient_id", currentUserId)
+      .in("production_file_id", fileIds)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (!active || error) return;
+        const newestByFile = {};
+        (data || []).forEach((item) => {
+          if (!newestByFile[item.production_file_id]) newestByFile[item.production_file_id] = item;
+        });
+        setDeliveryReworkNotes(newestByFile);
+      });
+
+    return () => { active = false; };
+  }, [order?.id, order?.updated_at, currentUserId]);
+
+  if (!order) return null;
+
+  const created = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
+  const statusCfg = getOrderStatusConfig(order.status);
+  const isInProduction = false;
+  const isInTermination = false;
+
+  const isExternal = order?.order_design_type === "EXTERNAL_DESING";
+  const areaCode = getProductionAreaForRole(producerRole);
+  const areaFiles = filterProductionFilesForRole(order, producerRole);
+  const areaSummary = getProductionSummary(areaFiles);
+  const referenceImageUrls = getReferenceImages(order);
+  const hasAreaFiles = areaFiles.length > 0;
+  const teamCompleted = teamProgress.filter((item) => item.summary_status === PRODUCTION_FILE_STATUS.COMPLETED).length;
+  const returnedFiles = Array.isArray(reworkHandoff?.returned_files) ? reworkHandoff.returned_files : [];
+
+  return (<>
+    <div className="pp-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="pp-modal">
+        <div className="pp-modal-header">
+          <div>
+            <h3>Orden #{order.id?.slice(0, 8).toUpperCase()}</h3>
+            <span className="pp-modal-subtitle">Detalles para producción</span>
+            {reworkHandoff && <span className="pp-rework-badge" role="status">Devuelta por entrega</span>}
+          </div>
+          <button className="pp-modal-close" onClick={onClose}>
+            <Icons.Close />
+          </button>
+        </div>
+
+        <div className="pp-modal-body">
+          {updateSuccess && (
+            <div className="pp-modal-alert pp-alert-success">
+              <Icons.Check />
+              {updateSuccessMessage}
+            </div>
+          )}
+          {updateError && (
+            <div className="pp-modal-alert pp-alert-error">
+              <Icons.Close />
+              {updateError}
+            </div>
+          )}
+
+          <OrderReviewCard
+            pendingReview={pendingReview}
+            onAcknowledge={onAcknowledgeReview}
+            acknowledging={reviewAcknowledging}
+            error={reviewError}
+          />
+
+          {reworkHandoff && (
+            <section className="pp-delivery-rework-context" aria-labelledby="pp-delivery-rework-context-title">
+              <div className="pp-delivery-rework-context-heading">
+                <Icons.AlertCircle />
+                <div>
+                  <h4 id="pp-delivery-rework-context-title">Devuelta por entrega</h4>
+                  <p>Esta orden permanece identificada como devuelta hasta que se reenvíe a la misma persona de entrega.</p>
+                </div>
+              </div>
+              {returnedFiles.length > 0 && (
+                <div className="pp-delivery-rework-reasons">
+                  <strong>Contexto de devolución</strong>
+                  <ul>
+                    {returnedFiles.map((item) => (
+                      <li key={item.production_file_id || `${item.filename}-${item.returned_at}`}>
+                        <span>{item.filename || "Archivo de producción"}</span>
+                        <p>{item.reason}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
+
+          <div className="pp-modal-grid">
+            <div>
+              <div className="pp-modal-card pp-client-info-card">
+                <div className="pp-modal-card-title">
+                  <Icons.User />
+                  <h4>Información del Cliente</h4>
+                </div>
+                <div className="pp-modal-card-body">
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.User /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Cliente</p>
+                      <p className="pp-modal-row-value">{order.client_name || "No especificado"}</p>
+                    </div>
+                  </div>
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.Users /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Vendedor</p>
+                      <p className="pp-modal-row-value">{sellerName || "No especificado"}</p>
+                    </div>
+                  </div>
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.Package /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Tipo de Orden</p>
+                      <p className="pp-modal-row-value">
+                        {order.order_type === "orden 911" ? (
+                          <span className="pp-badge-911">911 - Urgente</span>
+                        ) : (
+                          <span className="pp-badge-normal">Normal</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.Clock /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Fecha de Creación</p>
+                      <p className="pp-modal-row-value">{created}</p>
+                    </div>
+                  </div>
+                </div>
+                <p style={{ marginTop: 10, fontSize: 12, color: "var(--pp-text-muted)" }}>
+                  Area {getProductionAreaLabel(areaCode)}: {areaSummary.completed}/{areaSummary.total} completados
+                </p>
+              </div>
+
+              <div className="pp-modal-card pp-work-details-card" style={{ marginTop: 16 }}>
+                <div className="pp-modal-card-title">
+                  <Icons.FileText />
+                  <h4>Detalles del Trabajo</h4>
+                </div>
+                <div className="pp-modal-card-body">
+                  <div>
+                    <p className="pp-modal-row-label">Descripción</p>
+                    <p className="pp-modal-description">{order.description || "Sin descripción"}</p>
+                  </div>
+                  <div className="pp-modal-row pp-pink" style={{ marginTop: 10 }}>
+                    <span className="pp-modal-row-icon"><Icons.Package /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Material</p>
+                      <p className="pp-modal-row-value">{order.material || "No especificado"}</p>
+                    </div>
+                  </div>
+                  {order.width && order.height && (
+                    <div className="pp-modal-row">
+                      <span className="pp-modal-row-icon"><Icons.Clipboard /></span>
+                      <div>
+                        <p className="pp-modal-row-label">Dimensiones</p>
+                        <p className="pp-modal-row-value">{order.width} x {order.height} cm</p>
+                      </div>
+                    </div>
+                  )}
+                  {order.quantity && (
+                    <div className="pp-modal-row">
+                      <span className="pp-modal-row-icon"><Icons.Clipboard /></span>
+                      <div>
+                        <p className="pp-modal-row-label">Cantidad</p>
+                        <p className="pp-modal-row-value">{order.quantity} unidades</p>
+                      </div>
+                    </div>
+                  )}
+                  {order.termination_type && (
+                    <div className="pp-modal-row pp-pink">
+                      <span className="pp-modal-row-icon"><Icons.Check /></span>
+                      <div>
+                        <p className="pp-modal-row-label">Terminación</p>
+                        <p className="pp-modal-row-value">{order.termination_type}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="pp-modal-status-card">
+                <div className="pp-modal-status-glow" style={{ background: statusCfg?.bg || "transparent" }} />
+                <p className="pp-modal-status-title"><Icons.CheckCircle /> Estado</p>
+                <div className="pp-modal-status-grid">
+                  <div className="pp-modal-status-section">
+                    <span className="pp-modal-status-label"><Icons.Check /> Estado Actual</span>
+                    <StatusBadge status={order.status} className="pp-badge" bordered order={order} />
+                  </div>
+                  {order.price && (
+                    <div className="pp-price-box">
+                      <p className="pp-price-box-label">PRECIO</p>
+                      <p className="pp-price-box-value">RD$ {Number(order.price).toLocaleString("es-DO")}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="pp-modal-card pp-system-info-card" style={{ marginTop: 16 }}>
+                <div className="pp-modal-card-title">
+                  <Icons.Key />
+                  <h4>Información del Sistema</h4>
+                </div>
+                <div className="pp-modal-card-body">
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.Hash /></span>
+                    <div>
+                      <p className="pp-modal-row-label">ID Orden</p>
+                      <p className="pp-modal-row-value">{order.id?.slice(0, 8) || "---"}</p>
+                    </div>
+                    <span className="pp-modal-row-value-right" style={{ fontFamily: "monospace", fontSize: 11, color: "var(--pp-text-muted)" }}>
+                      {order.id?.slice(8, 13) || ""}
+                    </span>
+                  </div>
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.Clock /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Creada</p>
+                      <p className="pp-modal-row-value">{formatDate(order.created_at)}</p>
+                    </div>
+                  </div>
+                  {order.updated_at && (
+                    <div className="pp-modal-row">
+                      <span className="pp-modal-row-icon"><Icons.Refresh /></span>
+                      <div>
+                        <p className="pp-modal-row-label">Actualizada</p>
+                        <p className="pp-modal-row-value">{formatDate(order.updated_at)}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.Edit /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Diseñador</p>
+                      <p className="pp-modal-row-value">
+                        {isExternal ? "La orden es externa" : (designerName || "No asignado")}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pp-modal-row">
+                    <span className="pp-modal-row-icon"><Icons.User /></span>
+                    <div>
+                      <p className="pp-modal-row-label">Responsable de caja</p>
+                      <p className="pp-modal-row-value">{quoteName || "No asignado"}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pp-modal-card pp-team-progress-card" style={{ marginTop: 18 }}>
+            <div className="pp-modal-card-title">
+              <Icons.Users />
+              <h4>Progreso del equipo</h4>
+            </div>
+            {teamLoading ? (
+              <div className="pp-team-progress-empty">Cargando progreso del equipo...</div>
+            ) : teamError ? (
+              <div className="pp-team-progress-empty">{teamError}</div>
+            ) : teamProgress.length === 0 ? (
+              <div className="pp-team-progress-empty">No hay responsables de produccion asignados.</div>
+            ) : (
+              <>
+                <div className="pp-team-progress-summary">
+                  {teamCompleted}/{teamProgress.length} areas completadas
+                </div>
+                <div className="pp-team-progress-grid">
+                  {teamProgress.map((member) => {
+                    const isCurrentArea = member.production_area_code === areaCode;
+                    return (
+                      <div className={`pp-team-progress-item ${isCurrentArea ? "current" : ""}`} key={member.production_area_code}>
+                        <div className="pp-team-progress-head">
+                          <div>
+                            <strong>{member.production_area_label || getProductionAreaLabel(member.production_area_code)}</strong>
+                            <span>{member.assigned_name || "Usuario de produccion"}</span>
+                          </div>
+                          {isCurrentArea && <em>Tu area</em>}
+                        </div>
+                        <div className={`pp-team-progress-status ${member.summary_status || "pending"}`}>
+                          {getProductionTeamStatusLabel(member.summary_status)}
+                        </div>
+                        <div className="pp-team-progress-counts">
+                          <span>{member.completed_count || 0}/{member.total_files || 0} completados</span>
+                          <span>{member.in_termination_count || 0} en terminacion</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
+          {hasAreaFiles ? (
+            <div className="pp-files-section" style={{ marginTop: 18 }}>
+              <div className="pp-files-title">
+                <Icons.File />
+                Archivos Adjuntos
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: order.preview_image && areaFiles.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
+                {order.preview_image && (
+                  <div>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "#F43F5E", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                      <Icons.Eye /> Orden de Trabajo
+                    </p>
+                    <SecureImageLink
+                      url={order.preview_image}
+                      fileName={getFileNameFromUrl(order.preview_image)}
+                    >
+                      {(resolvedUrl) => <img
+                        src={resolvedUrl}
+                        alt="preview"
+                        style={{
+                          width: "100%",
+                          borderRadius: "var(--pp-radius-md)",
+                          border: "1px solid var(--pp-border)",
+                          cursor: "pointer",
+                          transition: "transform 0.2s, box-shadow 0.2s",
+                        }}
+                        onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+                        onMouseLeave={e => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "none"; }}
+                      />}
+                    </SecureImageLink>
+                  </div>
+                )}
+                {areaFiles.length > 0 && (
+                  <div>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "#1E40AF", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                      <Icons.Brush /> Diseño del cliente
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {areaFiles.map((file) => {
+                        const actions = [];
+                        if (file.status !== PRODUCTION_FILE_STATUS.COMPLETED) {
+                          if (file.status === PRODUCTION_FILE_STATUS.IN_TERMINATION) {
+                            actions.push({
+                              icon: <Icons.Refresh />,
+                              label: "Volver a producción",
+                              onClick: () => handleUpdateFileStatus(file.id, PRODUCTION_FILE_STATUS.IN_PRODUCTION),
+                              disabled: updating,
+                              title: "Volver a producción",
+                            });
+                            actions.push({
+                              icon: <Icons.Check />,
+                              label: "Completado",
+                              onClick: () => handleUpdateFileStatus(file.id, PRODUCTION_FILE_STATUS.COMPLETED),
+                              disabled: updating,
+                              title: "Marcar completado",
+                            });
+                          } else {
+                            actions.push({
+                              icon: <Icons.Play />,
+                              label: "Terminación",
+                              onClick: () => handleUpdateFileStatus(file.id, PRODUCTION_FILE_STATUS.IN_TERMINATION),
+                              disabled: updating,
+                              title: "Marcar en terminación",
+                            });
+                          }
+                        }
+                        return (
+                          <FileCard
+                            key={file.id}
+                            name={file.filename}
+                            secondaryText={getProductionFileStatusLabel(file.status)}
+                            url={file.url}
+                            actions={actions}
+                          >
+                            {file.status === PRODUCTION_FILE_STATUS.IN_PRODUCTION && deliveryReworkNotes[file.id] && (
+                              <div className="pp-delivery-rework-notice" role="note">
+                                <strong>Requiere corrección</strong>
+                                <p>{deliveryReworkNotes[file.id].correction_note}</p>
+                                <time dateTime={deliveryReworkNotes[file.id].created_at}>
+                                  {formatDate(deliveryReworkNotes[file.id].created_at)}
+                                </time>
+                              </div>
+                            )}
+                          </FileCard>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {referenceImageUrls.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pp-text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icons.Image /> Imágenes de referencia
+                  </p>
+                  <SecureImageGallery
+                    urls={referenceImageUrls}
+                    fileNames={referenceImageUrls.map(getFileNameFromUrl)}
+                    altPrefix="Referencia"
+                    itemClassName="pp-ref-item"
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="pp-modal-card" style={{ marginTop: 18 }}>
+              No hay archivos disponibles para tu area en esta orden.
+            </div>
+          )}
+        </div>
+
+        <div className="pp-modal-footer">
+          <button className="pp-btn pp-btn-secondary" onClick={onClose}>
+            Cerrar
+          </button>
+          {isInProduction && (
+            <button
+              className="pp-btn pp-btn-primary"
+              onClick={() => handleUpdateStatus(ORDER_STATUS.IN_TERMINATION)}
+              disabled={updating}
+            >
+              {updating ? (
+                <>
+                  <span className="pp-btn-spinner"></span>
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <Icons.Play />
+                  Marcar en terminación
+                </>
+              )}
+            </button>
+          )}
+          {isInTermination && (
+            // Solo mostrar botón de completado si ya está en terminación
+            <button
+              className="pp-btn pp-btn-success"
+              onClick={() => onCompleteOrder?.(order)}
+              disabled={updating}
+            >
+              {updating ? (
+                <>
+                  <span className="pp-btn-spinner"></span>
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <Icons.Check />
+                  Marcar como completado
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+    {showLastFileConfirm && (
+      <div className="pp-modal-overlay" onClick={() => setShowLastFileConfirm(false)} style={{ zIndex: 1100 }}>
+        <div className="pp-modal pp-modal-compact" onClick={(e) => e.stopPropagation()}>
+          <div className="pp-modal-header">
+            <div>
+              <div className="pp-modal-title"><h3>Finalizar orden de producción</h3></div>
+              <div className="pp-modal-subtitle" style={{ color: "#059669" }}>Confirmación requerida</div>
+            </div>
+            <button className="pp-modal-close" onClick={() => setShowLastFileConfirm(false)}><Icons.Close /></button>
+          </div>
+          <div className="pp-modal-body">
+            <div className="pp-confirm-body">
+              <div className="pp-confirm-icon"><Icons.CheckCircle size={28} /></div>
+              <p className="pp-confirm-text-em">
+                Estás a punto de completar el <strong>último archivo pendiente</strong> de esta orden.
+              </p>
+              <div className="pp-confirm-alert-box">
+                <Icons.AlertCircle size={16} />
+                <p className="pp-confirm-alert-text">
+                  Al marcar este archivo como completado, la orden de producción cambiará automáticamente a estado <strong>Completada</strong>.
+                </p>
+              </div>
+              <p className="pp-confirm-text">
+                ¿Deseas continuar?
+              </p>
+            </div>
+          </div>
+          <div className="pp-modal-footer">
+            <button className="pp-btn pp-btn-secondary" onClick={() => setShowLastFileConfirm(false)}>
+              Cancelar
+            </button>
+            <button className="pp-btn pp-btn-success" onClick={handleConfirmLastFile} disabled={updating}>
+              {updating ? (
+                <><span className="pp-btn-spinner" /> Completando...</>
+              ) : (
+                "Confirmar y completar orden"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    <AssignModal
+      open={assignDeliveryOpen}
+      order={order}
+      role="delivery"
+      onClose={() => { setAssignDeliveryOpen(false); setPendingLastFile(null); }}
+      onConfirm={handleAssignDelivery}
+      loading={assignDeliveryLoading}
+      filterActive
+      lockedDeliveryId={reworkHandoff?.returning_delivery_id || ""}
+    />
+  </>);
+}
+
+const getInitials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+
+function DeliveryReworkBadge({ handoff }) {
+  if (!handoff) return null;
+  return <span className="pp-rework-badge" role="status">Devuelta por entrega</span>;
+}
+
+export default function PageProduction() {
+  const navigate = useNavigate();
+  const { user: authUser, profile: authProfile, signOut } = useAuth();
+  const [user, setUser] = useState(null);
+  const [profileRole, setProfileRole] = useState("");
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterClient, setFilterClient] = useState("all");
+  const [filterOverdue, setFilterOverdue] = useState("all");
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 15;
+  const [viewMode, setViewMode] = useState("table");
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [reworkHandoffs, setReworkHandoffs] = useState({});
+  const [reworkHandoffsReady, setReworkHandoffsReady] = useState(false);
+  const [teamRefreshKey, setTeamRefreshKey] = useState(0);
+  const [archivingOrder, setArchivingOrder] = useState(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [filterArchive, setFilterArchive] = useState("active");
+  const [clients, setClients] = useState([]);
+  const notif = useNotifications(user?.id);
+  const orderReviews = useOrderEventReviews(user?.id);
+  const newOrderAssignments = useNewOrderAssignments(user?.id, "production");
+  const pendingOrderReviews = orderReviews.pendingByOrder;
+  const pendingNewAssignments = newOrderAssignments.pendingByOrder;
+  const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
+
+  const refreshOrders = useCallback(async (silent = false) => {
+    if (!user?.id) return;
+    if (!silent) setLoading(true);
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*, order_production_files(*), order_production_assignments(*), order_production_user_archives(*)")
+      .in("status", PRODUCTION_TRACKING_STATUS_OPTIONS)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
+      const orderIds = data.map((order) => order.id).filter(Boolean);
+      setReworkHandoffsReady(false);
+      if (orderIds.length === 0) {
+        setReworkHandoffs({});
+        setReworkHandoffsReady(true);
+      } else {
+        const { data: handoffs, error: handoffError } = await supabase
+          .rpc("get_active_delivery_rework_context", { p_order_ids: orderIds });
+        if (handoffError) {
+          console.error("Error loading active delivery rework handoffs:", handoffError);
+          setReworkHandoffs({});
+          setReworkHandoffsReady(false);
+        } else {
+          setReworkHandoffs(Object.fromEntries((handoffs || []).map((handoff) => [handoff.order_id, handoff])));
+          setReworkHandoffsReady(true);
+        }
+      }
+    } else {
+      setReworkHandoffs({});
+      setReworkHandoffsReady(false);
+    }
+    if (!silent) setLoading(false);
+   }, [user?.id]);
+
+  const refreshOrdersRef = useRef(refreshOrders);
+
+  useEffect(() => {
+    refreshOrdersRef.current = refreshOrders;
+  }, [refreshOrders]);
+
+  const refreshProductionOrdersSilently = useCallback(() => {
+    return refreshOrdersRef.current(true);
+  }, []);
+
+  const refreshProductionState = useCallback(() => {
+    setTeamRefreshKey((value) => value + 1);
+    return refreshProductionOrdersSilently();
+  }, [refreshProductionOrdersSilently]);
+
+  useOrdersRealtimeSync({
+    userId: user?.id,
+    scope: "production",
+    refreshOrders: refreshProductionState,
+    tables: ["orders", "order_production_files", "order_production_assignments", "order_production_user_archives"],
+  });
+
+  const handleArchiveOrder = (order) => {
+    if (!canArchiveOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id)) return;
+    setArchivingOrder(order);
+  };
+
+  const handleConfirmArchiveOrder = async () => {
+    if (!archivingOrder) return;
+    setArchiveLoading(true);
+    const { error } = await archiveOrder(archivingOrder, ARCHIVE_MODULES.PRODUCTION);
+    setArchiveLoading(false);
+    if (!error) {
+      notif.showActionNotification({
+        type: "order_archived",
+        label: "Orden archivada",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "La orden fue archivada correctamente.",
+      });
+      setArchivingOrder(null);
+      await refreshOrders();
+    } else {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al archivar",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo archivar la orden.",
+      });
+    }
+  };
+
+  const handleRestoreOrder = async (order) => {
+    if (!order?.id) return;
+    setArchiveLoading(true);
+    const { error } = await restoreOrder(order, ARCHIVE_MODULES.PRODUCTION);
+    setArchiveLoading(false);
+    if (error) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al restaurar",
+        orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo restaurar la orden.",
+      });
+    } else {
+      await refreshOrders();
+    }
+  };
+
+  useEffect(() => {
+    setUser(authUser || null);
+    setProfileRole(authProfile?.role || "");
+  }, [authProfile?.role, authUser]);
+
+  useEffect(() => {
+    loadClients(supabase).then(setClients);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id || !profileRole) return;
+    refreshOrders();
+  }, [user?.id, profileRole, refreshOrders]);
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/");
+  };
+
+  const participatingOrders = filterProductionOrdersForRoleParticipation(orders, profileRole, user?.id);
+  const activeOrders = filterProductionOrdersByArchiveState(participatingOrders, user?.id, "active");
+  const archivedOrders = filterProductionOrdersByArchiveState(participatingOrders, user?.id, "archived");
+  const archiveScopedOrders = filterArchive === "archived" ? archivedOrders : activeOrders;
+
+  const filteredOrders = archiveScopedOrders.filter(order => {
+    const q = search.toLowerCase();
+    const matchesSearch = !q ||
+      order.client_name?.toLowerCase().includes(q) ||
+      order.id?.toLowerCase().includes(q) ||
+      order.description?.toLowerCase().includes(q);
+
+    const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
+    const matchesClient = orderMatchesClientFilter(order, filterClient);
+    const matchesOverdue = filterOverdue === "all" || isOrderOverdue(order);
+
+    return matchesSearch && matchesStatus && matchesClient && matchesOverdue;
+  });
+
+  const totalPages = Math.ceil(filteredOrders.length / PER_PAGE) || 1;
+  const safePage = Math.min(page, totalPages);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  useEffect(() => { setPage(1); }, [filteredOrders.length]);
+
+  const metrics = [
+    { icon: <Icons.Package />, label: "Producción", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length, sub: "Archivos en proceso", accentIdx: 0 },
+    { icon: <Icons.Package />, label: "Terminación", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length, sub: "Listos para entregar", accentIdx: 1 },
+    { icon: <Icons.Truck />, label: "Entregadas", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_DELIVERED)).length, sub: "Fuera de taller", accentIdx: 2 },
+    { icon: <Icons.Check />, label: "Completado", value: activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length, sub: "Finalizadas hoy", accentIdx: 3 },
+  ];
+
+  const handleViewOrder = (order) => {
+    setSelectedOrder(order);
+    if (pendingNewAssignments[order.id]) {
+      void newOrderAssignments.acknowledgeOrder(order.id);
+    }
+  };
+
+
+
+  const canAdvance = (order) => {
+    void order;
+    return false;
+  };
+
+  const getAdvanceIcon = (order) => {
+    if (isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)) return <Icons.Play />;
+    if (isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)) return <Icons.Check />;
+    return null;
+  };
+
+  const getAdvanceLabel = (order) => {
+    if (isOrderStatus(order.status, ORDER_STATUS.IN_PRODUCTION)) return "Terminación";
+    if (isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION)) return "Completado";
+    return "";
+  };
+
+  const today = new Date();
+  const dateStr = today.toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+  return (
+    <div className="pp-root">
+      <Sidebar
+        isOpen={sidebarOpen}
+        userName={user?.user_metadata?.display_name || user?.email}
+        role="Producción"
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        menuItems={[
+          { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
+          { id: "orders", label: "Órdenes", icon: <Icons.Orders /> },
+          { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount },
+          { id: "profile", label: "Mi Perfil", icon: <Icons.User /> }
+        ]}
+        onLogout={handleLogout}
+      />
+
+      <main className="pp-main">
+        <header className="pp-header">
+          <button className="pp-toggle-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
+          </button>
+          <div className="pp-header-title">
+            <h2>{activeTab === "dashboard" ? "Panel Principal" : activeTab === "notifications" ? "Notificaciones" : activeTab === "profile" ? "Mi Perfil" : "Órdenes de Producción"}</h2>
+            <span className="pp-header-date">{dateStr}</span>
+          </div>
+          <div className="pp-header-actions">
+            <NotificationCenter
+              notifications={notif.notifications}
+              unreadCount={notif.unreadCount}
+              toasts={notif.toasts}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDismissToast={notif.dismissToast}
+            />
+            <button className="pp-refresh-btn" onClick={refreshOrders} title="Actualizar">
+              <Icons.Refresh />
+            </button>
+            <button className="pp-action-btn" onClick={() => setActiveTab("orders")}>
+              <Icons.Orders />
+              <span>Gestionar Órdenes</span>
+            </button>
+          </div>
+        </header>
+
+        <div className="pp-content">
+          {activeTab === "dashboard" && (
+            <>
+              <div className="pq-greeting">
+                <div className="pq-greeting-copy">
+                  <h2>Bienvenido, <span>{user?.displayName || "Operador"}</span></h2>
+                  <p>Aquí tienes el resumen de producción de hoy.</p>
+                  <div className="pq-greeting-badges">
+                    <div className="pq-greeting-count">
+                      <Icons.Package />
+                      <strong>{activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_PRODUCTION)).length}</strong> En producción
+                    </div>
+                    <div className="pq-greeting-count pq-greeting-count--pending">
+                      <Icons.Clock />
+                      <strong>{activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_TERMINATION)).length}</strong> Por entregar
+                    </div>
+                    <div className="pq-greeting-count pq-greeting-count--partial">
+                      <Icons.Check />
+                      <strong>{activeOrders.filter(o => isOrderStatus(o.status, ORDER_STATUS.IN_COMPLETED)).length}</strong> Completadas
+                    </div>
+                  </div>
+                </div>
+                <div className="pq-greeting-actions">
+                  <button type="button" className="pp-action-btn" onClick={() => setActiveTab("orders")}>
+                    <Icons.Orders />
+                    Gestionar Órdenes
+                  </button>
+                </div>
+              </div>
+
+              <div className="pp-metrics">
+                {metrics.map((m, i) => (
+                  <MetricCard key={i} {...m} />
+                ))}
+              </div>
+
+              <div className="pp-panel">
+                <div className="pp-panel-stripe" />
+                <div className="pp-panel-header">
+                  <div>
+                    <div className="pp-panel-title">Órdenes Recientes</div>
+                    <div className="pp-panel-sub pp-panel-sub--blue">Las últimas 5 órdenes en el flujo de producción</div>
+                  </div>
+                  <button className="pp-link-btn" onClick={() => setActiveTab("orders")}>
+                    Ver todas <Icons.ArrowRight />
+                  </button>
+                </div>
+                <div className="pp-table-wrap">
+                  <table className="pp-table">
+                    <thead>
+                      <tr>
+                        <th>Cliente</th>
+                        <th>Tipo de orden</th>
+                        <th>Estado</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading ? (
+                        <tr>
+                          <td colSpan={4} className="pp-table-empty">Cargando órdenes...</td>
+                        </tr>
+                      ) : activeOrders.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="pp-table-empty">No hay órdenes para producción</td>
+                        </tr>
+                      ) : (
+                        activeOrders.slice(0, 5).map(order => (
+                          <tr key={order.id} className="row-hover acm-client-row" onClick={() => handleViewOrder(order)}>
+                            <td className="td-pad">
+                              <div className="acm-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                                <span>
+                                  <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                  {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="td-pad">
+                              {order.order_type === "orden 911"
+                                ? <span className="acm-badge danger">911</span>
+                                : <span className="acm-badge neutral">Normal</span>}
+                            </td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered order={order} /><DeliveryReworkBadge handoff={reworkHandoffs[order.id]} /></td>
+                            <td className="td-pad td-actions" data-row-action>
+                              <div className="table-actions acm-row-actions" data-row-action>
+                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
+                                  <Icons.Eye />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === "orders" && (
+            <>
+              <div className="pp-filters">
+                <label className="pp-filter-control pp-filter-search">
+                  <Icons.Search />
+                  <input
+                    type="search"
+                    placeholder="Buscar por cliente, descripción o ID..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                  {search && (
+                    <button type="button" onClick={() => setSearch("")} aria-label="Limpiar búsqueda">
+                      <Icons.X />
+                    </button>
+                  )}
+                </label>
+
+                <FilterSelect
+                  icon={<Icons.FileText />}
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                  options={[
+                    { value: "all", label: "Todos los estados" },
+                    { value: ORDER_STATUS.IN_PRODUCTION, label: "Producción" },
+                    { value: ORDER_STATUS.IN_TERMINATION, label: "Terminación" },
+                    { value: ORDER_STATUS.IN_DELIVERED, label: "Entregadas" },
+                    { value: ORDER_STATUS.IN_COMPLETED, label: "Completadas" },
+                  ]}
+                />
+
+                <FilterSelect
+                  icon={<Icons.Users />}
+                  value={filterClient}
+                  onChange={setFilterClient}
+                  options={[
+                    { value: "all", label: "Todos los clientes" },
+                    { value: NO_CLIENT_FILTER_VALUE, label: "Sin cliente registrado" },
+                    ...clients.map(c => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+
+                <FilterSelect
+                  icon={<Icons.AlertCircle />}
+                  value={filterOverdue}
+                  onChange={value => { setFilterOverdue(value); setPage(1); }}
+                  options={[
+                    { value: "all", label: "Todas las fechas de entrega" },
+                    { value: "overdue", label: "Atrasadas" },
+                  ]}
+                />
+
+                <span className="pp-filters-count">{filteredOrders.length} resultado{filteredOrders.length !== 1 ? "s" : ""}</span>
+              </div>
+
+              <div className="pp-workbench-panel">
+                <div className="pp-workbench-heading">
+                  <div>
+                    <span className="pp-workbench-kicker">Bandeja de trabajo</span>
+                    <h3>{filterArchive === "archived" ? "Órdenes archivadas" : "Órdenes activas"}</h3>
+                  </div>
+                  <div className="pp-workbench-tools">
+                    <div className="pp-workbench-tabs" role="tablist" aria-label="Filtro de archivo de órdenes">
+                      <button
+                        type="button"
+                        className={filterArchive === "active" ? "active" : ""}
+                        onClick={() => setFilterArchive("active")}
+                        aria-selected={filterArchive === "active"}
+                      >
+                        <Icons.Package />
+                        <span>Activas</span>
+                        <strong>{activeOrders.length}</strong>
+                      </button>
+                      <button
+                        type="button"
+                        className={filterArchive === "archived" ? "active" : ""}
+                        onClick={() => setFilterArchive("archived")}
+                        aria-selected={filterArchive === "archived"}
+                      >
+                        <Icons.Archive />
+                        <span>Archivadas</span>
+                        <strong>{archivedOrders.length}</strong>
+                      </button>
+                    </div>
+                    <div className="pp-workbench-view-toggle" aria-label="Modo de vista">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("table")}
+                        className={viewMode === "table" ? "active" : ""}
+                        title="Vista de tabla"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("cards")}
+                        className={viewMode === "cards" ? "active" : ""}
+                        title="Vista de tarjetas"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pp-workbench-body">
+              {loading ? (
+                <div className="pp-loading">Cargando órdenes...</div>
+              ) : filteredOrders.length === 0 ? (
+                <div className="pp-loading">No hay órdenes que coincidan</div>
+              ) : viewMode === "table" ? (
+                <div className="pp-table-wrap pp-workbench-list">
+                    <table className="pp-table">
+                      <thead>
+                        <tr>
+                          <th>Cliente</th>
+                          <th>Estado</th>
+                          <th>Tipo</th>
+                          <th>Fecha</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedOrders.map(order => (
+                          <tr key={order.id} className="row-hover" onClick={() => handleViewOrder(order)}>
+                            <td className="td-pad td-name">
+                              <div className="acm-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                                <span className="pp-client-cell-main">
+                                  <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                  <span className="pp-client-cell-badges">
+                                     {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                     <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                     <DeliveryReworkBadge handoff={reworkHandoffs[order.id]} />
+                                  </span>
+                                </span>
+                              </div>
+                            </td>
+                            <td className="td-pad"><StatusBadge status={order.status} className="pp-badge" bordered order={order} /><DeliveryReworkBadge handoff={reworkHandoffs[order.id]} /></td>
+                            <td className="td-pad">
+                              {order.order_type === "orden 911" ? (
+                                <span className="acm-badge danger">911</span>
+                              ) : (
+                                <span className="acm-badge neutral">Normal</span>
+                              )}
+                            </td>
+                            <td className="td-pad td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
+                            <td className="td-pad td-actions">
+                              <div className="table-actions">
+                                <button className="table-action-btn view" onClick={() => handleViewOrder(order)} title="Ver detalles">
+                                  <Icons.Eye />
+                                </button>
+                                {canAdvance(order) && (
+                                  <button
+                                    className={`table-action-btn play ${isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION) ? "completed" : ""}`}
+                                    onClick={() => handleViewOrder(order)}
+                                    title={`Avanzar a ${getAdvanceLabel(order)}`}
+                                  >
+                                    {getAdvanceIcon(order)}
+                                  </button>
+                                )}
+                                {canArchiveOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id) && (
+                                  <button
+                                    className="table-action-btn archive"
+                                    onClick={(e) => { e.stopPropagation(); handleArchiveOrder(order); }}
+                                    title="Archivar orden"
+                                  >
+                                    <Icons.Archive />
+                                  </button>
+                                )}
+                                {filterArchive === "archived" && canRestoreOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id) && (
+                                  <button
+                                    className="table-action-btn unarchive"
+                                    onClick={(e) => { e.stopPropagation(); handleRestoreOrder(order); }}
+                                    disabled={archiveLoading}
+                                    title="Restaurar orden"
+                                  >
+                                    <Icons.Refresh />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+              ) : (
+                <div className="pp-workbench-cards">
+                  <div className="pp-cards-grid">
+                    {paginatedOrders.map(order => (
+                      <div key={order.id} className="pp-order-card" onClick={() => handleViewOrder(order)}>
+                        <div className="pp-order-card-header">
+                          <div className="acm-client-cell">
+                            <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                            <span className="pp-client-cell-main">
+                              <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                              <span className="pp-client-cell-badges">
+                                 {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                 <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                 <DeliveryReworkBadge handoff={reworkHandoffs[order.id]} />
+                              </span>
+                            </span>
+                          </div>
+                          <div className="pp-order-card-badges">
+                    <StatusBadge status={order.status} className="pp-badge" bordered order={order} />
+                    <DeliveryReworkBadge handoff={reworkHandoffs[order.id]} />
+                          </div>
+                        </div>
+                        <div className="pp-order-card-meta">
+                          {order.order_type === "orden 911" ? (
+                            <span className="acm-badge danger">911</span>
+                          ) : (
+                            <span className="acm-badge neutral">Normal</span>
+                          )}
+                        </div>
+                        <div className="pp-order-card-footer">
+                          <span className="pp-order-card-date">
+                            {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short", year: "numeric" })}
+                          </span>
+                          <div className="pp-order-card-actions">
+                            <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
+                              <Icons.Eye />
+                            </button>
+                            {canAdvance(order) && (
+                              <button
+                                className={`table-action-btn play ${isOrderStatus(order.status, ORDER_STATUS.IN_TERMINATION) ? "completed" : ""}`}
+                                onClick={e => { e.stopPropagation(); handleViewOrder(order); }}
+                                title={`Avanzar a ${getAdvanceLabel(order)}`}
+                              >
+                                {getAdvanceIcon(order)}
+                              </button>
+                            )}
+                            {canArchiveOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id) && (
+                              <button
+                                className="table-action-btn archive"
+                                onClick={e => { e.stopPropagation(); handleArchiveOrder(order); }}
+                                title="Archivar orden"
+                              >
+                                <Icons.Archive />
+                              </button>
+                            )}
+                            {filterArchive === "archived" && canRestoreOrder(order, ARCHIVE_MODULES.PRODUCTION, user?.id) && (
+                              <button
+                                className="table-action-btn unarchive"
+                                onClick={e => { e.stopPropagation(); handleRestoreOrder(order); }}
+                                disabled={archiveLoading}
+                                title="Restaurar orden"
+                              >
+                                <Icons.Refresh />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+            </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === "notifications" && (
+            <DesignerNotificationsModule
+              notifications={notif.notifications}
+              archivedNotifications={notif.archivedNotifications}
+              unreadCount={notif.unreadCount}
+              loading={notif.loading}
+              archivedLoading={notif.archivedLoading}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDeleteAll={notif.deleteNotificationsByScope}
+              notificationSoundEnabled={notif.notificationSoundEnabled}
+              notificationSoundLoading={notif.notificationSoundLoading}
+              onNotificationSoundChange={notif.setNotificationSoundEnabled}
+            />
+          )}
+
+          {activeTab === "profile" && (
+            <ProductionProfileModule authUser={user} fallbackProfile={authProfile} />
+          )}
+        </div>
+      </main>
+
+      <OrderDetailModal
+        open={!!selectedOrder}
+        onClose={() => setSelectedOrder(null)}
+        order={selectedOrder}
+        producerRole={profileRole}
+        onUpdateStatus={refreshOrders}
+        currentUserId={user?.id}
+        teamRefreshKey={teamRefreshKey}
+        pendingReview={selectedOrderReview}
+        onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
+        reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
+        reviewError={orderReviews.acknowledgeError}
+        reworkHandoff={selectedOrder ? reworkHandoffs[selectedOrder.id] : null}
+        reworkHandoffsReady={reworkHandoffsReady}
+      />
+
+      <ArchiveOrderModal
+        open={!!archivingOrder}
+        onClose={() => setArchivingOrder(null)}
+        onConfirm={handleConfirmArchiveOrder}
+        order={archivingOrder}
+        loading={archiveLoading}
+      />
+    </div>
+  );
+}
+
+

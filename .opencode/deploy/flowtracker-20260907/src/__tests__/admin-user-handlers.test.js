@@ -1,0 +1,1241 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+let currentClient;
+
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn(() => currentClient),
+}));
+
+const makeAdminToken = () => "Bearer valid-admin-token";
+
+const env = {
+  SUPABASE_URL: "https://example.supabase.co",
+  VITE_SUPABASE_ANON_KEY: "anon-key",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+  authHeader: makeAdminToken(),
+};
+
+const makeAdminUpdateClient = ({
+  tokenUserId = "admin-1",
+  tokenError = null,
+  currentRole = "admin",
+  currentProfileError = null,
+  duplicateProfiles = [],
+  duplicateError = null,
+  getUserError = null,
+  authError = null,
+  previousProfile = {
+    id: "user-1",
+    name: "Ana",
+    email: "ana@example.com",
+    role: "designer",
+    employment_status: true,
+  },
+  previousProfileError = null,
+  profileError = null,
+  rollbackError = null,
+  profileData = {
+    id: "user-1",
+    name: "Maria",
+    email: "maria@example.com",
+    role: "seller",
+    employment_status: true,
+  },
+} = {}) => {
+  const getUser = vi.fn(async () => ({
+    data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
+    error: tokenError,
+  }));
+  const authUpdate = vi.fn(async () => ({ error: authError }));
+  const getUserById = vi.fn(async (id) => {
+    if (id === tokenUserId) {
+      return { data: { user: { id: tokenUserId } }, error: null };
+    }
+    return { data: { user: { id } }, error: getUserError };
+  });
+  const updateEqResults = [];
+  const profileUpdate = vi.fn((payload) => ({
+    eq: vi.fn(() => {
+      const eqResult = {
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({ data: profileData, error: profileError })),
+        })),
+        then: (resolve, reject) => Promise.resolve({ data: null, error: rollbackError }).then(resolve, reject),
+        payload,
+      };
+      updateEqResults.push(eqResult);
+      return eqResult;
+    }),
+  }));
+
+  const duplicateBuilder = {
+    ilike: vi.fn(() => duplicateBuilder),
+    neq: vi.fn(() => duplicateBuilder),
+    limit: vi.fn(() => duplicateBuilder),
+    then: (resolve, reject) => Promise.resolve({ data: duplicateProfiles, error: duplicateError }).then(resolve, reject),
+  };
+
+  const select = vi.fn((columns) => {
+    if (columns === "id") return duplicateBuilder;
+
+    return {
+      eq: vi.fn((column, value) => ({
+        single: vi.fn(async () => {
+          if (value === tokenUserId) {
+            return {
+              data: {
+                id: tokenUserId,
+                name: "Admin",
+                email: "admin@example.com",
+                role: currentRole,
+                employment_status: true,
+              },
+              error: currentProfileError,
+            };
+          }
+
+          return {
+            data: previousProfile,
+            error: previousProfileError,
+          };
+        }),
+      })),
+    };
+  });
+
+  return {
+    auth: {
+      getUser,
+      admin: {
+        getUserById,
+        updateUserById: authUpdate,
+      },
+    },
+    from: vi.fn(() => ({
+      select,
+      update: profileUpdate,
+    })),
+    getUser,
+    authUpdate,
+    getUserById,
+    profileUpdate,
+    updateEqResults,
+  };
+};
+
+const makeAdminCreateClient = ({
+  tokenUserId = "admin-1",
+  tokenError = null,
+  currentRole = "admin",
+  currentProfileError = null,
+  duplicateProfiles = [],
+  duplicateError = null,
+  createUserError = null,
+} = {}) => {
+  const getUserById = vi.fn(async () => ({
+    data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
+    error: tokenError,
+  }));
+  const getUser = vi.fn(async () => ({
+    data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
+    error: tokenError,
+  }));
+  const insert = vi.fn(async () => ({ error: null }));
+  const deleteUser = vi.fn(async () => ({ error: null }));
+  const createUser = vi.fn(async () => ({
+    data: createUserError ? { user: null } : { user: { id: "user-1" } },
+    error: createUserError,
+  }));
+
+  const currentSingle = vi.fn(async () => ({
+    data: {
+      id: tokenUserId,
+      name: "Admin",
+      email: "admin@example.com",
+      role: currentRole,
+      employment_status: true,
+    },
+    error: currentProfileError,
+  }));
+
+  const duplicateBuilder = {
+    ilike: vi.fn(() => duplicateBuilder),
+    limit: vi.fn(() => duplicateBuilder),
+    then: (resolve, reject) => Promise.resolve({ data: duplicateProfiles, error: duplicateError }).then(resolve, reject),
+  };
+
+  const select = vi.fn((columns) => {
+    if (columns === "id") return duplicateBuilder;
+
+    return {
+    eq: vi.fn(() => ({
+      single: currentSingle,
+    })),
+    };
+  });
+
+  return {
+    auth: {
+      getUser,
+      admin: {
+        getUserById,
+        createUser,
+        deleteUser,
+      },
+    },
+    from: vi.fn(() => ({ select, insert })),
+    insert,
+    createUser,
+    deleteUser,
+    getUser,
+    getUserById,
+    duplicateBuilder,
+  };
+};
+
+const makeAdminDeleteClient = ({
+  tokenUserId = "admin-1",
+  currentRole = "admin",
+  currentProfileError = null,
+  referenceCounts = {},
+  referenceErrors = {},
+  deleteUserError = null,
+  profileDeleteError = null,
+} = {}) => {
+  const getUser = vi.fn(async () => ({
+    data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
+    error: null,
+  }));
+  const deleteUser = vi.fn(async () => ({ error: deleteUserError }));
+  const currentSingle = vi.fn(async () => ({
+    data: {
+      id: tokenUserId,
+      name: "Admin",
+      email: "admin@example.com",
+      role: currentRole,
+      employment_status: true,
+    },
+    error: currentProfileError,
+  }));
+  const profileDeleteEq = vi.fn(async () => ({ error: profileDeleteError }));
+  const profileDelete = vi.fn(() => ({ eq: profileDeleteEq }));
+
+  const from = vi.fn((table) => ({
+    select: vi.fn((columns, options = {}) => {
+      if (table === "profiles" && !options.head) {
+        return {
+          eq: vi.fn(() => ({
+            single: currentSingle,
+          })),
+        };
+      }
+
+      return {
+        eq: vi.fn((field) => Promise.resolve({
+          count: referenceCounts[`${table}.${field}`] || 0,
+          error: referenceErrors[`${table}.${field}`] || null,
+        })),
+      };
+    }),
+    delete: profileDelete,
+  }));
+
+  return {
+    auth: {
+      getUser,
+      admin: {
+        deleteUser,
+      },
+    },
+    from,
+    getUser,
+    deleteUser,
+    profileDelete,
+    profileDeleteEq,
+  };
+};
+
+const makeAdminListClient = ({
+  tokenUserId = "admin-1",
+  tokenError = null,
+  currentRole = "admin",
+  currentProfileError = null,
+  users = [{ id: "user-1", name: "Ana", email: "ana@example.com", role: "seller", employment_status: true }],
+  usersError = null,
+  firstUsersError = null,
+  fallbackUsers = [{ id: "user-1", name: "Ana", role: "seller", employment_status: true }],
+} = {}) => {
+  const getUserById = vi.fn(async () => ({
+    data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
+    error: tokenError,
+  }));
+  const getUser = vi.fn(async () => ({
+    data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
+    error: tokenError,
+  }));
+
+  const currentSingle = vi.fn(async () => ({
+    data: {
+      id: tokenUserId,
+      name: "Admin",
+      email: "admin@example.com",
+      role: currentRole,
+      employment_status: true,
+    },
+    error: currentProfileError,
+  }));
+
+  const rangeUsers = vi.fn(async () => ({
+    data: firstUsersError ? null : users,
+    error: firstUsersError || usersError,
+    count: firstUsersError ? null : users.length,
+  }));
+  const rangeFallbackUsers = vi.fn(async () => ({
+    data: fallbackUsers,
+    error: usersError,
+    count: fallbackUsers.length,
+  }));
+
+  const select = vi.fn((columns) => {
+    if (String(columns).includes("email")) {
+      return {
+        eq: vi.fn(() => ({
+          single: currentSingle,
+        })),
+        or: vi.fn(() => ({
+          order: vi.fn(() => ({ range: rangeUsers })),
+        })),
+        order: vi.fn(() => ({ range: rangeUsers })),
+      };
+    }
+
+    return {
+      eq: vi.fn(() => ({
+        single: currentSingle,
+      })),
+      or: vi.fn(() => ({
+        order: vi.fn(() => ({ range: rangeFallbackUsers })),
+      })),
+      order: vi.fn(() => ({ range: rangeFallbackUsers })),
+    };
+  });
+
+  return {
+    auth: {
+      getUser,
+      admin: {
+        getUserById,
+      },
+    },
+    from: vi.fn(() => ({ select })),
+    getUser,
+    getUserById,
+    currentSingle,
+    orderUsers: rangeUsers,
+    orderFallbackUsers: rangeFallbackUsers,
+  };
+};
+
+const makeAdminOrdersClient = ({
+  tokenUserId = "admin-1",
+  tokenError = null,
+  currentRole = "admin",
+  currentProfileError = null,
+  orders = [{
+    id: "order-1",
+    client_name: "JP MORGAN",
+    status: "in_Quote",
+    payment_status: "Pending_Payment",
+    price: null,
+    invoice_payment: null,
+    is_archived_admin: false,
+  }],
+  ordersError = null,
+} = {}) => {
+  const getUser = vi.fn(async () => ({
+    data: tokenUserId ? { user: { id: tokenUserId } } : { user: null },
+    error: tokenError,
+  }));
+
+  const currentSingle = vi.fn(async () => ({
+    data: {
+      id: tokenUserId,
+      name: "Admin",
+      email: "admin@example.com",
+      role: currentRole,
+      employment_status: true,
+    },
+    error: currentProfileError,
+  }));
+
+  const profileSelect = vi.fn(() => ({
+    eq: vi.fn(() => ({
+      single: currentSingle,
+    })),
+  }));
+
+  const orderRange = vi.fn(async () => ({
+    data: ordersError ? null : orders,
+    error: ordersError,
+    count: ordersError ? null : orders.length,
+  }));
+
+  const orderBuilder = {
+    eq: vi.fn(() => orderBuilder),
+    or: vi.fn(() => orderBuilder),
+    gte: vi.fn(() => orderBuilder),
+    order: vi.fn(() => ({ range: orderRange })),
+  };
+
+  const orderSelect = vi.fn(() => orderBuilder);
+
+  return {
+    auth: {
+      getUser,
+      admin: {
+        getUserById: vi.fn(),
+      },
+    },
+    from: vi.fn((table) => (
+      table === "profiles"
+        ? { select: profileSelect }
+        : { select: orderSelect }
+    )),
+    getUser,
+    currentSingle,
+    orderBuilder,
+    orderRange,
+    orderSelect,
+  };
+};
+
+const makeAdminSetStatusClient = ({
+  currentRole = "admin",
+  profileError = null,
+  statusData = {
+    id: "user-1",
+    name: "Ana",
+    email: "ana@example.com",
+    role: "seller",
+    employment_status: false,
+  },
+  statusError = null,
+} = {}) => {
+  const getUserById = vi.fn(async () => ({
+    data: { user: { id: "admin-1" } },
+    error: null,
+  }));
+  const getUser = vi.fn(async () => ({
+    data: { user: { id: "admin-1" } },
+    error: null,
+  }));
+
+  const currentSingle = vi.fn(async () => ({
+    data: {
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: currentRole,
+      employment_status: true,
+    },
+    error: profileError,
+  }));
+
+  const statusSingle = vi.fn(async () => ({
+    data: statusData,
+    error: statusError,
+  }));
+
+  const select = vi.fn(() => ({
+    eq: vi.fn(() => ({
+      single: currentSingle,
+    })),
+  }));
+  const update = vi.fn(() => ({
+    eq: vi.fn(() => ({
+      select: vi.fn(() => ({
+        single: statusSingle,
+      })),
+    })),
+  }));
+
+  return {
+    auth: {
+      getUser,
+      admin: {
+        getUserById,
+      },
+    },
+    from: vi.fn(() => ({ select, update })),
+    getUser,
+    getUserById,
+    update,
+    statusSingle,
+  };
+};
+
+const makeAdminUtilityClient = ({
+  email = "ana@example.com",
+  getUserByIdError = null,
+  updateUserError = null,
+} = {}) => {
+  const getUser = vi.fn(async () => ({ data: { user: { id: "admin-1" } }, error: null }));
+  const profileSingle = vi.fn(async () => ({
+    data: { id: "admin-1", name: "Admin", email: "admin@example.com", role: "admin", employment_status: true },
+    error: null,
+  }));
+  const getUserById = vi.fn(async (id) => ({
+    data: getUserByIdError ? null : { user: { id, email } },
+    error: getUserByIdError,
+  }));
+  const updateUserById = vi.fn(async () => ({ error: updateUserError }));
+
+  return {
+    auth: {
+      getUser,
+      admin: {
+        getUserById,
+        updateUserById,
+      },
+    },
+    from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ single: profileSingle })) })) })),
+    getUser,
+    getUserById,
+    updateUserById,
+  };
+};
+
+describe("requireAdmin", () => {
+  let requireAdmin;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ requireAdmin } = await import("../../server/auth-middleware.js"));
+  });
+
+  it("validates an admin session through Supabase Auth without JWT_SECRET", async () => {
+    currentClient = makeAdminListClient();
+    const envWithoutJwtSecret = { ...env };
+    delete envWithoutJwtSecret.JWT_SECRET;
+
+    const result = await requireAdmin(makeAdminToken(), envWithoutJwtSecret);
+
+    expect(result.authorized).toBe(true);
+    expect(result.profile.role).toBe("admin");
+    expect(currentClient.getUser).toHaveBeenCalledWith("valid-admin-token");
+  });
+
+  it("rejects a valid token when the profile is not admin", async () => {
+    currentClient = makeAdminListClient({ currentRole: "seller" });
+
+    const result = await requireAdmin(makeAdminToken(), env);
+
+    expect(result.authorized).toBe(false);
+    expect(result.status).toBe(403);
+    expect(result.error).toMatch(/administrador/);
+  });
+
+  it("returns a token error when Supabase Auth rejects the token", async () => {
+    currentClient = makeAdminListClient({
+      tokenUserId: null,
+      tokenError: { message: "invalid jwt" },
+    });
+
+    const result = await requireAdmin(makeAdminToken(), env);
+
+    expect(result.authorized).toBe(false);
+    expect(result.status).toBe(401);
+    expect(result.error).toMatch(/sesion/);
+  });
+
+  it("returns a connectivity error when Supabase Auth cannot be reached", async () => {
+    currentClient = makeAdminListClient({
+      tokenUserId: null,
+      tokenError: { message: "fetch failed" },
+    });
+
+    const result = await requireAdmin(makeAdminToken(), env);
+
+    expect(result.authorized).toBe(false);
+    expect(result.status).toBe(503);
+    expect(result.error).toMatch(/Supabase Auth/);
+  });
+
+  it("does not accept VITE_SUPABASE_URL as the server admin URL", async () => {
+    currentClient = makeAdminListClient();
+    const publicOnlyEnv = {
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      VITE_SUPABASE_ANON_KEY: "anon-key",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+    };
+
+    const result = await requireAdmin(makeAdminToken(), publicOnlyEnv);
+
+    expect(result.authorized).toBe(false);
+    expect(result.status).toBe(500);
+    expect(currentClient.getUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleAdminUpdateUser", () => {
+  let handleAdminUpdateUser;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleAdminUpdateUser } = await import("../../server/admin-update-user-handler.js"));
+  });
+
+  const validPayload = {
+    userId: "user-1",
+    name: "Maria",
+    email: "Maria@Example.com",
+    role: "seller",
+  };
+
+  it("updates auth and profile without changing password when password is empty", async () => {
+    currentClient = makeAdminUpdateClient();
+
+    const result = await handleAdminUpdateUser(validPayload, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.authUpdate).toHaveBeenCalledWith("user-1", {
+      email: "maria@example.com",
+      user_metadata: {
+        lastname: "Maria",
+        name: "Maria",
+        display_name: "Maria",
+      },
+    });
+    expect(currentClient.profileUpdate).toHaveBeenCalledWith({
+      name: "Maria",
+      email: "maria@example.com",
+      role: "seller",
+    });
+  });
+
+  it("updates auth password when a valid password is provided", async () => {
+    currentClient = makeAdminUpdateClient();
+
+    const result = await handleAdminUpdateUser({ ...validPayload, password: "SecurePass123" }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.authUpdate).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      password: "SecurePass123",
+    }));
+  });
+
+  it("rejects duplicated profile email from another user", async () => {
+    currentClient = makeAdminUpdateClient({ duplicateProfiles: [{ id: "user-2" }] });
+
+    const result = await handleAdminUpdateUser(validPayload, env);
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe("Este correo ya está registrado.");
+    expect(currentClient.authUpdate).not.toHaveBeenCalled();
+  });
+
+  it("requires profiles.email to edit users", async () => {
+    currentClient = makeAdminUpdateClient({
+      duplicateError: { code: "42703", message: "column profiles.email does not exist" },
+    });
+
+    const result = await handleAdminUpdateUser(validPayload, env);
+
+    expect(result.status).toBe(500);
+    expect(result.body.error).toMatch(/profiles\.email/);
+    expect(result.body.error).toMatch(/20260604_add_profiles_email_for_admin_edit/);
+    expect(currentClient.profileUpdate).not.toHaveBeenCalled();
+    expect(currentClient.authUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-admin users before updating anything", async () => {
+    currentClient = makeAdminUpdateClient({ currentRole: "seller" });
+
+    const result = await handleAdminUpdateUser(validPayload, env);
+
+    expect(result.status).toBe(403);
+    expect(result.body.error).toMatch(/administrador/);
+    expect(currentClient.profileUpdate).not.toHaveBeenCalled();
+    expect(currentClient.authUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects short passwords", async () => {
+    currentClient = makeAdminUpdateClient();
+
+    const result = await handleAdminUpdateUser({ ...validPayload, password: "123" }, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toMatch(/mas de 12/);
+  });
+
+  it("rejects invalid roles", async () => {
+    currentClient = makeAdminUpdateClient();
+
+    const result = await handleAdminUpdateUser({ ...validPayload, role: "owner" }, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toMatch(/rol/);
+  });
+
+  it("accepts producer roles", async () => {
+    currentClient = makeAdminUpdateClient({
+      profileData: {
+        id: "user-1",
+        name: "Maria",
+        email: "maria@example.com",
+        role: "digital_producer",
+        employment_status: true,
+      },
+    });
+
+    const result = await handleAdminUpdateUser({ ...validPayload, role: "digital_producer" }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.profileUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      role: "digital_producer",
+    }));
+  });
+
+  it("does not update auth when profile update fails", async () => {
+    currentClient = makeAdminUpdateClient({
+      profileError: { message: "duplicate key value violates unique constraint" },
+    });
+
+    const result = await handleAdminUpdateUser(validPayload, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toMatch(/No se pudo actualizar el perfil/);
+    expect(currentClient.profileUpdate).toHaveBeenCalledWith({
+      name: "Maria",
+      email: "maria@example.com",
+      role: "seller",
+    });
+    expect(currentClient.authUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rolls back profile and reports a conflict when Auth already has the email", async () => {
+    currentClient = makeAdminUpdateClient({
+      authError: { message: "User already registered" },
+      previousProfile: {
+        id: "user-1",
+        name: "Ana",
+        email: "ana@example.com",
+        role: "designer",
+        employment_status: true,
+      },
+    });
+
+    const result = await handleAdminUpdateUser(validPayload, env);
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe("Este correo ya está registrado.");
+    expect(currentClient.authUpdate).toHaveBeenCalled();
+    expect(currentClient.profileUpdate).toHaveBeenCalledTimes(2);
+    expect(currentClient.profileUpdate).toHaveBeenNthCalledWith(2, {
+      name: "Ana",
+      email: "ana@example.com",
+      role: "designer",
+    });
+  });
+
+  it("returns 404 when the auth user does not exist", async () => {
+    currentClient = makeAdminUpdateClient({ getUserError: { message: "User not found" } });
+
+    const result = await handleAdminUpdateUser(validPayload, env);
+
+    expect(result.status).toBe(404);
+    expect(result.body.error).toMatch(/cuenta de autenticacion/i);
+  });
+
+  it("requires server Supabase environment variables", async () => {
+    currentClient = makeAdminUpdateClient();
+
+    const result = await handleAdminUpdateUser(validPayload, {});
+
+    expect(result.status).toBe(500);
+    expect(result.body.error).toMatch(/configuracion segura/i);
+  });
+
+  it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
+    currentClient = makeAdminUpdateClient();
+
+    const result = await handleAdminUpdateUser(validPayload, {
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+      authHeader: makeAdminToken(),
+    });
+
+    expect(result.status).toBe(500);
+    expect(result.body.error).toMatch(/configuracion segura/i);
+    expect(currentClient.getUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleAdminCreateUser", () => {
+  let handleAdminCreateUser;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleAdminCreateUser } = await import("../../server/admin-create-user-handler.js"));
+  });
+
+  it("stores email in profiles when creating a user", async () => {
+    currentClient = makeAdminCreateClient();
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "Carlos@Example.com",
+      password: "SecurePass123",
+      role: "designer",
+    }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.insert).toHaveBeenCalledWith([{
+      id: "user-1",
+      name: "Carlos",
+      email: "carlos@example.com",
+      role: "designer",
+      employment_status: true,
+    }]);
+  });
+
+  it("creates users with producer roles", async () => {
+    currentClient = makeAdminCreateClient();
+
+    const result = await handleAdminCreateUser({
+      name: "Luis",
+      email: "luis@example.com",
+      password: "SecurePass123",
+      role: "dtf_producer",
+    }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.insert).toHaveBeenCalledWith([expect.objectContaining({
+      email: "luis@example.com",
+      role: "dtf_producer",
+    })]);
+  });
+
+  it("rejects invalid roles when creating a user", async () => {
+    currentClient = makeAdminCreateClient();
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "carlos@example.com",
+      password: "SecurePass123",
+      role: "owner",
+    }, env);
+
+    expect(result.status).toBe(400);
+    expect(currentClient.createUser).not.toHaveBeenCalled();
+  });
+
+  it("accepts a password longer than 12 characters without composition requirements", async () => {
+    currentClient = makeAdminCreateClient();
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "carlos@example.com",
+      password: "abcdefghijklm",
+      role: "seller",
+    }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.createUser).toHaveBeenCalledWith(expect.objectContaining({
+      password: "abcdefghijklm",
+    }));
+  });
+
+  it("rejects invalid email formats when creating a user", async () => {
+    currentClient = makeAdminCreateClient();
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "correo-invalido",
+      password: "SecurePass123",
+      role: "seller",
+    }, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toMatch(/correo/);
+    expect(currentClient.createUser).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicated emails before creating the auth user", async () => {
+    currentClient = makeAdminCreateClient({ duplicateProfiles: [{ id: "user-2" }] });
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "carlos@example.com",
+      password: "SecurePass123",
+      role: "seller",
+    }, env);
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe("Este correo ya está registrado.");
+    expect(currentClient.createUser).not.toHaveBeenCalled();
+  });
+
+  it("returns a conflict when Supabase Auth already has the email", async () => {
+    currentClient = makeAdminCreateClient({
+      createUserError: { code: "email_exists", message: "Email already exists" },
+    });
+
+    const result = await handleAdminCreateUser({
+      name: "Carlos",
+      email: "carlos@example.com",
+      password: "abcdefghijklm",
+      role: "seller",
+    }, env);
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe("Este correo ya está registrado.");
+    expect(currentClient.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleAdminDeleteUser", () => {
+  let handleAdminDeleteUser;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleAdminDeleteUser } = await import("../../server/admin-delete-user-handler.js"));
+  });
+
+  it("blocks deleting the current admin account", async () => {
+    currentClient = makeAdminDeleteClient({ tokenUserId: "admin-1" });
+
+    const result = await handleAdminDeleteUser({ userId: "admin-1" }, env);
+
+    expect(result.status).toBe(403);
+    expect(currentClient.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting employees with business references", async () => {
+    currentClient = makeAdminDeleteClient({
+      referenceCounts: {
+        "orders.seller_id": 2,
+      },
+    });
+
+    const result = await handleAdminDeleteUser({ userId: "user-1" }, env);
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toMatch(/referencia/);
+    expect(result.body.references).toEqual([
+      { table: "orders", field: "seller_id", count: 2 },
+    ]);
+    expect(currentClient.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("deletes auth and profile when the employee has no references", async () => {
+    currentClient = makeAdminDeleteClient();
+
+    const result = await handleAdminDeleteUser({ userId: "user-1" }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.deleteUser).toHaveBeenCalledWith("user-1");
+    expect(currentClient.profileDelete).toHaveBeenCalled();
+    expect(currentClient.profileDeleteEq).toHaveBeenCalledWith("id", "user-1");
+  });
+});
+
+describe("handleAdminListUsers", () => {
+  let handleAdminListUsers;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleAdminListUsers } = await import("../../server/admin-list-users-handler.js"));
+  });
+
+  it("lists users for an authenticated admin", async () => {
+    currentClient = makeAdminListClient();
+
+    const result = await handleAdminListUsers({}, { ...env, authHeader: makeAdminToken() });
+
+    expect(result.status).toBe(200);
+    expect(result.body.users).toEqual([
+      { id: "user-1", name: "Ana", email: "ana@example.com", role: "seller", employment_status: true, created_at: null },
+    ]);
+  });
+
+  it("rejects non-admin users", async () => {
+    currentClient = makeAdminListClient({ currentRole: "seller" });
+
+    const result = await handleAdminListUsers({}, { ...env, authHeader: makeAdminToken() });
+
+    expect(result.status).toBe(403);
+    expect(result.body.error).toMatch(/administrador/);
+    expect(currentClient.orderUsers).not.toHaveBeenCalled();
+  });
+
+  it("falls back when profiles.email does not exist yet", async () => {
+    currentClient = makeAdminListClient({
+      firstUsersError: { code: "42703", message: "column profiles.email does not exist" },
+    });
+
+    const result = await handleAdminListUsers({}, { ...env, authHeader: makeAdminToken() });
+
+    expect(result.status).toBe(200);
+    expect(result.body.users).toEqual([
+      { id: "user-1", name: "Ana", email: "", role: "seller", employment_status: true, created_at: null },
+    ]);
+    expect(currentClient.orderFallbackUsers).toHaveBeenCalled();
+  });
+});
+
+describe("handleAdminListOrders", () => {
+  let handleAdminListOrders;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleAdminListOrders } = await import("../../server/admin-list-orders-handler.js"));
+  });
+
+  it("lists orders for an authenticated admin", async () => {
+    currentClient = makeAdminOrdersClient({
+      orders: [
+        {
+          id: "order-1",
+          client_name: "JP MORGAN",
+          status: "in_Quote",
+          payment_status: "Pending_Payment",
+          price: null,
+          invoice_payment: null,
+          is_archived_admin: false,
+        },
+      ],
+    });
+
+    const result = await handleAdminListOrders({}, { ...env, authHeader: makeAdminToken() });
+
+    expect(result.status).toBe(200);
+    expect(result.body.orders).toEqual([
+      expect.objectContaining({
+        id: "order-1",
+        client_name: "JP MORGAN",
+        status: "in_Quote",
+        payment_status: "Pending_Payment",
+        is_archived_admin: false,
+      }),
+    ]);
+    expect(result.body.total).toBe(1);
+    expect(result.body.pageSize).toBe(50);
+    expect(currentClient.orderSelect).toHaveBeenCalledWith("*", { count: "exact" });
+    expect(currentClient.orderBuilder.order).toHaveBeenCalledWith("created_at", { ascending: false });
+    expect(currentClient.orderRange).toHaveBeenCalledWith(0, 49);
+  });
+
+  it("returns an empty list when there are no orders", async () => {
+    currentClient = makeAdminOrdersClient({ orders: [] });
+
+    const result = await handleAdminListOrders({ pageSize: 25 }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.orders).toEqual([]);
+    expect(result.body.total).toBe(0);
+    expect(result.body.pageSize).toBe(25);
+    expect(currentClient.orderRange).toHaveBeenCalledWith(0, 24);
+  });
+
+  it("rejects non-admin users before querying orders", async () => {
+    currentClient = makeAdminOrdersClient({ currentRole: "seller" });
+
+    const result = await handleAdminListOrders({}, env);
+
+    expect(result.status).toBe(403);
+    expect(result.body.error).toMatch(/administrador/);
+    expect(currentClient.orderRange).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid tokens before querying orders", async () => {
+    currentClient = makeAdminOrdersClient({
+      tokenUserId: null,
+      tokenError: { message: "invalid jwt" },
+    });
+
+    const result = await handleAdminListOrders({}, env);
+
+    expect(result.status).toBe(401);
+    expect(result.body.error).toMatch(/sesion/);
+    expect(currentClient.orderRange).not.toHaveBeenCalled();
+  });
+
+  it("returns a sanitized database error instead of an empty list", async () => {
+    currentClient = makeAdminOrdersClient({
+      ordersError: { message: "permission denied for table orders", code: "42501" },
+    });
+
+    const result = await handleAdminListOrders({}, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toMatch(/no se pudieron cargar las ordenes/i);
+  });
+
+  it("applies pagination and supported filters", async () => {
+    currentClient = makeAdminOrdersClient();
+
+    const result = await handleAdminListOrders({
+      page: 2,
+      pageSize: 10,
+      status: "in_Quote",
+      archive: "active",
+      clientId: "client-1",
+      ownerId: "owner-1",
+      dateFilter: "week",
+      search: "JP MORGAN",
+    }, { ...env, now: "2026-06-07T12:00:00.000Z" });
+
+    expect(result.status).toBe(200);
+    expect(currentClient.orderBuilder.eq).toHaveBeenCalledWith("status", "in_Quote");
+    expect(currentClient.orderBuilder.eq).toHaveBeenCalledWith("client_id", "client-1");
+    expect(currentClient.orderBuilder.gte).toHaveBeenCalledWith("created_at", expect.any(String));
+    expect(currentClient.orderBuilder.or).toHaveBeenCalledWith("is_archived_admin.is.false,is_archived_admin.is.null");
+    expect(currentClient.orderBuilder.or).toHaveBeenCalledWith(expect.stringContaining("seller_id.eq.owner-1"));
+    expect(currentClient.orderBuilder.or).toHaveBeenCalledWith(expect.stringContaining("client_name.ilike.%JP MORGAN%"));
+    expect(currentClient.orderRange).toHaveBeenCalledWith(10, 19);
+  });
+});
+
+describe("handleAdminSetUserStatus", () => {
+  let handleAdminSetUserStatus;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleAdminSetUserStatus } = await import("../../server/admin-set-user-status-handler.js"));
+  });
+
+  it("updates only employment_status for an authenticated admin", async () => {
+    currentClient = makeAdminSetStatusClient();
+
+    const result = await handleAdminSetUserStatus({
+      userId: "user-1",
+      employment_status: false,
+    }, { ...env, authHeader: makeAdminToken() });
+
+    expect(result.status).toBe(200);
+    expect(currentClient.update).toHaveBeenCalledWith({ employment_status: false });
+    expect(result.body.user).toEqual({
+      id: "user-1",
+      name: "Ana",
+      email: "ana@example.com",
+      role: "seller",
+      employment_status: false,
+      created_at: null,
+    });
+  });
+
+  it("rejects status updates from non-admin users", async () => {
+    currentClient = makeAdminSetStatusClient({ currentRole: "seller" });
+
+    const result = await handleAdminSetUserStatus({
+      userId: "user-1",
+      employment_status: false,
+    }, { ...env, authHeader: makeAdminToken() });
+
+    expect(result.status).toBe(403);
+    expect(currentClient.update).not.toHaveBeenCalled();
+  });
+
+  it("requires a boolean employment_status", async () => {
+    currentClient = makeAdminSetStatusClient();
+
+    const result = await handleAdminSetUserStatus({
+      userId: "user-1",
+      employment_status: "false",
+    }, { ...env, authHeader: makeAdminToken() });
+
+    expect(result.status).toBe(400);
+    expect(currentClient.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleGetUserEmail", () => {
+  let handleGetUserEmail;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleGetUserEmail } = await import("../../server/get-user-email-handler.js"));
+  });
+
+  it("reads a user email with server-only Supabase credentials", async () => {
+    currentClient = makeAdminUtilityClient({ email: "ana@example.com" });
+
+    const result = await handleGetUserEmail({ userId: "user-1" }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.email).toBe("ana@example.com");
+    expect(currentClient.getUserById).toHaveBeenCalledWith("user-1");
+  });
+
+  it("requires an authenticated administrator before reading an email", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleGetUserEmail({ userId: "user-1" }, { ...env, authHeader: "" });
+
+    expect(result.status).toBe(401);
+    expect(currentClient.getUserById).not.toHaveBeenCalled();
+  });
+
+  it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleGetUserEmail({ userId: "user-1" }, {
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+    });
+
+    expect(result.status).toBe(500);
+    expect(result.body.error).toMatch(/configuracion segura/i);
+    expect(currentClient.getUserById).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleChangeUserPassword", () => {
+  let handleChangeUserPassword;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ handleChangeUserPassword } = await import("../../server/change-user-password-handler.js"));
+  });
+
+  it("updates a password with server-only Supabase credentials", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleChangeUserPassword({
+      userId: "user-1",
+      newPassword: "SecurePass123",
+    }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.updateUserById).toHaveBeenCalledWith("user-1", { password: "SecurePass123" });
+  });
+
+  it("requires an authenticated administrator before changing a password", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleChangeUserPassword({
+      userId: "user-1",
+      newPassword: "SecurePass123",
+    }, { ...env, authHeader: "" });
+
+    expect(result.status).toBe(401);
+    expect(currentClient.updateUserById).not.toHaveBeenCalled();
+  });
+
+  it("rejects public VITE Supabase URL when server SUPABASE_URL is missing", async () => {
+    currentClient = makeAdminUtilityClient();
+
+    const result = await handleChangeUserPassword({
+      userId: "user-1",
+      newPassword: "SecurePass123",
+    }, {
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+    });
+
+    expect(result.status).toBe(500);
+    expect(result.body.error).toMatch(/configuracion segura/i);
+    expect(currentClient.updateUserById).not.toHaveBeenCalled();
+  });
+});

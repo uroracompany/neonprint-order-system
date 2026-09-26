@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    { "source": "/api/seller-profile", "destination": "/api/profile?scope=seller" },
+    { "source": "/api/designer-profile", "destination": "/api/profile?scope=designer" },
+    { "source": "/api/quote-profile", "destination": "/api/profile?scope=quote" },
+    { "source": "/api/production-profile", "destination": "/api/profile?scope=production" },
+    { "source": "/api/delivery-profile", "destination": "/api/profile?scope=delivery" },
+    { "source": "/api/admin-profile", "destination": "/api/profile?scope=admin" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/cron/order-asset-cleanup", "schedule": "0 3 * * *" }
+  ]
+}

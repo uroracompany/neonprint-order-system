@@ -71,12 +71,14 @@ export function SecureImageGallery({ urls, fileNames, altPrefix = 'Imagen', clas
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState(new Set());
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const urlsKey = JSON.stringify(urls);
   
   useEffect(() => {
     let active = true;
+    const effectUrls = JSON.parse(urlsKey);
     setLoading(true);
     setErrors(new Set());
-    resolveBatchSecureUrls(urls).then(results => {
+    resolveBatchSecureUrls(effectUrls).then(results => {
       if (!active) return;
       setResolvedMap(results);
       setLoading(false);
@@ -88,7 +90,7 @@ export function SecureImageGallery({ urls, fileNames, altPrefix = 'Imagen', clas
     }, getSecureUrlRefreshDelay());
 
     return () => { active = false; window.clearTimeout(refreshTimer); };
-  }, [refreshVersion, urls.join('|')]);
+  }, [refreshVersion, urlsKey]);
   
   if (loading) return (
     <div className={`secure-gallery-loading ${className || ''}`} style={{ display: 'flex', gap: '12px', padding: '16px', minHeight: '120px' }}>

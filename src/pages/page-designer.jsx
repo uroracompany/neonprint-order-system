@@ -17,7 +17,7 @@ import {
   canArchiveOrder,
   archiveOrder,
 } from "../utils/archive";
-import { ORDER_STATUS, isOrderStatus, isOrderStatusIn, ARCHIVE_MODULES, getFileNameFromUrl } from "../utils/constants";
+import { ORDER_STATUS, isOrderStatus, isOrderStatusIn, isPaymentProductionEligible, ARCHIVE_MODULES, getFileNameFromUrl } from "../utils/constants";
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
@@ -39,6 +39,7 @@ import { canDecodeAsImage, compressImage, REF_IMAGE_CONFIG, validateReferenceIma
 import { buildProductionFileRows } from "../utils/production";
 import { buildProductionCatalogs } from "../utils/production";
 import { ProductionFileDetailsModal } from "../components/orders/CreateOrderModal";
+import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import DesignerProfileModule from "../components/designer/DesignerProfileModule";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
@@ -60,6 +61,11 @@ const DESIGNER_ORDER_SELECT = [
   "description",
   "material",
   "status",
+  "payment_status",
+  "order_design_type",
+  "production_authorized_at",
+  "production_authorized_by",
+  "operational_status",
   "return_reason",
   "returned_to_designer_at",
   "order_file_url",
@@ -75,6 +81,45 @@ const DESIGNER_ORDER_SELECT = [
   "order_files(id, provider, bucket, object_key, original_filename, content_type, category, status, deleted_at, uploaded_by)",
 ].join(", ");
 const isReturnedOrder = isReturnedDesignerOrder;
+
+const canDesignerRouteInternalOrderToProduction = (order, actorId) => {
+  const productionFiles = Array.isArray(order?.order_production_files) ? order.order_production_files : [];
+  const filesReady = productionFiles.length > 0 && productionFiles.every((file) => (
+    Boolean(file?.production_area_code)
+    && (Array.isArray(file?.material_names) ? file.material_names.length > 0 : Boolean(file?.material_names))
+    && Boolean(String(file?.termination_name || "").trim())
+  ));
+
+  return Boolean(
+    actorId
+    && order?.order_design_type === "INTERNAL_DESING"
+    && order?.designer_id === actorId
+    && isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE)
+    && isPaymentProductionEligible(order?.payment_status)
+    && Boolean(order?.production_authorized_at && order?.production_authorized_by)
+    && !order?.is_archived_designer
+    && order?.operational_status !== "blocked"
+    && filesReady
+  );
+};
+
+const canDesignerSendInternalOrderToQuote = (order, actorId) => {
+  const files = Array.isArray(order?.order_production_files) ? order.order_production_files : [];
+  const filesReady = files.length > 0 && files.every((file) => (
+    Boolean(file?.production_area_code)
+    && (Array.isArray(file?.material_names) ? file.material_names.length > 0 : Boolean(file?.material_names))
+    && Boolean(String(file?.termination_name || "").trim())
+  ));
+  return Boolean(
+    actorId
+    && order?.order_design_type === "INTERNAL_DESING"
+    && order?.designer_id === actorId
+    && isOrderStatus(order?.status, ORDER_STATUS.IN_DESIGN)
+    && !order?.is_archived_designer
+    && order?.operational_status !== "blocked"
+    && filesReady
+  );
+};
 
 function ReturnedBadge({ compact = false }) {
   return (
@@ -225,12 +270,15 @@ export function OrderDetailModal({
   returnHistory,
   onReturnToCashier,
   currentUserId,
+  onOpenProductionAssignment,
+  productionActionLoading = false,
 }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingFileAreas, setPendingFileAreas] = useState([]);
   const [pendingFileLabels, setPendingFileLabels] = useState([]);
   const [pendingFileMaterials, setPendingFileMaterials] = useState([]);
   const [pendingFileTerminations, setPendingFileTerminations] = useState([]);
+  const [pendingDetailsIndices, setPendingDetailsIndices] = useState([]);
   const [productionCatalog, setProductionCatalog] = useState({});
   const [fileDetailsTarget, setFileDetailsTarget] = useState(null);
   const [fileDetailsSaving, setFileDetailsSaving] = useState(false);
@@ -407,6 +455,24 @@ export function OrderDetailModal({
         ? "Esta orden está en modo lectura mientras permanece en caja."
         : "Esta orden está en modo lectura según su estado actual.";
   const returnedReason = String(order.return_reason || "").trim();
+  const productionFiles = Array.isArray(order.order_production_files) ? order.order_production_files : [];
+  const productionFilesReady = productionFiles.length > 0 && productionFiles.every((file) => (
+    Boolean(file?.production_area_code)
+    && (Array.isArray(file?.material_names) ? file.material_names.length > 0 : Boolean(file?.material_names))
+    && Boolean(String(file?.termination_name || "").trim())
+  ));
+  const canRouteToProduction = Boolean(
+    onOpenProductionAssignment
+    && currentUserId
+    && order.order_design_type === "INTERNAL_DESING"
+    && order.designer_id === currentUserId
+    && isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)
+    && isPaymentProductionEligible(order.payment_status)
+    && Boolean(order.production_authorized_at && order.production_authorized_by)
+    && !order.is_archived_designer
+    && order.operational_status !== "blocked"
+    && productionFilesReady
+  );
   
   const handleFileSelect = (filesOrEvent, { showError } = {}) => {
     if (!canEditDesignerAssets) return;
@@ -424,11 +490,16 @@ export function OrderDetailModal({
     });
 
     if (acceptedFiles.length > 0) {
+      const firstNewFileIndex = pendingFiles.length;
       setPendingFiles(prev => [...prev, ...acceptedFiles]);
       setPendingFileAreas(prev => [...prev, ...acceptedFiles.map(() => "")]);
       setPendingFileLabels(prev => [...prev, ...acceptedFiles.map(() => "")]);
       setPendingFileMaterials(prev => [...prev, ...acceptedFiles.map(() => [])]);
       setPendingFileTerminations(prev => [...prev, ...acceptedFiles.map(() => "")]);
+      setPendingDetailsIndices(prev => [
+        ...prev,
+        ...acceptedFiles.map((_, offset) => firstNewFileIndex + offset),
+      ]);
     }
 
     if (rejectedFiles.length > 0) {
@@ -489,6 +560,9 @@ export function OrderDetailModal({
     setPendingFileLabels(prev => prev.filter((_, i) => i !== index));
     setPendingFileMaterials(prev => prev.filter((_, i) => i !== index));
     setPendingFileTerminations(prev => prev.filter((_, i) => i !== index));
+    setPendingDetailsIndices(prev => prev
+      .filter((pendingIndex) => pendingIndex !== index)
+      .map((pendingIndex) => (pendingIndex > index ? pendingIndex - 1 : pendingIndex)));
     setSaveSuccess(false);
     setMissingAreaIndices([]);
     setMissingSpecificationIndices([]);
@@ -823,6 +897,7 @@ export function OrderDetailModal({
       setPendingFileLabels([]);
       setPendingFileMaterials([]);
       setPendingFileTerminations([]);
+      setPendingDetailsIndices([]);
       setPendingPreview(null);
       setPendingPreviewName(null);
       setSaveSuccessMessage("Archivos guardados correctamente.");
@@ -842,6 +917,7 @@ export function OrderDetailModal({
     setPendingFileLabels([]);
     setPendingFileMaterials([]);
     setPendingFileTerminations([]);
+    setPendingDetailsIndices([]);
     setPendingPreview(null);
     setSaveSuccess(false);
     setSaveSuccessMessage("");
@@ -1131,7 +1207,11 @@ export function OrderDetailModal({
                         title: `Ver detalles de ${file.name}`,
                         label: "Detalles",
                         icon: <Icons.Edit />,
-                        onClick: () => setFileDetailsTarget({ type: "pending", index: i, file }),
+                        attention: pendingDetailsIndices.includes(i),
+                        onClick: () => {
+                          setPendingDetailsIndices(prev => prev.filter((pendingIndex) => pendingIndex !== i));
+                          setFileDetailsTarget({ type: "pending", index: i, file });
+                        },
                       }]}
                       removeIcon={<Icons.Trash />}
                       removeTitle={`Eliminar ${file.name}`}
@@ -1418,6 +1498,17 @@ export function OrderDetailModal({
               )}
             </button>
           )}
+          {canRouteToProduction && (
+            <button
+              className="designer-order-modal__button designer-order-modal__button--production"
+              type="button"
+              onClick={() => onOpenProductionAssignment(order)}
+              disabled={productionActionLoading}
+            >
+              <Icons.Package />
+              {productionActionLoading ? "Preparando..." : "Enviar a Producción"}
+            </button>
+          )}
           {!canSendToQuotation && canEditDesignerAssets && (
             <p id="designer-send-to-cashier-requirements" className="sr-only">{sendToQuotationBlockReason}</p>
           )}
@@ -1477,6 +1568,8 @@ export default function PageDesigner() {
   const [viewMode, setViewMode] = useState("table");
   const [page, setPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [productionOrder, setProductionOrder] = useState(null);
+  const [productionSaving, setProductionSaving] = useState(false);
   const [editedOrders, setEditedOrders] = useState(() => {
     try {
       const saved = localStorage.getItem(EDITED_ORDERS_STORAGE_KEY);
@@ -1620,6 +1713,35 @@ export default function PageDesigner() {
       void newOrderAssignments.acknowledgeOrder(order.id);
     }
   }, [newOrderAssignments, pendingNewAssignments]);
+
+  const handleOpenProductionAssignment = useCallback((order) => {
+    if (!order?.id || productionSaving) return;
+    setProductionOrder(order);
+  }, [productionSaving]);
+
+  const handleConfirmProductionAssignment = useCallback(async (assignments) => {
+    if (!productionOrder?.id || productionSaving) return;
+    setProductionSaving(true);
+    const { data: updatedOrder, error } = await supabase.rpc("send_order_to_production", {
+      p_order_id: productionOrder.id,
+      p_area_assignments: assignments,
+    });
+    setProductionSaving(false);
+    if (error || !updatedOrder) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al enviar",
+        orderTitle: productionOrder.client_name || `Orden #${productionOrder.id.slice(0, 8).toUpperCase()}`,
+        message: error?.message || "No se pudo enviar la orden a Producción.",
+      });
+      return;
+    }
+    const nextOrder = { ...productionOrder, ...updatedOrder };
+    setOrders((previous) => previous.map((item) => item.id === nextOrder.id ? { ...item, ...nextOrder } : item));
+    setSelectedOrder((current) => current?.id === nextOrder.id ? nextOrder : current);
+    setProductionOrder(null);
+    await fetchOrders();
+  }, [fetchOrders, notif, productionOrder, productionSaving]);
 
   const isInteractiveOrderRowTarget = (target) => Boolean(
     target?.closest?.("button, a, input, select, textarea, [data-row-action]")
@@ -2069,6 +2191,7 @@ export default function PageDesigner() {
                                 {isReturnedOrder(order) && <ReturnedBadge compact />}
                                 {isNewOrder(order) && <NewOrderBadge compact />}
                                 <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                {isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE) && order.production_authorized_at && <span className="acm-badge success" title="Autorizada por Caja o Administración">Lista para enviar</span>}
                                 {getEditLabel(order) && <span className="acm-badge warning">{getEditLabel(order)}</span>}
                                 <StatusBadge status={order.status} className="acm-badge" showDot={false} bordered order={order} />
                               </div>
@@ -2295,6 +2418,7 @@ export default function PageDesigner() {
                                       {isReturnedOrder(order) && <ReturnedBadge compact />}
                                       {isNewOrder(order) && <NewOrderBadge compact />}
                                       <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                      {isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE) && order.production_authorized_at && <span className="acm-badge success" title="Autorizada por Caja o Administración">Lista para enviar</span>}
                                       {getEditLabel(order) && <span className="acm-badge warning">{getEditLabel(order)}</span>}
                                     </span>
                                   </span>
@@ -2312,6 +2436,21 @@ export default function PageDesigner() {
                               </td>
                               <td className="td-pad td-actions" data-row-action>
                                 <div className="table-actions" data-row-action>
+                                  {canDesignerSendInternalOrderToQuote(order, user?.id) && (
+                                    <button className="table-action-btn edit" title="Enviar a Caja" aria-label="Enviar a Caja" onClick={(event) => { event.stopPropagation(); setSendingToQuotation(order); }}>
+                                      <Icons.ArrowRight />
+                                    </button>
+                                  )}
+                                  {canDesignerRouteInternalOrderToProduction(order, user?.id) && (
+                                    <button
+                                      className="table-action-btn production"
+                                      title="Enviar a producción"
+                                      aria-label="Enviar a producción"
+                                      onClick={(event) => { event.stopPropagation(); handleOpenProductionAssignment(order); }}
+                                    >
+                                      <Icons.Package />
+                                    </button>
+                                  )}
                                   <button className="table-action-btn view" title="Ver detalle" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>
                                     <Icons.Eye />
                                   </button>
@@ -2354,6 +2493,7 @@ export default function PageDesigner() {
                               {isReturnedOrder(order) && <ReturnedBadge compact />}
                               {isNewOrder(order) && <NewOrderBadge compact />}
                               <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                              {isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE) && order.production_authorized_at && <span className="acm-badge success" title="Autorizada por Caja o Administración">Lista para enviar</span>}
                               {getEditLabel(order) && <span className="acm-badge warning">{getEditLabel(order)}</span>}
                             </span>
                           </span>
@@ -2384,6 +2524,14 @@ export default function PageDesigner() {
                         </div>
 
                         <div className="ps-order-card-actions">
+                          {canDesignerSendInternalOrderToQuote(order, user?.id) && (
+                            <button className="card-action-btn edit" onClick={(event) => { event.stopPropagation(); setSendingToQuotation(order); }} title="Enviar a Caja" aria-label="Enviar a Caja"><Icons.ArrowRight /></button>
+                          )}
+                          {canDesignerRouteInternalOrderToProduction(order, user?.id) && (
+                            <button className="card-action-btn production" onClick={(event) => { event.stopPropagation(); handleOpenProductionAssignment(order); }} title="Enviar a producción" aria-label="Enviar a producción">
+                              <Icons.Package />
+                            </button>
+                          )}
                           <button className="card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                             <Icons.Eye />
                           </button>
@@ -2453,6 +2601,15 @@ export default function PageDesigner() {
         returnHandoff={selectedOrder ? orderReturns.incomingByOrder[selectedOrder.id] : null}
         returnHistory={selectedOrder ? orderReturns.historyByOrder[selectedOrder.id] || [] : []}
         onReturnToCashier={setReturningToCashier}
+        onOpenProductionAssignment={handleOpenProductionAssignment}
+        productionActionLoading={productionSaving}
+      />
+      <ProductionAssignmentModal
+        open={!!productionOrder}
+        order={productionOrder}
+        loading={productionSaving}
+        onClose={() => setProductionOrder(null)}
+        onConfirm={handleConfirmProductionAssignment}
       />
       <ReturnToCashierModal
         open={!!returningToCashier}

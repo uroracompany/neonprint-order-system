@@ -108,7 +108,7 @@
 
 .pq-credit-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 14px;
 }
 
@@ -938,6 +938,27 @@
   font-weight: 700;
   color: #000000;
   margin-top: 6px;
+}
+
+/* Métricas de créditos: mismo lenguaje visual que las métricas de Caja. */
+.pq-credit-summary-card.pq-metric-card {
+  display: block;
+  padding: 22px;
+  min-height: 140px;
+}
+
+.pq-credit-summary-card.pq-metric-card .pq-metric-icon {
+  margin-bottom: 16px;
+}
+
+.pq-credit-summary-card.pq-metric-card .pq-metric-value {
+  display: block;
+  color: var(--pq-text);
+}
+
+.pq-credit-summary-card.pq-metric-card .pq-metric-label {
+  display: block;
+  color: var(--pq-text);
 }
 
 .pq-metric-sub {
@@ -2393,6 +2414,33 @@
 
 .pq-payment-panel {
   background: var(--pq-surface, #ffffff);
+}
+
+.pq-payment-readonly-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--pq-border);
+  border-radius: var(--pq-radius-md);
+  color: var(--pq-text-muted);
+  font-size: 12px;
+}
+
+.pq-payment-readonly-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pq-payment-readonly-row strong {
+  color: var(--pq-text);
+  font-size: 13px;
+}
+
+.pq-manage-payment-btn {
+  margin-top: 16px;
 }
 
 .pq-payment-field {

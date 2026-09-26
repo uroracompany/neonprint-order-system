@@ -5,6 +5,7 @@ import { PAYMENT_RECEIPT_ACCEPT } from "../../utils/fileValidation";
 import { createSignedOrderAssetUrlFromStoredUrl } from "../../utils/uploadOrderAsset";
 import { Icons } from "../../utils/icons";
 import { ORDER_STATUS, PAYMENT_STATUS } from "../../utils/constants";
+import { getAvatarInitials } from "../../utils/avatar-initials";
 import { PaymentBadge } from "./Badge";
 import FileUploadZone from "./FileUploadZone";
 import { Modal } from "../orders/CreateOrderModal";
@@ -16,8 +17,12 @@ export default function PaymentFormModal({
   loading = false,
   onClose,
   onConfirm,
-  allowReceiptNumber = false,
   canAssignInvoiceCode = false,
+  onAssignInvoiceCode,
+  onCreditClientRequired,
+  canManagePayment = true,
+  hasVerifiedPaymentReceipt = false,
+  nested = false,
 }) {
   const [paymentStatus, setPaymentStatus] = useState("Pending_Payment");
   const [receiptFile, setReceiptFile] = useState(null);
@@ -27,11 +32,10 @@ export default function PaymentFormModal({
   const [receiptZoneError, setReceiptZoneError] = useState("");
   const [receiptZoneErrorKey, setReceiptZoneErrorKey] = useState(0);
   const [internalError, setInternalError] = useState("");
-  const [receiptNumber, setReceiptNumber] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceCodeSaving, setInvoiceCodeSaving] = useState(false);
   const orderId = order?.id;
   const orderPaymentStatus = order?.payment_status;
-  const requiresCashierInvoiceCode = order?.invoice_assignment_mode === "cashier";
 
   useEffect(() => {
     if (!open || !orderId) return;
@@ -41,8 +45,8 @@ export default function PaymentFormModal({
     setReceiptZoneError("");
     setReceiptZoneErrorKey(0);
     setInternalError("");
-    setReceiptNumber(order?.invoice_number || "");
     setInvoiceNumber(order?.invoice_number || "");
+    setInvoiceCodeSaving(false);
     if (receiptInputRef.current) receiptInputRef.current.value = "";
   }, [open, orderId, orderPaymentStatus, order?.invoice_number]);
 
@@ -112,7 +116,11 @@ export default function PaymentFormModal({
 
   const handleSubmit = async () => {
     setInternalError("");
-    const hasPaymentEvidence = Boolean(receiptFile || order?.invoice_payment || receiptNumber.trim());
+    if (!canManagePayment) {
+      setInternalError("Esta orden está en modo lectura para Caja.");
+      return;
+    }
+    const hasPaymentEvidence = Boolean(receiptFile || hasVerifiedPaymentReceipt);
     const hasInvoiceCode = Boolean(invoiceNumber.trim() || order?.invoice_number?.trim());
 
     if (paymentStatus === PAYMENT_STATUS.CREDIT) {
@@ -124,31 +132,50 @@ export default function PaymentFormModal({
       }
     }
 
-    if (requiresCashierInvoiceCode && paymentStatus === PAYMENT_STATUS.PAID && !hasInvoiceCode) {
-      return setInternalError("Caja debe registrar el código de facturación antes de marcar la orden como pagada.");
-    }
-
-    if (requiresCashierInvoiceCode && paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !order?.invoice_payment) {
-      return setInternalError("Caja debe adjuntar y verificar el comprobante de pago para marcar la orden como pagada.");
+    if (paymentStatus === PAYMENT_STATUS.PAID && !hasInvoiceCode) {
+      return setInternalError("Para marcar la orden como pagada debes registrar el código de facturación.");
     }
 
     if (paymentStatus === PAYMENT_STATUS.PAID && !hasPaymentEvidence) {
-      return setInternalError("Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.");
+      return setInternalError("Para marcar la orden como pagada debes adjuntar un comprobante de imagen verificado.");
     }
 
     try {
-      await onConfirm({
+      const result = await onConfirm({
         paymentStatus,
         receiptFile,
-        receiptNumber: receiptNumber.trim(),
         invoiceNumber: invoiceNumber.trim(),
       });
+      if (result?.ok === false) return;
     } catch (err) {
       setInternalError(err?.message || "No se pudo procesar el pago.");
     }
   };
 
+  const handleInvoiceCodeSave = async () => {
+    const nextInvoiceNumber = invoiceNumber.trim();
+    if (!nextInvoiceNumber || !onAssignInvoiceCode || !canAssignInvoiceCode || invoiceCodeSaving) return;
+
+    setInternalError("");
+    setInvoiceCodeSaving(true);
+    try {
+      const updated = await onAssignInvoiceCode(order, nextInvoiceNumber);
+      if (updated?.invoice_number) setInvoiceNumber(updated.invoice_number);
+    } catch (err) {
+      setInternalError(err?.message || "No se pudo guardar el código de facturación.");
+    } finally {
+      setInvoiceCodeSaving(false);
+    }
+  };
+
   if (!open || !order) return null;
+
+  const orderReference = order.id
+    ? `ORDEN #${String(order.id).slice(0, 8).toUpperCase()}`
+    : "ORDEN";
+  const clientName = order.client_name || "Cliente";
+  const clientInitials = getAvatarInitials(clientName);
+  const clientPhone = order.client_contact || order.client_phone || "Sin teléfono";
 
   const paymentFooter = (
     <div className="pq-dialog-actions pfm-actions">
@@ -161,8 +188,11 @@ export default function PaymentFormModal({
         onClick={handleSubmit}
         disabled={
           loading ||
-          (requiresCashierInvoiceCode && paymentStatus === PAYMENT_STATUS.PAID && (!invoiceNumber.trim() && !order?.invoice_number?.trim() || !receiptFile && !order?.invoice_payment)) ||
-          (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !order?.invoice_payment && !receiptNumber.trim())
+          !canManagePayment ||
+          (paymentStatus === PAYMENT_STATUS.PAID && (
+            (!invoiceNumber.trim() && !order?.invoice_number?.trim())
+            || (!receiptFile && !hasVerifiedPaymentReceipt)
+          ))
         }
       >
         {confirmLabel}
@@ -176,11 +206,13 @@ export default function PaymentFormModal({
       onClose={onClose}
       title="Gestionar pago"
       hideStripe
+      closeOnBackdrop
+      closeOnEscape
       className="ps-file-details-modal pfm-modal"
-      overlayClassName="ps-file-details-overlay pfm-file-details-overlay"
+      overlayClassName={`ps-file-details-overlay pfm-file-details-overlay${nested ? " pfm-nested-overlay" : ""}`}
       headerContent={
         <>
-          <span className="pfm-modal-kicker">Registro de pago</span>
+          <span className="pfm-order-id">{orderReference}</span>
           <h3 className="ps-file-details-title">Gestionar pago</h3>
         </>
       }
@@ -188,14 +220,13 @@ export default function PaymentFormModal({
     >
       <div className="pfm-modal-content">
         <div className="pfm-order-summary">
-          <span className="pfm-summary-icon"><Icons.Receipt /></span>
+          <span className="pfm-avatar" aria-label={`Iniciales de ${clientName}`}>{clientInitials}</span>
           <div className="pfm-order-info">
-            <span className="pfm-client-name">{order.client_name}</span>
-            {order.description && (
-              <span className="pfm-desc">
-                {order.description.length > 60 ? `${order.description.slice(0, 60)}…` : order.description}
-              </span>
-            )}
+            <span className="pfm-client-name">{clientName}</span>
+            <span className="pfm-order-phone" aria-label="Teléfono del cliente">
+              <Icons.Phone aria-hidden="true" />
+              <span>{clientPhone}</span>
+            </span>
           </div>
           <div className="pfm-current-badge">
             <span className="pfm-label">Estado actual</span>
@@ -203,13 +234,19 @@ export default function PaymentFormModal({
           </div>
         </div>
 
+        {!canManagePayment && (
+          <div className="pfm-readonly-note" role="status">
+            Esta orden está en modo lectura para Caja. Puedes consultar su estado, pero no modificar el pago.
+          </div>
+        )}
+
           <div className="pfm-field">
             <span className="pfm-label">Estado de pago</span>
             <div className="pfm-select-wrap">
               <select
                 value={paymentStatus}
                 onChange={(e) => setPaymentStatus(e.target.value)}
-                disabled={loading}
+                disabled={loading || !canManagePayment}
               >
                 {paymentOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
@@ -221,46 +258,42 @@ export default function PaymentFormModal({
             <div className="pfm-credit-info">
               <Icons.AlertCircle />
               <span>Facturación: <strong>{order?.invoice_number || "No definido"}</strong></span>
+              {!order?.client_id && onCreditClientRequired && (
+                <button type="button" className="pq-btn pq-btn-secondary pfm-credit-client-btn" onClick={() => onCreditClientRequired(order)} disabled={loading}>
+                  <Icons.User /> Vincular cliente
+                </button>
+              )}
             </div>
           )}
 
-          {requiresCashierInvoiceCode && (
-            <div className="pfm-receipt-number-field">
+          <div className="pfm-receipt-number-field">
               <label className="pfm-label" htmlFor="pfm-invoice-number">Código de facturación</label>
               <input
                 id="pfm-invoice-number"
                 className="pfm-receipt-number-input"
                 value={invoiceNumber}
                 onChange={(event) => setInvoiceNumber(event.target.value)}
-                disabled={loading || !canAssignInvoiceCode}
-                placeholder="Código asignado por Caja"
+                disabled={loading || !canAssignInvoiceCode || !canManagePayment}
+                placeholder="Código de facturación"
                 aria-describedby="pfm-invoice-number-hint"
               />
-              <small id="pfm-invoice-number-hint" className="pfm-receipt-number-hint">
-                {canAssignInvoiceCode ? "Guarda el código antes de completar el pago." : "Caja debe registrar este código antes de completar el pago."}
+              {canAssignInvoiceCode && canManagePayment && onAssignInvoiceCode && (
+                <button
+                  type="button"
+                  className="pq-btn pq-btn-primary pfm-save-invoice-btn"
+                  onClick={handleInvoiceCodeSave}
+                  disabled={loading || invoiceCodeSaving || !invoiceNumber.trim() || invoiceNumber.trim() === String(order?.invoice_number || "").trim()}
+                >
+                  {invoiceCodeSaving ? "Guardando..." : "Guardar código"}
+                </button>
+              )}
+              <small id="pfm-invoice-number-hint" className="pfm-receipt-number-hint pfm-invoice-code-hint">
+                {canAssignInvoiceCode ? "Guarda el código antes de completar el pago." : "El código registrado es requerido antes de completar el pago."}
               </small>
-            </div>
-          )}
+          </div>
 
           {paymentStatus === PAYMENT_STATUS.PAID && (
             <div className="pfm-receipt-section">
-              {allowReceiptNumber && (
-                <div className="pfm-receipt-number-field">
-                  <label className="pfm-label" htmlFor="pfm-receipt-number">Número de comprobante</label>
-                  <input
-                    id="pfm-receipt-number"
-                    className="pfm-receipt-number-input"
-                    value={receiptNumber}
-                    onChange={(event) => setReceiptNumber(event.target.value)}
-                    disabled={loading}
-                    placeholder="Ingresa el número de comprobante"
-                    aria-describedby="pfm-receipt-number-hint"
-                  />
-                  <small id="pfm-receipt-number-hint" className="pfm-receipt-number-hint">
-                    Adjunta un comprobante o registra este número para confirmar el pago.
-                  </small>
-                </div>
-              )}
               <span className="pfm-label">Comprobante de pago</span>
               {receiptFile ? (
                 <div className="pfm-receipt-card">
@@ -271,7 +304,7 @@ export default function PaymentFormModal({
                     inputRef={receiptInputRef}
                     className="file-upload-zone--hidden-picker"
                     buttonLabel="Cambiar comprobante"
-                    disabled={loading}
+                  disabled={loading || !canManagePayment}
                     externalError={receiptZoneError}
                     externalErrorKey={receiptZoneErrorKey}
                     onFilesAccepted={handleReceiptAccepted}
@@ -294,10 +327,10 @@ export default function PaymentFormModal({
                   <div className="pfm-receipt-actions">
                     <span>{receiptFile.name}</span>
                     <div>
-                      <button type="button" className="pfm-receipt-btn" onClick={() => receiptInputRef.current?.click()}>
+                      <button type="button" className="pfm-receipt-btn" onClick={() => receiptInputRef.current?.click()} disabled={loading || !canManagePayment}>
                         <Icons.Edit /> Cambiar
                       </button>
-                      <button type="button" className="pfm-receipt-btn pfm-receipt-btn--danger" onClick={handleRemoveReceipt}>
+                      <button type="button" className="pfm-receipt-btn pfm-receipt-btn--danger" onClick={handleRemoveReceipt} disabled={loading || !canManagePayment}>
                         <Icons.Trash /> Eliminar
                       </button>
                     </div>
@@ -311,7 +344,7 @@ export default function PaymentFormModal({
                   inputRef={receiptInputRef}
                   buttonLabel="Seleccionar desde el ordenador"
                   hint={PAYMENT_RECEIPT_HINT}
-                  disabled={loading}
+                  disabled={loading || !canManagePayment}
                   externalError={receiptZoneError}
                   externalErrorKey={receiptZoneErrorKey}
                   onFilesAccepted={handleReceiptAccepted}

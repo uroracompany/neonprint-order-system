@@ -6,8 +6,8 @@ const projectFile = (file) => readFileSync(resolve(file), "utf8");
 
 describe("Caja payment receipt integrity", () => {
   const migration = projectFile("supabase/migrations/20260907141901_cash_receipt_integrity.sql");
+  const paymentAuthorizationMigration = projectFile("supabase/migrations/20260926112516_payment_authorization_production_gate.sql");
   const quotePage = projectFile("src/pages/page-quote.jsx");
-  const semiAdminMigration = projectFile("supabase/migrations/20260907110000_semi_admin_cash_audit_sync.sql");
 
   it("requires an explicit, canonical uploaded image for the versioned Caja payment command", () => {
     expect(migration).toContain("create or replace function public.quote_set_order_payment(");
@@ -58,16 +58,16 @@ describe("Caja payment receipt integrity", () => {
     expect(paymentBucketPolicy).not.toMatch(/\bfile_size_limit\s*=/i);
   });
 
-  it("keeps Caja gated by image evidence and submits its canonical stored reference", () => {
+  it("keeps Caja gated by a verified image record and submits its canonical stored reference", () => {
     expect(quotePage).toContain("getCanonicalPaymentReceiptCandidate");
-    expect(quotePage).toContain("Boolean(receiptFile || persistedReceiptReference)");
+    expect(quotePage).toContain("const hasVerifiedPaymentReceipt = (order) =>");
+    expect(quotePage).toContain("file.payment_image_verified_at");
+    expect(quotePage).toContain("file.category === \"payment\"");
     expect(quotePage).toContain("PAYMENT_RECEIPT_REQUIRED_MESSAGE");
-    expect(quotePage).toContain("paymentReceiptRequirementId");
-    expect(quotePage).toContain("required={paymentReceiptRequired}");
-    expect(quotePage).toContain("aria-describedby={paymentReceiptRequired ? paymentReceiptRequirementId : undefined}");
     expect(quotePage).toContain('bucket: "payment-invoice"');
     expect(quotePage).toContain("buildPaymentReceiptPath(order.id, receiptFile.name)");
     expect(quotePage).toContain('rpc("quote_set_order_payment"');
+    expect(quotePage).toContain("hasVerifiedPaymentReceipt(order)");
     expect(quotePage).toContain("let invoicePaymentUrl = paymentStatus === PAYMENT_STATUS.PAID ? persistedReceiptReference : null");
 
     const paidSubmitGuardStart = quotePage.indexOf("if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !persistedReceiptReference)");
@@ -79,10 +79,11 @@ describe("Caja payment receipt integrity", () => {
     expect(paidSubmitGuard).not.toContain("invoice_number");
   });
 
-  it("does not narrow the separately audited SemiAdmin receipt-or-number exception", () => {
-    expect(semiAdminMigration).toContain("v_invoice_payment := coalesce");
-    expect(semiAdminMigration).toContain("v_invoice_number := coalesce");
-    expect(semiAdminMigration).toContain("and nullif(btrim(coalesce(v_invoice_number, '')), '') is null");
-    expect(semiAdminMigration).toContain("'semi_admin_payment_updated'");
+  it("applies the strict billing-code and verified-image rule to the SemiAdmin writer", () => {
+    expect(paymentAuthorizationMigration).toContain("semi_admin_register_order_payment");
+    expect(paymentAuthorizationMigration).toContain("order_has_confirmable_payment");
+    expect(paymentAuthorizationMigration).toContain("v_invoice_payment");
+    expect(paymentAuthorizationMigration).toContain("adjuntar un comprobante de imagen verificado");
+    expect(paymentAuthorizationMigration).not.toContain("allowReceiptNumber");
   });
 });

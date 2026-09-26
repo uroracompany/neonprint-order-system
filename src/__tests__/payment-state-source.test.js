@@ -27,13 +27,15 @@ describe("payment state integration source guards", () => {
     expect(renderOrderCardSource).not.toContain("labelOverride");
   });
 
-  it("no expone el estado de pago en el modulo de diseno", () => {
+  it("no renderiza etiquetas ni columnas de pago en Diseño, pero conserva elegibilidad interna", () => {
     const source = readSource("src/pages/page-designer.jsx");
 
     expect(source).not.toContain("PaymentBadge");
-    expect(source).not.toContain("order.payment_status");
-    expect(source).not.toContain('"payment_status"');
     expect(source).not.toContain("<th>Pago</th>");
+    expect(source).not.toContain("Estado del pago");
+    expect(source).toContain('"payment_status"');
+    expect(source).toContain("isPaymentProductionEligible(order?.payment_status)");
+    expect(source).toContain("isPaymentProductionEligible(order.payment_status)");
   });
 
   it("permite al admin elegir cualquier estado de pago sin restriccion de parcial", () => {
@@ -69,7 +71,7 @@ describe("payment state integration source guards", () => {
     expect(source).toContain("Seleccionar desde el ordenador");
     expect(source).toContain("URL.createObjectURL(receiptFile)");
     expect(source).toContain("URL.revokeObjectURL");
-    expect(source).toContain("!receiptFile && !order?.invoice_payment");
+    expect(source).toContain("!receiptFile && !hasVerifiedPaymentReceipt");
     expect(source).toContain("validateReceiptFile");
     expect(source).toContain("{paymentStatus === PAYMENT_STATUS.PAID && (");
     expect(source).not.toContain("No existe un comprobante de pago");

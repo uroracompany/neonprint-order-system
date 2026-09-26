@@ -6,12 +6,12 @@ import { TerminationSelector } from "../components/orders/CreateOrderModal";
 
 describe("TerminationSelector", () => {
   const options = ["Ojales", "Corte"];
-  const ControlledSelector = ({ onChange, initialValue = "", availableOptions = options }) => {
+  const ControlledSelector = ({ onChange, initialValue = "" }) => {
     const [value, setValue] = useState(initialValue);
     return (
       <TerminationSelector
         value={value}
-        options={availableOptions}
+        options={options}
         onChange={(nextValue) => {
           setValue(nextValue);
           onChange(nextValue);
@@ -20,7 +20,7 @@ describe("TerminationSelector", () => {
     );
   };
 
-  it("selecciona una terminación de catálogo y la refleja en el control", async () => {
+  it("agrega una terminación inmediatamente al marcarla", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<ControlledSelector onChange={onChange} />);
@@ -28,50 +28,37 @@ describe("TerminationSelector", () => {
     await user.click(screen.getByRole("button", { name: "Terminación" }));
     await user.click(screen.getByRole("option", { name: "Ojales" }));
 
-    expect(onChange).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Agregar" }));
     expect(onChange).toHaveBeenCalledWith("Ojales");
-    expect(screen.getByRole("button", { name: "Terminación" })).toHaveTextContent("Ojales");
+    expect(screen.getByRole("option", { name: /Ojales/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
   });
 
-  it("emite el texto de la terminación personalizada, no un sentinela", async () => {
+  it("no elimina una terminación al volver a marcarla", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ControlledSelector onChange={onChange} />);
+
+    await user.click(screen.getByRole("button", { name: "Terminación" }));
+    await user.click(screen.getByRole("option", { name: "Ojales" }));
+    const callsBeforeRepeat = onChange.mock.calls.length;
+    await user.click(screen.getByRole("option", { name: /Ojales/ }));
+
+    expect(onChange).toHaveBeenCalledTimes(callsBeforeRepeat);
+    expect(screen.getByRole("button", { name: "Quitar Ojales" })).toBeInTheDocument();
+  });
+
+  it("elimina la terminación únicamente mediante su X", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<ControlledSelector onChange={onChange} initialValue="Ojales" />);
 
-    await user.click(screen.getByRole("button", { name: "Terminación" }));
-    await user.click(screen.getByRole("button", { name: "Agregar terminación personalizada" }));
+    await user.click(screen.getByRole("button", { name: "Quitar Ojales" }));
 
-    const input = screen.getByLabelText("Terminación personalizada");
-    await user.type(input, "Laminado mate especial");
-
-    expect(onChange).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Agregar" }));
-    expect(onChange).toHaveBeenLastCalledWith("Laminado mate especial");
-    expect(onChange).not.toHaveBeenCalledWith("__custom__");
+    expect(onChange).toHaveBeenCalledWith("");
+    expect(screen.getByRole("button", { name: "Terminación" })).toHaveTextContent("Seleccionar terminación");
   });
 
-  it("abre con catálogo vacío y permite registrar una terminación personalizada", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(<ControlledSelector onChange={onChange} availableOptions={[]} />);
-
-    const trigger = screen.getByRole("button", { name: "Terminación" });
-    expect(trigger.parentElement).toHaveClass("ps-multimat");
-
-    await user.click(trigger);
-
-    expect(screen.getByRole("listbox", { name: "Terminaciones disponibles" })).toBeInTheDocument();
-    expect(screen.getByText("Sin terminaciones disponibles")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Agregar terminación personalizada" }));
-    await user.type(screen.getByLabelText("Terminación personalizada"), "Laminado sin catálogo");
-
-    await user.click(screen.getByRole("button", { name: "Agregar" }));
-    expect(onChange).toHaveBeenLastCalledWith("Laminado sin catálogo");
-  });
-
-  it("conserva la terminación preparada al cerrar y reabrir el selector", async () => {
+  it("conserva la terminación al cerrar y reabrir el selector", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<ControlledSelector onChange={onChange} />);
@@ -82,20 +69,19 @@ describe("TerminationSelector", () => {
     await user.click(screen.getByRole("button", { name: "Terminación" }));
 
     expect(screen.getByRole("option", { name: /Ojales/ })).toHaveAttribute("aria-selected", "true");
-    await user.click(screen.getByRole("button", { name: "Agregar" }));
-    expect(onChange).toHaveBeenLastCalledWith("Ojales");
   });
 
-  it("solo elimina la terminación mediante su X y confirma el cambio con Agregar", async () => {
+  it("usa Agregar para una terminación personalizada", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<ControlledSelector onChange={onChange} initialValue="Ojales" />);
+    render(<ControlledSelector onChange={onChange} />);
 
-    await user.click(screen.getByRole("button", { name: "Quitar Ojales" }));
-    expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Agregar" })).toBeDisabled();
-    await user.click(screen.getByRole("option", { name: "Corte" }));
+    await user.click(screen.getByRole("button", { name: "Terminación" }));
+    await user.click(screen.getByRole("button", { name: "Agregar terminación personalizada" }));
+    await user.type(screen.getByLabelText("Terminación personalizada"), "Laminado mate especial");
     await user.click(screen.getByRole("button", { name: "Agregar" }));
-    expect(onChange).toHaveBeenLastCalledWith("Corte");
+
+    expect(onChange).toHaveBeenCalledWith("Laminado mate especial");
+    expect(screen.getByRole("button", { name: "Quitar Laminado mate especial" })).toBeInTheDocument();
   });
 });

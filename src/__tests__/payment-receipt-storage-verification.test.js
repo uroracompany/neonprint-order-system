@@ -27,7 +27,7 @@ const r2Env = {
   R2_BUCKET: "payment-r2",
 };
 
-const completionAdmin = ({ bytes }) => {
+const completionAdmin = () => {
   const updates = [];
   const result = {
     eq: () => result,

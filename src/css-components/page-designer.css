@@ -276,8 +276,6 @@
   position: relative;
   isolation: isolate;
   width: 100%;
-  max-width: 1264px;
-  margin-inline: auto;
   box-sizing: border-box;
 }
 
@@ -522,7 +520,7 @@
 
 .pd-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 14px;
   margin-bottom: 28px;
 }
@@ -2029,9 +2027,22 @@ label.pd-upload-btn {
   box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
 }
 
+.designer-order-modal__button--production {
+  border: none;
+  background: var(--pd-primary);
+  color: #ffffff;
+  box-shadow: 0 4px 14px var(--pd-primary-glow);
+}
+
 .designer-order-modal__button--primary:hover:not(:disabled),
-.designer-order-modal__button--quotation:hover:not(:disabled) {
+.designer-order-modal__button--quotation:hover:not(:disabled),
+.designer-order-modal__button--production:hover:not(:disabled) {
   transform: translateY(-1px);
+}
+
+.designer-order-modal__button--production:hover:not(:disabled) {
+  background: var(--pd-primary-mid);
+  box-shadow: 0 6px 20px var(--pd-primary-glow);
 }
 
 .designer-order-modal__button--quotation:hover:not(:disabled) {
@@ -2436,7 +2447,7 @@ label.pd-upload-btn {
 }
 
 @media (max-width: 1100px) {
-  .pd-main {
+  .pd-main-content {
     padding: 20px;
   }
 }
@@ -2471,7 +2482,7 @@ label.pd-upload-btn {
     border-right: none;
   }
 
-  .pd-main {
+  .pd-main-content {
     padding: 18px;
   }
 
@@ -2785,6 +2796,31 @@ label.pd-upload-btn {
   color: #fff;
   border-color: #1d4ed8;
   box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
+}
+
+.card-action-btn.production {
+  color: var(--primary, #0f1e40);
+  border-color: color-mix(in srgb, var(--primary, #0f1e40) 24%, var(--pd-border, #dde3ef));
+  background: color-mix(in srgb, var(--primary, #0f1e40) 8%, #fff);
+}
+
+.table-action-btn.production {
+  color: var(--primary, #0f1e40);
+  border-color: color-mix(in srgb, var(--primary, #0f1e40) 24%, var(--pd-border, #dde3ef));
+  background: color-mix(in srgb, var(--primary, #0f1e40) 8%, #fff);
+}
+
+.table-action-btn.production:hover {
+  background: var(--primary, #0f1e40);
+  color: #fff;
+  border-color: var(--primary, #0f1e40);
+}
+
+.card-action-btn.production:hover {
+  background: var(--primary, #0f1e40);
+  color: #fff;
+  border-color: var(--primary, #0f1e40);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--primary, #0f1e40) 25%, transparent);
 }
 
 .card-action-btn.archive {

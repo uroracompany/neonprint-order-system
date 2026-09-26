@@ -83,7 +83,7 @@ export default function AdminAdvancedSettings({
     await fetchActions();
   };
 
-  const handlePaymentInAdvanced = async ({ paymentStatus, receiptFile }) => {
+  const handlePaymentInAdvanced = async ({ paymentStatus, receiptFile, invoiceNumber }) => {
     if (!order) return;
 
     if (paymentStatus === PAYMENT_STATUS.PENDING && (
@@ -143,7 +143,7 @@ export default function AdminAdvancedSettings({
       await executeAdminOrderCommand(supabase, {
         orderId: order.id,
         action: "register_payment",
-        payload: { payment_status: paymentStatus, invoice_payment: paymentInvoiceUrl },
+        payload: { payment_status: paymentStatus, invoice_payment: paymentInvoiceUrl, invoice_number: String(invoiceNumber || "").trim() || undefined },
         reasonCategory: "workflow_correction",
         reasonDetail: "Pago registrado por Administración desde Configuración avanzada.",
         expectedUpdatedAt: order.updated_at,
@@ -335,6 +335,7 @@ export default function AdminAdvancedSettings({
         loading={paymentLoading}
         onClose={() => setPaymentOrder(null)}
         onConfirm={handlePaymentInAdvanced}
+        canAssignInvoiceCode
       />
     </>
   );

@@ -1,0 +1,499 @@
+.credit-reminder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(10px);
+}
+
+.credit-reminder--admin {
+  --credit-reminder-accent: var(--primary);
+  --credit-reminder-accent-strong: var(--primary-mid);
+  --credit-reminder-accent-soft: var(--primary-light);
+  --credit-reminder-text: var(--text);
+  --credit-reminder-muted: var(--text-sub);
+  --credit-reminder-surface: var(--surface);
+  --credit-reminder-surface-soft: var(--surface-alt);
+  --credit-reminder-border: var(--border);
+  --credit-reminder-danger: var(--pink);
+  --credit-reminder-danger-soft: var(--pink-light);
+  --credit-reminder-shadow: var(--shadow-lg);
+  --credit-reminder-glow: var(--primary-glow);
+}
+
+.credit-reminder--quote {
+  --credit-reminder-accent: var(--pq-cyan, #06b6d4);
+  --credit-reminder-accent-strong: var(--pq-cyan, #06b6d4);
+  --credit-reminder-accent-soft: var(--pq-cyan-light, rgba(6, 182, 212, 0.08));
+  --credit-reminder-text: var(--pq-text, #0f172a);
+  --credit-reminder-muted: var(--pq-text-muted, #64748b);
+  --credit-reminder-surface: var(--pq-surface, #ffffff);
+  --credit-reminder-surface-soft: var(--pq-surface-alt, #f8fafc);
+  --credit-reminder-border: var(--pq-border, #dbeafe);
+  --credit-reminder-danger: #b91c1c;
+  --credit-reminder-danger-soft: #fee2e2;
+  --credit-reminder-shadow: 0 24px 70px rgba(14, 165, 233, 0.22);
+  --credit-reminder-due-surface: color-mix(in srgb, var(--credit-reminder-accent) 9%, #ffffff);
+  --credit-reminder-due-border: color-mix(in srgb, var(--credit-reminder-accent) 28%, #dbeafe);
+  --credit-reminder-pending-surface: #fef3c7;
+  --credit-reminder-pending-text: #92400e;
+  --credit-reminder-pending-border: rgba(245, 158, 11, 0.28);
+  --credit-reminder-soft-shadow: 0 16px 38px rgba(14, 165, 233, 0.12);
+}
+
+.credit-reminder-modal {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--credit-reminder-surface);
+  color: var(--credit-reminder-text);
+  border: 1px solid var(--credit-reminder-border);
+  border-radius: 18px;
+  box-shadow: var(--credit-reminder-shadow);
+}
+
+.credit-reminder-modal::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: var(--credit-reminder-accent);
+}
+
+.credit-reminder-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 22px 16px;
+  border-bottom: 1px solid var(--credit-reminder-border);
+}
+
+.credit-reminder-kicker {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--credit-reminder-accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.credit-reminder-header h2 {
+  margin: 0;
+  color: var(--credit-reminder-text);
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.credit-reminder-close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--credit-reminder-border);
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--credit-reminder-muted);
+  background: var(--credit-reminder-surface-soft);
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.credit-reminder-close:hover {
+  border-color: var(--credit-reminder-accent);
+  color: var(--credit-reminder-accent);
+  transform: translateY(-1px);
+}
+
+.credit-reminder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 22px 22px;
+  overflow: auto;
+}
+
+.credit-reminder-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  background: var(--credit-reminder-surface-soft);
+  border: 1px solid var(--credit-reminder-border);
+  border-radius: 14px;
+}
+
+.credit-reminder-hero--due {
+  background: var(--credit-reminder-danger-soft);
+  border-color: color-mix(in srgb, var(--credit-reminder-danger) 34%, transparent);
+}
+
+.credit-reminder--quote .credit-reminder-hero--due {
+  align-items: center;
+  background: var(--credit-reminder-due-surface);
+  border-color: var(--credit-reminder-due-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.credit-reminder-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  background: var(--credit-reminder-accent-soft);
+  color: var(--credit-reminder-accent-strong);
+}
+
+.credit-reminder-hero--due .credit-reminder-icon {
+  background: var(--credit-reminder-surface);
+  color: var(--credit-reminder-danger);
+}
+
+.credit-reminder--quote .credit-reminder-hero--due .credit-reminder-icon {
+  background: var(--credit-reminder-accent);
+  color: #ffffff;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--credit-reminder-accent) 24%, transparent);
+}
+
+.credit-reminder-hero strong {
+  display: block;
+  color: var(--credit-reminder-text);
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
+.credit-reminder-hero p {
+  margin: 4px 0 0;
+  color: var(--credit-reminder-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.credit-reminder-field,
+.credit-reminder-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.credit-reminder-field > span,
+.credit-reminder-section-title {
+  color: var(--credit-reminder-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.credit-reminder-field input,
+.credit-reminder-field textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--credit-reminder-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--credit-reminder-text);
+  background: var(--credit-reminder-surface);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.credit-reminder-field textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.credit-reminder-field input:focus,
+.credit-reminder-field textarea:focus {
+  border-color: var(--credit-reminder-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--credit-reminder-accent) 18%, transparent);
+}
+
+.credit-reminder-field small,
+.credit-reminder-help {
+  color: var(--credit-reminder-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.credit-reminder-invoices,
+.credit-reminder-due-list,
+.credit-reminder-visibility-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.credit-reminder-invoice,
+.credit-reminder-visibility-option,
+.credit-reminder-due-card,
+.credit-reminder-empty {
+  border: 1px solid var(--credit-reminder-border);
+  border-radius: 10px;
+  background: var(--credit-reminder-surface);
+  padding: 10px 12px;
+}
+
+.credit-reminder-invoice,
+.credit-reminder-visibility-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.credit-reminder-invoice input,
+.credit-reminder-visibility-option input {
+  margin-top: 3px;
+  accent-color: var(--credit-reminder-accent);
+}
+
+.credit-reminder-visibility-option {
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.credit-reminder-visibility-option.is-selected {
+  border-color: var(--credit-reminder-accent);
+  background: var(--credit-reminder-accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--credit-reminder-accent) 10%, transparent);
+}
+
+.credit-reminder-visibility-option div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.credit-reminder-invoice div,
+.credit-reminder-due-head > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.credit-reminder-invoice strong,
+.credit-reminder-visibility-option strong,
+.credit-reminder-due-card strong {
+  color: var(--credit-reminder-text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.credit-reminder-invoice span,
+.credit-reminder-visibility-option span,
+.credit-reminder-due-card span,
+.credit-reminder-empty {
+  color: var(--credit-reminder-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.credit-reminder-due-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.credit-reminder--quote .credit-reminder-due-card {
+  gap: 12px;
+  padding: 14px 16px;
+  border-color: var(--credit-reminder-due-border);
+  box-shadow: var(--credit-reminder-soft-shadow);
+}
+
+.credit-reminder-due-head,
+.credit-reminder-due-actions,
+.credit-reminder-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.credit-reminder--quote .credit-reminder-due-head {
+  align-items: flex-start;
+}
+
+.credit-reminder--quote .credit-reminder-due-actions {
+  align-items: center;
+  padding-top: 2px;
+}
+
+.credit-reminder-due-card p {
+  margin: 0;
+  color: var(--credit-reminder-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.credit-reminder--quote .credit-reminder-due-card p {
+  color: var(--credit-reminder-text);
+  font-size: 14px;
+}
+
+.credit-reminder-status {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--credit-reminder-danger-soft);
+  color: var(--credit-reminder-danger);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.credit-reminder--quote .credit-reminder-status {
+  background: var(--credit-reminder-pending-surface);
+  border: 1px solid var(--credit-reminder-pending-border);
+  color: var(--credit-reminder-pending-text);
+}
+
+.credit-reminder-due-invoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.credit-reminder-due-invoices span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--credit-reminder-accent-soft);
+  color: var(--credit-reminder-accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.credit-reminder-actions {
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.credit-reminder-btn {
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+.credit-reminder-btn--primary {
+  position: relative;
+  min-width: 190px;
+  overflow: hidden;
+  color: #ffffff;
+  background: var(--credit-reminder-accent);
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--credit-reminder-accent) 24%, transparent);
+}
+
+.credit-reminder--admin .credit-reminder-btn--primary {
+  border: none;
+  background: var(--primary);
+  box-shadow: 0 4px 14px var(--primary-glow);
+}
+
+.credit-reminder--admin .credit-reminder-btn--primary::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--gradient);
+}
+
+.credit-reminder--admin .credit-reminder-btn--primary:hover:not(:disabled),
+.credit-reminder--admin .credit-reminder-btn--primary:focus-visible:not(:disabled) {
+  background: var(--primary-mid);
+}
+
+.credit-reminder--quote .credit-reminder-icon,
+.credit-reminder--quote .credit-reminder-due-invoices span {
+  background: var(--credit-reminder-accent);
+  color: #ffffff;
+}
+
+.credit-reminder--quote .credit-reminder-due-invoices span {
+  background: var(--credit-reminder-accent-soft);
+  border: 1px solid var(--credit-reminder-due-border);
+  color: var(--credit-reminder-accent-strong);
+}
+
+.credit-reminder--quote .credit-reminder-btn--primary {
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--credit-reminder-accent) 22%, transparent);
+}
+
+.credit-reminder-btn--secondary {
+  color: var(--credit-reminder-text);
+  background: var(--credit-reminder-surface-soft);
+  border: 1px solid var(--credit-reminder-border);
+}
+
+.credit-reminder-btn--sm {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.credit-reminder-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.credit-reminder-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .credit-reminder-overlay {
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .credit-reminder-modal {
+    max-height: calc(100vh - 24px);
+    border-radius: 16px;
+  }
+
+  .credit-reminder-header,
+  .credit-reminder-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .credit-reminder-due-head,
+  .credit-reminder-due-actions,
+  .credit-reminder-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .credit-reminder-btn,
+  .credit-reminder-btn--primary {
+    width: 100%;
+    min-width: 0;
+  }
+}

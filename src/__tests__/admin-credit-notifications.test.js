@@ -31,11 +31,12 @@ describe("notificaciones administrativas de crédito", () => {
 
   it("suprime la franja superior sólo en los modales de materiales solicitados", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
-    const materialModal = dashboard.slice(dashboard.indexOf("{showMaterialModal && ("), dashboard.indexOf("{showTerminationModal && ("));
+    const materialModal = readProjectFile("src/components/materials/MaterialFormModal.jsx");
     const terminationModal = dashboard.slice(dashboard.indexOf("{showTerminationModal && ("), dashboard.indexOf("{activeTab === \"users\""));
 
-    expect(materialModal).toContain('className="pa-modal pa-modal--hide-top-accent"');
-    expect(materialModal).toContain("handleSaveMaterial");
+    expect(materialModal).toContain("hideStripe");
+    expect(dashboard).toContain("MaterialFormModal");
+    expect(dashboard).toContain("handleSaveMaterial");
     expect(terminationModal).toContain('className="pa-modal pa-modal--hide-top-accent"');
     expect(terminationModal).toContain("handleSaveTermination");
   });

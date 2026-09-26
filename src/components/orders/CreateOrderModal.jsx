@@ -162,21 +162,11 @@ export function Modal({
       }
     };
 
-    const handleNativeBackdropPointerDown = (event) => {
-      if (closeOnBackdropRef.current && event.target === overlayRef.current) {
-        onCloseRef.current?.();
-      }
-    };
-
-    const overlayNode = overlayRef.current;
-
     document.addEventListener("keydown", handleKeyDown);
-    overlayNode?.addEventListener("pointerdown", handleNativeBackdropPointerDown);
 
     return () => {
       window.cancelAnimationFrame(focusCloseButton);
       document.removeEventListener("keydown", handleKeyDown);
-      overlayNode?.removeEventListener("pointerdown", handleNativeBackdropPointerDown);
       releaseModalLayer(modalId);
       if (previousActiveElement && typeof previousActiveElement.focus === "function") {
         previousActiveElement.focus({ preventScroll: true });
@@ -314,9 +304,7 @@ export function CatalogSelector({
     return nextValue ? [nextValue] : [];
   }, [multiple]);
   const initialValue = normalizeValue(value);
-  const [committedSelected, setCommittedSelected] = useState(initialValue);
-  const [draftSelected, setDraftSelected] = useState(initialValue);
-  const [draftActive, setDraftActive] = useState(false);
+  const [selectedValues, setSelectedValues] = useState(initialValue);
   const customInputRef = useRef(null);
   const selectedRef = useRef(initialValue);
   const pendingCommitRef = useRef(null);
@@ -327,77 +315,76 @@ export function CatalogSelector({
     if (pendingCommitRef.current) {
       if (areCatalogValuesEqual(nextValue, pendingCommitRef.current)) {
         pendingCommitRef.current = null;
-      } else if (!draftActive) {
+      } else {
         return;
       }
     }
     selectedRef.current = nextValue;
-    if (!draftActive) {
-      setCommittedSelected(nextValue);
-      setDraftSelected(nextValue);
-    }
-  }, [draftActive, normalizeValue, value]);
-
-  const startDraftSession = () => {
-    if (draftActive) return;
-    setDraftActive(true);
-    setDraftSelected([...selectedRef.current]);
-    setCustomMode(false);
-    setCustomValue("");
-  };
+    setSelectedValues(nextValue);
+  }, [normalizeValue, value]);
 
   const toggleDropdown = () => {
     if (disabled) return;
     if (open) {
       setOpen(false);
+      setCustomMode(false);
+      setCustomValue("");
       return;
     }
-    startDraftSession();
+    setCustomMode(false);
+    setCustomValue("");
     setOpen(true);
   };
 
-  const displayedSelected = draftActive ? draftSelected : committedSelected;
+  const displayedSelected = selectedValues;
+
+  const applySelection = (nextSelected) => {
+    const normalized = nextSelected
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    pendingCommitRef.current = normalized;
+    selectedRef.current = normalized;
+    setSelectedValues(normalized);
+    onChange(multiple ? normalized : normalized[0] || "");
+  };
 
   const selectOption = (option) => {
     if (disabled) return;
-    setDraftSelected((current) => {
-      if (multiple) return current.includes(option) ? current : [...current, option];
-      return [option];
-    });
+    const current = selectedRef.current;
+    if (current.includes(option)) return;
+    applySelection(multiple ? [...current, option] : [option]);
   };
   const remove = (option) => {
     if (disabled) return;
-    const currentValues = draftActive ? draftSelected : selectedRef.current;
-    setDraftActive(true);
     setCustomMode(false);
     setCustomValue("");
-    setDraftSelected(currentValues.filter((valueItem) => valueItem !== option));
-    setOpen(true);
+    applySelection(selectedRef.current.filter((valueItem) => valueItem !== option));
   };
 
   const openCustomMode = () => {
     if (disabled) return;
-    const currentValue = draftSelected[0] || "";
+    const currentValue = selectedRef.current[0] || "";
     const customDraft = currentValue && !options.includes(currentValue) ? currentValue : "";
     setCustomValue(customDraft);
-    if (!multiple && !customDraft) setDraftSelected([]);
     setCustomMode(true);
   };
 
   const handleCustomInputChange = (event) => {
     const nextValue = event.target.value;
     setCustomValue(nextValue);
-    if (!multiple) setDraftSelected(nextValue.trim() ? [nextValue] : []);
   };
 
   const handleAddCustom = () => {
     if (disabled) return;
     const nextValue = customValue.trim();
     if (!nextValue) return;
-    setDraftSelected((current) => {
-      if (!multiple) return [nextValue];
-      return current.includes(nextValue) ? current : [...current, nextValue];
-    });
+    const current = selectedRef.current;
+    if (multiple && current.includes(nextValue)) {
+      setCustomValue("");
+      setCustomMode(false);
+      return;
+    }
+    applySelection(multiple ? [...current, nextValue] : [nextValue]);
     setCustomValue("");
     setCustomMode(false);
   };
@@ -410,30 +397,8 @@ export function CatalogSelector({
     if (e.key === "Escape") {
       setCustomMode(false);
       setCustomValue("");
+      setOpen(false);
     }
-  };
-
-  const handleCancel = () => {
-    setDraftActive(false);
-    setCommittedSelected([...selectedRef.current]);
-    setDraftSelected([...selectedRef.current]);
-    setCustomMode(false);
-    setCustomValue("");
-    setOpen(false);
-  };
-
-  const handleCommit = () => {
-    const nextSelected = draftSelected
-      .map((item) => String(item || "").trim())
-      .filter(Boolean);
-    if (disabled || nextSelected.length === 0) return;
-    pendingCommitRef.current = nextSelected;
-    selectedRef.current = nextSelected;
-    setCommittedSelected(nextSelected);
-    setDraftSelected(nextSelected);
-    onChange(multiple ? nextSelected : nextSelected[0]);
-    setDraftActive(false);
-    setOpen(false);
   };
 
   useEffect(() => {
@@ -441,7 +406,6 @@ export function CatalogSelector({
   }, [customMode]);
 
   const isCustomValue = (item) => !options.includes(item);
-  const hasDraftValue = draftSelected.some((item) => String(item || "").trim());
   const triggerProps = {
     className: `ps-multimat-box ${open ? "focused" : ""}`,
     role: multiple ? "combobox" : "button",
@@ -456,7 +420,11 @@ export function CatalogSelector({
         event.preventDefault();
         toggleDropdown();
       }
-      if (event.key === "Escape" && open) handleCancel();
+      if (event.key === "Escape" && open) {
+        setCustomMode(false);
+        setCustomValue("");
+        setOpen(false);
+      }
     },
   };
   const triggerContent = (
@@ -497,7 +465,7 @@ export function CatalogSelector({
       {multiple ? <div {...triggerProps}>{triggerContent}</div> : <button type="button" disabled={disabled} {...triggerProps}>{triggerContent}</button>}
 
       {open && !disabled && (
-        <div className="ps-multimat-dropdown" role="listbox" aria-label={listboxLabel} aria-multiselectable={multiple ? "true" : undefined} onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") handleCancel(); }}>
+        <div className="ps-multimat-dropdown" role="listbox" aria-label={listboxLabel} aria-multiselectable={multiple ? "true" : undefined} onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setCustomMode(false); setCustomValue(""); setOpen(false); } }}>
           {!customMode ? (
             <button type="button" className="ps-multimat-option ps-multimat-add" onClick={openCustomMode}>
               <span className="ps-multimat-add-icon"><Icons.Plus /></span>
@@ -515,7 +483,7 @@ export function CatalogSelector({
                 onKeyDown={handleCustomKeyDown}
               />
               <button type="button" className="ps-multimat-custom-btn" onClick={handleAddCustom} disabled={!customValue.trim()}>
-                Preparar
+                Agregar
               </button>
             </div>
           )}
@@ -526,13 +494,9 @@ export function CatalogSelector({
             <div className="ps-multimat-option ps-multimat-empty">{emptyMessage}</div>
           ) : (
             options.map((option) => (
-              <CatalogOption key={option} selected={draftSelected.includes(option)} onClick={() => selectOption(option)}>{option}</CatalogOption>
+              <CatalogOption key={option} selected={selectedValues.includes(option)} onClick={() => selectOption(option)}>{option}</CatalogOption>
             ))
           )}
-          <div className="ps-multimat-actions">
-            <button type="button" className="ps-multimat-cancel" onClick={handleCancel}>Cancelar</button>
-            <button type="button" className="ps-multimat-confirm" onClick={handleCommit} disabled={!hasDraftValue}>Agregar</button>
-          </div>
         </div>
       )}
     </div>
@@ -627,14 +591,14 @@ export function ProductionFileSpecifications({
           }}
         />
       </label>
-      <label className="production-file-field">
+      <div className="production-file-field">
         <span id={materialsLabelId} className="production-file-field-label">Materiales</span>
         <MultiMaterialSelector selected={materialNames} onChange={onMaterialsChange} options={materialOptions} disabled={materialsDisabled} ariaLabelledBy={materialsLabelId} />
-      </label>
-      <label className="production-file-field">
+      </div>
+      <div className="production-file-field">
         <span id={terminationLabelId} className="production-file-field-label">Terminación</span>
         <TerminationSelector value={terminationName} onChange={onTerminationChange} options={terminationOptions} disabled={terminationDisabled} ariaLabelledBy={terminationLabelId} />
-      </label>
+      </div>
     </div>
   );
 }
@@ -649,6 +613,7 @@ export function ProductionFileDetailsModal({
   saving = false,
   orderId = null,
   fileKey = "",
+  lockArea = false,
 }) {
   const [draft, setDraft] = useState(value || {});
   const [errors, setErrors] = useState({});
@@ -702,7 +667,7 @@ export function ProductionFileDetailsModal({
       onClose={onClose}
       title={`Detalles: ${fileName || "archivo"}`}
       hideStripe
-      className="ps-file-details-modal"
+      className="ps-file-details-modal ps-modal-form-visual"
       overlayClassName="ps-file-details-overlay"
       headerContent={
         <>
@@ -728,7 +693,7 @@ export function ProductionFileDetailsModal({
           terminationName={draft.terminationName}
           catalog={catalog}
           isError={Boolean(errors.areaCode || errors.materials || errors.terminationName)}
-          areaDisabled={!draft.publicLabel?.trim()}
+          areaDisabled={!draft.publicLabel?.trim() || lockArea}
           materialsDisabled={!draft.publicLabel?.trim() || !draft.areaCode}
           terminationDisabled={!draft.publicLabel?.trim() || !draft.areaCode}
           onAreaChange={(value) => update("areaCode", value)}
@@ -781,6 +746,7 @@ export default function CreateOrderModal({
   const [fieldErrors, setFieldErrors] = useState({});
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
+  const [pendingDetailsIndices, setPendingDetailsIndices] = useState([]);
   const [detailsFileIndex, setDetailsFileIndex] = useState(null);
   // A retry after an uncertain network response must address the same command.
   const createRequestIdRef = useRef(null);
@@ -793,6 +759,7 @@ export default function CreateOrderModal({
     setFieldErrors({});
     setMissingLabelIndices([]);
     setMissingAreaIndices([]);
+    setPendingDetailsIndices([]);
     setDetailsFileIndex(null);
   }, [userId]);
 
@@ -1118,12 +1085,24 @@ export default function CreateOrderModal({
 
   return (
     <>
-    <Modal open={open} onClose={handleClose} title="Nueva Orden" stickyHeader hideStripe>
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Nueva Orden"
+      stickyHeader
+      hideStripe
+      className="ps-create-order-modal ps-modal-form-visual"
+      footer={(
+        <div className="ps-form-actions">
+          <button className="ps-btn-cancel" onClick={handleClose}>Cancelar</button>
+          <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
+            {loading ? (<><span className="ps-btn-spinner" /> Guardando...</>) : "Crear Orden"}
+          </button>
+        </div>
+      )}
+    >
       {error && <div className="ps-form-error">{error}</div>}
 
-      <div className="ps-form-section-title">
-        <span className="ps-form-section-num">1</span> Datos del cliente
-      </div>
       <div className="ps-form-grid">
         <div className="col-full">
           <Field label="Cliente registrado" required hint="Busca y selecciona un cliente registrado." error={fieldErrors.client_id}>
@@ -1180,12 +1159,6 @@ export default function CreateOrderModal({
             <span>Asignar código de facturación en Caja</span>
           </label>
         </div>
-      </div>
-
-      <div className="ps-form-section-title">
-        <span className="ps-form-section-num">2</span> Detalles del trabajo
-      </div>
-      <div className="ps-form-grid">
         <div className="col-full">
           <Field label="Descripcion del trabajo" required error={fieldErrors.description}>
             <textarea className="ps-form-input textarea" placeholder="Describe el trabajo solicitado por el cliente..."
@@ -1244,11 +1217,16 @@ export default function CreateOrderModal({
                   buttonLabel="Subir archivos"
                   hint="Archivos del diseño (PDF, AI, PNG, JPG...)"
                   onFilesAccepted={(files) => {
+                    const firstNewFileIndex = form.design_files.length;
                     set("design_files", [...form.design_files, ...files]);
                     set("design_file_areas", [...form.design_file_areas, ...files.map(() => "")]);
                     set("design_file_labels", [...form.design_file_labels, ...files.map(() => "")]);
                     set("design_file_materials", [...form.design_file_materials, ...files.map(() => [])]);
                     set("design_file_terminations", [...form.design_file_terminations, ...files.map(() => "")]);
+                    setPendingDetailsIndices((previous) => [
+                      ...previous,
+                      ...files.map((_, offset) => firstNewFileIndex + offset),
+                    ]);
                     setFieldErrors(previous => ({ ...previous, design_files: "" }));
                   }}
                 />
@@ -1264,11 +1242,18 @@ export default function CreateOrderModal({
                             title: `Ver detalles de ${file.name}`,
                             label: "Detalles",
                             icon: <Icons.Edit />,
-                            onClick: () => setDetailsFileIndex(index),
+                            attention: pendingDetailsIndices.includes(index),
+                            onClick: () => {
+                              setPendingDetailsIndices((previous) => previous.filter((pendingIndex) => pendingIndex !== index));
+                              setDetailsFileIndex(index);
+                            },
                           }]}
                           removeIcon={<Icons.Trash />}
                           removeTitle={`Eliminar ${file.name}`}
                           onRemove={() => {
+                            setPendingDetailsIndices((previous) => previous
+                              .filter((pendingIndex) => pendingIndex !== index)
+                              .map((pendingIndex) => (pendingIndex > index ? pendingIndex - 1 : pendingIndex)));
                             set("design_files", form.design_files.filter((_, currentIndex) => currentIndex !== index));
                             set("design_file_areas", form.design_file_areas.filter((_, currentIndex) => currentIndex !== index));
                             set("design_file_labels", form.design_file_labels.filter((_, currentIndex) => currentIndex !== index));
@@ -1413,12 +1398,6 @@ export default function CreateOrderModal({
         </div>
       </div>
 
-      <div className="ps-form-actions">
-        <button className="ps-btn-cancel" onClick={handleClose}>Cancelar</button>
-        <button className="ps-btn-submit" onClick={handleSubmit} disabled={loading}>
-          {loading ? (<><span className="ps-btn-spinner" /> Guardando...</>) : "Crear Orden →"}
-        </button>
-      </div>
     </Modal>
     <ProductionFileDetailsModal
       open={Boolean(selectedDetailsFile)}

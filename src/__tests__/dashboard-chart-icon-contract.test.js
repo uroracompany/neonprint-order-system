@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 
 const readSource = (relativePath) => fs.readFileSync(
   path.resolve(process.cwd(), relativePath),

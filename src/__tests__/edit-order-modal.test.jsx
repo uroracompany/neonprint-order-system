@@ -119,7 +119,10 @@ describe("EditOrderModal seller hydration", () => {
 
     await user.upload(uploadInput, file);
 
-    await user.click(screen.getByRole("button", { name: "Detalles" }));
+    const detailsButton = screen.getByRole("button", { name: "Detalles" });
+    expect(detailsButton).toHaveClass("fc-file-action-attention");
+    await user.click(detailsButton);
+    expect(screen.getByRole("button", { name: "Detalles" })).not.toHaveClass("fc-file-action-attention");
     expect(screen.getByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
     expect(screen.getByLabelText("Nombre visible en seguimiento")).toBeInTheDocument();
     expect(screen.getByLabelText("Área de producción")).toBeInTheDocument();

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -67,6 +67,59 @@ beforeEach(async () => {
 });
 
 describe("secure login", () => {
+  it("starts every login entry empty and disables browser credential autofill", () => {
+    renderLobby();
+
+    const email = screen.getByLabelText("Correo electrónico");
+    const password = screen.getByLabelText("Contraseña");
+    const form = screen.getByRole("button", { name: /acceder al sistema/i }).closest("form");
+
+    expect(email).toHaveValue("");
+    expect(password).toHaveValue("");
+    expect(form).toHaveAttribute("autocomplete", "off");
+    expect(email).toHaveAttribute("autocomplete", "off");
+    expect(password).toHaveAttribute("autocomplete", "new-password");
+    expect(email).toHaveAttribute("name", "np-login-identifier");
+    expect(password).toHaveAttribute("name", "np-login-secret");
+    expect(email).toHaveAttribute("readonly");
+    expect(password).toHaveAttribute("readonly");
+  });
+
+  it("clears a native autofill value when the user starts interacting", async () => {
+    const user = userEvent.setup();
+    renderLobby();
+
+    const email = screen.getByLabelText("Correo electrónico");
+    const password = screen.getByLabelText("Contraseña");
+    email.value = "otro-usuario@empresa.com";
+    password.value = "credencial-ajena";
+
+    fireEvent.focus(email);
+    fireEvent.focus(password);
+
+    expect(email).toHaveValue("");
+    expect(password).toHaveValue("");
+
+    await user.type(email, "propio@empresa.com");
+    await user.type(password, "MiClaveSegura");
+    expect(email).toHaveValue("propio@empresa.com");
+    expect(password).toHaveValue("MiClaveSegura");
+  });
+
+  it("keeps fields empty after the Login component is re-entered", () => {
+    const view = renderLobby();
+    const email = screen.getByLabelText("Correo electrónico");
+    const password = screen.getByLabelText("Contraseña");
+    email.value = "previous@example.com";
+    password.value = "previous-password";
+
+    view.unmount();
+    renderLobby();
+
+    expect(screen.getByLabelText("Correo electrónico")).toHaveValue("");
+    expect(screen.getByLabelText("Contraseña")).toHaveValue("");
+  });
+
   it("keeps the original visible login surface without new UX controls", () => {
     renderLobby();
 

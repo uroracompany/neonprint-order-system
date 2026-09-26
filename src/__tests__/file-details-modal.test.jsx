@@ -9,6 +9,12 @@ const catalog = {
 };
 
 describe("ProductionFileDetailsModal", () => {
+  it("comparte la variante visual de formularios con Nueva orden", () => {
+    render(<ProductionFileDetailsModal open fileName="banner.pdf" value={{}} catalog={catalog} onSave={vi.fn()} onClose={vi.fn()} />);
+
+    expect(screen.getByRole("dialog")).toHaveClass("ps-file-details-modal", "ps-modal-form-visual");
+  });
+
   it("restores a file configuration and saves only that file draft", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
@@ -133,6 +139,41 @@ describe("ProductionFileDetailsModal", () => {
     );
 
     expect(screen.getByRole("combobox", { name: "Materiales" })).toHaveTextContent("Banner");
+  });
+
+  it("conserva todos los materiales del modal al perder foco y agregar otro", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProductionFileDetailsModal
+        open
+        fileKey="archivo-multi"
+        fileName="banner.pdf"
+        value={{ publicLabel: "Banner", areaCode: "ploteo", materialNames: [], terminationName: "" }}
+        catalog={{ materials: { ploteo: ["Banner", "Vinilo", "Lona", "PVC"] }, terminations: { ploteo: ["Ojales"] } }}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const materials = screen.getByRole("combobox", { name: "Materiales" });
+    await user.click(materials);
+    await user.click(screen.getByRole("option", { name: "Banner" }));
+    expect(screen.getByRole("combobox", { name: "Materiales" })).toHaveTextContent("Banner");
+    await user.click(screen.getByRole("option", { name: "Vinilo" }));
+    expect(screen.getByRole("combobox", { name: "Materiales" })).toHaveTextContent("Banner");
+    await user.click(screen.getByRole("option", { name: "Lona" }));
+    expect(screen.getByRole("combobox", { name: "Materiales" })).toHaveTextContent("Banner");
+    await user.click(document.body);
+    expect(screen.getByRole("combobox", { name: "Materiales" })).toHaveTextContent("Banner");
+    await user.click(screen.getByRole("combobox", { name: "Materiales" }));
+    expect(screen.getByRole("combobox", { name: "Materiales" })).toHaveTextContent("Banner");
+    await user.click(screen.getByRole("option", { name: "PVC" }));
+
+    const reopenedMaterials = screen.getByRole("combobox", { name: "Materiales" });
+    expect(reopenedMaterials).toHaveTextContent("Banner");
+    expect(reopenedMaterials).toHaveTextContent("Vinilo");
+    expect(reopenedMaterials).toHaveTextContent("Lona");
+    expect(reopenedMaterials).toHaveTextContent("PVC");
   });
 
   it("actualiza el catálogo al cambiar el área sin mezclar opciones de otra área", async () => {

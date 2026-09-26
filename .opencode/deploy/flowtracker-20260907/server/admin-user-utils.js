@@ -1,0 +1,86 @@
+export const ADMIN_USER_ROLES = [
+  "admin",
+  "semi_admin",
+  "seller",
+  "designer",
+  "quote",
+  "printer",
+  "digital_producer",
+  "dtf_producer",
+  "ploteo_producer",
+  "delivery",
+];
+
+export const ADMIN_USER_ROLE_SET = new Set(ADMIN_USER_ROLES);
+
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const MIN_ADMIN_PASSWORD_LENGTH = 13;
+
+export function getPasswordPolicyError(password) {
+  const value = String(password || "");
+
+  if (value.length < MIN_ADMIN_PASSWORD_LENGTH) {
+    return "La contrasena debe tener mas de 12 caracteres.";
+  }
+
+  return null;
+}
+
+export function isDuplicateAuthEmailError(error) {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+
+  return code === "email_exists"
+    || code === "user_already_exists"
+    || /user already registered|email.*already (exists|registered)|already exists.*email/.test(message);
+}
+
+export function jsonResponse(status, body) {
+  return { status, body };
+}
+
+// Do not expose provider, database, or environment details through API responses.
+// Operational details belong in restricted server logs/observability only.
+export function internalError(message = "No se pudo completar la operacion. Intentalo nuevamente.", code = "INTERNAL") {
+  return jsonResponse(500, { error: message, code });
+}
+
+export function getEnvValue(env, key, fallback) {
+  return env[key] || (fallback ? env[fallback] : undefined);
+}
+
+export function getSupabaseAdminEnv(env) {
+  const supabaseUrl = getEnvValue(env, "SUPABASE_URL");
+  const serviceRoleKey = getEnvValue(env, "SUPABASE_SERVICE_ROLE_KEY");
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return {
+      error: internalError("La configuracion segura del servidor no esta disponible."),
+    };
+  }
+
+  return { supabaseUrl, serviceRoleKey };
+}
+
+export function isMissingEmailColumnError(error) {
+  return error?.code === "42703" || /column .*email/i.test(error?.message || "");
+}
+
+export function normalizeUserProfile(profile, fallback = {}) {
+  const src = profile || fallback;
+  if (!src || !src.id) return null;
+
+  return {
+    id: src.id,
+    name: src.name || "",
+    email: src.email || "",
+    role: src.role || "",
+    employment_status: src.employment_status ?? true,
+    ...(src.deleted_at ? {
+      deleted_at: src.deleted_at,
+      deleted_by: src.deleted_by || null,
+      deletion_reason: src.deletion_reason || null,
+    } : {}),
+    created_at: src.created_at || null,
+  };
+}

@@ -22,6 +22,17 @@ const SELLER_EDIT_BLOCKED_STATUSES = new Set([
   ORDER_STATUS.IN_QUOTE,
 ]);
 
+const SEMI_ADMIN_ASSET_EDITABLE_STATUSES = new Set([
+  ORDER_STATUS.PENDING,
+  "Pending",
+  ORDER_STATUS.IN_DESIGN,
+  "In_Design",
+  ORDER_STATUS.IN_QUOTE,
+  ORDER_STATUS.IN_PRODUCTION,
+  ORDER_STATUS.IN_TERMINATION,
+  ORDER_STATUS.IN_COMPLETED,
+]);
+
 const SELLER_EDITABLE_ORDER_FIELDS = new Set([
   "client_id",
   "client_name",
@@ -35,6 +46,7 @@ const SELLER_EDITABLE_ORDER_FIELDS = new Set([
   "preview_image",
   "reference_images",
 ]);
+const SEMI_ADMIN_ASSET_FIELDS = new Set(["order_file_url", "preview_image", "reference_images"]);
 
 const normalizeText = (value) => String(value || "").trim();
 const normalizeKey = (value) => normalizeText(value).toLowerCase();
@@ -54,6 +66,8 @@ const SELLER_LIST_COLUMNS = [
   "client_name",
   "invoice_number",
   "invoice_assignment_mode",
+  "production_authorized_at",
+  "production_authorized_by",
   "status",
   "payment_status",
   "order_design_type",
@@ -69,6 +83,7 @@ const SELLER_SUMMARY_COLUMNS = "id,status,created_at,is_archived,return_reason,o
 const isPaymentPartial = (value) => ["parcial", "partial"].includes(normalizeKey(value));
 const isPaymentPaid = (value) => ["pagado", "paid"].includes(normalizeKey(value));
 const isPaymentCredit = (value) => ["credito", "crédito", "credit"].includes(normalizeKey(value));
+const isPaymentProductionEligible = (value) => isPaymentPaid(value) || isPaymentPartial(value) || isPaymentCredit(value);
 const SEMI_ADMIN_CANCELLABLE_STATUSES = new Set(["Pending", "in_Design", "in_Quote"]);
 const isSemiAdminCancellableOrder = (order, profile) => (
   isOwnedByProfile(order, profile)
@@ -241,9 +256,38 @@ const applySellerOwnershipFilter = (query, sellerId) => (
 const isAdminProfile = (profile) => profile?.role === "admin";
 const isSemiAdminProfile = (profile) => profile?.role === "semi_admin";
 const isOrderOperatorProfile = (profile) => isAdminProfile(profile) || isSemiAdminProfile(profile);
+const SEMI_ADMIN_PARTICIPANT_FIELDS = ["created_by", "seller_id", "designer_id", "quote_id", "delivery_id"];
+const SEMI_ADMIN_QUOTE_ACTION_FIELDS = ["created_by", "seller_id", "designer_id", "quote_id"];
 
 const isOwnedByProfile = (order, profile) =>
   Boolean(order?.seller_id === profile?.id || order?.created_by === profile?.id);
+
+const isSemiAdminParticipant = (order, profile) => (
+  isSemiAdminProfile(profile)
+  && SEMI_ADMIN_PARTICIPANT_FIELDS.some((field) => order?.[field] === profile?.id)
+);
+
+// Delivery participation grants delivery actions, not financial or quote-stage authority.
+const isSemiAdminQuoteActionParticipant = (order, profile) => (
+  isSemiAdminProfile(profile)
+  && SEMI_ADMIN_QUOTE_ACTION_FIELDS.some((field) => order?.[field] === profile?.id)
+);
+
+const isSemiAdminAssetParticipant = (order, profile) => (
+  isSemiAdminParticipant(order, profile)
+  && SEMI_ADMIN_ASSET_EDITABLE_STATUSES.has(normalizeText(order?.status))
+  && !order?.is_archived
+  && order?.operational_status !== "blocked"
+);
+
+const canSemiAdminConfirmDelivery = (order, profile) => (
+  isSemiAdminProfile(profile)
+  && order?.delivery_id === profile?.id
+  && normalizeText(order?.status) === ORDER_STATUS.IN_COMPLETED
+  && ["pagado", "credito"].includes(normalizeKey(order?.payment_status))
+  && !order?.is_archived
+  && order?.operational_status !== "blocked"
+);
 
 const buildAuthenticatedSupabase = (auth, env) => {
   const anonKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
@@ -367,7 +411,16 @@ async function handleDetail(payload, auth, env) {
   if (loaded.response) return loaded.response;
 
   if (!isSemiAdminProfile(auth.profile)) {
-    return jsonResponse(200, { order: loaded.order });
+    const { data: files, error: filesError } = await auth.supabaseAdmin
+      .from("order_production_files")
+      .select("id,order_id,url,filename,public_label,production_area_code,material_names,termination_name,status,assigned_to,updated_at")
+      .eq("order_id", loaded.order.id)
+      .order("created_at", { ascending: true });
+    if (filesError) {
+      debugSellerOrderAction("seller-detail-files-error", { orderId: loaded.order.id, error: filesError.message }, env);
+      return jsonResponse(500, { error: "No se pudieron cargar los archivos de producción." });
+    }
+    return jsonResponse(200, { order: { ...loaded.order, order_production_files: files || [] } });
   }
 
   const [filesResult, operatorsResult, deliveryResult, stageUsersResult, operationalEventsResult] = await Promise.all([
@@ -401,7 +454,7 @@ async function handleDetail(payload, auth, env) {
       .from("order_events")
       .select("id,actor_id,event_type,old_status,new_status,old_payment_status,new_payment_status,changes,created_at")
       .eq("order_id", loaded.order.id)
-      .in("event_type", ["semi_admin_payment_updated", "semi_admin_stage_responsibility_changed", "semi_admin_return_quote_to_design"])
+      .in("event_type", ["semi_admin_payment_updated", "semi_admin_stage_responsibility_changed", "semi_admin_return_quote_to_design", "semi_admin_return_quote_to_previous_stage"])
       .order("created_at", { ascending: false })
       .limit(20),
   ]);
@@ -439,7 +492,13 @@ async function handleDetail(payload, auth, env) {
       event_type: event.event_type,
       created_at: event.created_at,
       actor: { id: event.actor_id || null, name: actor?.name || "Actor no disponible", role: actor?.role || null },
-      label: event.event_type === "semi_admin_payment_updated" ? "Pago actualizado" : event.event_type === "semi_admin_return_quote_to_design" ? "Regresó a Diseño" : `Responsabilidad ${stage || "operativa"}`,
+      label: event.event_type === "semi_admin_payment_updated"
+        ? "Pago actualizado"
+        : event.event_type === "semi_admin_return_quote_to_design"
+          ? "Regresó a Diseño"
+          : event.event_type === "semi_admin_return_quote_to_previous_stage"
+            ? (event.changes?.target_stage === "sales" ? "Regresó a Ventas" : "Regresó a Diseño")
+            : `Responsabilidad ${stage || "operativa"}`,
       old_value: oldValue,
       new_value: newValue,
     };
@@ -516,15 +575,20 @@ async function handleUpdate(payload, auth, env) {
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
 
+  const assetOperation = isSemiAdminProfile(auth.profile) && payload.asset_operation === "manage_assets";
+  if (assetOperation && !isSemiAdminAssetParticipant(loaded.order, auth.profile)) {
+    return jsonResponse(403, { error: "Solo un Semi-Administrador participante o responsable puede gestionar los archivos de esta orden.", code: "SEMI_ADMIN_ASSET_FORBIDDEN" });
+  }
+
   if (!isAdminProfile(auth.profile) && loaded.order.is_archived) {
     return jsonResponse(409, { error: "No se puede editar una orden archivada en Ventas." });
   }
 
-  if (!isAdminProfile(auth.profile) && SELLER_EDIT_BLOCKED_STATUSES.has(loaded.order.status)) {
+  if (!isAdminProfile(auth.profile) && !assetOperation && SELLER_EDIT_BLOCKED_STATUSES.has(loaded.order.status)) {
     return jsonResponse(409, { error: "No se puede editar una orden en cotizacion." });
   }
 
-  if (isSemiAdminProfile(auth.profile) && [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_DELIVERED].includes(loaded.order.status)) {
+  if (isSemiAdminProfile(auth.profile) && !assetOperation && [ORDER_STATUS.CANCELLED, ORDER_STATUS.IN_DELIVERED].includes(loaded.order.status)) {
     return jsonResponse(409, { error: "No se puede editar una orden cancelada o entregada." });
   }
 
@@ -534,6 +598,9 @@ async function handleUpdate(payload, auth, env) {
   }
 
   const rawChanges = payload.changes || payload.payload || payload;
+  if (assetOperation && Object.keys(rawChanges || {}).some((field) => !SEMI_ADMIN_ASSET_FIELDS.has(field))) {
+    return jsonResponse(400, { error: "La gestión de archivos solo puede modificar archivos y referencias.", code: "SEMI_ADMIN_ASSET_PAYLOAD" });
+  }
   const foreignSemiAdminOrder = isSemiAdminProfile(auth.profile) && !isOwnedByProfile(loaded.order, auth.profile);
   if (foreignSemiAdminOrder && ["seller_id", "created_by", "client_id", "client_name", "client_contact"].some((field) => Object.prototype.hasOwnProperty.call(rawChanges || {}, field))) {
     return jsonResponse(403, { error: "No puedes cambiar el vendedor ni el cliente de una orden ajena.", code: "ORDER_PROTECTED_FIELDS" });
@@ -548,6 +615,14 @@ async function handleUpdate(payload, auth, env) {
     loaded.order,
     auth.profile.id
   );
+  // Asset-only SemiAdmin calls never accept lifecycle/ownership fields from
+  // the browser. The SQL function keeps the URL as the row identity and
+  // applies its own pending-file guards for destructive operations.
+  const commandProductionFileRows = assetOperation
+    ? productionFileRows.map((row) => Object.fromEntries(
+      Object.entries(row).filter(([field]) => !["status", "created_by", "updated_by", "order_id"].includes(field))
+    ))
+    : productionFileRows;
   const removedFileUrls = sanitizeUrlList(payload.removed_file_urls || payload.removedFileUrls);
 
   const command = isSemiAdminProfile(auth.profile)
@@ -561,7 +636,7 @@ async function handleUpdate(payload, auth, env) {
       p_action: "update_order",
       p_payload: {
         changes,
-        new_production_files: productionFileRows,
+        new_production_files: commandProductionFileRows,
         removed_file_urls: removedFileUrls,
         asset_operation: payload.asset_operation === "manage_assets" ? "manage_assets" : null,
         asset_removal_only: payload.asset_removal_only === true,
@@ -706,6 +781,40 @@ const requireSemiAdminAction = (auth) => (
     : jsonResponse(403, { error: "Esta operación está reservada para Semi-Administración.", code: "SEMI_ADMIN_ONLY" })
 );
 
+const resolveHistoryVerifiedQuoteReturn = async (supabaseAdmin, order) => {
+  if (!order?.id || order.status !== ORDER_STATUS.IN_QUOTE || order.payment_status !== "Pending_Payment") return null;
+  const { data: events, error } = await supabaseAdmin
+    .from("order_events")
+    .select("id,event_type,old_status,new_status,old_payment_status,new_payment_status,changes,created_at")
+    .eq("order_id", order.id)
+    .order("created_at", { ascending: false })
+    .limit(80);
+  if (error) throw error;
+
+  const paymentEvent = (events || []).find((event) => (
+    event.event_type === "semi_admin_payment_updated"
+    && event.old_payment_status === "pagado"
+    && event.new_payment_status === "Pending_Payment"
+    && event.changes?.correction === "paid_to_pending_in_quote"
+  ));
+
+  const routeTypes = order.order_design_type === "EXTERNAL_DESING"
+    ? { eventType: "semi_admin_send_to_quote", oldStatus: "Pending", targetStatus: "Pending", title: "Regresar a Ventas", targetStage: "sales" }
+    : order.order_design_type === "INTERNAL_DESING"
+      ? { eventType: "semi_admin_send_design_to_quote", oldStatus: "in_Design", targetStatus: "in_Design", title: "Regresar a Diseño", targetStage: "design" }
+      : null;
+  if (!routeTypes) return null;
+
+  const routeEvent = (events || []).find((event) => (
+    event.event_type === routeTypes.eventType
+    && event.old_status === routeTypes.oldStatus
+    && event.new_status === ORDER_STATUS.IN_QUOTE
+    && new Date(event.created_at).getTime() <= (paymentEvent ? new Date(paymentEvent.created_at).getTime() : Date.now())
+  ));
+  if (!routeEvent) return null;
+  return { ...routeTypes, paymentEventId: paymentEvent?.id || null, routeEventId: routeEvent.id };
+};
+
 async function handleSemiAdminOperationalCatalog(payload, auth, env) {
   const roleError = requireSemiAdminAction(auth);
   if (roleError) return roleError;
@@ -728,6 +837,30 @@ async function handleSemiAdminOperationalCatalog(payload, auth, env) {
         next_safe_step: "Caja debe registrar el código de facturación antes de continuar la orden.",
       },
     ];
+  }
+
+  const previousStageReturn = await resolveHistoryVerifiedQuoteReturn(auth.supabaseAdmin, loaded.order);
+  catalog.actions = (catalog.actions || []).filter((action) => (
+    action?.key !== "return_quote_to_design" && action?.key !== "return_quote_to_previous_stage"
+  ));
+  catalog.unavailable_actions = (catalog.unavailable_actions || []).filter((action) => (
+    action?.key !== "return_quote_to_design" && action?.key !== "return_quote_to_previous_stage"
+  ));
+  const canManageDesignAssets = isSemiAdminAssetParticipant(loaded.order, auth.profile);
+  if (!catalog.locked && canManageDesignAssets && !catalog.actions.some((action) => action?.key === "manage_design_assets")) {
+    catalog.actions = [
+      ...(catalog.actions || []),
+      { key: "manage_design_assets", title: "Gestionar diseños y archivos" },
+    ];
+  }
+  if (previousStageReturn && isSemiAdminQuoteActionParticipant(loaded.order, auth.profile)) {
+    catalog.actions = [
+      ...(catalog.actions || []),
+      { key: "return_quote_to_previous_stage", title: previousStageReturn.title, requires_reason: true, target_stage: previousStageReturn.targetStage },
+    ];
+  }
+  if (!canSemiAdminConfirmDelivery(loaded.order, auth.profile)) {
+    catalog.actions = (catalog.actions || []).filter((action) => action?.key !== "mark_delivered");
   }
   return jsonResponse(200, { catalog });
 }
@@ -814,6 +947,53 @@ const handleRouteProduction = (payload, auth, env) => handleSemiAdminOrderComman
   })
 );
 
+const handleSellerRouteProduction = async (payload, auth, env) => {
+  if (auth.profile?.role !== "seller") {
+    return jsonResponse(403, {
+      error: "Solo Ventas puede enviar órdenes de Diseño Externo a Producción.",
+      code: "SELLER_PRODUCTION_ROLE_FORBIDDEN",
+    });
+  }
+
+  const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
+  if (loaded.response) return loaded.response;
+
+  const order = loaded.order;
+  if (order.order_design_type !== "EXTERNAL_DESING") {
+    return jsonResponse(403, { error: "Solo Ventas puede enviar órdenes de Diseño Externo a Producción.", code: "SELLER_PRODUCTION_DESIGN_TYPE_FORBIDDEN" });
+  }
+  if (order.status !== ORDER_STATUS.IN_QUOTE) {
+    return jsonResponse(409, { error: "La orden debe estar en Caja antes de enviarse a Producción.", code: "SELLER_PRODUCTION_STATUS_INVALID" });
+  }
+  if (!isPaymentProductionEligible(order.payment_status)) {
+    return jsonResponse(409, { error: "El pago debe ser pagado, parcial o a crédito antes de continuar.", code: "SELLER_PRODUCTION_PAYMENT_REQUIRED" });
+  }
+  if (!order.production_authorized_at || !order.production_authorized_by) {
+    return jsonResponse(409, { error: "Caja o Administración debe autorizar la orden antes de enviarla a Producción.", code: "SELLER_PRODUCTION_AUTHORIZATION_REQUIRED" });
+  }
+  if (order.is_archived || order.operational_status === "blocked") {
+    return jsonResponse(409, { error: "La orden está archivada o bloqueada.", code: "SELLER_PRODUCTION_ORDER_LOCKED" });
+  }
+
+  const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || order.updated_at;
+  if (!timestampsMatch(order.updated_at, expectedUpdatedAt)) {
+    return jsonResponse(409, { error: "La orden cambió mientras la editabas. Actualiza los datos e intenta nuevamente." });
+  }
+
+  const result = await callSellerOrderCommand(
+    buildAuthenticatedSupabase(auth, env),
+    "send_order_to_production",
+    {
+      p_order_id: order.id,
+      p_area_assignments: payload.area_assignments || payload.areaAssignments || {},
+    },
+    order,
+    env
+  );
+  if (result.response) return result.response;
+  return jsonResponse(200, { order: result.order });
+};
+
 const handleStageResponsibility = (payload, auth, env) => handleSemiAdminOrderCommand(
   payload, auth, env, "semi_admin_assign_stage_responsibility",
   (order, expectedUpdatedAt) => ({
@@ -830,12 +1010,32 @@ async function handleSemiAdminCatalogCommand(payload, auth, env, action) {
   if (roleError) return roleError;
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
-  const isResponsible = [loaded.order.designer_id, loaded.order.quote_id, loaded.order.seller_id, loaded.order.created_by].includes(auth.profile.id);
+  const isResponsible = isSemiAdminQuoteActionParticipant(loaded.order, auth.profile);
   if (action === "register_payment" && (loaded.order.status !== ORDER_STATUS.IN_QUOTE || !isResponsible)) {
     return jsonResponse(isResponsible ? 409 : 403, { error: "El pago de Semi-Administración solo se gestiona por el responsable en Caja.", code: "SEMI_ADMIN_PAYMENT_FORBIDDEN" });
   }
   if (action === "return_quote_to_design" && (loaded.order.status !== ORDER_STATUS.IN_QUOTE || loaded.order.payment_status !== "Pending_Payment" || !loaded.order.designer_id || !isResponsible)) {
     return jsonResponse(isResponsible ? 409 : 403, { error: "El regreso a Diseño requiere Caja, pago pendiente y un diseñador asignado.", code: "SEMI_ADMIN_RETURN_FORBIDDEN" });
+  }
+  if (action === "return_quote_to_previous_stage") {
+    const target = await resolveHistoryVerifiedQuoteReturn(auth.supabaseAdmin, loaded.order);
+    if (!target || !isResponsible) {
+      return jsonResponse(isResponsible ? 409 : 403, { error: "El retorno requiere una corrección de pago y una transición previa auditada.", code: "SEMI_ADMIN_RETURN_HISTORY_REQUIRED" });
+    }
+    const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
+    const result = await callSellerOrderCommand(
+      buildAuthenticatedSupabase(auth, env),
+      "semi_admin_return_quote_to_previous_stage",
+      {
+        p_order_id: loaded.order.id,
+        p_reason: payload.reason || "",
+        p_expected_updated_at: expectedUpdatedAt,
+      },
+      loaded.order,
+      env
+    );
+    if (result.response) return result.response;
+    return jsonResponse(200, { order: result.order });
   }
   const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
   const commandPayload = { ...payload };
@@ -931,9 +1131,11 @@ const ACTION_HANDLERS = {
   reassign_production_file: handleReassignProductionFile,
   production_specifications: handleProductionSpecifications,
   route_production: handleRouteProduction,
+  seller_route_production: handleSellerRouteProduction,
   stage_responsibility: handleStageResponsibility,
   register_payment: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "register_payment"),
   return_quote_to_design: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "return_quote_to_design"),
+  return_quote_to_previous_stage: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "return_quote_to_previous_stage"),
   send_design_to_quote: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "send_design_to_quote"),
   return_design_to_sales: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "return_design_to_sales"),
 };

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   ResponsiveContainer,
   PieChart,
@@ -45,11 +45,6 @@ const STATUS_COLORS = {
   cancelled: '#EF4444',
 }
 
-function number(value) {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
 function formatTrendDay(value) {
   const [year, month, day] = String(value || '').split('-').map(Number)
   if (!year || !month || !day) return value
@@ -72,7 +67,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   )
 }
 
-function MetricCard({ label, value, icon: Icon, color, detail }) {
+function MetricCard({ label, value, icon: Icon, detail }) {
   return (
     <div className="kpi-order-stats-metric">
       <span className="kpi-order-stats-metric-label">{Icon && <Icon size={14} />}{label}</span>
@@ -457,25 +452,21 @@ export default function OrderStatisticsModal({ open, userId, onClose, initialPer
                 label="Total de órdenes"
                 value={cards.total}
                 icon={Icons.Orders}
-                color="#1E40AF"
               />
               <MetricCard
                 label="Órdenes activas"
                 value={cards.active}
                 icon={Icons.TrendUp}
-                color="#10B981"
               />
               <MetricCard
                 label="Órdenes canceladas"
                 value={cards.cancelled}
                 icon={Icons.AlertCircle}
-                color="#EF4444"
               />
               <MetricCard
                 label="Activas a crédito"
                 value={cards.activeCredit}
                 icon={Icons.Money}
-                color="#F59E0B"
               />
             </div>
 

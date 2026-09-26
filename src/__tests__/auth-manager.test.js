@@ -84,7 +84,61 @@ describe("authManager", () => {
     refreshRequest.resolve({ data: { session: makeSession({ access_token: "new-token" }) }, error: null });
 
     await expect(Promise.all(requests)).resolves.toEqual(Array(10).fill("new-token"));
-    expect(authMock.getSession).toHaveBeenCalledTimes(1);
+    expect(authMock.getSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("usa el lock del navegador para evitar refresh concurrente entre pestañas", async () => {
+    const previousLocks = globalThis.navigator.locks;
+    const requestLock = vi.fn((name, options, callback) => callback());
+    Object.defineProperty(globalThis.navigator, "locks", {
+      configurable: true,
+      value: { request: requestLock },
+    });
+    authMock.getSession
+      .mockResolvedValueOnce({
+        data: { session: makeSession({ expires_at: Math.floor(Date.now() / 1000) + 10 }) },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { session: makeSession({ access_token: "latest-token", expires_at: Math.floor(Date.now() / 1000) + 3600 }) },
+        error: null,
+      });
+
+    try {
+      const manager = await loadManager();
+      await expect(manager.getFreshAccessToken()).resolves.toBe("latest-token");
+
+      expect(requestLock).toHaveBeenCalledWith(
+        "np-auth-refresh-session",
+        { mode: "exclusive" },
+        expect.any(Function),
+      );
+      expect(authMock.refreshSession).not.toHaveBeenCalled();
+    } finally {
+      if (previousLocks === undefined) delete globalThis.navigator.locks;
+      else Object.defineProperty(globalThis.navigator, "locks", { configurable: true, value: previousLocks });
+    }
+  });
+
+  it("no cierra una sesión válida cuando Supabase responde 429 y aplica backoff", async () => {
+    vi.useFakeTimers();
+    const session = makeSession({ expires_at: Math.floor(Date.now() / 1000) + 30 });
+    authMock.getSession.mockResolvedValue({ data: { session }, error: null });
+    authMock.refreshSession.mockResolvedValue({
+      data: { session: null },
+      error: Object.assign(new Error("Too Many Requests"), { status: 429, code: "over_request_rate_limit" }),
+    });
+    authMock.signOut.mockResolvedValue({ error: null });
+
+    const manager = await loadManager();
+    await expect(manager.maintainAuthSession({ forceRefresh: true, invalidateAtExpiry: true }))
+      .rejects.toMatchObject({ status: 429 });
+
+    expect(authMock.signOut).not.toHaveBeenCalled();
+    await expect(manager.maintainAuthSession({ forceRefresh: true, invalidateAtExpiry: true }))
+      .rejects.toMatchObject({ status: 429 });
+    expect(authMock.refreshSession).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it("limpia la caché de sesión al cerrar sesión", async () => {
@@ -122,6 +176,29 @@ describe("authManager", () => {
 
     await vi.advanceTimersByTimeAsync(1_000);
 
+    expect(authMock.refreshSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("introduce variación en la programación para evitar refreshes sincronizados", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.999999);
+    vi.setSystemTime(new Date("2026-08-11T15:00:00Z"));
+    authMock.getSession.mockResolvedValue({
+      data: { session: makeSession({ expires_at: Math.floor(Date.now() / 1000) + 180 }) },
+      error: null,
+    });
+    authMock.refreshSession.mockResolvedValue({
+      data: { session: makeSession({ access_token: "jittered-token" }) },
+      error: null,
+    });
+
+    const manager = await loadManager();
+    await manager.getAuthSession();
+
+    // 60 s safety buffer + 90 s jitter => refresh at 30 s before expiry.
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(authMock.refreshSession).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(authMock.refreshSession).toHaveBeenCalledTimes(1);
   });
 

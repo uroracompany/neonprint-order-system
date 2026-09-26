@@ -1,0 +1,45 @@
+.profile-period-control {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #4a5e80;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.profile-period-control svg {
+  width: 14px;
+  height: 14px;
+  color: #1d4ed8;
+}
+
+.profile-period-control select {
+  min-width: 142px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #0f1e40;
+  font: inherit;
+  cursor: pointer;
+}
+
+.profile-period-control:focus-within {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .profile-period-control {
+    width: 100%;
+  }
+
+  .profile-period-control select {
+    min-width: 0;
+    flex: 1;
+  }
+}

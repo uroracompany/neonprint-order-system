@@ -28,6 +28,8 @@ export const OPERATIONAL_ORDER_COLUMNS = [
   "invoice_number",
   "invoice_assignment_mode",
   "invoice_payment",
+  "production_authorized_at",
+  "production_authorized_by",
   "preview_image",
   "order_file_url",
   "reference_images",
@@ -62,4 +64,5 @@ export const PRODUCTION_ORDER_SELECT = [
 export const QUOTE_ORDER_SELECT = [
   OPERATIONAL_ORDER_COLUMNS,
   "order_production_files(id,order_id,url,filename,public_label,production_area_code,material_names,termination_name,status,updated_at)",
+  "order_files(id,provider,bucket,object_key,category,status,deleted_at,content_type,payment_image_verified_at)",
 ].join(",");

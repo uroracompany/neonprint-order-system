@@ -3,15 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 import Sidebar from "../components/Sidebar";
 import { uploadOrderAsset, buildPaymentReceiptPath, createSignedOrderAssetUrlFromStoredUrl } from "../utils/uploadOrderAsset";
-import { PAYMENT_RECEIPT_HINT, validateReceiptFile } from "../utils/receiptValidation";
-import { PAYMENT_RECEIPT_ACCEPT } from "../utils/fileValidation";
+import { validateReceiptFile } from "../utils/receiptValidation";
 import { Icons } from "../utils/icons";
 import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
 import { FilterSelect } from "../components/ui/FilterSelect";
 import "../components/ui/FilterSelect.css";
-import FileUploadZone from "../components/ui/FileUploadZone";
 import CreateClientModal from "../components/ui/CreateClientModal";
 import SettleCreditModal from "../components/ui/SettleCreditModal";
 import {
@@ -31,6 +29,7 @@ import {
   isOrderStatusIn,
   getFileNameFromUrl,
   formatDate,
+  getPaymentStatusLabel,
 } from "../utils/constants";
 import { SecureImageLink, SecureImageGallery } from "../components/ui/SecureImage";
 import { getReferenceImages } from "../utils/orderAssets";
@@ -54,7 +53,6 @@ import "../components/clients/AdminClientsModule.css";
 import OrderReviewCard from "../components/orders/OrderReviewCard";
 import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import NewOrderBadge from "../components/orders/NewOrderBadge";
-import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import ReturnToDesignerModal from "../components/orders/ReturnToDesignerModal";
 import { getReturnTargetLabel } from "../components/orders/returnToDesignerPresentation";
 import FileCard from "../components/FileCard";
@@ -64,11 +62,11 @@ import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import "../css-components/page-production.css";
 import "../css-components/page-quote.css";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import PaymentFormModal from "../components/ui/PaymentFormModal";
 import {
   canArchiveOrder,
   archiveOrder,
 } from "../utils/archive";
-import { getPaymentConfirmButtonLabel } from "../utils/paymentUi";
 import {
   CreditPendingAlertModal,
   CreditCustomReminderDueModal,
@@ -101,6 +99,22 @@ const getCanonicalPaymentReceiptCandidate = (order) => {
     && key.startsWith(`orders/${order.id}/`)
     ? reference
     : "";
+};
+const hasVerifiedPaymentReceipt = (order) => {
+  const reference = getCanonicalPaymentReceiptCandidate(order);
+  if (!reference) return false;
+
+  return Array.isArray(order?.order_files) && order.order_files.some((file) => (
+    file?.provider
+    && file?.bucket
+    && file?.object_key
+    && `${file.provider}://${file.bucket}/${file.object_key}` === reference
+    && file.category === "payment"
+    && file.status === "uploaded"
+    && !file.deleted_at
+    && Boolean(file.payment_image_verified_at)
+    && /^image\/[a-z0-9][a-z0-9.+-]*$/i.test(String(file.content_type || ""))
+  ));
 };
 const PER_PAGE = 15;
 // Verifica si una orden está asignada a un usuario específico de cotización
@@ -250,13 +264,6 @@ function ReturnedBadge({ compact = false }) {
 // Este modal determina automáticamente si la devuelve al diseñador o vendedor
 // basándose en el tipo de diseño (interno vs. externo)
 
-// MODAL PARA ENVIAR ÓRDENES A PRODUCCIÓN
-// Cuando una orden está cotizada y pagada, se envía a un impresor para que produzca
-// Este modal:
-// 1. Carga los usuarios con rol "printer" (impresores) disponibles
-// 2. Permite seleccionar el impresor responsable
-// 3. Asigna la orden al impresor seleccionado
-
 // MODAL PRINCIPAL DE DETALLE DE COTIZACIÓN
 // Este es el modal más importante de la página
 // Permite:
@@ -264,22 +271,18 @@ function ReturnedBadge({ compact = false }) {
 // 2. Confirmar o rechazar pagos
 // 3. Subir comprobantes de pago (solo si el estado es "Pagado")
 // 4. Devolver la orden al diseñador si hay problemas
-// 5. Enviar la orden a producción cuando está lista
-// 6. Archivar órdenes completadas
+// 5. Archivar órdenes completadas
 
 
 function QuoteOrderDetailModal({
   open,
   onClose,
   order,
-  onConfirmPayment,
-  onAssignInvoiceCode,
-  paymentSaving,
+  onOpenPayment,
+  onAuthorizeProduction,
+  authorizingProduction,
   sellerDirectory,
   onOpenReturnModal,
-  onValidationError,
-  onOpenProductionModal,
-  onCreditClientRequired,
   pendingReview,
   onAcknowledgeReview,
   reviewAcknowledging,
@@ -289,47 +292,13 @@ function QuoteOrderDetailModal({
   onAcknowledgeReturn,
   returnAcknowledging,
 }) {
-  const [receiptFile, setReceiptFile] = useState(null);
-  const [receiptPreviewAvailable, setReceiptPreviewAvailable] = useState(true);
-  const [receiptZoneError, setReceiptZoneError] = useState("");
-  const [receiptZoneErrorKey, setReceiptZoneErrorKey] = useState(0);
-  const [paymentStatus, setPaymentStatus] = useState("pagado");
-  const [localError, setLocalError] = useState("");
-  const [creditClientRequired, setCreditClientRequired] = useState(false);
-  const [initialPaymentStatus, setInitialPaymentStatus] = useState(null);
   const [receiptUrl, setReceiptUrl] = useState("");
-  const [invoiceCodeDraft, setInvoiceCodeDraft] = useState("");
-  const [invoiceCodeSaving, setInvoiceCodeSaving] = useState(false);
-  const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    if (open) {
-      setReceiptFile(null);
-      setReceiptPreviewAvailable(true);
-      setReceiptZoneError("");
-      setReceiptZoneErrorKey(0);
-      const defaultStatus = isPaymentPartial(order?.payment_status) ? PAYMENT_STATUS.PAID : order?.payment_status || PAYMENT_STATUS.PENDING;
-      setPaymentStatus(defaultStatus);
-      setInitialPaymentStatus(order?.payment_status || PAYMENT_STATUS.PENDING);
-      setLocalError("");
-      setCreditClientRequired(false);
-      setReceiptUrl("");
-      setInvoiceCodeDraft(order?.invoice_number || "");
-      setInvoiceCodeSaving(false);
-    }
-  }, [open, order?.id, order?.payment_status, order?.invoice_number]);
-
-  useEffect(() => {
-    if (paymentStatus !== PAYMENT_STATUS.CREDIT || order?.client_id) {
-      setCreditClientRequired(false);
-    }
-  }, [order?.client_id, paymentStatus]);
 
   useEffect(() => {
     let active = true;
 
     const loadReceiptUrl = async () => {
-      if (!open || !order?.invoice_payment) {
+      if (!open || !isPaymentPaid(order?.payment_status) || !order?.invoice_payment) {
         if (active) setReceiptUrl("");
         return;
       }
@@ -349,127 +318,36 @@ function QuoteOrderDetailModal({
     return () => {
       active = false;
     };
-  }, [open, order?.invoice_payment]);
-
-  const receiptPreviewUrl = useMemo(() => (
-    receiptFile && receiptPreviewAvailable ? URL.createObjectURL(receiptFile) : ""
-  ), [receiptFile, receiptPreviewAvailable]);
-
-  useEffect(() => () => {
-    if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
-  }, [receiptPreviewUrl]);
+  }, [open, order?.invoice_payment, order?.payment_status]);
 
   if (!open || !order) return null;
 
   const orderFiles = getOrderFiles(order);
   const productionFiles = getProductionFiles(order);
   const unclassifiedProductionFiles = productionFiles.filter((file) => !file.production_area_code).length;
+  const productionFilesReadyForAuthorization = productionFiles.length > 0 && productionFiles.every((file) => (
+    Boolean(file?.production_area_code)
+    && Array.isArray(file?.material_names)
+    && file.material_names.length > 0
+    && Boolean(String(file?.termination_name || "").trim())
+  ));
   const referenceImageUrls = getReferenceImages(order);
   const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
-  const canConfirmPayment = isQuoteEditable(order);
-  const canSelectPendingPayment = !isPaymentPartial(order.payment_status);
-  const isCompletingPartialPayment = isPaymentPartial(order.payment_status);
-  const persistedReceiptReference = getCanonicalPaymentReceiptCandidate(order);
-  const hasPaidReceiptEvidence = Boolean(receiptFile || persistedReceiptReference);
-  const requiresCashierInvoiceCode = order.invoice_assignment_mode === "cashier";
-  const hasInvoiceCode = Boolean(String(order.invoice_number || "").trim());
-  const hasInvoiceCodeDraft = Boolean(String(invoiceCodeDraft || "").trim());
-  const paymentReceiptRequired = paymentStatus === PAYMENT_STATUS.PAID && !hasPaidReceiptEvidence;
-  const paymentReceiptRequirementId = `pq-payment-receipt-required-${order.id}`;
+  const canManagePayment = isQuoteEditable(order);
   const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && !isPaymentPaid(order?.payment_status) && !order?.is_archived_quote;
-  const canMoveToProduction = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE)
+  const canAuthorizeProduction = Boolean(onAuthorizeProduction)
+    && isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE)
     && isPaymentProductionEligible(order?.payment_status)
+    && !order?.production_authorized_at
+    && !order?.is_archived
+    && !order?.is_archived_admin
+    && !order?.is_archived_designer
     && !order?.is_archived_quote
-    && (!requiresCashierInvoiceCode || hasInvoiceCode);
+    && !order?.is_archived_production
+    && !order?.is_archived_delivery
+    && order?.operational_status !== "blocked"
+    && productionFilesReadyForAuthorization;
   const returnedReason = String(order?.return_reason || "").trim();
-  const readonlyMessage =
-    order.is_archived_quote
-      ? "Esta orden está en modo lectura porque fue archivada en caja."
-      : isPaymentPaid(order.payment_status)
-        ? "Esta orden está en modo lectura porque el pago ya fue confirmado."
-        : "Esta orden está en modo lectura porque su estado actual no permite confirmar pago.";
-
-  const showReceiptZoneError = (message) => {
-    setReceiptZoneError(message || "No se pudo procesar la imagen del recibo.");
-    setReceiptZoneErrorKey(prev => prev + 1);
-  };
-
-  const handleReceiptAccepted = async ([nextFile], { showError } = {}) => {
-    const validation = await validateReceiptFile(nextFile);
-    if (!validation.isValid) {
-      const message = validation.error || "La imagen no cumple con los requisitos.";
-      if (showError) showError(message);
-      else showReceiptZoneError(message);
-      return;
-    }
-
-    setReceiptFile(nextFile);
-    setReceiptPreviewAvailable(validation.previewAvailable !== false);
-    setReceiptZoneError("");
-    setLocalError("");
-  };
-
-  const handleRemoveReceipt = () => {
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    setReceiptFile(null);
-    setReceiptPreviewAvailable(true);
-    setReceiptZoneError("");
-    setReceiptZoneErrorKey(0);
-    setLocalError("");
-  };
-
-  const handleSubmit = async () => {
-    if (isPaymentPartial(order.payment_status) && paymentStatus === PAYMENT_STATUS.PENDING) {
-      const msg = "Una orden con pago parcial solo puede mantenerse parcial o cambiarse a pagado.";
-      setLocalError(msg);
-      if (onValidationError) onValidationError(order, msg);
-      return;
-    }
-
-    if ((paymentStatus === PAYMENT_STATUS.CREDIT || paymentStatus === PAYMENT_STATUS.PAID)
-      && requiresCashierInvoiceCode
-      && !hasInvoiceCode) {
-      const msg = "Caja debe registrar el código de facturación antes de completar esta acción.";
-      setLocalError(msg);
-      if (onValidationError) onValidationError(order, msg);
-      return;
-    }
-
-    if (paymentStatus === PAYMENT_STATUS.CREDIT && !hasInvoiceCode) {
-      const msg = "La orden debe tener un numero de facturacion para vender a credito.";
-      setLocalError(msg);
-      if (onValidationError) onValidationError(order, msg);
-      return;
-    }
-
-    if (paymentStatus === PAYMENT_STATUS.CREDIT && !order.client_id) {
-      const msg = "Para crear una orden a crédito, el cliente debe estar registrado.";
-      setLocalError(msg);
-      setCreditClientRequired(true);
-      if (onValidationError) onValidationError(order, msg);
-      return;
-    }
-
-    if (paymentStatus === PAYMENT_STATUS.PAID && (!hasPaidReceiptEvidence || (requiresCashierInvoiceCode && !hasPaidReceiptEvidence))) {
-      const msg = PAYMENT_RECEIPT_REQUIRED_MESSAGE;
-      // Mostramos error inline DENTRO del modal
-      setLocalError(msg);
-      // Y también mostramos un toast flotante para que el usuario no se lo pierda
-      if (onValidationError) onValidationError(order, msg);
-      return;
-    }
-
-    setLocalError("");
-    const result = await onConfirmPayment({
-      order,
-      receiptFile,
-      paymentStatus,
-      invoiceNumber: invoiceCodeDraft.trim(),
-    });
-    if (result?.receiptError) {
-      showReceiptZoneError(result.receiptError);
-    }
-  };
 
   return (
     <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
@@ -674,155 +552,18 @@ function QuoteOrderDetailModal({
           )}
 
             <div className="pq-panel pq-payment-panel">
-              <div className="pq-panel-title pq-panel-title--accent">Confirmación de pago</div>
-
-            {!canConfirmPayment && (
+              <div className="pq-panel-title pq-panel-title--accent">Estado del pago</div>
               <div className={`pq-readonly-note ${isPaymentPaid(order.payment_status) ? "success" : ""}`}>
                 <Icons.Check />
-                {readonlyMessage}
+                <span>Estado actual: <strong>{getPaymentStatusLabel(order.payment_status)}</strong></span>
               </div>
-            )}
-
-            <div className="pq-payment-grid">
-              <div className="pq-payment-field">
-                <label><Icons.CheckCircle /> Estado del pago</label>
-                <select
-                  className="pq-input"
-                  value={paymentStatus}
-                  disabled={!canConfirmPayment || paymentSaving || isCompletingPartialPayment}
-                  onChange={event => setPaymentStatus(event.target.value)}
-                >
-                  <option value={PAYMENT_STATUS.PENDING} disabled={!canSelectPendingPayment}>Pendiente</option>
-                  <option value={PAYMENT_STATUS.PARTIAL}>Pago parcial</option>
-                  <option value={PAYMENT_STATUS.CREDIT}>Pago a crédito</option>
-                  <option value={PAYMENT_STATUS.PAID}>Pagado</option>
-                </select>
-              </div>
-
-              {requiresCashierInvoiceCode && (
-                <div className="pq-payment-field">
-                  <label><Icons.FileText /> Código de facturación</label>
-                  <input
-                    className="pq-input"
-                    value={invoiceCodeDraft}
-                    onChange={(event) => setInvoiceCodeDraft(event.target.value)}
-                    placeholder="Código asignado por Caja"
-                    disabled={!canConfirmPayment || paymentSaving || invoiceCodeSaving}
-                  />
-                  <button
-                    type="button"
-                    className="pq-btn pq-btn-secondary pq-invoice-code-save"
-                    onClick={async () => {
-                      if (!hasInvoiceCodeDraft || !onAssignInvoiceCode) return;
-                      setInvoiceCodeSaving(true);
-                      try {
-                        const updated = await onAssignInvoiceCode(order, invoiceCodeDraft.trim());
-                        if (updated?.invoice_number) setInvoiceCodeDraft(updated.invoice_number);
-                        setLocalError("");
-                      } catch (error) {
-                        setLocalError(error?.message || "No se pudo guardar el código de facturación.");
-                      } finally {
-                        setInvoiceCodeSaving(false);
-                      }
-                    }}
-                    disabled={!canConfirmPayment || paymentSaving || invoiceCodeSaving || !hasInvoiceCodeDraft || invoiceCodeDraft.trim() === String(order.invoice_number || "").trim()}
-                  >
-                    {invoiceCodeSaving ? "Guardando..." : "Guardar código"}
-                  </button>
-                  <span className="pq-upload-hint">El código se guarda por separado antes de completar el pago.</span>
+              {order.invoice_number && (
+                <div className="pq-payment-readonly-row">
+                  <span><Icons.FileText /> Código de facturación</span>
+                  <strong>{order.invoice_number}</strong>
                 </div>
               )}
-
-              <div className="pq-payment-field">
-                <label><Icons.Receipt /> Recibo de factura</label>
-                {paymentStatus === PAYMENT_STATUS.PAID ? (
-                  receiptFile ? (
-                    <div className="pq-receipt-preview-card">
-                      <FileUploadZone
-                        accept={PAYMENT_RECEIPT_ACCEPT}
-                        mode="image"
-                        replaceMode
-                        inputRef={fileInputRef}
-                        className="file-upload-zone--hidden-picker"
-                        buttonLabel="Cambiar recibo"
-                        disabled={!canConfirmPayment || paymentSaving}
-                        externalError={receiptZoneError}
-                        externalErrorKey={receiptZoneErrorKey}
-                        onFilesAccepted={handleReceiptAccepted}
-                      />
-                      {receiptPreviewAvailable && receiptPreviewUrl ? (
-                        <a href={receiptPreviewUrl} target="_blank" rel="noreferrer">
-                          <img
-                            src={receiptPreviewUrl}
-                            alt="Vista previa del recibo"
-                            className="pq-receipt-preview-img"
-                          />
-                        </a>
-                      ) : (
-                        <div className="pq-receipt-preview-unavailable">
-                          <Icons.Image />
-                          <span>{receiptFile.name}</span>
-                          <small>Vista previa no disponible</small>
-                        </div>
-                      )}
-                      <div className="pq-receipt-preview-footer">
-                        <span className="pq-receipt-preview-name">{receiptFile.name}</span>
-                        <div className="pq-receipt-preview-actions">
-                          <button
-                            type="button"
-                            className="pq-receipt-preview-action"
-                            disabled={!canConfirmPayment || paymentSaving}
-                            aria-label="Cambiar recibo o factura"
-                            onClick={() => {
-                              if (fileInputRef.current) {
-                                fileInputRef.current.value = "";
-                                fileInputRef.current.click();
-                              }
-                            }}
-                          >
-                            <Icons.Edit /> Cambiar
-                          </button>
-                          <button
-                            type="button"
-                            className="pq-receipt-preview-action danger"
-                            disabled={!canConfirmPayment || paymentSaving}
-                            aria-label="Eliminar recibo o factura cargado"
-                            title="Eliminar recibo o factura"
-                            onClick={handleRemoveReceipt}
-                          >
-                            <Icons.Trash />
-                            <span>Eliminar</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <FileUploadZone
-                      accept={PAYMENT_RECEIPT_ACCEPT}
-                      mode="image"
-                      replaceMode
-                      inputRef={fileInputRef}
-                      buttonLabel="Seleccionar desde el ordenador"
-                      hint={PAYMENT_RECEIPT_HINT}
-                      className={paymentReceiptRequired ? "pq-receipt-required" : ""}
-                      disabled={!canConfirmPayment || paymentSaving}
-                      required={paymentReceiptRequired}
-                      aria-describedby={paymentReceiptRequired ? paymentReceiptRequirementId : undefined}
-                      externalError={receiptZoneError}
-                      externalErrorKey={receiptZoneErrorKey}
-                      onFilesAccepted={handleReceiptAccepted}
-                    />
-                  )
-                ) : (
-                  <span className="pq-upload-hint">El campo de recibo solo se muestra cuando el estado es "Pagado". En pago parcial o crédito no se adjunta comprobante final.</span>
-                )}
-                {paymentReceiptRequired && (
-                  <p id={paymentReceiptRequirementId} className="pq-upload-hint" role="alert">{PAYMENT_RECEIPT_REQUIRED_MESSAGE}</p>
-                )}
-              </div>
-            </div>
-
-            {receiptUrl && (
+              {receiptUrl && (
               <div className="pq-preview-block" style={{ marginTop: 16 }}>
                 <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <Icons.Eye /> Comprobante de pago
@@ -846,26 +587,29 @@ function QuoteOrderDetailModal({
                   />
                 </a>
               </div>
-            )}
-
-            {/* Contenedor de errores */}
-            {localError && <div className="pq-inline-error">{localError}</div>}
-            {creditClientRequired && paymentStatus === PAYMENT_STATUS.CREDIT && !order.client_id && (
-              <div className="pq-credit-client-action">
-                <p className="pq-upload-hint">
-                  Esta es una orden heredada sin cliente registrado. Vincula un cliente existente antes de aprobar credito.
-                </p>
-                <button
-                  type="button"
-                  className="pq-btn pq-btn-secondary"
-                  onClick={() => onCreditClientRequired?.(order)}
-                  disabled={paymentSaving}
-                >
-                  <Icons.User />
-                  Vincular cliente registrado
+              )}
+              {!isPaymentPaid(order.payment_status) && (
+                <p className="pq-upload-hint">El comprobante confirmado se muestra aquí después de registrar el pago.</p>
+              )}
+              {isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)
+                && isPaymentProductionEligible(order.payment_status)
+                && !order.is_archived_quote && (
+                <div className="pq-readonly-note success" role="status">
+                  <Icons.Check />
+                  <span>{order.production_authorized_at ? "Producción autorizada. El responsable operativo puede continuar el envío." : "Pago validado. Caja debe autorizar la orden antes de que el responsable operativo continúe a Producción."}</span>
+                </div>
+              )}
+              {canManagePayment && (
+                <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onOpenPayment?.(order)}>
+                  <Icons.Receipt /> Gestionar pago
                 </button>
-              </div>
-            )}
+              )}
+              {canAuthorizeProduction && (
+                <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onAuthorizeProduction?.(order)} disabled={authorizingProduction}>
+                  <Icons.Check /> {authorizingProduction ? "Autorizando..." : "Autorizar para Producción"}
+                </button>
+              )}
+            </div>
 
             {/* Acciones del modal para cotizar orden */}
             <div className="pq-modal-actions">
@@ -875,22 +619,11 @@ function QuoteOrderDetailModal({
                   {`Devolver al ${getReturnTargetLabel(order)}`}
                 </button>
               )}
-              {canMoveToProduction && (
-                <button className="pq-btn pq-btn-primary" onClick={() => onOpenProductionModal(order)}>
-                  <Icons.Package />
-                  Dar paso a producción
-                </button>
-              )}
               <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
-              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving || paymentStatus === initialPaymentStatus || (paymentStatus === PAYMENT_STATUS.PAID && (!hasPaidReceiptEvidence || (requiresCashierInvoiceCode && !hasInvoiceCode)))}>
-                {getPaymentConfirmButtonLabel(paymentStatus, paymentSaving)}
-              </button>
             </div>
           </div>
         </div>
       </div>
-
-    </div>
   );
 }
 
@@ -1238,6 +971,7 @@ export default function PageQuote() {
   const [orders, setOrders] = useState([]); // Lista de todas las órdenes asignadas al usuario
   const [loading, setLoading] = useState(true); // Indica si se están cargando órdenes
   const [selectedOrder, setSelectedOrder] = useState(null); // Orden actualmente abierta en el modal
+  const [paymentModalOrder, setPaymentModalOrder] = useState(null); // Orden actualmente abierta en el modal de pago
   
   // Estados para archivo
   const [archivingOrder, setArchivingOrder] = useState(null); // Orden que se va a archivar
@@ -1247,12 +981,9 @@ export default function PageQuote() {
   const [returningOrder, setReturningOrder] = useState(null); // Orden que se va a devolver
   const [returnLoading, setReturnLoading] = useState(false); // Indica si se está devolviendo
   
-  // Estados para envío a producción
-  const [forwardToProductionOrder, setForwardToProductionOrder] = useState(null); // Orden que se enviará a producción
-  const [productionSaving, setProductionSaving] = useState(false); // Indica si se está enviando a producción
-  
   // Estados de pago
   const [paymentSaving, setPaymentSaving] = useState(false); // Indica si se está guardando pago
+  const [productionAuthorizationSaving, setProductionAuthorizationSaving] = useState(false);
   
   // Estados de búsqueda y filtrado
   const [search, setSearch] = useState(""); // Texto de búsqueda
@@ -1388,7 +1119,7 @@ export default function PageQuote() {
   const fetchCreditCustomReminders = useCallback(async () => {
     if (!user?.id) {
       setCreditCustomReminders([]);
-      return;
+      return { ok: false };
     }
 
     try {
@@ -1483,7 +1214,7 @@ export default function PageQuote() {
         orderTitle: clientLinkOrder?.client_name || clientLinkOrder?.description || "Orden heredada",
         message: "Debes seleccionar un cliente registrado.",
       });
-      return;
+      return { ok: false };
     }
 
     const orderToLink = orders.find(item => item.id === clientLinkOrder.id) || selectedOrder || clientLinkOrder;
@@ -1593,7 +1324,8 @@ export default function PageQuote() {
 
     const nextOrder = mergeOrderWithProductionFiles(order, hydratedOrder || updatedOrder);
     setOrders(prev => prev.map(item => item.id === nextOrder.id ? mergeOrderWithProductionFiles(item, nextOrder) : item));
-    setSelectedOrder(nextOrder);
+    setSelectedOrder(previous => previous?.id === nextOrder.id ? nextOrder : previous);
+    setPaymentModalOrder(previous => previous?.id === nextOrder.id ? nextOrder : previous);
     await fetchAccountsReceivable();
     return { ok: true, order: nextOrder };
   };
@@ -1772,6 +1504,35 @@ export default function PageQuote() {
     }
   };
 
+  const handleOpenPayment = async (order) => {
+    if (!order?.id) return;
+
+    const { data } = await supabase
+      .from("orders")
+      .select(QUOTE_ORDER_SELECT)
+      .eq("id", order.id)
+      .single();
+
+    const nextOrder = data || order;
+    await syncSellerDirectory([nextOrder]);
+    setPaymentModalOrder(nextOrder);
+  };
+
+  const handleConfirmPaymentFromModal = async (paymentData) => {
+    if (!paymentModalOrder) return { ok: false };
+
+    const result = await handleConfirmPayment({
+      ...paymentData,
+      order: paymentModalOrder,
+    });
+
+    if (result?.ok) {
+      setPaymentModalOrder(null);
+    }
+
+    return result;
+  };
+
   // ============= FUNCIÓN: CONFIRMAR PAGO DE ORDEN =============
   // Este es uno de los procesos más complejos:
   // 1. Valida que se haya subido un recibo si el pago es "Pagado"
@@ -1780,8 +1541,9 @@ export default function PageQuote() {
   // 4. Actualiza la BD con el nuevo estado de pago y URL del recibo
   // 5. Notifica al usuario del resultado
   const handleConfirmPayment = async ({ order, receiptFile, paymentStatus }) => {
-    const persistedReceiptReference = getCanonicalPaymentReceiptCandidate(order);
-    const requiresCashierInvoiceCode = order?.invoice_assignment_mode === "cashier";
+    const persistedReceiptReference = hasVerifiedPaymentReceipt(order)
+      ? getCanonicalPaymentReceiptCandidate(order)
+      : "";
     const hasInvoiceCode = Boolean(String(order?.invoice_number || "").trim());
     // Validación inicial: si es pagado, debe haber recibo
     if (isPaymentPartial(order?.payment_status) && paymentStatus === PAYMENT_STATUS.PENDING) {
@@ -1818,12 +1580,12 @@ export default function PageQuote() {
       return applyCreditToOrder(order);
     }
 
-    if (requiresCashierInvoiceCode && paymentStatus === PAYMENT_STATUS.PAID && !hasInvoiceCode) {
+    if (paymentStatus === PAYMENT_STATUS.PAID && !hasInvoiceCode) {
       notif.showActionNotification({
         type: "order_cancelled",
         label: "Facturación requerida",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-        message: "Caja debe registrar el código de facturación antes de marcar la orden como pagada.",
+        message: "Debes registrar el código de facturación antes de marcar la orden como pagada.",
       });
       return { ok: false };
     }
@@ -1927,14 +1689,15 @@ export default function PageQuote() {
         type: "order_cancelled",
         label: "Error al confirmar",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
-        message: updateError?.message || "No se pudo guardar los cambios de pago. Verifica la conexión a la base de datos.",
+      message: updateError?.message || "No se pudo guardar los cambios de pago. Verifica la conexión a la base de datos.",
       });
-      return;
+      return { ok: false };
     }
 
     // Actualiza estado local con los nuevos datos
     setOrders(prev => prev.map(item => item.id === updatedOrder.id ? updatedOrder : item));
-    setSelectedOrder(updatedOrder);
+    setSelectedOrder(previous => previous?.id === updatedOrder.id ? updatedOrder : previous);
+    setPaymentModalOrder(previous => previous?.id === updatedOrder.id ? updatedOrder : previous);
     return { ok: true };
 
   };
@@ -1950,71 +1713,27 @@ export default function PageQuote() {
     }
     setOrders((previous) => previous.map((item) => item.id === data.id ? data : item));
     setSelectedOrder((previous) => previous?.id === data.id ? data : previous);
+    setPaymentModalOrder((previous) => previous?.id === data.id ? data : previous);
     return data;
   }, []);
 
-  // Muestra un toast de error cuando el usuario intenta confirmar el pago
-  // sin haber seleccionado una imagen de comprobante.
-  // Se dispara desde QuoteOrderDetailModal.handleSubmit
-  const handlePaymentValidationError = (order, message) => {
-    notif.showActionNotification({
-      type: "order_cancelled",
-      label: "Validación requerida",
-      orderTitle: order?.client_name || order?.description || `Orden #${order?.id?.slice(0, 8).toUpperCase()}`,
-      message,
+  const handleAuthorizeProduction = useCallback(async (order) => {
+    if (!order?.id || productionAuthorizationSaving) return;
+    setProductionAuthorizationSaving(true);
+    const { data, error } = await supabase.rpc("authorize_order_for_production", {
+      p_order_id: order.id,
+      p_expected_updated_at: order.updated_at,
     });
-  };
-
-  // Abre el modal para seleccionar un impresor antes de enviar a producción.
-  const handleOpenProductionModal = async (order) => {
-    if (!order?.id) return;
-
-    const hydratedOrder = await fetchOrderWithProductionFiles(order?.id);
-    const nextOrder = mergeOrderWithProductionFiles(order, hydratedOrder);
-
-    setOrders(prev => prev.map(item => item.id === nextOrder.id ? mergeOrderWithProductionFiles(item, nextOrder) : item));
-    setSelectedOrder(prev => prev?.id === nextOrder.id ? mergeOrderWithProductionFiles(prev, nextOrder) : prev);
-    setForwardToProductionOrder(nextOrder);
-  };
-
-  // Envía la orden a producción asignándola al impresor seleccionado.
-  const handleConfirmSendToProduction = async (areaAssignments) => {
-    if (!forwardToProductionOrder) return;
-
-    setProductionSaving(true);
-
-    const { data: updatedOrder, error } = await supabase
-      .rpc("send_order_to_production", {
-        p_order_id: forwardToProductionOrder.id,
-        p_area_assignments: areaAssignments,
-      });
-
-    setProductionSaving(false);
-
-    if (error || !updatedOrder) {
-      console.error("Error moving to production:", error);
-      notif.showActionNotification({
-        type: "order_cancelled",
-        label: "Error al enviar",
-        orderTitle: forwardToProductionOrder.client_name || forwardToProductionOrder.description || `Orden #${forwardToProductionOrder.id?.slice(0, 8).toUpperCase()}`,
-        message: error?.message || "No se pudo enviar la orden a producción.",
-      });
+    setProductionAuthorizationSaving(false);
+    if (error || !data) {
+      notif.showActionNotification({ type: "order_cancelled", label: "No se pudo autorizar", orderTitle: order.client_name || `Orden #${order.id.slice(0, 8).toUpperCase()}`, message: error?.message || "Verifica el pago y vuelve a intentarlo." });
       return;
     }
-
-    const nextOrder = {
-      ...forwardToProductionOrder,
-      ...updatedOrder,
-      order_production_files: updatedOrder.order_production_files || forwardToProductionOrder.order_production_files,
-    };
-
-    setOrders(prev => prev.map(item => item.id === nextOrder.id ? { ...item, ...nextOrder } : item));
-    setSelectedOrder(nextOrder);
-    setForwardToProductionOrder(null);
-    if (user?.id) {
-      await fetchOrdersRef.current(user.id, true);
-    }
-  };
+    setOrders((previous) => previous.map((item) => item.id === data.id ? { ...item, ...data } : item));
+    setSelectedOrder((previous) => previous?.id === data.id ? { ...previous, ...data } : previous);
+    setPaymentModalOrder((previous) => previous?.id === data.id ? { ...previous, ...data } : previous);
+    notif.showActionNotification({ type: "success", title: "Producción autorizada", message: "El responsable operativo ya puede asignar y enviar la orden a Producción.", metadata: { event_kind: "production_authorized", order_id: data.id, variant: "success" } });
+  }, [notif, productionAuthorizationSaving]);
 
   // Archiva órdenes en el campo específico del rol Quote.
   const handleConfirmArchive = async () => {
@@ -2782,6 +2501,7 @@ export default function PageQuote() {
                             <td className="td-pad">
                               <div className="pq-status-stack">
                                 <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                {isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE) && order.production_authorized_at && <span className="acm-badge success" title="Autorizada para enviar a Producción">Lista para enviar</span>}
                                 {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
                                 {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
                                 {isReturnedOrder(order) && <ReturnedBadge compact />}
@@ -2795,6 +2515,9 @@ export default function PageQuote() {
                             <div className="table-actions" data-row-action>
                               <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                                 <Icons.Eye />
+                              </button>
+                              <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
+                                <Icons.Receipt />
                               </button>
                             </div>
                           </td>
@@ -2810,38 +2533,59 @@ export default function PageQuote() {
         )}
         {activeTab === "credits" && creditView === "list" && (
           <section className="pq-section pq-credit-section">
-            <div className="pq-filters">
-              <div className="pq-search-box">
+            <div className="pq-greeting pq-credit-greeting">
+              <div className="pq-greeting-copy">
+                <h2>Gestión de <span>crédito</span></h2>
+                <p>Seguimiento de clientes, facturas y pendientes de cobro.</p>
+              </div>
+            </div>
+
+            <div className="pq-credit-metrics" aria-label="Resumen de créditos">
+              <article className="pq-credit-summary-card pq-metric-card">
+                <span className="pq-credit-summary-icon pq-metric-icon client"><Icons.User /></span>
+                <div className="pq-metric-value">{creditClientGroups.length}</div>
+                <div className="pq-metric-label">Clientes filtrados</div>
+              </article>
+              <article className="pq-credit-summary-card pq-metric-card">
+                <span className="pq-credit-summary-icon pq-metric-icon pending"><Icons.Receipt /></span>
+                <div className="pq-metric-value">{creditPendingInvoicesCount}</div>
+                <div className="pq-metric-label">Pendientes</div>
+              </article>
+              <article className="pq-credit-summary-card pq-metric-card">
+                <span className="pq-credit-summary-icon pq-metric-icon followup"><Icons.AlertCircle /></span>
+                <div className="pq-metric-value">{creditPendingClientCount}</div>
+                <div className="pq-metric-label">Clientes con pendientes</div>
+              </article>
+            </div>
+
+            <div className="pp-filters pq-credit-filters">
+              <label className="pp-filter-control pp-filter-search">
                 <Icons.Search />
                 <input
-                  type="text"
-                  className="pq-search-input"
+                  type="search"
                   placeholder="Buscar por cliente, teléfono, factura u orden..."
                   value={creditSearch}
                   onChange={event => setCreditSearch(event.target.value)}
                 />
-              </div>
-              <select className="pq-input" value={creditStatusFilter} onChange={event => setCreditStatusFilter(event.target.value)}>
-                <option value="all">Todos</option>
-                <option value="open">Pendientes</option>
-                <option value="resolved">Resueltas</option>
-              </select>
-              <span className="pq-results-count">{creditClientGroups.length} cliente{creditClientGroups.length !== 1 ? "s" : ""}</span>
-            </div>
+                {creditSearch && (
+                  <button type="button" onClick={() => setCreditSearch("")} aria-label="Limpiar búsqueda">
+                    <Icons.X />
+                  </button>
+                )}
+              </label>
 
-            <div className="pq-credit-metrics" aria-label="Resumen de créditos">
-              <article className="pq-credit-summary-card">
-                <span className="pq-credit-summary-icon client"><Icons.User /></span>
-                <div><strong>{creditClientGroups.length}</strong><span>Clientes filtrados</span></div>
-              </article>
-              <article className="pq-credit-summary-card">
-                <span className="pq-credit-summary-icon pending"><Icons.Receipt /></span>
-                <div><strong>{creditPendingInvoicesCount}</strong><span>Pendientes</span></div>
-              </article>
-              <article className="pq-credit-summary-card">
-                <span className="pq-credit-summary-icon followup"><Icons.AlertCircle /></span>
-                <div><strong>{creditPendingClientCount}</strong><span>Clientes con pendientes</span></div>
-              </article>
+              <FilterSelect
+                icon={<Icons.Receipt />}
+                value={creditStatusFilter}
+                onChange={setCreditStatusFilter}
+                options={[
+                  { value: "all", label: "Todos los créditos" },
+                  { value: "open", label: "Pendientes" },
+                  { value: "resolved", label: "Resueltas" },
+                ]}
+              />
+
+              <span className="pp-filters-count">{creditClientGroups.length} cliente{creditClientGroups.length !== 1 ? "s" : ""}</span>
             </div>
 
             {creditPendingInvoicesCount > 0 && (
@@ -2857,11 +2601,11 @@ export default function PageQuote() {
               </div>
             )}
 
-            <div className="pq-panel pq-credit-panel">
-              <div className="pq-panel-head">
+            <div className="pq-panel pq-workbench-panel pq-credit-panel">
+              <div className="pq-workbench-heading pq-credit-panel-head">
                 <div>
-                  <span className="pq-section-kicker">Seguimiento</span>
-                  <h2>Créditos agrupados por cliente</h2>
+                  <span className="pq-workbench-kicker">Seguimiento</span>
+                  <h3>Créditos agrupados por cliente</h3>
                 </div>
                 <span className="pq-orders-count">{creditClientGroups.length} cliente{creditClientGroups.length === 1 ? "" : "s"}</span>
               </div>
@@ -3221,6 +2965,7 @@ export default function PageQuote() {
                                 <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
                                 <span className="ps-client-cell-badges">
                                   <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                  {isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE) && order.production_authorized_at && <span className="acm-badge success" title="Autorizada para enviar a Producción">Lista para enviar</span>}
                                   {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
                                   {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
                                   {isReturnedOrder(order) && <ReturnedBadge compact />}
@@ -3242,6 +2987,9 @@ export default function PageQuote() {
                             <div className="table-actions" data-row-action>
                               <button className="table-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                                 <Icons.Eye />
+                              </button>
+                              <button className="table-action-btn view" onClick={event => { event.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
+                                <Icons.Receipt />
                               </button>
                               {canArchiveQuoteOrder(order, user?.id) && (
                                 <button className="table-action-btn archive" onClick={event => { event.stopPropagation(); setArchivingOrder(order); }} title="Archivar orden">
@@ -3274,6 +3022,7 @@ export default function PageQuote() {
                           <span className="ps-order-card-client-badges">
                             <span className="ps-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
                             <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                            {isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE) && order.production_authorized_at && <span className="acm-badge success" title="Autorizada para enviar a Producción">Lista para enviar</span>}
                             {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
                             {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
                             {isReturnedOrder(order) && <ReturnedBadge compact />}
@@ -3314,6 +3063,9 @@ export default function PageQuote() {
                       <div className="ps-order-card-actions">
                         <button className="card-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                           <Icons.Eye />
+                        </button>
+                        <button className="card-action-btn view" onClick={event => { event.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
+                          <Icons.Receipt />
                         </button>
                         {canArchiveQuoteOrder(order, user?.id) && (
                           <button className="card-action-btn archive" onClick={event => { event.stopPropagation(); setArchivingOrder(order); }} title="Archivar orden">
@@ -3364,14 +3116,11 @@ export default function PageQuote() {
         open={!!selectedOrder}
         onClose={() => setSelectedOrder(null)}
         order={selectedOrder}
-        onConfirmPayment={handleConfirmPayment}
-        onAssignInvoiceCode={handleAssignInvoiceCode}
-        paymentSaving={paymentSaving}
+        onOpenPayment={handleOpenPayment}
+        onAuthorizeProduction={handleAuthorizeProduction}
+        authorizingProduction={productionAuthorizationSaving}
         sellerDirectory={sellerDirectory}
         onOpenReturnModal={setReturningOrder}
-        onValidationError={handlePaymentValidationError}
-        onOpenProductionModal={handleOpenProductionModal}
-        onCreditClientRequired={openCreditClientRegistration}
         pendingReview={selectedOrderReview}
         onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
         reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
@@ -3380,6 +3129,20 @@ export default function PageQuote() {
         returnHistory={selectedOrder ? orderReturns.historyByOrder[selectedOrder.id] || [] : []}
         onAcknowledgeReturn={handleAcknowledgeReturn}
         returnAcknowledging={false}
+      />
+
+      <PaymentFormModal
+        open={!!paymentModalOrder}
+        order={paymentModalOrder}
+        loading={paymentSaving}
+        onClose={() => setPaymentModalOrder(null)}
+        onConfirm={handleConfirmPaymentFromModal}
+        onAssignInvoiceCode={handleAssignInvoiceCode}
+        onCreditClientRequired={openCreditClientRegistration}
+        canAssignInvoiceCode={Boolean(paymentModalOrder && isQuoteEditable(paymentModalOrder) && paymentModalOrder.invoice_assignment_mode === "cashier")}
+        canManagePayment={Boolean(paymentModalOrder && isQuoteEditable(paymentModalOrder))}
+        hasVerifiedPaymentReceipt={hasVerifiedPaymentReceipt(paymentModalOrder)}
+        nested={Boolean(selectedOrder && paymentModalOrder?.id === selectedOrder.id)}
       />
 
       <ArchiveOrderModal
@@ -3398,13 +3161,6 @@ export default function PageQuote() {
         loading={returnLoading}
       />
 
-      <ProductionAssignmentModal
-        open={!!forwardToProductionOrder}
-        onClose={() => setForwardToProductionOrder(null)}
-        onConfirm={handleConfirmSendToProduction}
-        order={forwardToProductionOrder}
-        loading={productionSaving}
-      />
 
       <CreateClientModal
         open={showNewClientModal}

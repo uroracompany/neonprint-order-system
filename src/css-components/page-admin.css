@@ -3023,6 +3023,18 @@
   border-color: #091127;
 }
 
+.pa-orders-panel .acm-row-actions .table-action-btn.production {
+  color: #fff;
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.pa-orders-panel .acm-row-actions .table-action-btn.production:hover {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--primary) 88%, #000);
+  background: color-mix(in srgb, var(--primary) 88%, #000);
+}
+
 .pa-orders-panel .acm-row-actions .table-action-btn.cash {
   color: #059669;
   border-color: #a7f3d0;

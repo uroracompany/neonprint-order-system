@@ -30,6 +30,18 @@ import {
 } from "./CreateOrderModal";
 import "./EditOrderModal.css";
 
+const SEMI_ADMIN_ASSET_EDITABLE_STATUSES = new Set([
+  "Pending",
+  "pending",
+  "in_Design",
+  "In_Design",
+  "in_Quote",
+  "in_Production",
+  "in_Termination",
+  "in_Completed",
+]);
+const SEMI_ADMIN_ACTIVE_FILE_LOCK_STATUSES = new Set(["in_Production", "in_Termination", "in_Completed"]);
+
 export default function EditOrderModal({
   open,
   onClose,
@@ -62,6 +74,8 @@ export default function EditOrderModal({
     delivery_date: "",
   });
   const [existingFiles, setExistingFiles] = useState([]);
+  const [existingFileRows, setExistingFileRows] = useState([]);
+  const [existingFileReplacements, setExistingFileReplacements] = useState({});
   const [newFiles, setNewFiles] = useState([]);
   const [newFileAreas, setNewFileAreas] = useState([]);
   const [newFileLabels, setNewFileLabels] = useState([]);
@@ -81,16 +95,29 @@ export default function EditOrderModal({
   const [fieldErrors, setFieldErrors] = useState({});
   const [missingLabelIndices, setMissingLabelIndices] = useState([]);
   const [missingAreaIndices, setMissingAreaIndices] = useState([]);
+  const [pendingDetailsIndices, setPendingDetailsIndices] = useState([]);
   const [detailsFileIndex, setDetailsFileIndex] = useState(null);
+  const [detailsExistingFileIndex, setDetailsExistingFileIndex] = useState(null);
+  const existingFileReplaceInputRef = useRef(null);
+  const [replaceExistingFileIndex, setReplaceExistingFileIndex] = useState(null);
   const isSellerEdit = editMode === "seller";
-  const isSellerEditBlocked = isSellerEdit && ["in_Quote", "cancelled", "in_Delivered"].includes(order?.status);
+  const isSemiAdminAssetEdit = Boolean(isSellerEdit && semiAdminVariant && assetsOnly);
+  const isSellerEditBlocked = isSellerEdit && (isSemiAdminAssetEdit
+    ? !SEMI_ADMIN_ASSET_EDITABLE_STATUSES.has(order?.status)
+    : ["in_Quote", "cancelled", "in_Delivered"].includes(order?.status));
   const canEditAssets = !isSellerEditBlocked && (isSellerEdit || (
     (order?.order_design_type === "INTERNAL_DESING" && order?.status === "in_Design")
     || (order?.order_design_type === "EXTERNAL_DESING" && order?.status === "Pending")
   ));
+  const canMutateExistingAsset = (row) => {
+    if (!isSemiAdminAssetEdit || !SEMI_ADMIN_ACTIVE_FILE_LOCK_STATUSES.has(order?.status)) return true;
+    return String(row?.status || "").toLowerCase() === "pending";
+  };
+  const canMutateStandaloneAsset = !isSemiAdminAssetEdit || !SEMI_ADMIN_ACTIVE_FILE_LOCK_STATUSES.has(order?.status);
+  const existingPreviewLocked = Boolean(isSemiAdminAssetEdit && existingPreview && !canMutateStandaloneAsset);
   const assetWorkflowMessage = order?.order_design_type === "INTERNAL_DESING"
-    ? "Para modificar archivos, devuelve esta orden a Diseño desde Configuración avanzada."
-    : "Para modificar archivos, devuelve esta orden a Ventas desde Configuración avanzada.";
+    ? "El estado productivo está protegido. Puedes gestionar archivos y especificaciones permitidas; para cambiar la etapa, devuelve la orden a Diseño desde Configuración avanzada."
+    : "El estado productivo está protegido. Puedes gestionar archivos y especificaciones permitidas; para cambiar la etapa, devuelve la orden a Ventas desde Configuración avanzada.";
 
   useEffect(() => {
     if (!order) return;
@@ -106,7 +133,38 @@ export default function EditOrderModal({
       delivery_date: order.delivery_date ? order.delivery_date.split("T")[0] : "",
     });
 
-    setExistingFiles(normalizeAssetUrls(order.order_file_url));
+    const legacyUrls = normalizeAssetUrls(order.order_file_url);
+    const normalizedProductionFiles = Array.isArray(order.order_production_files)
+      ? order.order_production_files
+        .map((file, index) => ({
+          id: file?.id || `existing-${index}`,
+          url: file?.url || file?.file_url || "",
+          filename: file?.filename || file?.name || parseFileName(file?.url || file?.file_url || ""),
+          public_label: file?.public_label || "",
+          production_area_code: file?.production_area_code || "",
+          material_names: Array.isArray(file?.material_names) ? file.material_names : [],
+          termination_name: file?.termination_name || "",
+          status: file?.status || "pending",
+        }))
+        .filter((file) => file.url)
+      : [];
+    const productionUrls = new Set(normalizedProductionFiles.map((file) => file.url));
+    const normalizedFiles = [
+      ...normalizedProductionFiles,
+      ...legacyUrls.filter((url) => !productionUrls.has(url)).map((url, index) => ({
+        id: `legacy-${index}`,
+        url,
+        filename: parseFileName(url),
+        public_label: "",
+        production_area_code: "",
+        material_names: [],
+        termination_name: "",
+        status: "pending",
+      })),
+    ];
+    setExistingFileRows(normalizedFiles);
+    setExistingFiles(normalizedFiles.map((file) => file.url));
+    setExistingFileReplacements({});
     setExistingPreview(order.preview_image || null);
     setResolvedExistingPreview("");
     setPreviewLoading(false);
@@ -117,7 +175,10 @@ export default function EditOrderModal({
     setNewFileLabels([]);
     setNewFileMaterials([]);
     setNewFileTerminations([]);
+    setPendingDetailsIndices([]);
     setDetailsFileIndex(null);
+    setDetailsExistingFileIndex(null);
+    setReplaceExistingFileIndex(null);
     setNewPreview(null);
     setNewRefImages([]);
     setAssetVersion(order.updated_at || null);
@@ -301,10 +362,46 @@ export default function EditOrderModal({
   };
 
   const handleRemoveExistingFile = (url) => {
+    const rowIndex = existingFileRows.findIndex((file) => file.url === url);
+    if (rowIndex >= 0 && !canMutateExistingAsset(existingFileRows[rowIndex])) {
+      setError("Este archivo ya está en proceso y no puede eliminarse en esta etapa.");
+      return;
+    }
     void persistAssetRemoval({
       urls: [url],
       nextFiles: existingFiles.filter(file => file !== url),
     });
+    if (rowIndex >= 0) {
+      setExistingFileRows((previous) => previous.filter((_, index) => index !== rowIndex));
+      setExistingFileReplacements((previous) => {
+        const next = {};
+        Object.entries(previous).forEach(([key, value]) => {
+          const currentIndex = Number(key);
+          if (currentIndex < rowIndex) next[currentIndex] = value;
+          if (currentIndex > rowIndex) next[currentIndex - 1] = value;
+        });
+        return next;
+      });
+    }
+  };
+
+  const handleReplaceExistingFile = (index, file) => {
+    if (!file || !canEditAssets) return;
+    if (!canMutateExistingAsset(existingFileRows[index])) {
+      setError("Este archivo ya está en proceso y no puede reemplazarse en esta etapa.");
+      return;
+    }
+    setExistingFileReplacements((previous) => ({ ...previous, [index]: file }));
+    setError("");
+  };
+
+  const handleExistingFileReplaceInput = (event) => {
+    const file = event.target.files?.[0];
+    if (replaceExistingFileIndex !== null && file) {
+      handleReplaceExistingFile(replaceExistingFileIndex, file);
+    }
+    event.target.value = "";
+    setReplaceExistingFileIndex(null);
   };
 
   const handleAddNewFiles = (filesOrEvent) => {
@@ -320,11 +417,19 @@ export default function EditOrderModal({
     setNewFileLabels(previous => [...previous, ...files.map(() => "")]);
     setNewFileMaterials(previous => [...previous, ...files.map(() => [])]);
     setNewFileTerminations(previous => [...previous, ...files.map(() => "")]);
+    const firstNewFileIndex = newFiles.length;
+    setPendingDetailsIndices(previous => [
+      ...previous,
+      ...files.map((_, offset) => firstNewFileIndex + offset),
+    ]);
     if (filesOrEvent?.target) filesOrEvent.target.value = "";
   };
 
   const handleRemoveNewFile = (index) => {
     setDetailsFileIndex(null);
+    setPendingDetailsIndices(previous => previous
+      .filter((pendingIndex) => pendingIndex !== index)
+      .map((pendingIndex) => (pendingIndex > index ? pendingIndex - 1 : pendingIndex)));
     setNewFiles(previous => previous.filter((_, currentIndex) => currentIndex !== index));
     setNewFileAreas(previous => previous.filter((_, currentIndex) => currentIndex !== index));
     setNewFileLabels(previous => previous.filter((_, currentIndex) => currentIndex !== index));
@@ -342,16 +447,40 @@ export default function EditOrderModal({
     setMissingLabelIndices([]);
     setMissingAreaIndices([]);
     setFieldErrors(previous => ({ ...previous, order_files: "" }));
+    setPendingDetailsIndices(previous => previous.filter((pendingIndex) => pendingIndex !== index));
+    setDetailsFileIndex(null);
+    setDetailsExistingFileIndex(null);
+  };
+
+  const handleSaveExistingFileDetails = async (details) => {
+    const index = detailsExistingFileIndex;
+    if (index === null) return;
+    setExistingFileRows((previous) => previous.map((file, currentIndex) => (
+      currentIndex === index
+        ? { ...file, public_label: details.publicLabel, production_area_code: details.areaCode, material_names: details.materialNames, termination_name: details.terminationName }
+        : file
+    )));
+    setFieldErrors(previous => ({ ...previous, order_files: "" }));
+    setDetailsExistingFileIndex(null);
+    setDetailsFileIndex(null);
   };
 
   const handleRemoveExistingPreview = () => {
     if (!existingPreview) return;
+    if (!canMutateStandaloneAsset) {
+      setError("La Orden de Trabajo ya está en proceso y no puede eliminarse en esta etapa.");
+      return;
+    }
     void persistAssetRemoval({ urls: [existingPreview], nextPreview: null });
   };
 
   const handleAddNewPreview = (filesOrEvent) => {
     if (!canEditAssets) {
       setError(assetWorkflowMessage);
+      return;
+    }
+    if (existingPreview && !canMutateStandaloneAsset) {
+      setError("La Orden de Trabajo ya está en proceso y no puede reemplazarse en esta etapa.");
       return;
     }
     const file = Array.from(filesOrEvent?.target?.files || filesOrEvent || [])[0];
@@ -396,8 +525,28 @@ export default function EditOrderModal({
 
     let fileUrls = [...existingFiles];
     const newFileUrls = [];
+    const replacedFileUrls = [];
 
     try {
+      for (const [rawIndex, replacement] of Object.entries(existingFileReplacements)) {
+        const index = Number(rawIndex);
+        if (!replacement || !existingFiles[index]) continue;
+        if (!canMutateExistingAsset(existingFileRows[index])) {
+          setLoading(false);
+          setError("Uno de los archivos ya está en proceso y no puede reemplazarse en esta etapa.");
+          return;
+        }
+        const fileName = buildStorageSafeFileName(replacement, `replacement-${index}-`);
+        const publicUrl = await uploadOrderAsset({
+          bucket: "order-docs",
+          path: `orders/${order.id}/files/${fileName}`,
+          file: replacement,
+        });
+        if (publicUrl) {
+          replacedFileUrls.push({ oldUrl: existingFiles[index], newUrl: publicUrl, index });
+          fileUrls[index] = publicUrl;
+        }
+      }
       for (let index = 0; index < newFiles.length; index += 1) {
         const file = newFiles[index];
         const fileName = buildStorageSafeFileName(file, `${index}-`);
@@ -418,8 +567,25 @@ export default function EditOrderModal({
       return;
     }
 
-    const productionRows = newFileUrls.length > 0
-      ? buildProductionFileRows({
+    const existingProductionRows = isSellerEdit ? existingFileRows.map((row, index) => ({
+      order_id: order.id,
+      url: replacedFileUrls.find((replacement) => replacement.index === index)?.newUrl || row.url,
+      filename: existingFileReplacements[index]?.name || row.filename || parseFileName(row.url),
+      public_label: row.public_label || null,
+      production_area_code: row.production_area_code || null,
+      material_names: row.material_names || [],
+      termination_name: row.termination_name || null,
+      status: row.status || "pending",
+    })).filter((row) => (
+      row.public_label
+      && row.production_area_code
+      && row.material_names.length > 0
+      && row.termination_name
+    )) : [];
+    const productionRows = [
+      ...existingProductionRows,
+      ...(newFileUrls.length > 0
+        ? buildProductionFileRows({
         orderId: order.id,
         urls: newFileUrls,
         files: newFiles,
@@ -429,7 +595,8 @@ export default function EditOrderModal({
         terminationNames: newFileTerminations,
         userId: order.seller_id || order.created_by,
       })
-      : [];
+        : []),
+    ];
 
     let previewUrl = existingPreview;
     if (newPreview) {
@@ -517,7 +684,10 @@ export default function EditOrderModal({
           expected_updated_at: assetVersion || order.updated_at,
           changes: sellerChanges,
           production_files: productionRows,
-          removed_file_urls: existingPreview && newPreview ? [existingPreview] : [],
+          removed_file_urls: [
+            ...replacedFileUrls.map((replacement) => replacement.oldUrl),
+            ...(existingPreview && newPreview ? [existingPreview] : []),
+          ],
           asset_operation: assetsOnly ? "manage_assets" : undefined,
         });
 
@@ -570,6 +740,7 @@ export default function EditOrderModal({
     }
 
     const addedAssetCount = newFileUrls.length
+      + replacedFileUrls.length
       + newRefImageUrls.length
       + (newPreview && previewUrl ? 1 : 0);
 
@@ -583,6 +754,12 @@ export default function EditOrderModal({
       // Keep the editor mounted for Semi-Administración: the parent has already
       // reconciled the confirmed order, while this local state is reset below.
       setExistingFiles(fileUrls);
+      setExistingFileRows((previous) => previous.map((row, index) => ({
+        ...row,
+        url: fileUrls[index] || row.url,
+        filename: existingFileReplacements[index]?.name || row.filename,
+      })));
+      setExistingFileReplacements({});
       setExistingPreview(previewUrl);
       setExistingRefImages(refImageUrls);
       setAssetVersion(updatedOrder?.updated_at || assetVersion);
@@ -610,6 +787,7 @@ export default function EditOrderModal({
   };
 
   const selectedDetailsFile = detailsFileIndex === null ? null : newFiles[detailsFileIndex];
+  const selectedExistingDetailsFile = detailsExistingFileIndex === null ? null : existingFileRows[detailsExistingFileIndex];
 
   return (
     <>
@@ -684,14 +862,48 @@ export default function EditOrderModal({
           <Field label="Archivos adjuntos" hint="Archivos de diseño existentes y nuevos" error={fieldErrors.order_files}>
             {existingFiles.length > 0 && (
               <div className="ps-files-list" style={{ marginBottom: 12 }}>
-                {existingFiles.map((url, index) => (
-                  <FileCard
-                    key={`${url}-${index}`}
-                    name={parseFileName(url)}
-                    url={url}
-                    onRemove={() => handleRemoveExistingFile(url)}
-                  />
-                ))}
+                {existingFiles.map((url, index) => {
+                  const row = existingFileRows[index] || { url };
+                  const replacement = existingFileReplacements[index];
+                  const displayName = replacement?.name || row.filename || parseFileName(url);
+                  return (
+                    <FileCard
+                      key={`${url}-${index}`}
+                      name={displayName}
+                      url={url}
+                      detailText={!canMutateExistingAsset(row) ? `${row.public_label || "Detalles pendientes"} · Archivo en proceso` : (row.public_label || "Detalles pendientes")}
+                      actions={[
+                        {
+                          title: `Editar archivo y detalles de ${displayName}`,
+                          label: "Editar detalles",
+                          icon: <Icons.Edit />,
+                          onClick: () => {
+                            setDetailsExistingFileIndex(index);
+                            setDetailsFileIndex(null);
+                          },
+                        },
+                        ...(canMutateExistingAsset(row) ? [{
+                          title: `Reemplazar ${displayName}`,
+                          label: "Reemplazar",
+                          icon: <Icons.Upload />,
+                          onClick: () => {
+                            setReplaceExistingFileIndex(index);
+                            requestAnimationFrame(() => existingFileReplaceInputRef.current?.click());
+                          },
+                        }] : []),
+                      ]}
+                      onRemove={canMutateExistingAsset(row) ? () => handleRemoveExistingFile(url) : undefined}
+                    />
+                  );
+                })}
+                <input
+                  ref={existingFileReplaceInputRef}
+                  type="file"
+                  className="sr-only"
+                  accept=".pdf,.ai,.png,.jpg,.jpeg,.webp,.svg"
+                  onChange={handleExistingFileReplaceInput}
+                  aria-label="Seleccionar archivo de reemplazo"
+                />
               </div>
             )}
             {newFiles.length > 0 && (
@@ -706,7 +918,11 @@ export default function EditOrderModal({
                         title: `Ver detalles de ${file.name}`,
                         label: "Detalles",
                         icon: <Icons.Edit />,
-                        onClick: () => setDetailsFileIndex(index),
+                        attention: pendingDetailsIndices.includes(index),
+                        onClick: () => {
+                          setPendingDetailsIndices(previous => previous.filter((pendingIndex) => pendingIndex !== index));
+                          setDetailsFileIndex(index);
+                        },
                       }]}
                       onRemove={() => handleRemoveNewFile(index)}
                     />
@@ -735,6 +951,7 @@ export default function EditOrderModal({
                   inputRef={previewInputRef}
                   className="file-upload-zone--hidden-picker"
                   buttonLabel="Cambiar Orden de Trabajo"
+                  disabled={existingPreviewLocked}
                   onFilesAccepted={handleAddNewPreview}
                 />
                 {newPreview || resolvedExistingPreview ? <div className="ps-preview-card">
@@ -748,10 +965,10 @@ export default function EditOrderModal({
                       {newPreview ? "Nueva Orden de Trabajo" : "Orden de Trabajo actual"}
                     </span>
                     <div className="ps-preview-card-actions">
-                      <button type="button" className="ps-preview-change-btn" onClick={() => previewInputRef.current?.click()}>
+                      <button type="button" className="ps-preview-change-btn" disabled={existingPreviewLocked} title={existingPreviewLocked ? "La Orden de Trabajo está protegida mientras el archivo está en proceso." : undefined} onClick={() => previewInputRef.current?.click()}>
                         {newPreview ? "Cancelar" : "Cambiar"}
                       </button>
-                      <button type="button" className="ps-preview-del-btn" onClick={newPreview ? () => setNewPreview(null) : handleRemoveExistingPreview}>
+                      <button type="button" className="ps-preview-del-btn" disabled={existingPreviewLocked} title={existingPreviewLocked ? "La Orden de Trabajo no puede eliminarse en esta etapa." : "Eliminar Orden de Trabajo"} onClick={newPreview ? () => setNewPreview(null) : handleRemoveExistingPreview}>
                         <Icons.Trash />
                       </button>
                     </div>
@@ -779,9 +996,13 @@ export default function EditOrderModal({
                   <div key={`${url}-${index}`} className="ps-file-item">
                     <SecureImage url={url} alt={parseFileName(url)} className="ps-ref-thumb" compact />
                     <span className="ps-file-name">{parseFileName(url)}</span>
-                    <button className="ps-file-remove" onClick={() => {
+                    <button className="ps-file-remove" disabled={!canMutateStandaloneAsset} title={!canMutateStandaloneAsset ? "Las imágenes de referencia existentes están protegidas en esta etapa." : "Eliminar imagen de referencia"} aria-label={!canMutateStandaloneAsset ? "Imagen de referencia protegida" : "Eliminar imagen de referencia"} onClick={() => {
                       if (!canEditAssets) {
                         setError(assetWorkflowMessage);
+                        return;
+                      }
+                      if (!canMutateStandaloneAsset) {
+                        setError("Las imágenes de referencia ya están en proceso y no pueden eliminarse en esta etapa.");
                         return;
                       }
                       void persistAssetRemoval({
@@ -855,18 +1076,27 @@ export default function EditOrderModal({
       </div>
     </Modal>
     <ProductionFileDetailsModal
-      open={Boolean(selectedDetailsFile)}
-      fileName={selectedDetailsFile?.name}
-      fileKey={selectedDetailsFile ? `edit-${detailsFileIndex}-${selectedDetailsFile.name}` : ""}
+      open={Boolean(selectedDetailsFile || selectedExistingDetailsFile)}
+      fileName={selectedDetailsFile?.name || selectedExistingDetailsFile?.filename}
+      fileKey={selectedDetailsFile ? `edit-new-${detailsFileIndex}-${selectedDetailsFile.name}` : selectedExistingDetailsFile ? `edit-existing-${detailsExistingFileIndex}-${selectedExistingDetailsFile.id}` : ""}
       value={selectedDetailsFile ? {
         publicLabel: newFileLabels[detailsFileIndex] || "",
         areaCode: newFileAreas[detailsFileIndex] || "",
         materialNames: newFileMaterials[detailsFileIndex] || [],
         terminationName: newFileTerminations[detailsFileIndex] || "",
+      } : selectedExistingDetailsFile ? {
+        publicLabel: selectedExistingDetailsFile.public_label || "",
+        areaCode: selectedExistingDetailsFile.production_area_code || "",
+        materialNames: selectedExistingDetailsFile.material_names || [],
+        terminationName: selectedExistingDetailsFile.termination_name || "",
       } : null}
       catalog={productionCatalog}
-      onClose={() => setDetailsFileIndex(null)}
-      onSave={handleSaveNewFileDetails}
+      onClose={() => {
+        setDetailsFileIndex(null);
+        setDetailsExistingFileIndex(null);
+      }}
+      onSave={selectedDetailsFile ? handleSaveNewFileDetails : handleSaveExistingFileDetails}
+      lockArea={Boolean(selectedExistingDetailsFile && isSemiAdminAssetEdit && !canMutateExistingAsset(selectedExistingDetailsFile))}
     />
     </>
   );

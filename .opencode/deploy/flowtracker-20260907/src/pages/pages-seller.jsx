@@ -1,0 +1,1634 @@
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { supabase } from "../../supabaseClient";
+import { useNavigate } from "react-router-dom";
+import "../css-components/page-seller.css";
+import "../css-components/page-production.css";
+import "../css-components/page-quote.css";
+import Sidebar from "../components/Sidebar";
+import { Icons } from "../utils/icons";
+import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import CreateClientModal from "../components/ui/CreateClientModal";
+import {
+  canArchiveOrder,
+} from "../utils/archive";
+import { StatusBadge as SharedStatusBadge, PaymentBadge } from "../components/ui/Badge";
+import { AssignModal } from "../components/ui/AssignModal";
+import { Pagination } from "../components/ui/Pagination";
+import { SalesFilterToolbar } from "../components/ui/SalesFilterToolbar";
+import {
+  ORDER_STATUS,
+  isPaymentCredit,
+  isPaymentPaid,
+  isPaymentPartial,
+  PAYMENT_COLORS,
+  STATUS_OPTIONS,
+  ARCHIVE_MODULES,
+  getOrderStatusConfig,
+  isOrderStatus,
+  isOrderStatusIn,
+} from "../utils/constants";
+import { useAuth } from "../hooks/useAuth";
+import useNotifications from "../hooks/useNotifications";
+import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useOrderReturnHandoffs from "../hooks/useOrderReturnHandoffs";
+import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
+import NotificationCenter from "../components/NotificationCenter";
+import SharedCreateOrderModal from "../components/orders/CreateOrderModal";
+import SharedEditOrderModal from "../components/orders/EditOrderModal";
+import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
+import SemiAdminOperationalPanel from "../components/orders/SemiAdminOperationalPanel";
+import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
+import OrderReviewBadge from "../components/orders/OrderReviewBadge";
+import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
+import SellerProfileModule from "../components/seller/SellerProfileModule";
+import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
+import "../components/designer/DesignerNotificationsModule.css";
+import { loadClients, searchClients } from "../utils/clients";
+import { adminApiFetch } from "../utils/adminApi";
+import { getAvatarInitials } from "../utils/avatar-initials";
+import ReturnToCashierModal from "../components/orders/ReturnToCashierModal";
+import GreetingBanner from "../components/ui/GreetingBanner";
+import MetricCard from "../components/ui/MetricCard";
+import { buildProductionCatalogs } from "../utils/production";
+import PaymentFormModal from "../components/ui/PaymentFormModal";
+import { buildPaymentReceiptPath, uploadOrderAsset } from "../utils/uploadOrderAsset";
+import { validateReceiptFile } from "../utils/receiptValidation";
+
+export { default as OrderDetailModal } from "../components/orders/OrderDetailModal";
+
+const isReturnedOrder = (order) => {
+  if (!order || !order.return_reason) return false;
+  const validStatuses = order.order_design_type === "EXTERNAL_DESING"
+    ? [ORDER_STATUS.PENDING]
+    : [ORDER_STATUS.IN_DESIGN];
+  return isOrderStatusIn(order.status, validStatuses);
+};
+
+const canSellerEditOrder = (order, isSemiAdmin = false) => (
+  Boolean(order) &&
+  !order.is_archived &&
+  !isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE) &&
+  (!isSemiAdmin || isOrderStatus(order.status, ORDER_STATUS.PENDING))
+);
+
+const isInteractiveOrderRowTarget = (target) => Boolean(
+  target?.closest?.("button, a, input, select, textarea, [data-row-action]")
+);
+
+const SELLER_HIDDEN_NOTIFICATION_EVENTS = new Set([
+  "admin_edited_order",
+  "designer_assigned",
+  "quote_assigned",
+]);
+
+const ACTIVE_WORKFLOW_STATUSES_FOR_SELLER = [
+  ORDER_STATUS.IN_DESIGN,
+  ORDER_STATUS.IN_QUOTE,
+  ORDER_STATUS.IN_PRODUCTION,
+  ORDER_STATUS.IN_TERMINATION,
+  ORDER_STATUS.IN_DELIVERED,
+  ORDER_STATUS.IN_COMPLETED,
+  ORDER_STATUS.CANCELLED,
+];
+
+const SELLER_ORDER_PAGE_SIZE = 15;
+const SELLER_CARD_PAGE_SIZE = 10;
+const EMPTY_SELLER_SUMMARY = {
+  todayOrders: 0,
+  pending: 0,
+  inDesign: 0,
+  inQuote: 0,
+  inProduction: 0,
+  inTermination: 0,
+  completed: 0,
+  returned: 0,
+  active: 0,
+  unarchived: 0,
+};
+
+const isSellerVisibleNotification = (notification) => {
+  const eventKind = notification?.metadata?.event_kind;
+  return !SELLER_HIDDEN_NOTIFICATION_EVENTS.has(eventKind);
+};
+
+const PHONE_PLACEHOLDER = "Seleccionar Cliente";
+
+
+
+function StatusBadge({ status, type = "status", order = null }) {
+  if (type === "payment") {
+    return <PaymentBadge status={status} className="ps-badge" bordered />;
+  }
+  return <SharedStatusBadge status={status} className="ps-badge" showDot bordered order={order} />;
+}
+
+
+//OVERLAY DE LOS MODALES, RECIBE PROPS DE CONTROL Y CONTENIDO
+function Modal({ open, onClose, title, children, wide, stickyHeader = false }) {
+  if (!open) return null;
+  return (
+    // onClick={e => e.target === e.currentTarget && onClose()}
+    // Overlay del modal de crear video 
+    <div className="ps-modal-overlay">
+      <div className={`ps-modal ${wide ? "wide" : "narrow"}`}>
+        <div className="ps-modal-stripe" />
+        <div className={`ps-modal-header ${stickyHeader ? "is-sticky" : ""}`}>
+          <span className="ps-modal-title">{title}</span>
+          <button className="ps-modal-close" onClick={onClose}><Icons.Close /></button>
+        </div>
+        <div className="ps-modal-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// CAMPO DE FORMULARIO QUE RECIBE VALORES
+function ReturnedBadge({ compact = false }) {
+  return (
+    <span className={`ps-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta desde caja">
+      Devuelta
+    </span>
+  );
+}
+
+function CancelOrderModal({ open, onClose, onConfirm, order, loading }) {
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setReason("");
+    }
+  }, [open]);
+  
+  const isPaid = isPaymentPaid(order?.payment_status);
+  const isPartial = isPaymentPartial(order?.payment_status);
+  const isCredit = isPaymentCredit(order?.payment_status);
+
+  return (
+    <Modal open={open} onClose={onClose} title="Cancelar Orden">
+      <div style={{ minWidth: 350, paddingTop: 8 }}>
+        {isPaid || isPartial || isCredit ? (
+          <>
+            <p style={{ fontSize: 14, color: "#991B1B", marginBottom: 16, lineHeight: 1.5, fontWeight: 500 }}>
+              No se puede cancelar esta orden
+            </p>
+            <p style={{ fontSize: 13, color: "#7F1D1D", marginBottom: 20, lineHeight: 1.5 }}>
+              {isPartial
+                ? "Esta orden tiene pago parcial. No se puede cancelar hasta que este totalmente pagada."
+                : "Esta orden ya ha sido pagada. No se permite cancelar ordenes con pago confirmado. Si necesitas anular esta orden, contacta con el administrador."}
+            </p>
+            {order && (
+              <p style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 16 }}>
+                Orden #{order.id?.slice(0, 8)} - {order.client_name}
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button 
+                className="ps-btn-cancel" 
+                onClick={onClose}
+              >
+                Entendido
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 14, color: "#4A5E80", marginBottom: 16, lineHeight: 1.5 }}>
+              Estas seguro de que deseas cancelar esta orden?{order && (
+                <span style={{ display: "block", marginTop: 8, fontWeight: 500, color: "#0f1e40" }}>
+                  Orden #{order.id?.slice(0, 8)} - {order.client_name}
+                </span>
+              )}
+            </p>
+            <p style={{ fontSize: 13, color: "#8899B5", marginBottom: 20, lineHeight: 1.5 }}>
+              El estado de la orden cambiara a "Cancelada" y esta accion no podra ser revertida facilmente.
+            </p>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#0f1e40", marginBottom: 8 }}>
+                Motivo de cancelacion
+              </label>
+              <textarea
+                className="ps-form-input textarea"
+                placeholder="Describe por que se cancela esta orden..."
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                disabled={loading}
+                rows={4}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button 
+                className="ps-btn-cancel" 
+                onClick={onClose}
+                disabled={loading}
+              >
+                Mantener orden
+              </button>
+              <button 
+                className="ps-btn-submit" 
+                onClick={() => onConfirm(reason)}
+                disabled={loading || !reason.trim()}
+                style={{ background: "#EF4444", border: "1px solid #DC2626" }}
+              >
+                {loading ? "Cancelando..." : "Si, cancelar orden"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// â”€â”€â”€ ARCHIVAR ORDEN VENTANA DE CONFIRMACION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+// â”€â”€â”€ MAIN PAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export default function PageSeller() {
+  const navigate = useNavigate();
+  const { user: authUser, profile: authProfile, signOut } = useAuth();
+  const isSemiAdmin = authProfile?.role === "semi_admin";
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [orders, setOrders] = useState([]);
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [ordersTotal, setOrdersTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [sellerSummary, setSellerSummary] = useState(EMPTY_SELLER_SUMMARY);
+  const [ordersError, setOrdersError] = useState(null);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterPayment, setFilterPayment] = useState("all");
+  const [filterDate, setFilterDate] = useState("all");
+  const [filterClient, setFilterClient] = useState("all");
+  const [filterArchive, setFilterArchive] = useState("all");
+  const [filterOverdue, setFilterOverdue] = useState("all");
+  const [page, setPage] = useState(1);
+  const [viewMode, setViewMode] = useState("table");
+  const [showCreate, setShowCreate] = useState(false);
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [semiAdminOperationLoading, setSemiAdminOperationLoading] = useState(false);
+  const [semiAdminProductionOrder, setSemiAdminProductionOrder] = useState(null);
+  const [semiAdminPaymentOrder, setSemiAdminPaymentOrder] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [editingAssetsOnly, setEditingAssetsOnly] = useState(false);
+  const [productionCatalog, setProductionCatalog] = useState({ materials: {}, terminations: {} });
+  const [clients, setClients] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const catalogsStartedRef = useRef(false);
+  const [user, setUser] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [cancelingOrder, setCancelingOrder] = useState(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [archivingOrder, setArchivingOrder] = useState(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [sendingToDesigner, setSendingToDesigner] = useState(null);
+  const [sendingToQuotation, setSendingToQuotation] = useState(null);
+  const [semiAdminQuoteAssignment, setSemiAdminQuoteAssignment] = useState(null);
+  const [semiAdminQuoteResponsibilityReassignment, setSemiAdminQuoteResponsibilityReassignment] = useState(null);
+  const [semiAdminDesignReassignment, setSemiAdminDesignReassignment] = useState(null);
+  const [sendingLoading, setSendingLoading] = useState(false);
+  const [returningToCashier, setReturningToCashier] = useState(null);
+  const [returningToCashierLoading, setReturningToCashierLoading] = useState(false);
+  const [toastMsg, setToastMsg] = useState(null);
+  const toastTimeoutRef = useRef(null);
+  const ordersRequestIdRef = useRef(0);
+  const visibleOrdersLoadIdRef = useRef(0);
+  const visibleOrdersLoadingRef = useRef(false);
+  const notif = useNotifications(user?.id);
+  const orderReviews = useOrderEventReviews(user?.id);
+  const orderReturns = useOrderReturnHandoffs(user?.id);
+  const pendingOrderReviews = orderReviews.pendingByOrder;
+  const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
+  const showToast = useCallback((message, type = "success") => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToastMsg({ message, type });
+    toastTimeoutRef.current = setTimeout(() => setToastMsg(null), 1500);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+  }, []);
+
+  const runSellerOrderAction = useCallback(async (action, payload = {}) => {
+    const { response, result } = await adminApiFetch("/api/seller-orders", {
+      action,
+      ...payload,
+    });
+
+    if (!response.ok) {
+      throw new Error(result?.error || "No se pudo completar la accion.");
+    }
+
+    return result;
+  }, []);
+
+  const fetchOrders = useCallback(async ({
+    nextPage = page,
+    includeDashboard = true,
+    silent = false,
+  } = {}) => {
+    if (!authUser?.id) {
+      setOrders([]);
+      setRecentOrders([]);
+      setOrdersTotal(0);
+      setTotalPages(1);
+      setSellerSummary(EMPTY_SELLER_SUMMARY);
+      setOrdersError(null);
+      setOrdersLoaded(false);
+      visibleOrdersLoadingRef.current = false;
+      setLoading(false);
+      return;
+    }
+
+    const requestId = ordersRequestIdRef.current + 1;
+    ordersRequestIdRef.current = requestId;
+    const isVisibleLoad = !silent;
+    const visibleLoadId = isVisibleLoad ? visibleOrdersLoadIdRef.current + 1 : null;
+    if (isVisibleLoad) {
+      visibleOrdersLoadIdRef.current = visibleLoadId;
+      visibleOrdersLoadingRef.current = true;
+      setLoading(true);
+    }
+
+    try {
+      const isReturnedFilter = filterArchive === "returned";
+      const result = await runSellerOrderAction("list", {
+        page: isReturnedFilter ? 1 : nextPage,
+        pageSize: isReturnedFilter ? 500 : (viewMode === "cards" ? SELLER_CARD_PAGE_SIZE : SELLER_ORDER_PAGE_SIZE),
+        search: debouncedSearch,
+        status: filterStatus,
+        paymentStatus: filterPayment,
+        clientId: filterClient,
+        archive: isReturnedFilter ? "all" : filterArchive,
+        dateFilter: filterDate,
+        overdue: filterOverdue === "overdue",
+        includeDashboard,
+      });
+
+      if (requestId !== ordersRequestIdRef.current) return;
+      setOrdersError(null);
+      setOrdersLoaded(true);
+
+      const rawOrders = Array.isArray(result?.orders) ? result.orders : [];
+      const nextOrders = isReturnedFilter ? rawOrders.filter(o => isReturnedOrder(o)) : rawOrders;
+      const filteredTotal = isReturnedFilter ? nextOrders.length : (Number(result?.total) || 0);
+      const filteredPageSize = viewMode === "cards" ? SELLER_CARD_PAGE_SIZE : SELLER_ORDER_PAGE_SIZE;
+      const resolvedTotalPages = Math.max(isReturnedFilter
+        ? Math.ceil(nextOrders.length / filteredPageSize)
+        : Number(result?.totalPages) || 1, 1);
+
+      if (nextPage > resolvedTotalPages) {
+        setPage(resolvedTotalPages);
+        return;
+      }
+
+      applyOrdersSnapshot({
+        orders: nextOrders,
+        setOrders,
+        setSelectedOrder,
+        preserveMissingOpenOrders: silent,
+      });
+      setRecentOrders(Array.isArray(result?.recent_orders) ? result.recent_orders : []);
+      setOrdersTotal(filteredTotal);
+      setTotalPages(resolvedTotalPages);
+      setSellerSummary({ ...EMPTY_SELLER_SUMMARY, ...(result?.summary || {}) });
+      if (Number(result?.page) && Number(result.page) !== page) setPage(Number(result.page));
+      setSelectedOrder((current) => {
+        if (!current?.id) return current;
+        return nextOrders.find((order) => order.id === current.id) || current;
+      });
+    } catch (error) {
+      if (requestId !== ordersRequestIdRef.current) return;
+      if (silent) {
+        console.warn("No se pudo refrescar ordenes en segundo plano:", error?.message || error);
+      } else {
+        setOrdersError(error?.message || "No se pudieron cargar las ordenes.");
+        showToast(error?.message || "No se pudieron cargar las ordenes", "error");
+      }
+    } finally {
+      if (isVisibleLoad && visibleLoadId === visibleOrdersLoadIdRef.current) {
+        visibleOrdersLoadingRef.current = false;
+        setLoading(false);
+      }
+    }
+  }, [
+    authUser?.id,
+    debouncedSearch,
+    filterArchive,
+    filterClient,
+    filterDate,
+    filterPayment,
+    filterStatus,
+    filterOverdue,
+    page,
+    runSellerOrderAction,
+    viewMode,
+    showToast,
+  ]);
+
+  const openOrderDetail = useCallback((order) => {
+    setSelectedOrder(order);
+  }, []);
+
+  // Carga inicial + listener de sesiÃ³n
+  useEffect(() => {
+    if (!authUser) {
+      setUser(null);
+      setOrders([]);
+      setRecentOrders([]);
+      setOrdersTotal(0);
+      setTotalPages(1);
+      setSellerSummary(EMPTY_SELLER_SUMMARY);
+      setOrdersError(null);
+      setOrdersLoaded(false);
+      return;
+    }
+
+    const displayName =
+      authUser.user_metadata?.display_name ||
+      authUser.user_metadata?.full_name ||
+      authUser.user_metadata?.name ||
+      authUser.user_metadata?.first_name ||
+      authUser.email?.split("@")[0];
+
+    setUser({ ...authUser, displayName });
+  }, [authUser]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterDate, filterStatus, filterPayment, filterClient, filterArchive, filterOverdue]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [viewMode]);
+
+  useEffect(() => {
+    fetchOrders({ nextPage: page, includeDashboard: true });
+  }, [fetchOrders, page]);
+
+  // SincronizaciÃ³n en tiempo real + refresco al volver a la pÃ¡gina
+  const sellerUserId = user?.id;
+  const refreshSellerOrdersSilently = useCallback(async () => {
+    if (!sellerUserId) return;
+    if (visibleOrdersLoadingRef.current) return;
+    await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
+  }, [fetchOrders, page, sellerUserId]);
+
+  useOrdersRealtimeSync({
+    userId: sellerUserId,
+    scope: "seller",
+    refreshOrders: refreshSellerOrdersSilently,
+  });
+
+  const loadSellerCatalogs = useCallback(() => {
+    if (!authUser?.id || catalogsStartedRef.current) return;
+    catalogsStartedRef.current = true;
+    setClientsLoading(true);
+    Promise.all([
+      supabase.from("materials").select("name,production_area_code").not("production_area_code", "is", null).order("name"),
+      supabase.from("production_terminations").select("name,production_area_code").order("name"),
+      loadClients(supabase),
+    ]).then(([materialsResult, terminationsResult, loadedClients]) => {
+      setProductionCatalog(buildProductionCatalogs(materialsResult.data || [], terminationsResult.data || []));
+      setClients(loadedClients);
+    }).catch((error) => {
+      console.warn("No se pudieron cargar los catálogos de Ventas:", error?.message || error);
+    }).finally(() => setClientsLoading(false));
+  }, [authUser?.id]);
+
+  // Catalogs are not needed to render the order queue. Defer them until after
+  // the first paint, while opening a form still loads them immediately.
+  useEffect(() => {
+    const timer = window.setTimeout(loadSellerCatalogs, 800);
+    return () => window.clearTimeout(timer);
+  }, [loadSellerCatalogs]);
+
+  useEffect(() => {
+    if (showCreate || editingOrder) loadSellerCatalogs();
+  }, [editingOrder, loadSellerCatalogs, showCreate]);
+
+  const handleClientSearch = useCallback(async (query) => {
+    const results = await searchClients(supabase, query);
+    setClients((prev) => {
+      const byId = new Map(prev.map((client) => [client.id, client]));
+      results.forEach((client) => byId.set(client.id, client));
+      return [...byId.values()].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    });
+    return results;
+  }, []);
+
+  const handleLogout = async () => { await signOut(); navigate("/"); };
+
+  const handleNewClientCreated = async (newClient) => {
+    setClients(prev => {
+      const exists = prev.some(c => c.id === newClient.id);
+      return exists ? prev : [...prev, newClient].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    });
+    if (showCreate) {
+      setClientToSelectInOrderForm(newClient);
+    }
+    showToast("Cliente creado correctamente.");
+  };
+
+  // â”€â”€ Funcion para cancelar orden â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleCancelOrder = (order) => {
+    if (isPaymentPartial(order?.payment_status)) {
+      showToast("No se puede cancelar una orden con pago parcial", "error");
+      return;
+    }
+
+    // ValidaciÃ³n: No permitir cancelar Ã³rdenes pagadas
+    if (isPaymentPaid(order?.payment_status)) {
+      showToast("No se puede cancelar una orden que ya ha sido pagada", "error");
+      return;
+    }
+    setCancelingOrder(order);
+  };
+
+  const handleConfirmCancel = async (reason) => {
+    if (!cancelingOrder) return;
+    
+    // ValidaciÃ³n adicional: Verificar nuevamente que no estÃ© pagada
+    if (isPaymentPartial(cancelingOrder?.payment_status)) {
+      showToast("No se puede cancelar una orden con pago parcial", "error");
+      setCancelingOrder(null);
+      return;
+    }
+
+    if (isPaymentPaid(cancelingOrder?.payment_status)) {
+      showToast("No se puede cancelar una orden que ya ha sido pagada", "error");
+      setCancelingOrder(null);
+      return;
+    }
+    
+    if (!String(reason || "").trim()) {
+      showToast("Debes indicar el motivo de cancelacion", "error");
+      return;
+    }
+    
+    setCancelLoading(true);
+    try {
+      const result = await runSellerOrderAction("cancel", {
+        order_id: cancelingOrder.id,
+        reason: String(reason).trim(),
+        expected_updated_at: cancelingOrder.updated_at,
+      });
+
+      setCancelingOrder(null);
+      if (result?.order) setSelectedOrder((current) => current?.id === result.order.id ? result.order : current);
+      await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
+      await notif.refresh({ showNewToasts: true });
+    } catch (error) {
+      showToast(error?.message || "Error al cancelar la orden", "error");
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
+  // â”€â”€ Ver detalles de orden â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleViewOrder = useCallback(async (order) => {
+    if (!order?.id) return;
+
+    try {
+      const result = await runSellerOrderAction("detail", { order_id: order.id });
+      openOrderDetail(result?.order || order);
+    } catch (error) {
+      showToast(error?.message || "No se pudo cargar el detalle de la orden", "error");
+      openOrderDetail(order);
+    }
+  }, [openOrderDetail, runSellerOrderAction, showToast]);
+
+  const handleEditOrder = useCallback(async (order) => {
+    if (!order?.id) return;
+
+    try {
+      const result = await runSellerOrderAction("detail", { order_id: order.id });
+      if (!result?.order) {
+        throw new Error("No se recibieron los datos completos de la orden.");
+      }
+      setEditingAssetsOnly(false);
+      setEditingOrder(result.order);
+    } catch (error) {
+      showToast(error?.message || "No se pudo cargar la orden para editarla", "error");
+    }
+  }, [runSellerOrderAction, showToast]);
+
+  const handleSemiAdminOperation = useCallback(async (action, payload) => {
+    if (!isSemiAdmin || !selectedOrder?.id || semiAdminOperationLoading) return;
+
+    const operationOrderId = selectedOrder.id;
+    const mergeConfirmedOrder = (current, confirmedOrder) => {
+      if (current?.id !== operationOrderId || !confirmedOrder) return current;
+      // Command responses can omit relations included by the detail endpoint.
+      // Keep them until the non-blocking reconciliation completes.
+      return { ...current, ...confirmedOrder };
+    };
+
+    setSemiAdminOperationLoading(true);
+    try {
+      const result = await runSellerOrderAction(action, {
+        ...payload,
+        order_id: operationOrderId,
+        expected_updated_at: selectedOrder.updated_at,
+      });
+
+      // Apply the command-confirmed state before any follow-up request. The
+      // advanced configuration and detail modal consume selectedOrder directly,
+      // so a reassignment appears in the open modal without a close/reopen.
+      setSelectedOrder((current) => mergeConfirmedOrder(current, result?.order));
+
+      // Reconciliation must not delay the confirmed UI update or require a
+      // page refresh. It supplies complete relations, list data and notices.
+      void (async () => {
+        try {
+          const detail = await runSellerOrderAction("detail", { order_id: operationOrderId });
+          if (detail?.order) {
+            setSelectedOrder((current) => mergeConfirmedOrder(current, detail.order));
+          }
+        } catch (refreshError) {
+          console.warn("No se pudo reconciliar el detalle tras la operación operativa:", refreshError?.message || refreshError);
+        }
+
+        try {
+          await Promise.all([
+            fetchOrders({ nextPage: page, includeDashboard: true, silent: true }),
+            notif.refresh({ showNewToasts: true }),
+          ]);
+        } catch (refreshError) {
+          console.warn("No se pudo reconciliar la lista tras la operación operativa:", refreshError?.message || refreshError);
+        }
+      })();
+
+      return result;
+    } catch (error) {
+      showToast(error?.message || "No se pudo completar la acción operativa.", "error");
+      return null;
+    } finally {
+      setSemiAdminOperationLoading(false);
+    }
+  }, [fetchOrders, isSemiAdmin, notif, page, runSellerOrderAction, selectedOrder, semiAdminOperationLoading, showToast]);
+
+  const handleConfirmSemiAdminQuoteAssignment = useCallback(async (quoteId) => {
+    if (!semiAdminQuoteAssignment) return;
+    const result = await handleSemiAdminOperation("send_design_to_quote", { quote_id: quoteId });
+    if (result) setSemiAdminQuoteAssignment(null);
+  }, [handleSemiAdminOperation, semiAdminQuoteAssignment]);
+
+  const handleConfirmSemiAdminQuoteResponsibilityReassignment = useCallback(async (quoteId) => {
+    if (!semiAdminQuoteResponsibilityReassignment) return;
+    const result = await handleSemiAdminOperation("stage_responsibility", { stage: "quote", assignee_id: quoteId });
+    if (result) setSemiAdminQuoteResponsibilityReassignment(null);
+  }, [handleSemiAdminOperation, semiAdminQuoteResponsibilityReassignment]);
+
+  const handleConfirmSemiAdminDesignReassignment = useCallback(async (designerId) => {
+    if (!semiAdminDesignReassignment) return;
+    const result = await handleSemiAdminOperation("stage_responsibility", { stage: "design", assignee_id: designerId });
+    if (result) setSemiAdminDesignReassignment(null);
+  }, [handleSemiAdminOperation, semiAdminDesignReassignment]);
+
+  const handleOpenSemiAdminProductionAssignment = useCallback(async () => {
+    if (!selectedOrder?.id || semiAdminOperationLoading) return;
+    try {
+      const detail = await runSellerOrderAction("detail", { order_id: selectedOrder.id });
+      setSemiAdminProductionOrder(detail?.order || selectedOrder);
+    } catch (error) {
+      showToast(error?.message || "No se pudo preparar la asignación de Producción.", "error");
+    }
+  }, [runSellerOrderAction, selectedOrder, semiAdminOperationLoading, showToast]);
+
+  const handleConfirmSemiAdminProductionAssignment = useCallback(async (assignments) => {
+    const result = await handleSemiAdminOperation("route_production", { area_assignments: assignments });
+    if (result) setSemiAdminProductionOrder(null);
+  }, [handleSemiAdminOperation]);
+
+  const handleConfirmSemiAdminPayment = useCallback(async ({ paymentStatus, receiptFile, receiptNumber }) => {
+    if (!semiAdminPaymentOrder) return;
+    let invoicePayment = null;
+    if (receiptFile) {
+      const validation = await validateReceiptFile(receiptFile);
+      if (!validation.isValid) throw new Error(validation.error || "El comprobante no es válido.");
+      invoicePayment = await uploadOrderAsset({
+        bucket: "payment-invoice",
+        path: buildPaymentReceiptPath(semiAdminPaymentOrder.id, receiptFile.name),
+        file: receiptFile,
+      });
+      if (!invoicePayment) throw new Error("No se pudo subir el comprobante de pago.");
+    }
+    const result = await handleSemiAdminOperation("register_payment", {
+      payment_status: paymentStatus,
+      invoice_payment: invoicePayment,
+      invoice_number: receiptNumber || undefined,
+    });
+    if (result) setSemiAdminPaymentOrder(null);
+  }, [handleSemiAdminOperation, semiAdminPaymentOrder]);
+
+  const loadSemiAdminOperationalCatalog = useCallback(async (orderId) => {
+    if (!isSemiAdmin || !orderId) return { actions: [], unavailable_actions: [] };
+    const result = await runSellerOrderAction("operational_catalog", { order_id: orderId });
+    return result?.catalog || { actions: [], unavailable_actions: [] };
+  }, [isSemiAdmin, runSellerOrderAction]);
+
+  const handleSellerOrderRowClick = useCallback((event, order) => {
+    if (isInteractiveOrderRowTarget(event.target)) return;
+    handleViewOrder(order);
+  }, [handleViewOrder]);
+
+  const handleSellerOrderRowKeyDown = useCallback((event, order) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    if (isInteractiveOrderRowTarget(event.target)) return;
+    event.preventDefault();
+    handleViewOrder(order);
+  }, [handleViewOrder]);
+
+  // â”€â”€ Enviar a DiseÃ±o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleSendToDesigner = (order) => {
+    setSendingToDesigner(order);
+  };
+
+  // â”€â”€ Enviar a CotizaciÃ³n (DiseÃ±o Externo) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleSendToQuotation = (order) => {
+    setSelectedOrder(null);
+    setSendingToQuotation(order);
+  };
+
+  const handleConfirmSendToQuotation = async (quoteUserId) => {
+    if (!sendingToQuotation) return;
+
+    setSendingLoading(true);
+
+    try {
+      await runSellerOrderAction("send_to_quote", {
+        order_id: sendingToQuotation.id,
+        quote_user_id: quoteUserId,
+        expected_updated_at: sendingToQuotation.updated_at,
+      });
+
+      setSendingToQuotation(null);
+      setSelectedOrder(null);
+      await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
+      await notif.refresh({ showNewToasts: true });
+    } catch (error) {
+      showToast(error?.message || "Error al enviar a caja", "error");
+    } finally {
+      setSendingLoading(false);
+    }
+  };
+
+  const handleReturnToCashier = async (correctionNote) => {
+    if (!returningToCashier) return;
+    setReturningToCashierLoading(true);
+    const { error } = await supabase.rpc("return_order_to_cashier", {
+      p_handoff_id: returningToCashier.id,
+      p_correction_note: correctionNote,
+    });
+    setReturningToCashierLoading(false);
+    if (error) {
+      showToast(error.message || "No se pudo regresar la orden a Caja", "error");
+      return;
+    }
+    setReturningToCashier(null);
+    setSelectedOrder(null);
+    await Promise.all([
+      fetchOrders({ nextPage: page, includeDashboard: true, silent: true }),
+      orderReturns.refresh(),
+      notif.refresh({ showNewToasts: true }),
+    ]);
+  };
+
+  const handleConfirmSendToDesigner = async (designerId) => {
+    if (!sendingToDesigner) return;
+
+    setSendingLoading(true);
+
+    try {
+      const result = await runSellerOrderAction("send_to_designer", {
+        order_id: sendingToDesigner.id,
+        designer_id: designerId,
+        expected_updated_at: sendingToDesigner.updated_at,
+      });
+
+      setSendingToDesigner(null);
+      await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
+      await notif.refresh({ showNewToasts: true });
+
+      if (result?.order) {
+        setSelectedOrder(result.order);
+      }
+    } catch (err) {
+      console.error("Error inesperado:", err);
+      showToast(`Error inesperado: ${err.message}`, "error");
+    } finally {
+      setSendingLoading(false);
+    }
+  };
+
+  const handleOrderUpdated = useCallback(async (updatedOrder) => {
+    const orderId = updatedOrder?.id || editingOrder?.id;
+    if (!orderId) return;
+
+    const applyConfirmedOrder = (current) => {
+      if (current?.id !== orderId || !updatedOrder) return current;
+      // The mutation response can omit relations loaded by the detail endpoint.
+      // Preserve those until the authoritative detail refresh below completes.
+      return { ...current, ...updatedOrder };
+    };
+
+    // Detail and asset editor use this same order snapshot. Apply the confirmed
+    // mutation before the follow-up request so their file data never waits for a
+    // close/reopen cycle.
+    setSelectedOrder(applyConfirmedOrder);
+    setEditingOrder(applyConfirmedOrder);
+
+    try {
+      const result = await runSellerOrderAction("detail", { order_id: orderId });
+      const refreshedOrder = result?.order || updatedOrder;
+      if (refreshedOrder) {
+        setSelectedOrder((current) => current?.id === orderId ? refreshedOrder : current);
+      }
+    } catch (error) {
+      if (updatedOrder) {
+        setSelectedOrder((current) => current?.id === orderId ? updatedOrder : current);
+      }
+      console.warn("No se pudo recargar el detalle actualizado de la orden:", error?.message || error);
+    }
+
+    await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
+  }, [editingOrder?.id, fetchOrders, page, runSellerOrderAction]);
+
+  const handleSemiAdminAssetSaved = useCallback(() => {
+    showToast("Archivo agregado correctamente.", "success");
+  }, [showToast]);
+
+  // â”€â”€ Funcion para archivar orden â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleArchiveOrder = (order) => {
+    if (!canArchiveOrder(order, ARCHIVE_MODULES.SELLER, user?.id)) return;
+    setArchivingOrder(order);
+  }
+ 
+  // Funcion por si el usuario confirma el archivado
+  const handleConfirmArchiveOrder = async () => {
+    if (!archivingOrder) return;
+
+    setArchiveLoading(true);
+    try {
+      const result = await runSellerOrderAction("archive", {
+        order_id: archivingOrder.id,
+        expected_updated_at: archivingOrder.updated_at,
+      });
+      if (result?.order) setSelectedOrder((current) => current?.id === result.order.id ? result.order : current);
+      await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
+      setArchivingOrder(null);
+    } catch (error) {
+      showToast(error?.message || "Error al archivar la orden", "error");
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  // â”€â”€ Metrics Values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const safePage = Math.min(page, totalPages);
+  const activeOrdersCount = sellerSummary.active;
+  const returnedOrdersCount = orders.filter(o => isReturnedOrder(o)).length;
+  const editedOrdersCount = orders.filter(o => o?.metadata?.event_kind === "admin_edited_order").length;
+  const displayCount = (value) => (ordersLoaded ? value : "—");
+  const activeOrders = useMemo(() => orders.filter(o => !o.is_archived), [orders]);
+  const archivedOrders = useMemo(() => orders.filter(o => o.is_archived), [orders]);
+  const returnedOrders = useMemo(() => orders.filter(o => isReturnedOrder(o)), [orders]);
+
+  const visibleSellerNotifications = useMemo(
+    () => notif.notifications.filter(isSellerVisibleNotification),
+    [notif.notifications]
+  );
+
+  const visibleSellerToasts = useMemo(
+    () => notif.toasts.filter(isSellerVisibleNotification),
+    [notif.toasts]
+  );
+
+  const visibleSellerUnreadCount = useMemo(
+    () => visibleSellerNotifications.filter((notification) => !notification.is_read && !notification.is_archived).length,
+    [visibleSellerNotifications]
+  );
+
+  const nav = [
+    { id: "dashboard", label: "Dashboard", icon: <Icons.Dashboard /> },
+    { id: "orders", label: "Ordenes", icon: <Icons.Orders />, badge: displayCount(sellerSummary.unarchived) },
+    { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
+    { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: visibleSellerUnreadCount },
+  ];
+  const pageTitles = {
+    dashboard: "Dashboard",
+    orders: "Gestion de Ordenes",
+    notifications: "Notificaciones",
+    profile: "Mi Perfil",
+  };
+
+  // Valores para las cartas metricas
+  const metrics = [
+    { icon: <Icons.Orders />, label: "Ordenes hoy", value: sellerSummary.todayOrders, sub: "Creadas por ti", accentIdx: 0, subColor: "#1E40AF" },
+    { icon: <Icons.Package />, label: "Pendientes", value: sellerSummary.pending, sub: "Ordenes Pendientes", accentIdx: 1 },
+    { icon: <Icons.Edit />, label: "En diseño", value: sellerSummary.inDesign, sub: "En proceso de diseño", accentIdx: 2 },
+    { icon: <Icons.Package />, label: "En caja", value: sellerSummary.inQuote, sub: "Esperando aprobación", accentIdx: 5 },
+    { icon: <Icons.Package />, label: "En producción", value: sellerSummary.inProduction, sub: "Siendo impresas", accentIdx: 3 },
+    { icon: <Icons.Package />, label: "Terminación", value: sellerSummary.inTermination, sub: "En proceso final", accentIdx: 0 },
+    { icon: <Icons.Truck />, label: "Completadas", value: sellerSummary.completed, sub: "Entregadas al cliente", accentIdx: 4 },
+    { icon: <Icons.ArrowLeft />, label: "Devueltas", value: sellerSummary.returned, sub: "Pendientes de corrección", accentIdx: 6 },
+  ];
+
+  return (
+    <div className="ps-root">
+
+      {/* â”€â”€ SIDEBAR â”€â”€ */}
+      <Sidebar 
+        isOpen={sidebarOpen}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        role={isSemiAdmin ? "Semi-Administrador" : "Vendedor"}
+        userName={user?.email?.split('@')[0] || (isSemiAdmin ? "Semi-Administrador" : "Vendedor")}
+        menuItems={nav.map(item => ({ ...item, icon: item.icon }))}
+        onLogout={handleLogout}
+        onCreateNew={() => setShowCreate(true)}
+        showCreateButton={false}
+      />
+
+      {/* â”€â”€ MAIN â”€â”€ */}
+      <div className="ps-main-wrap">
+        <header className="ps-topbar">
+          <div className="ps-topbar-left">
+            <button className="ps-icon-btn" onClick={() => setSidebarOpen(p => !p)}>
+              {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
+            </button>
+            <div>
+              <div className="ps-page-title">{pageTitles[activeTab] || "Dashboard"}</div>
+              <div className="ps-page-date">{new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
+            </div>
+          </div>
+          <div className="ps-topbar-right">
+            <button className="ps-icon-btn" onClick={() => fetchOrders({ nextPage: page, includeDashboard: true })}><Icons.Refresh /></button>
+            {/* Boton para agregar  registrar Nuevo Cliente */}
+    {!isSemiAdmin && <button className="ps-topbar-client-btn" onClick={() => setShowNewClientModal(true)}>
+      <div className="ps-topbar-client-inner"><Icons.Users /> Nuevo Cliente</div>
+    </button>}
+            {/* Boton para regitrar Nueva Orden */}
+             <button className="ps-topbar-new-btn" onClick={() => setShowCreate(true)}>
+              <div className="ps-topbar-new-inner"><Icons.Plus /> Nueva Orden</div>
+              <div className="ps-topbar-new-stripe" />
+            </button>
+            <NotificationCenter
+              notifications={visibleSellerNotifications}
+              unreadCount={visibleSellerUnreadCount}
+              toasts={visibleSellerToasts}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDismissToast={notif.dismissToast}
+              onViewAll={() => setActiveTab("notifications")}
+            />
+          </div>
+        </header>
+
+        <main className="ps-main">
+          {/* DASHBOARD */}
+          {activeTab === "dashboard" && (
+            <>
+              <GreetingBanner
+                title={<>Bienvenido, <span>{user?.displayName || "Vendedor"}</span></>}
+                subtitle="Aqui tienes el resumen de tu actividad de hoy."
+                badges={[
+                  { icon: <Icons.Orders />, count: ordersLoaded ? activeOrdersCount.toLocaleString("es-DO") : "—", label: "Ordenes activas", ariaLabel: `${displayCount(activeOrdersCount)} ordenes activas` },
+                  { icon: <Icons.ArrowLeft />, count: ordersLoaded ? returnedOrdersCount.toLocaleString("es-DO") : "—", label: "Devueltas", variant: "returned", ariaLabel: `${displayCount(returnedOrdersCount)} órdenes devueltas` },
+                  { icon: <Icons.Edit />, count: ordersLoaded ? editedOrdersCount.toLocaleString("es-DO") : "—", label: "Editadas por Administrador", variant: "edited", ariaLabel: `${displayCount(editedOrdersCount)} órdenes editadas por administrador` },
+                ]}
+                actions={
+                  <>
+                    <button type="button" className="ps-greeting-btn primary" onClick={() => setShowCreate(true)}>
+                      <Icons.Plus />
+                      Crear Ordenes
+                    </button>
+                    {!isSemiAdmin && <button type="button" className="ps-greeting-btn secondary" onClick={() => setShowNewClientModal(true)}>
+                      <Icons.Users />
+                      Nuevo Cliente
+                    </button>}
+                  </>
+                }
+              />
+              <div className="ps-metrics">
+                {metrics.map((m, i) => <MetricCard key={i} {...m} value={displayCount(m.value)} />)}
+              </div>
+              <div className="ps-panel">
+                <div className="ps-panel-stripe" />
+                <div className="ps-panel-header">
+                  <div>
+                    <div className="ps-panel-title">Ordenes recientes</div>
+                    <div className="ps-panel-sub">Las ultimas 5 ordenes ingresadas al sistema</div>
+                  </div>
+                  <button className="ps-link-btn" onClick={() => setActiveTab("orders")}>
+                    Ver todas <Icons.ArrowRight />
+                  </button>
+                </div>
+                <div className="ps-table-wrap">
+                  <table className="ps-table">
+                    <thead><tr>{["Cliente", "Facturacion", "Estado", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {loading ? (
+                        <tr>
+                          <td colSpan={4} className="ps-table-empty">Cargando Ordenes...</td>
+                        </tr>
+                      ) : ordersError ? (
+                        <tr>
+                          <td colSpan={4} className="ps-table-empty">
+                            <div className="acm-empty-state">
+                              <Icons.AlertCircle />
+                              <strong>No se pudieron cargar las órdenes recientes</strong>
+                              <span>{ordersError}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : recentOrders.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="ps-table-empty">No hay Ordenes disponibles</td>
+                        </tr>
+                      ) : (
+                        recentOrders.map(o => (
+                          <tr
+                            key={o.id}
+                            className="row-hover ps-order-row"
+                            tabIndex={0}
+                            onClick={(event) => handleSellerOrderRowClick(event, o)}
+                            onKeyDown={(event) => handleSellerOrderRowKeyDown(event, o)}
+                            aria-label={`Ver detalles de la orden ${o.id?.slice(0, 8) || ""} de ${o.client_name || "cliente sin nombre"}`}
+                          >
+                            <td className="td-pad td-name">
+                              <div className="ps-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getAvatarInitials(o.client_name)}</span>
+                                <span className="ps-client-cell-main">
+                                  <strong title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</strong>
+                                  <span className="ps-client-cell-badges">
+                                    <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                                    {isReturnedOrder(o) && <ReturnedBadge compact />}
+                                  </span>
+                                </span>
+                              </div>
+                            </td>
+                            <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number ? <span className="td-invoice-badge">{o.invoice_number}</span> : "---"}</td>
+                            <td className="td-pad"><StatusBadge status={o.status} order={o} /></td>
+                            <td className="td-pad td-actions" data-row-action>
+                              <div className="table-actions" data-row-action>
+                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
+                                  <Icons.Eye />
+                                </button>
+                                {canSellerEditOrder(o, isSemiAdmin) && (
+                                  <button className="table-action-btn edit" onClick={e => { e.stopPropagation(); handleEditOrder(o); }} title="Editar orden">
+                                    <Icons.Edit />
+                                  </button>
+                                )}
+{!isSemiAdmin && canArchiveOrder(o, ARCHIVE_MODULES.SELLER, user?.id) ? (
+                  <button 
+                    className="table-action-btn archive"
+                    onClick={e => { e.stopPropagation(); handleArchiveOrder(o); }}
+                    title="Archivar orden"
+                  >
+                    <Icons.Archived />
+                  </button>
+                ) : o.is_archived ? (
+                  <button 
+                    className="table-action-btn archive"
+                    title="Orden archivada"
+                    disabled
+                  >
+                    <Icons.Check />
+                  </button>
+                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === "profile" && (
+            <SellerProfileModule authUser={authUser} fallbackProfile={authProfile} />
+          )}
+
+          {/* ORDERS TAB */}
+          {activeTab === "orders" && (
+            <>
+              <SalesFilterToolbar
+                ariaLabel="Filtros de órdenes de venta"
+                search={{
+                  label: "Buscar órdenes de venta",
+                  value: search,
+                  onChange: setSearch,
+                  placeholder: "Buscar por cliente, descripción o ID...",
+                }}
+                controls={[
+                  {
+                    id: "status", label: "Estado", icon: <Icons.FileText />, value: filterStatus, onChange: setFilterStatus,
+                    isActive: filterStatus !== "all", placeholder: "Todos los estados",
+                    options: [{ value: "all", label: "Todos los estados" }, ...STATUS_OPTIONS.map((status) => ({ value: status, label: getOrderStatusConfig(status).label }))],
+                  },
+                  {
+                    id: "payment", label: "Pago", icon: <Icons.Money />, value: filterPayment, onChange: setFilterPayment,
+                    isActive: filterPayment !== "all", placeholder: "Pago: Todos",
+                    options: [{ value: "all", label: "Pago: Todos" }, ...Object.entries(PAYMENT_COLORS).map(([value, option]) => ({ value, label: option.label }))],
+                  },
+                  {
+                    id: "client", label: "Cliente", icon: <Icons.Users />, value: filterClient, onChange: setFilterClient,
+                    isActive: filterClient !== "all", placeholder: "Todos los clientes",
+                    options: [{ value: "all", label: "Todos los clientes" }, ...clients.map((client) => ({ value: client.id, label: client.name }))],
+                  },
+                  {
+                    id: "date", label: "Fecha", icon: <Icons.Calendar />, value: filterDate, onChange: setFilterDate,
+                    isActive: filterDate !== "all", placeholder: "Fecha: Todas",
+                    options: [
+                      { value: "all", label: "Fecha: Todas" }, { value: "10min", label: "Hace 10 minutos" }, { value: "30min", label: "Hace 30 minutos" },
+                      { value: "1hour", label: "Hace 1 hora" }, { value: "today", label: "Hoy" }, { value: "yesterday", label: "Ayer" },
+                      { value: "3days", label: "Hace 3 días" }, { value: "7days", label: "Hace 7 días" }, { value: "thismonth", label: "Este mes" }, { value: "thisyear", label: "Este año" },
+                    ],
+                  },
+                  {
+                    id: "overdue", label: "Entrega", icon: <Icons.AlertCircle />, value: filterOverdue, onChange: setFilterOverdue,
+                    isActive: filterOverdue !== "all", placeholder: "Todas las fechas de entrega",
+                    options: [{ value: "all", label: "Todas las fechas de entrega" }, { value: "overdue", label: "Atrasadas" }],
+                  },
+                ]}
+                resultCount={!ordersLoaded || ordersError ? undefined : ordersTotal}
+                resultLabel={`resultado${ordersTotal !== 1 ? "s" : ""}`}
+                activeFilters={[search, filterStatus !== "all", filterPayment !== "all", filterClient !== "all", filterDate !== "all", filterArchive !== "all", filterOverdue !== "all"].filter(Boolean).length}
+                onReset={() => { setSearch(""); setFilterStatus("all"); setFilterPayment("all"); setFilterClient("all"); setFilterDate("all"); setFilterArchive("all"); setFilterOverdue("all"); setPage(1); }}
+              />
+
+              <div className="pp-workbench-panel">
+                <div className="pp-workbench-heading">
+                  <div>
+                    <span className="pp-workbench-kicker">Bandeja de trabajo</span>
+                    <h3>{filterArchive === "all" ? "Todas las ordernes" : filterArchive === "archived" ? "Ordernes archivadas" : filterArchive === "returned" ? "Ordernes devueltas" : "Ordernes activas"}</h3>
+                  </div>
+                  <div className="pp-workbench-tools">
+                    <div className="pp-workbench-tabs" role="tablist">
+                        <button className={filterArchive === "all" ? "active" : ""} onClick={() => { setFilterArchive("all"); setPage(1); }}>
+                        <Icons.Clipboard /> Todas <span className="pp-workbench-badge">{displayCount(orders.length)}</span>
+                      </button>
+                      <button className={filterArchive === "active" ? "active" : ""} onClick={() => { setFilterArchive("active"); setPage(1); }}>
+                        <Icons.Package /> Activas <span className="pp-workbench-badge">{displayCount(activeOrders.length)}</span>
+                      </button>
+                      <button className={filterArchive === "archived" ? "active" : ""} onClick={() => { setFilterArchive("archived"); setPage(1); }}>
+                        <Icons.Archive /> Archivadas <span className="pp-workbench-badge">{displayCount(archivedOrders.length)}</span>
+                      </button>
+                      <button className={filterArchive === "returned" ? "active" : ""} onClick={() => { setFilterArchive("returned"); setPage(1); }}>
+                        <Icons.ArrowLeft /> Devueltas <span className="pp-workbench-badge">{displayCount(returnedOrders.length)}</span>
+                      </button>
+                    </div>
+                    <div className="pp-workbench-view-toggle">
+                      <button onClick={() => setViewMode("table")} className={viewMode === "table" ? "active" : ""} title="Vista de tabla">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                      </button>
+                      <button onClick={() => setViewMode("cards")} className={viewMode === "cards" ? "active" : ""} title="Vista de tarjetas">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              <div className="pp-workbench-body">
+              <div className={`ps-panel${viewMode === "cards" ? " ps-panel--transparent" : ""}`}>
+                <div className="ps-panel-stripe" />
+                {viewMode === "table" ? (
+                  <div className="ps-table-wrap">
+                    <table className="ps-table">
+                      <thead><tr>{["Cliente", "Facturacion", "Estado", "Pago", "Tipo", "Fecha", "Acciones"].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {loading ? (
+                          <tr>
+                            <td colSpan={7} className="ps-table-empty">Cargando Ordenes...</td>
+                          </tr>
+                        ) : ordersError ? (
+                          <tr>
+                            <td colSpan={7} className="ps-table-empty">
+                              <div className="acm-empty-state">
+                                <Icons.AlertCircle />
+                                <strong>No se pudieron cargar las órdenes</strong>
+                                <span>{ordersError}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : orders.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="ps-table-empty">
+                              <div className="acm-empty-state">
+                                <Icons.Package />
+                                <strong>No hay órdenes disponibles</strong>
+                                <span>{search || filterStatus !== "all" || filterPayment !== "all" || filterClient !== "all" || filterDate !== "all" || filterArchive !== "all" || filterOverdue !== "all"
+                                  ? "Prueba con otros filtros o limpia la búsqueda."
+                                  : "Las órdenes que crees aparecerán aquí."}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          orders.map(o => (
+                            <tr
+                              key={o.id}
+                              className="row-hover ps-order-row"
+                              tabIndex={0}
+                              onClick={(event) => handleSellerOrderRowClick(event, o)}
+                              onKeyDown={(event) => handleSellerOrderRowKeyDown(event, o)}
+                              aria-label={`Ver detalles de la orden ${o.id?.slice(0, 8) || ""} de ${o.client_name || "cliente sin nombre"}`}
+                            >
+                              <td className="td-pad td-name">
+                                <div className="ps-client-cell">
+                                  <span className="acm-avatar acm-avatar-small">{getAvatarInitials(o.client_name)}</span>
+                                  <span className="ps-client-cell-main">
+                                    <strong title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</strong>
+                                    <span className="ps-client-cell-badges">
+                                      <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                                      {isReturnedOrder(o) && <ReturnedBadge compact />}
+                                    </span>
+                                  </span>
+                                </div>
+                              </td>
+                            <td className="td-pad td-invoice" title={o.invoice_number || "---"}>{o.invoice_number ? <span className="td-invoice-badge">{o.invoice_number}</span> : "---"}</td>
+                              <td className="td-pad"><StatusBadge status={o.status} order={o} /></td>
+                              <td className="td-pad"><StatusBadge status={o.payment_status} type="payment" /></td>
+                              <td className="td-pad">
+                                {o.order_type === "orden 911"
+                                  ? <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B", border: "1px solid #EF444420" }}>911</span>
+                                  : <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>Normal</span>
+                                }
+                              </td>
+                              <td className="td-pad td-date">{new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
+                              <td className="td-pad td-actions" data-row-action>
+                                <div className="table-actions" data-row-action>
+                                  <button className="table-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
+                                    <Icons.Eye />
+                                  </button>
+                                  {canSellerEditOrder(o, isSemiAdmin) && (
+                                    <button className="table-action-btn edit" onClick={() => handleEditOrder(o)} title="Editar orden">
+                                      <Icons.Edit />
+                                    </button>
+                                  )}
+                                  {!isSemiAdmin && !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && !isPaymentCredit(o.payment_status) && (
+                                    <button 
+                                      className="table-action-btn cancel" 
+                                      onClick={() => handleCancelOrder(o)} 
+                                      title="Cancelar orden"
+                                    >
+                                      <Icons.Trash />
+                                    </button>
+                                  )}
+                                  {!isSemiAdmin && canArchiveOrder(o, ARCHIVE_MODULES.SELLER, user?.id) ? (
+                                    <button 
+                                      className="table-action-btn archive"
+                                      onClick={() => handleArchiveOrder(o)}
+                                      title="Archivar orden"
+                                    >
+                                      <Icons.Archived />
+                                    </button>
+                                  ) : o.is_archived ? (
+                                    <button 
+                                      className="table-action-btn archive"
+                                      title="Orden archivada"
+                                      disabled
+                                    >
+                                      <Icons.Check />
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="ps-cards-grid">
+                    {loading ? (
+                      <div className="ps-cards-empty">Cargando Ordenes...</div>
+                    ) : ordersError ? (
+                      <div className="ps-cards-empty">
+                        <div className="acm-empty-state">
+                          <Icons.AlertCircle />
+                          <strong>No se pudieron cargar las órdenes</strong>
+                          <span>{ordersError}</span>
+                        </div>
+                      </div>
+                    ) : orders.length === 0 ? (
+                      <div className="ps-cards-empty">
+                        <div className="acm-empty-state">
+                          <Icons.Package />
+                          <strong>No hay órdenes disponibles</strong>
+                          <span>{search || filterStatus !== "all" || filterPayment !== "all" || filterClient !== "all" || filterDate !== "all" || filterArchive !== "all" || filterOverdue !== "all"
+                            ? "Prueba con otros filtros o limpia la búsqueda."
+                            : "Las órdenes que crees aparecerán aquí."}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      orders.map(o => {
+                        const isUrgent = String(o.order_type || "").toLowerCase().includes("911");
+                        return (
+                        <div
+                          key={o.id}
+                          className="ps-order-card"
+                          onClick={() => handleViewOrder(o)}
+                          data-order-type={isUrgent ? "911" : "normal"}
+                        >
+                          <div className="ps-order-card-client">
+                            <span className="acm-avatar acm-avatar-small">{getAvatarInitials(o.client_name)}</span>
+                            <span className="ps-order-card-client-main">
+                              <strong title={o.client_name || "Sin cliente"}>{o.client_name || "Sin cliente"}</strong>
+                              <span className="ps-order-card-client-badges">
+                                <span className="ps-order-card-id">{o.invoice_number || "---"}</span>
+                                {isReturnedOrder(o) && <ReturnedBadge compact />}
+                                <OrderReviewBadge review={pendingOrderReviews[o.id]} />
+                              </span>
+                            </span>
+                          </div>
+
+                          <div className="ps-order-card-fields">
+                            <div className="ps-order-card-field">
+                              <span className="ps-order-card-field-label">Tipo</span>
+                              {isUrgent
+                                ? <span className="ps-badge" style={{ background: "#FEF2F2", color: "#991B1B", border: "1px solid #EF444420" }}>911</span>
+                                : <span className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>Normal</span>
+                              }
+                            </div>
+                            <div className="ps-order-card-field">
+                              <span className="ps-order-card-field-label">Estado</span>
+                              <StatusBadge status={o.status} order={o} />
+                            </div>
+                          </div>
+
+                          <div className="ps-order-card-footer">
+                            <span className="ps-order-card-date">
+                              {new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                            </span>
+                            <StatusBadge status={o.payment_status} type="payment" />
+                          </div>
+
+                          <div className="ps-order-card-actions">
+                            <button className="card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
+                              <Icons.Eye />
+                            </button>
+                            {canSellerEditOrder(o, isSemiAdmin) && (
+                              <button className="card-action-btn edit" onClick={(event) => { event.stopPropagation(); handleEditOrder(o); }} title="Editar">
+                                <Icons.Edit />
+                              </button>
+                            )}
+                            {!isSemiAdmin && !isOrderStatus(o.status, ORDER_STATUS.CANCELLED) && !o.is_archived && !isPaymentPaid(o.payment_status) && !isPaymentPartial(o.payment_status) && !isPaymentCredit(o.payment_status) && (
+                              <button className="card-action-btn cancel" onClick={(event) => { event.stopPropagation(); handleCancelOrder(o); }} title="Cancelar">
+                                <Icons.Trash />
+                              </button>
+                            )}
+                            {!isSemiAdmin && canArchiveOrder(o, ARCHIVE_MODULES.SELLER, user?.id) ? (
+                              <button className="card-action-btn archive" onClick={(event) => { event.stopPropagation(); handleArchiveOrder(o); }} title="Archivar">
+                                <Icons.Archived />
+                              </button>
+                            ) : o.is_archived ? (
+                              <button className="card-action-btn archive" disabled title="Orden archivada">
+                                <Icons.Check />
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+                <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+              </div>
+              </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === "notifications" && (
+            <DesignerNotificationsModule
+              notifications={visibleSellerNotifications}
+              archivedNotifications={notif.archivedNotifications}
+              unreadCount={visibleSellerUnreadCount}
+              loading={notif.loading}
+              archivedLoading={notif.archivedLoading}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDeleteAll={notif.deleteNotificationsByScope}
+              notificationSoundEnabled={notif.notificationSoundEnabled}
+              notificationSoundLoading={notif.notificationSoundLoading}
+              onNotificationSoundChange={notif.setNotificationSoundEnabled}
+            />
+          )}
+        </main>
+      </div>
+
+      <SharedCreateOrderModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={async () => {
+          await fetchOrders({ nextPage: 1, includeDashboard: true });
+          await notif.refresh({ showNewToasts: true });
+        }}
+        userId={user?.id}
+        productionCatalog={productionCatalog}
+        clients={clients}
+        clientsLoading={clientsLoading}
+        onClientSearch={handleClientSearch}
+        onAddNewClient={isSemiAdmin ? undefined : () => setShowNewClientModal(true)}
+        clientToSelect={clientToSelectInOrderForm}
+        onClientToSelectConsumed={() => setClientToSelectInOrderForm(null)}
+        isSemiAdmin={isSemiAdmin}
+      />
+      <SharedEditOrderModal
+        open={!!editingOrder}
+        onClose={() => {
+          setEditingOrder(null);
+          setEditingAssetsOnly(false);
+        }}
+        order={editingOrder}
+        onUpdated={handleOrderUpdated}
+        onAssetSaved={isSemiAdmin && editingAssetsOnly ? handleSemiAdminAssetSaved : undefined}
+        productionCatalog={productionCatalog}
+        clients={clients}
+        clientsLoading={clientsLoading}
+        onClientSearch={handleClientSearch}
+        editMode="seller"
+        assetsOnly={editingAssetsOnly}
+        requireWorkOrder={isSemiAdmin && editingAssetsOnly}
+        lockClientIdentity={isSemiAdmin && editingOrder?.seller_id !== authUser?.id && editingOrder?.created_by !== authUser?.id}
+      />
+      <SharedOrderDetailModal
+        open={!!selectedOrder}
+        onClose={() => setSelectedOrder(null)}
+        closeOnBackdrop={!isSemiAdmin}
+        closeOnEscape={!isSemiAdmin}
+        order={selectedOrder}
+        user={user}
+        pendingReview={selectedOrderReview}
+        onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
+        reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
+        reviewError={orderReviews.acknowledgeError}
+        onSendToDesigner={handleSendToDesigner}
+        onSendToQuotation={handleSendToQuotation}
+        returnHandoff={selectedOrder ? orderReturns.incomingByOrder[selectedOrder.id] : null}
+        returnHistory={selectedOrder ? orderReturns.historyByOrder[selectedOrder.id] || [] : []}
+        onReturnToCashier={setReturningToCashier}
+        adminActions={isSemiAdmin ? (
+          <SemiAdminOperationalPanel
+            order={selectedOrder}
+            productionCatalog={productionCatalog}
+            onAction={handleSemiAdminOperation}
+            onLoadCatalog={loadSemiAdminOperationalCatalog}
+            onOpenDesignEditor={() => {
+              setEditingAssetsOnly(true);
+              setEditingOrder(selectedOrder);
+            }}
+            onOpenDesignReassignment={() => setSemiAdminDesignReassignment(selectedOrder)}
+            onOpenQuoteAssignment={() => setSemiAdminQuoteAssignment(selectedOrder)}
+            onOpenQuoteResponsibilityReassignment={() => setSemiAdminQuoteResponsibilityReassignment(selectedOrder)}
+            onOpenOrderAssets={() => {
+              setEditingAssetsOnly(true);
+              setEditingOrder(selectedOrder);
+            }}
+            onOpenProductionAssignment={handleOpenSemiAdminProductionAssignment}
+            onOpenPayment={() => setSemiAdminPaymentOrder(selectedOrder)}
+            currentUserId={authUser?.id}
+            busy={semiAdminOperationLoading}
+          />
+        ) : null}
+      />
+      <ReturnToCashierModal
+        open={!!returningToCashier}
+        handoff={returningToCashier}
+        order={selectedOrder}
+        onClose={() => setReturningToCashier(null)}
+        onConfirm={handleReturnToCashier}
+        loading={returningToCashierLoading}
+      />
+      <AssignModal
+        open={!!sendingToDesigner}
+        onClose={() => setSendingToDesigner(null)}
+        order={sendingToDesigner}
+        role="designer"
+        allowSelfAssignment={isSemiAdmin}
+        currentUserId={isSemiAdmin ? authUser?.id : ""}
+        currentResponsibleId={sendingToDesigner?.designer_id || ""}
+        onConfirm={handleConfirmSendToDesigner}
+        loading={sendingLoading}
+      />
+      <AssignModal
+        open={!!semiAdminDesignReassignment}
+        onClose={() => setSemiAdminDesignReassignment(null)}
+        order={semiAdminDesignReassignment}
+        role="designer"
+        allowSelfAssignment
+        currentUserId={authUser?.id || ""}
+        currentResponsibleId={semiAdminDesignReassignment?.designer_id || ""}
+        defaultUserId={semiAdminDesignReassignment?.designer_id || ""}
+        title="Reasignar responsabilidad de Diseño"
+        description="Selecciona el diseñador responsable de esta orden."
+        onConfirm={handleConfirmSemiAdminDesignReassignment}
+        loading={semiAdminOperationLoading}
+      />
+      <ProductionAssignmentModal
+        open={!!semiAdminProductionOrder}
+        order={semiAdminProductionOrder}
+        loading={semiAdminOperationLoading}
+        onClose={() => setSemiAdminProductionOrder(null)}
+        onConfirm={handleConfirmSemiAdminProductionAssignment}
+      />
+      <PaymentFormModal
+        open={!!semiAdminPaymentOrder}
+        order={semiAdminPaymentOrder}
+        loading={semiAdminOperationLoading}
+        onClose={() => setSemiAdminPaymentOrder(null)}
+        onConfirm={handleConfirmSemiAdminPayment}
+        allowReceiptNumber
+      />
+      <AssignModal
+        open={!!sendingToQuotation}
+        onClose={() => setSendingToQuotation(null)}
+        order={sendingToQuotation}
+        role="quote"
+        allowSelfAssignment={isSemiAdmin}
+        currentUserId={isSemiAdmin ? authUser?.id : ""}
+        currentResponsibleId={sendingToQuotation?.quote_id || ""}
+        defaultUserId={isReturnedOrder(sendingToQuotation) ? (sendingToQuotation?.quote_id || "") : ""}
+        onConfirm={handleConfirmSendToQuotation}
+        loading={sendingLoading}
+      />
+      <AssignModal
+        open={!!semiAdminQuoteAssignment}
+        onClose={() => setSemiAdminQuoteAssignment(null)}
+        order={semiAdminQuoteAssignment}
+        role="quote"
+        allowSelfAssignment
+        currentUserId={authUser?.id || ""}
+        title="Enviar a Caja"
+        description="Selecciona el responsable de Caja que recibirá la orden."
+        onConfirm={handleConfirmSemiAdminQuoteAssignment}
+        loading={semiAdminOperationLoading}
+      />
+      <AssignModal
+        open={!!semiAdminQuoteResponsibilityReassignment}
+        onClose={() => setSemiAdminQuoteResponsibilityReassignment(null)}
+        order={semiAdminQuoteResponsibilityReassignment}
+        role="quote"
+        allowSelfAssignment
+        currentUserId={authUser?.id || ""}
+        currentResponsibleId={semiAdminQuoteResponsibilityReassignment?.quote_id || ""}
+        defaultUserId={semiAdminQuoteResponsibilityReassignment?.quote_id || ""}
+        title="Cambiar responsable de Caja / Cotización"
+        description="Selecciona el cotizador responsable de esta orden."
+        onConfirm={handleConfirmSemiAdminQuoteResponsibilityReassignment}
+        loading={semiAdminOperationLoading}
+      />
+      <CancelOrderModal open={!!cancelingOrder} onClose={() => setCancelingOrder(null)} order={cancelingOrder} onConfirm={handleConfirmCancel} loading={cancelLoading} />
+      <ArchiveOrderModal open={!!archivingOrder} onClose={() => setArchivingOrder(null)} order={archivingOrder} onConfirm={handleConfirmArchiveOrder} loading={archiveLoading} />
+      
+      {!isSemiAdmin && <CreateClientModal
+        open={showNewClientModal}
+        onClose={() => setShowNewClientModal(false)}
+        onCreated={handleNewClientCreated}
+        supabase={supabase}
+        userId={user?.id}
+      />}
+
+      {toastMsg && (
+        <div className="ps-toast">
+          <div className="ps-toast-icon">
+            {toastMsg.type === "success" ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            )}
+          </div>
+          <span className="ps-toast-message">{toastMsg.message}</span>
+        </div>
+      )}
+    </div>
+  );
+}

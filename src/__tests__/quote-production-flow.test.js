@@ -21,19 +21,76 @@ describe("flujo de produccion en caja", () => {
     expect(isPaymentDeliveryEligible(PAYMENT_STATUS.PARTIAL)).toBe(false);
   });
 
-  it("actualiza la lista local y refresca silenciosamente al enviar a produccion", () => {
+  it("mantiene a Caja fuera del envio a produccion", () => {
     const quote = readProjectFile("src/pages/page-quote.jsx");
-    const handlerStart = quote.indexOf("const handleConfirmSendToProduction = async");
-    const handlerEnd = quote.indexOf("const handleConfirmArchive", handlerStart);
-    const handler = quote.slice(handlerStart, handlerEnd);
+    expect(quote).not.toContain("ProductionAssignmentModal");
+    expect(quote).not.toContain("send_order_to_production");
+    expect(quote).not.toContain("Dar paso a producción");
+    expect(quote).toContain("Caja debe autorizar la orden antes de que el responsable operativo continúe a Producción.");
+    expect(quote).toContain("authorize_order_for_production");
+  });
 
-    expect(handler).toContain('supabase');
-    expect(handler).toContain('rpc("send_order_to_production"');
-    expect(handler).toContain("const nextOrder = {");
-    expect(handler).toContain("setOrders(prev => prev.map(item => item.id === nextOrder.id");
-    expect(handler).toContain("setSelectedOrder(nextOrder)");
-    expect(handler).toContain("setForwardToProductionOrder(null)");
-    expect(handler).toContain("fetchOrdersRef.current(user.id, true)");
+  it("persiste la autorización financiera y exige factura más imagen para pagos pagados", () => {
+    const migration = readLatestMigration("_payment_authorization_production_gate.sql");
+
+    expect(migration).toContain("production_authorized_at timestamptz");
+    expect(migration).toContain("production_authorized_by uuid");
+    expect(migration).toContain("create or replace function public.authorize_order_for_production");
+    expect(migration).toContain("public.order_has_confirmable_payment");
+    expect(migration).toContain("public.quote_has_uploaded_payment_receipt");
+    expect(migration).toContain("v_order.payment_status not in ('pagado', 'parcial', 'credito')");
+    expect(migration).toContain("v_updated.designer_id");
+    expect(migration).toContain("coalesce(v_updated.seller_id, v_updated.created_by)");
+    expect(migration).toContain("La orden requiere al menos un archivo clasificado en un área de Producción activa antes de autorizarla.");
+    expect(migration).toContain("Cada archivo requiere área activa, materiales y terminación válidos antes de autorizar Producción.");
+  });
+
+  it("invalida la autorización al archivar y exige una autorización nueva después de restaurar", () => {
+    const migration = readLatestMigration("_payment_authorization_production_gate.sql");
+    const lifecycleStart = migration.indexOf("create or replace function public.enforce_production_authorization_lifecycle()");
+    const lifecycleEnd = migration.indexOf("create or replace function public.enforce_invoice_assignment_lifecycle()", lifecycleStart);
+    const lifecycle = migration.slice(lifecycleStart, lifecycleEnd);
+    const authorizationStart = migration.indexOf("create or replace function public.authorize_order_for_production(");
+    const authorizationEnd = migration.indexOf("create or replace function public.can_send_order_to_production(", authorizationStart);
+    const authorization = migration.slice(authorizationStart, authorizationEnd);
+
+    for (const archiveField of [
+      "is_archived",
+      "is_archived_admin",
+      "is_archived_designer",
+      "is_archived_quote",
+      "is_archived_production",
+      "is_archived_delivery",
+    ]) {
+      expect(lifecycle).toContain(`not coalesce(old.${archiveField}, false) and coalesce(new.${archiveField}, false)`);
+      expect(authorization).toContain(`coalesce(v_order.${archiveField}, false)`);
+    }
+
+    expect(lifecycle).toContain("before update of production_authorized_at, production_authorized_by, payment_status, status, operational_status,");
+    expect(lifecycle).toContain("new.production_authorized_at := null;");
+    expect(lifecycle).toContain("new.production_authorized_by := null;");
+  });
+
+  it("no confunde editar el pago con autorizar Producción", () => {
+    const quote = readProjectFile("src/pages/page-quote.jsx");
+    const authorizationStart = quote.indexOf("const canAuthorizeProduction =");
+    const authorizationEnd = quote.indexOf("const returnedReason", authorizationStart);
+    const authorization = quote.slice(authorizationStart, authorizationEnd);
+
+    expect(authorization).not.toContain("canManagePayment");
+    expect(authorization).toContain("isPaymentProductionEligible(order?.payment_status)");
+    expect(authorization).toContain("productionFilesReadyForAuthorization");
+    for (const archiveField of [
+      "is_archived",
+      "is_archived_admin",
+      "is_archived_designer",
+      "is_archived_quote",
+      "is_archived_production",
+      "is_archived_delivery",
+    ]) {
+      expect(authorization).toContain(`!order?.${archiveField}`);
+    }
+    expect(quote).toContain("hasVerifiedPaymentReceipt(paymentModalOrder)");
   });
 
   it("muestra solo areas participantes en el modal de asignacion de produccion", () => {
@@ -47,27 +104,20 @@ describe("flujo de produccion en caja", () => {
     expect(modal).toContain("pq-dialog-header pq-dialog-header--delivery");
     expect(modal).toContain("pq-production-header-code");
     expect(modal).not.toContain("pq-dialog-icon production");
-    expect(modal).toContain("pq-dialog-order");
     expect(modal).toContain("pq-dialog-actions");
   });
 
-  it("rehidrata archivos de produccion despues de credito y antes de abrir el modal", () => {
+  it("rehidrata archivos de produccion despues de registrar credito", () => {
     const quote = readProjectFile("src/pages/page-quote.jsx");
     const applyCreditStart = quote.indexOf("const applyCreditToOrder = async");
     const applyCreditEnd = quote.indexOf("const openCreditClientRegistration", applyCreditStart);
     const applyCredit = quote.slice(applyCreditStart, applyCreditEnd);
-    const openModalStart = quote.indexOf("const handleOpenProductionModal = async");
-    const openModalEnd = quote.indexOf("const handleConfirmSendToProduction", openModalStart);
-    const openModal = quote.slice(openModalStart, openModalEnd);
-
     expect(quote).toContain("const fetchOrderWithProductionFiles = useCallback(async (orderId) => {");
-    expect(quote).toContain('.select("*, order_production_files(*)")');
+    expect(quote).toContain("QUOTE_ORDER_SELECT");
     expect(quote).toContain("const mergeOrderWithProductionFiles = (baseOrder, nextOrder) => {");
     expect(applyCredit).toContain('rpc("mark_order_as_credit"');
     expect(applyCredit).toContain("const hydratedOrder = await fetchOrderWithProductionFiles(updatedOrder.id);");
     expect(applyCredit).toContain("mergeOrderWithProductionFiles(order, hydratedOrder || updatedOrder)");
-    expect(openModal).toContain("const hydratedOrder = await fetchOrderWithProductionFiles(order?.id);");
-    expect(openModal).toContain("setForwardToProductionOrder(nextOrder)");
   });
 
   it("define el envio a produccion desde areas participantes y rechaza areas extra", () => {

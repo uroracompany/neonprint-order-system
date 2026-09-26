@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../supabaseClient";
 import { Icons } from "../../utils/icons";
 import {
@@ -174,13 +174,14 @@ export default function OrderDetailModal({
   onReturnToCashier,
   adminIntervention = null,
   adminActions = null,
+  productionAction = null,
   closeOnBackdrop = true,
   closeOnEscape = true,
 }) {
   const hasOrder = Boolean(order);
   const created = hasOrder ? new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" }) : "";
   const orderFileUrls = getOrderFiles(order);
-  const referenceImageUrls = getReferenceImages(order);
+  const referenceImageUrls = useMemo(() => getReferenceImages(order), [order]);
   const hasAssets = hasAnyOrderAsset(order);
   const [designerName, setDesignerName] = useState("");
   const [resolvedAssetUrls, setResolvedAssetUrls] = useState({});
@@ -246,7 +247,7 @@ export default function OrderDetailModal({
     return () => {
       active = false;
     };
-  }, [open, order?.id, order?.preview_image, referenceImagesKey]);
+  }, [open, order?.id, order?.preview_image, referenceImageUrls, referenceImagesKey]);
 
   if (!hasOrder) return null;
 
@@ -279,12 +280,13 @@ export default function OrderDetailModal({
           )}
         </div>
 
-        {adminActions && (
+        {(adminActions || productionAction) && (
           <section className="order-detail-actions-panel" aria-label="Acciones de la orden">
             <div className="order-detail-actions-copy">
               <strong>Acciones de la orden</strong>
               <span>Gestiona esta orden sin volver al listado.</span>
             </div>
+            {productionAction}
             {adminActions}
           </section>
         )}

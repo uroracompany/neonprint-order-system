@@ -132,6 +132,51 @@
   background: var(--primary-mid, #1a3060);
 }
 
+/* Used for the next-step action on newly added files. The animation is
+   intentionally restrained so it guides attention without competing with
+   the rest of the form. */
+.fc-file-action-attention {
+  position: relative;
+  outline: 2px solid rgba(37, 99, 235, 0.42);
+  outline-offset: 2px;
+  animation: fc-file-action-attention-pulse 1.8s ease-in-out infinite;
+}
+
+.fc-file-action-attention::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--surface, #ffffff);
+  border-radius: 999px;
+  background: #2563eb;
+}
+
+@keyframes fc-file-action-attention-pulse {
+  0%,
+  100% {
+    outline-color: rgba(37, 99, 235, 0.42);
+    outline-offset: 2px;
+    transform: translateY(0);
+  }
+
+  50% {
+    outline-color: rgba(37, 99, 235, 0);
+    outline-offset: 5px;
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-file-action-attention {
+    animation: none;
+    outline: 2px solid rgba(37, 99, 235, 0.42);
+    outline-offset: 2px;
+  }
+}
+
 .fc-file-action:focus-visible {
   outline: 2px solid rgba(9, 17, 39, 0.22);
   outline-offset: 2px;

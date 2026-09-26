@@ -1,5 +1,5 @@
 // Supabase client and React imports
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient"
 import { setAuthSessionPersistence, signOutAuth } from "../utils/authManager";
@@ -156,10 +156,54 @@ export default function Lobby() {
   const [focused, setFocused] = useState(null);
   const captchaNodeRef = useRef(null);
   const captchaWidgetIdRef = useRef(null);
+  const emailInputRef = useRef(null);
+  const passwordInputRef = useRef(null);
+  const unlockedFieldsRef = useRef({ email: false, password: false });
+  const [unlockedFields, setUnlockedFields] = useState({ email: false, password: false });
 
   const clearMsg = () => { setMessage(null); setFieldErr(false); };
   const navigate = useNavigate();
   const location = useLocation();
+
+  const clearLoginFields = useCallback(() => {
+    setEmail("");
+    setPassword("");
+    setMessage(null);
+    setFieldErr(false);
+    setFocused(null);
+    unlockedFieldsRef.current = { email: false, password: false };
+    setUnlockedFields({ email: false, password: false });
+    if (emailInputRef.current) emailInputRef.current.value = "";
+    if (passwordInputRef.current) passwordInputRef.current.value = "";
+  }, []);
+
+  const unlockLoginField = (field, inputRef, setValue) => {
+    if (!unlockedFieldsRef.current[field]) {
+      unlockedFieldsRef.current[field] = true;
+      if (inputRef.current?.value) {
+        inputRef.current.value = "";
+        setValue("");
+      }
+      setUnlockedFields(previous => ({ ...previous, [field]: true }));
+    }
+  };
+
+  useEffect(() => {
+    if (location.pathname !== "/") return undefined;
+
+    clearLoginFields();
+    const scrubAutofill = () => {
+      if (!unlockedFieldsRef.current.email && emailInputRef.current) {
+        emailInputRef.current.value = "";
+      }
+      if (!unlockedFieldsRef.current.password && passwordInputRef.current) {
+        passwordInputRef.current.value = "";
+      }
+    };
+    const timer = window.setTimeout(scrubAutofill, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [clearLoginFields, location.pathname]);
 
   useEffect(() => {
     const loginNotice = location.state?.loginNotice;
@@ -380,16 +424,18 @@ export default function Lobby() {
               </div>
             )}
 
-            <form onSubmit={handleLogin} noValidate>
+            <form onSubmit={handleLogin} noValidate autoComplete="off">
               <div className="field-wrap">
                 <label className="field-label" htmlFor="np-email">Correo electrónico</label>
                 <div className="field-rel">
                   <span className="field-ico" style={{ color: focused === "email" ? "#00aac4" : "#9ca3af" }}><IcoMail /></span>
                   <input id="np-email" type="email" placeholder="usuario@empresa.com"
-                    autoComplete="email" value={email}
+                    name="np-login-identifier" autoComplete="off" readOnly={!unlockedFields.email}
+                    ref={emailInputRef} value={email}
                     className={`field-input${fieldErr ? " err" : ""}`}
-                    onFocus={() => setFocused("email")} onBlur={() => { setFocused(null); setEmail(prev => normalizeEmailForAuth(prev)); }}
-                    onChange={e => { setEmail(e.target.value); clearMsg(); }} />
+                    onFocus={() => { unlockLoginField("email", emailInputRef, setEmail); setFocused("email"); }}
+                    onBlur={() => { setFocused(null); setEmail(prev => normalizeEmailForAuth(prev)); }}
+                    onChange={e => { unlockLoginField("email", emailInputRef, setEmail); setEmail(e.target.value); clearMsg(); }} />
                 </div>
               </div>
 
@@ -398,10 +444,12 @@ export default function Lobby() {
                 <div className="field-rel">
                   <span className="field-ico" style={{ color: focused === "pass" ? "#00aac4" : "#9ca3af" }}><IcoLock /></span>
                   <input id="np-pass" type="password" placeholder="••••••••••"
-                    autoComplete="current-password" value={password}
+                    name="np-login-secret" autoComplete="new-password" readOnly={!unlockedFields.password}
+                    ref={passwordInputRef} value={password}
                     className={`field-input${fieldErr ? " err" : ""}`}
-                    onFocus={() => setFocused("pass")} onBlur={() => setFocused(null)}
-                    onChange={e => { setPassword(e.target.value); clearMsg(); }} />
+                    onFocus={() => { unlockLoginField("password", passwordInputRef, setPassword); setFocused("pass"); }}
+                    onBlur={() => setFocused(null)}
+                    onChange={e => { unlockLoginField("password", passwordInputRef, setPassword); setPassword(e.target.value); clearMsg(); }} />
                 </div>
               </div>
 

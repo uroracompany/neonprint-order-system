@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import AdminOrderActions from "../components/orders/AdminOrderActions";
-import { ORDER_STATUS } from "../utils/constants";
+import { ORDER_STATUS, PAYMENT_STATUS } from "../utils/constants";
 
 const activeOrder = {
   id: "order-1",
@@ -9,6 +9,12 @@ const activeOrder = {
   order_design_type: "INTERNAL_DESING",
 };
 const cashOrder = { ...activeOrder, status: ORDER_STATUS.IN_QUOTE };
+const paidCashOrder = {
+  ...cashOrder,
+  payment_status: PAYMENT_STATUS.PAID,
+  production_authorized_at: "2026-09-26T12:00:00.000Z",
+  production_authorized_by: "cashier-1",
+};
 
 describe("AdminOrderActions", () => {
   it("exposes every row operation in the modal and delegates to existing handlers", () => {
@@ -44,6 +50,100 @@ describe("AdminOrderActions", () => {
     expect(screen.getByRole("button", { name: "Configuración avanzada" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pago" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancelar orden" })).not.toBeInTheDocument();
+  });
+
+  it("shows direct production routing only for a paid order when the handler is provided", () => {
+    const onProduction = vi.fn();
+    const { rerender } = render(
+      <AdminOrderActions
+        order={paidCashOrder}
+        onProduction={onProduction}
+        variant="table"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Enviar a producción" }));
+    expect(onProduction).toHaveBeenCalledWith(paidCashOrder);
+
+    rerender(
+      <AdminOrderActions
+        order={cashOrder}
+        onProduction={onProduction}
+        variant="table"
+      />
+    );
+    expect(screen.queryAllByRole("button", { name: "Enviar a producción" })).toHaveLength(0);
+  });
+
+  it("delegates the production action from the detail-modal variant", () => {
+    const onProduction = vi.fn();
+    render(
+      <AdminOrderActions
+        order={paidCashOrder}
+        onProduction={onProduction}
+        variant="modal"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Enviar a producción" }));
+    expect(onProduction).toHaveBeenCalledWith(paidCashOrder);
+  });
+
+  it("disables production actions while authorization or assignment is busy", () => {
+    const onAuthorizeProduction = vi.fn();
+    const { rerender } = render(
+      <AdminOrderActions
+        order={{ ...paidCashOrder, production_authorized_at: null, production_authorized_by: null }}
+        onAuthorizeProduction={onAuthorizeProduction}
+        loadingAction
+        variant="modal"
+      />
+    );
+
+    const authorizingButton = screen.getByRole("button", { name: "Autorizando Producción..." });
+    expect(authorizingButton).toBeDisabled();
+    expect(authorizingButton).toHaveAttribute("aria-busy", "true");
+    fireEvent.click(authorizingButton);
+    expect(onAuthorizeProduction).not.toHaveBeenCalled();
+
+    rerender(
+      <AdminOrderActions
+        order={paidCashOrder}
+        onProduction={vi.fn()}
+        operationalBusy
+        variant="modal"
+      />
+    );
+
+    const productionButton = screen.getByRole("button", { name: "Enviar a producción" });
+    expect(productionButton).toBeDisabled();
+    expect(productionButton).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("hides authorization and routing for any archived queue state", () => {
+    const archiveFields = [
+      "is_archived",
+      "is_archived_admin",
+      "is_archived_designer",
+      "is_archived_quote",
+      "is_archived_production",
+      "is_archived_delivery",
+    ];
+
+    for (const archiveField of archiveFields) {
+      const { unmount } = render(
+        <AdminOrderActions
+          order={{ ...paidCashOrder, [archiveField]: true }}
+          onAuthorizeProduction={vi.fn()}
+          onProduction={vi.fn()}
+          variant="modal"
+        />
+      );
+
+      expect(screen.queryByRole("button", { name: "Autorizar Producción" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Enviar a producción" })).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("hides direct edit, payment, and cancellation for delivered orders", () => {

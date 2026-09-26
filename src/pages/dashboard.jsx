@@ -91,6 +91,7 @@ import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import NotificationCenter from "../components/NotificationCenter";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
 import FileCard from "../components/FileCard";
+import MaterialFormModal from "../components/materials/MaterialFormModal";
 import "../css-components/page-seller.css";
 import "../css-components/page-admin.css";
 
@@ -1755,7 +1756,6 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
   const adminVisibleNotifications = useMemo(() => filterActiveNotifications(notif.notifications), [notif.notifications]);
   const adminVisibleToasts = useMemo(() => filterActiveNotifications(notif.toasts), [notif.toasts]);
   const adminUnreadCount = useMemo(() => getActiveUnreadCount(adminVisibleNotifications), [adminVisibleNotifications]);
-  const isMaterialCreateReady = Boolean(materialFormName.trim() && materialFormAreaCode);
   const creditAlertPeriodKey = useMemo(() => getCreditAlertPeriodKey(), []);
   const minimumCreditReminderAt = useMemo(() => getMinimumCreditReminderAt(creditReminderNow), [creditReminderNow]);
   const feedbackIdRef = useRef(0);
@@ -2659,23 +2659,77 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
 
   const fetchAdvancedOrderForProduction = useCallback(async (order) => {
     if (!order?.id) return order;
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*, order_production_files(*)")
-      .eq("id", order.id)
-      .single();
-    if (error || !data) {
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("*, order_production_files(*)")
+        .eq("id", order.id)
+        .single();
+      if (error || !data) {
+        console.warn("No se pudieron cargar los archivos de produccion para Administracion:", error?.message || error);
+        return order;
+      }
+      return {
+        ...order,
+        ...data,
+        order_production_files: Array.isArray(data.order_production_files)
+          ? data.order_production_files
+          : order.order_production_files,
+      };
+    } catch (error) {
       console.warn("No se pudieron cargar los archivos de produccion para Administracion:", error?.message || error);
       return order;
     }
-    return {
-      ...order,
-      ...data,
-      order_production_files: Array.isArray(data.order_production_files)
-        ? data.order_production_files
-        : order.order_production_files,
-    };
   }, []);
+
+  const handleDirectProductionAssignment = useCallback(async (order) => {
+    if (!order?.id || advancedProduction) return;
+
+    // Abrir primero con la fila actual garantiza una respuesta inmediata. La
+    // consulta enriquecida solo completa archivos y updated_at en segundo
+    // plano; si falla, el modal permanece visible y la RPC revalida todo.
+    setAdvancedProduction({
+      order,
+      reasonCategory: "workflow_correction",
+      reasonDetail: "Envío a Producción iniciado desde el registro de órdenes.",
+      expectedUpdatedAt: order.updated_at,
+      action: "route_production",
+      areaAssignments: {},
+      payload: {},
+    });
+    const hydratedOrder = await fetchAdvancedOrderForProduction(order);
+    setAdvancedProduction((current) => (
+      current?.order?.id === order.id
+        ? {
+            ...current,
+            order: hydratedOrder,
+            expectedUpdatedAt: hydratedOrder?.updated_at || order.updated_at,
+          }
+        : current
+    ));
+  }, [advancedProduction, fetchAdvancedOrderForProduction]);
+
+  const handleAuthorizeProduction = useCallback(async (order) => {
+    if (!order?.id || advancedActionLoading) return;
+
+    setAdvancedActionLoading(true);
+    const hydratedOrder = await fetchAdvancedOrderForProduction(order);
+    const { data, error } = await supabase.rpc("authorize_order_for_production", {
+      p_order_id: hydratedOrder.id,
+      p_expected_updated_at: hydratedOrder.updated_at,
+    });
+    setAdvancedActionLoading(false);
+
+    if (error || !data) {
+      showFeedback("error", error?.message || "No se pudo autorizar la orden para Producción.");
+      return;
+    }
+
+    setSelectedOrder((current) => current?.id === data.id ? { ...current, ...data } : current);
+    setSettingsOrder((current) => current?.id === data.id ? { ...current, ...data } : current);
+    await loadOrders();
+    showFeedback("success", "Orden autorizada. El responsable operativo ya puede enviarla a Producción.");
+  }, [advancedActionLoading, fetchAdvancedOrderForProduction, loadOrders]);
 
   const handleAdvancedAction = async ({ action, targetUserId, reasonCategory, reasonDetail, expectedUpdatedAt, areaAssignments, payload = {} }) => {
     if (!settingsOrder) return;
@@ -2766,6 +2820,7 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
     setAdvancedProduction(null);
     if (data?.order?.id) {
       setSettingsOrder((current) => current?.id === data.order.id ? { ...current, ...data.order } : current);
+      setSelectedOrder((current) => current?.id === data.order.id ? { ...current, ...data.order } : current);
     }
     await loadOrders();
     const msg = productionAction === "reassign_production" ? "Producción reasignada correctamente." : "Orden enviada a Producción correctamente.";
@@ -4296,6 +4351,10 @@ const filteredMaterials = useMemo(() => {
                                   onAdvanced={openAdvancedSettings}
                                   onPayment={openPaymentModal}
                                   onCancel={openCancelModal}
+                                  onAuthorizeProduction={handleAuthorizeProduction}
+                                  onProduction={handleDirectProductionAssignment}
+                                  loadingAction={advancedActionLoading}
+                                  operationalBusy={Boolean(advancedProduction)}
                                 />
                                 {canArchiveOrder(order, ARCHIVE_MODULES.ADMIN, user?.id) ? (
                                   <button className="table-action-btn archive" onClick={() => openArchiveModal(order)} title="Archivar orden" aria-label="Archivar orden">
@@ -4989,53 +5048,18 @@ const filteredMaterials = useMemo(() => {
           </Suspense>
         )}
 
-        <Modal
+        <MaterialFormModal
           open={showMaterialModal}
           onClose={() => setShowMaterialModal(false)}
-          title={editingMaterial ? "Editar material" : "Agregar material"}
-          closeOnBackdrop
-          closeOnEscape={false}
-          hideStripe
-          className="ps-file-details-modal"
-          overlayClassName="ps-file-details-overlay"
-          headerContent={<h3 className="ps-file-details-title">{editingMaterial ? "Editar material" : "Agregar material"}</h3>}
-        >
-          <div className="ps-file-details-content">
-            {materialFormError && <p className="ps-form-error-banner" role="alert">{materialFormError}</p>}
-            <Field label="Nombre del material" required>
-              <input
-                className="ps-form-input"
-                value={materialFormName}
-                onChange={e => { setMaterialFormName(e.target.value); setMaterialFormError(""); }}
-                placeholder="Ej. Vinilo, Banner, Lona..."
-                autoFocus
-                onKeyDown={e => { if (e.key === "Enter") handleSaveMaterial(); }}
-              />
-            </Field>
-            <Field label="Área de producción" required>
-              <select
-                className="ps-form-input"
-                value={materialFormAreaCode}
-                onChange={e => { setMaterialFormAreaCode(e.target.value); setMaterialFormError(""); }}
-              >
-                <option value="">Seleccionar área</option>
-                {productionAreas.map((area) => <option key={area.code} value={area.code}>{area.label}</option>)}
-              </select>
-            </Field>
-            <div className="ps-form-actions ps-file-details-actions">
-              <button type="button" className="ps-btn-cancel ps-file-details-btn-cancel" onClick={() => setShowMaterialModal(false)}>Cancelar</button>
-              <button
-                type="button"
-                className="ps-btn-submit ps-file-details-btn-save"
-                onClick={handleSaveMaterial}
-                disabled={!editingMaterial && !isMaterialCreateReady}
-              >
-                <Icons.Check />
-                {editingMaterial ? "Guardar cambios" : "Agregar material"}
-              </button>
-            </div>
-          </div>
-        </Modal>
+          editingMaterial={editingMaterial}
+          name={materialFormName}
+          areaCode={materialFormAreaCode}
+          areas={productionAreas}
+          error={materialFormError}
+          onNameChange={(value) => { setMaterialFormName(value); setMaterialFormError(""); }}
+          onAreaChange={(value) => { setMaterialFormAreaCode(value); setMaterialFormError(""); }}
+          onSave={handleSaveMaterial}
+        />
 
         {showTerminationModal && (
           <div className="pa-overlay" onClick={() => setShowTerminationModal(false)}>
@@ -5382,6 +5406,10 @@ const filteredMaterials = useMemo(() => {
               onAdvanced={openAdvancedSettings}
               onPayment={openPaymentModal}
               onCancel={openCancelModal}
+              onAuthorizeProduction={handleAuthorizeProduction}
+              onProduction={handleDirectProductionAssignment}
+              loadingAction={advancedActionLoading}
+              operationalBusy={Boolean(advancedProduction)}
             />
           ) : null}
         />

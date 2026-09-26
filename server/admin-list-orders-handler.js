@@ -56,6 +56,8 @@ const ADMIN_ORDER_LIST_SELECT = [
   "reference_images",
   "invoice_number",
   "invoice_assignment_mode",
+  "production_authorized_at",
+  "production_authorized_by",
   "last_admin_intervention_at",
   "last_admin_intervention_by",
   "last_admin_intervention_kind",

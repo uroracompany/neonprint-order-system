@@ -1,0 +1,10 @@
+.acm-badge.pd-new-order-badge {
+  background: #166534;
+  border-color: #166534;
+  color: #fff;
+}
+
+.acm-badge.pd-new-order-badge--compact {
+  font-size: 10px;
+  padding: 3px 8px;
+}

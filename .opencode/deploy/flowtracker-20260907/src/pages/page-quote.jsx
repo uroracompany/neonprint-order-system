@@ -1,0 +1,3422 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "../../supabaseClient";
+import Sidebar from "../components/Sidebar";
+import { uploadOrderAsset, buildPaymentReceiptPath, createSignedOrderAssetUrlFromStoredUrl } from "../utils/uploadOrderAsset";
+import { PAYMENT_RECEIPT_HINT, validateReceiptFile } from "../utils/receiptValidation";
+import { Icons } from "../utils/icons";
+import { StatusBadge, PaymentBadge } from "../components/ui/Badge";
+import { Pagination } from "../components/ui/Pagination";
+import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
+import { FilterSelect } from "../components/ui/FilterSelect";
+import "../components/ui/FilterSelect.css";
+import FileUploadZone from "../components/ui/FileUploadZone";
+import CreateClientModal from "../components/ui/CreateClientModal";
+import SettleCreditModal from "../components/ui/SettleCreditModal";
+import {
+  ORDER_STATUS,
+  PAYMENT_STATUS,
+  PAYMENT_COLORS,
+  QUOTE_ASSIGNMENT_FIELDS,
+  STATUS_OPTIONS,
+  ARCHIVE_MODULES,
+  PRODUCTION_AREAS,
+  getOrderStatusConfig,
+  isPaymentCredit,
+  isPaymentPaid,
+  isPaymentPartial,
+  isPaymentProductionEligible,
+  isOrderStatus,
+  isOrderStatusIn,
+  getFileNameFromUrl,
+  formatDate,
+} from "../utils/constants";
+import { SecureImageLink, SecureImageGallery } from "../components/ui/SecureImage";
+import { getReferenceImages } from "../utils/orderAssets";
+import { isOrderOverdue } from "../utils/orderDeadline";
+import { getProductionFiles } from "../utils/production";
+import { useAuth } from "../hooks/useAuth";
+import { showCreditActionFeedback } from "../utils/notifications";
+import useNotifications from "../hooks/useNotifications";
+import useOrderEventReviews from "../hooks/useOrderEventReviews";
+import useOrderReturnHandoffs from "../hooks/useOrderReturnHandoffs";
+import useNewOrderAssignments from "../hooks/useNewOrderAssignments";
+import useOrdersRealtimeSync from "../hooks/useOrdersRealtimeSync";
+import NotificationCenter from "../components/NotificationCenter";
+import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
+import QuoteProfileModule from "../components/quote/QuoteProfileModule";
+import "../components/quote/QuoteProfileModule.css";
+import "../css-components/page-seller.css";
+import "../css-components/page-admin.css";
+import "../components/clients/AdminClientsModule.css";
+import OrderReviewCard from "../components/orders/OrderReviewCard";
+import OrderReviewBadge from "../components/orders/OrderReviewBadge";
+import NewOrderBadge from "../components/orders/NewOrderBadge";
+import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
+import FileCard from "../components/FileCard";
+import { OrderReturnHandoffPanel, ReturnedToCashierBadge } from "../components/orders/OrderReturnHandoff";
+import { loadClients, orderMatchesClientFilter, searchClients, formatPhone, NO_CLIENT_FILTER_VALUE } from "../utils/clients";
+import { applyOrdersSnapshot } from "../utils/orderRealtime";
+import "../css-components/page-production.css";
+import "../css-components/page-quote.css";
+import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
+import {
+  canArchiveOrder,
+  archiveOrder,
+} from "../utils/archive";
+import { getPaymentConfirmButtonLabel } from "../utils/paymentUi";
+import {
+  CreditPendingAlertModal,
+  CreditCustomReminderDueModal,
+  CreditReminderCreateModal,
+} from "../components/ui/CreditReminderModals";
+// Normaliza texto a minúsculas y sin espacios para comparaciones seguras
+const normalizeText = (value) => String(value || "").trim().toLowerCase();
+const INVOICE_PAYMENT_FIELD = "invoice_payment";
+const PER_PAGE = 15;
+// Verifica si una orden está asignada a un usuario específico de cotización
+const hasQuoteAssignment = (order, quoteUserId) => QUOTE_ASSIGNMENT_FIELDS.some(field => order?.[field] === quoteUserId);
+// Obtiene el ID del vendedor que creó la orden
+const resolveSellerId = (order) => order?.seller_id || order?.created_by || null;
+// Obtiene el nombre del vendedor buscando en el directorio o usando valor por defecto
+const resolveSellerName = (order, sellerDirectory) => order?.seller_name || sellerDirectory?.[resolveSellerId(order)] || "No definido";
+// Verifica si una orden puede ser editada en cotización (debe estar en estado IN_QUOTE, no pagada, no archivada)
+const isQuoteEditable = (order) => (
+  !order?.is_archived_quote &&
+  !isPaymentPaid(order?.payment_status) &&
+  !isPaymentCredit(order?.payment_status) &&
+  (isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) || isPaymentPartial(order?.payment_status))
+);
+// Verifica si una orden está asignada al usuario actual
+const isOrderAssignedToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId);
+// Verifica si una orden puede ser archivada (recibe userId explícitamente)
+const canArchiveQuoteOrder = (order, userId) => canArchiveOrder(order, ARCHIVE_MODULES.QUOTE, userId);
+// Verifica si una orden fue devuelta (tiene estado de diseño/pendiente Y razón de devolución)
+const isReturnedOrder = (order) => isOrderStatusIn(order?.status, [ORDER_STATUS.IN_DESIGN, ORDER_STATUS.PENDING]) && Boolean(String(order?.return_reason || "").trim());
+const getInitials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+const isOpenCreditReceivable = (item) => item?.status === "open";
+const formatCreditDate = (value) => (value ? formatDate(value) : "---");
+const getCreditIssuedAt = (item) => item?.issued_at || item?.created_at || item?.order?.created_at || null;
+const CREDIT_REMINDER_FALLBACK_CHECK_MS = 30000;
+const CREDIT_REMINDER_SERVER_TIME_RESYNC_MS = 300000;
+const CREDIT_REMINDER_MAX_TIMEOUT_MS = 2147483000;
+const CREDIT_REMINDER_TIME_ZONE = "America/Santo_Domingo";
+const getMonotonicNow = () => (
+  typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : 0
+);
+const getCreditReminderServerNow = (clock) => {
+  if (!clock) return null;
+  return clock.serverNowMs + (getMonotonicNow() - clock.clientMonotonicMs);
+};
+const getTimeZoneDateParts = (date, timeZone = CREDIT_REMINDER_TIME_ZONE) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  return Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, Number(part.value)]));
+};
+const formatDatetimeLocalParts = ({ year, month, day, hour = 0, minute = 0 }) => (
+  `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+);
+const getTimeZoneOffsetMs = (date, timeZone = CREDIT_REMINDER_TIME_ZONE) => {
+  const parts = getTimeZoneDateParts(date, timeZone);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second || 0);
+  return asUtc - date.getTime();
+};
+const parseDatetimeLocalValue = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value || "");
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match;
+  return {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+  };
+};
+const zonedDatetimeLocalToUtcMs = (value, timeZone = CREDIT_REMINDER_TIME_ZONE) => {
+  const parts = parseDatetimeLocalValue(value);
+  if (!parts) return NaN;
+
+  const utcGuess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0);
+  const firstOffset = getTimeZoneOffsetMs(new Date(utcGuess), timeZone);
+  const firstInstant = utcGuess - firstOffset;
+  const secondOffset = getTimeZoneOffsetMs(new Date(firstInstant), timeZone);
+  return utcGuess - secondOffset;
+};
+const getDefaultCreditReminderAt = (baseTimeMs) => {
+  const baseDate = Number.isFinite(baseTimeMs) ? new Date(baseTimeMs) : new Date();
+  const countryParts = getTimeZoneDateParts(baseDate, CREDIT_REMINDER_TIME_ZONE);
+  const nextDay = new Date(Date.UTC(countryParts.year, countryParts.month - 1, countryParts.day + 1, 9, 0, 0));
+  return formatDatetimeLocalParts({
+    year: nextDay.getUTCFullYear(),
+    month: nextDay.getUTCMonth() + 1,
+    day: nextDay.getUTCDate(),
+    hour: 9,
+    minute: 0,
+  });
+};
+const getMinimumCreditReminderAt = (baseTimeMs) => {
+  if (!Number.isFinite(baseTimeMs)) return "";
+  const countryParts = getTimeZoneDateParts(new Date(baseTimeMs), CREDIT_REMINDER_TIME_ZONE);
+  return formatDatetimeLocalParts({
+    year: countryParts.year,
+    month: countryParts.month,
+    day: countryParts.day,
+    hour: countryParts.hour,
+    minute: countryParts.minute,
+  });
+};
+const getCreditReceivableStatusLabel = (status) => {
+  const labels = {
+    open: "Pendiente",
+    resolved: "Resuelta",
+    void: "Anulada",
+  };
+  return labels[status] || status || "Pendiente";
+};
+const getCreditReceivableStatusStyle = (status) => {
+  if (status === "resolved") return { background: "#DCFCE7", color: "#166534", border: "1px solid #22C55E40" };
+  if (status === "void") return { background: "#F1F5F9", color: "#475569", border: "1px solid #CBD5E140" };
+  return { background: "#FEF3C7", color: "#92400E", border: "1px solid #F59E0B40" };
+};
+// FUNCIÓN PARA PARSEAR ARCHIVOS DE ORDEN
+// Los archivos de una orden se guardan como JSON string (puede ser un array o un objeto único)
+// Esta función maneja ambos casos y devuelve siempre un array
+const getOrderFiles = (order) => {
+  if (!order?.order_file_url) return [];
+  try {
+    const parsed = JSON.parse(order.order_file_url);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    // Si no es válido como JSON, asumimos que es una URL directa
+    return [order.order_file_url];
+  }
+};
+
+// Badge que indica que una orden fue devuelta para correcciones
+
+// Badge que indica que una orden fue devuelta para correcciones
+function ReturnedBadge({ compact = false }) {
+  return (
+    <span className={`ps-returned-badge${compact ? " compact" : ""}`}>
+      Devuelta
+    </span>
+  );
+}
+
+// MODAL PARA DEVOLVER ÓRDENES AL DISEÑADOR
+// Cuando hay problemas con el diseño, la orden se devuelve al diseñador o vendedor
+// Se debe especificar el motivo de la devolución para que sepan qué corregir
+// Este modal determina automáticamente si la devuelve al diseñador o vendedor
+// basándose en el tipo de diseño (interno vs. externo)
+
+const getReturnTargetLabel = (order) => (
+  order?.order_design_type === "EXTERNAL_DESING" ? "Vendedor" : "Diseñador"
+);
+
+function ReturnToDesignerModal({ open, onClose, onConfirm, order, loading }) {
+  const [reason, setReason] = useState("");
+  const targetLabel = getReturnTargetLabel(order);
+  const nextStatusLabel = order?.order_design_type === "EXTERNAL_DESING" ? "Pendiente" : "En Diseño";
+
+  const handleConfirm = () => {
+    if (!reason.trim()) return;
+    onConfirm(reason);
+  };
+
+  if (!open || !order) return null;
+
+  return (
+    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className="pq-dialog pq-dialog--return-designer">
+        <div className="pq-dialog-icon return pq-dialog-icon--return-designer">
+          <Icons.ArrowLeft />
+        </div>
+        <h3 className="pq-dialog-title">{`Devolver al ${targetLabel}`}</h3>
+        <p className="pq-dialog-text">
+          {`¿Estás seguro de que deseas devolver esta orden al ${targetLabel.toLowerCase()} para correcciones?`}
+          {` El estado cambiará a "${nextStatusLabel}".`}
+        </p>
+        <div className="pq-dialog-order pq-dialog-order--return-designer">
+          <span className="pq-dialog-order-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+          <span className="pq-dialog-order-name">{order.client_name || order.description || "Orden sin título"}</span>
+        </div>
+        <div className="pq-form-group pq-form-group--return-designer">
+          <label className="pq-input-label">Razón de la devolución</label>
+          <textarea
+            className="pq-input pq-textarea"
+            placeholder="Describe los cambios o correcciones necesarias..."
+            value={reason}
+            onChange={event => setReason(event.target.value)}
+            disabled={loading}
+            rows={3}
+          />
+        </div>
+        <div className="pq-dialog-actions pq-dialog-actions--return-designer">
+          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button className="pq-btn pq-btn-return" onClick={handleConfirm} disabled={loading || !reason.trim()}>
+            {loading ? "Devolviendo..." : `Devolver al ${targetLabel}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// MODAL PARA ENVIAR ÓRDENES A PRODUCCIÓN
+// Cuando una orden está cotizada y pagada, se envía a un impresor para que produzca
+// Este modal:
+// 1. Carga los usuarios con rol "printer" (impresores) disponibles
+// 2. Permite seleccionar el impresor responsable
+// 3. Asigna la orden al impresor seleccionado
+
+// MODAL PRINCIPAL DE DETALLE DE COTIZACIÓN
+// Este es el modal más importante de la página
+// Permite:
+// 1. Ver todos los detalles de la orden (cliente, vendedor, materiales, descripción, archivos)
+// 2. Confirmar o rechazar pagos
+// 3. Subir comprobantes de pago (solo si el estado es "Pagado")
+// 4. Devolver la orden al diseñador si hay problemas
+// 5. Enviar la orden a producción cuando está lista
+// 6. Archivar órdenes completadas
+
+
+function QuoteOrderDetailModal({
+  open,
+  onClose,
+  order,
+  onConfirmPayment,
+  paymentSaving,
+  sellerDirectory,
+  onOpenReturnModal,
+  onValidationError,
+  onOpenProductionModal,
+  onCreditClientRequired,
+  pendingReview,
+  onAcknowledgeReview,
+  reviewAcknowledging,
+  reviewError,
+  returnAcknowledgement,
+  returnHistory,
+  onAcknowledgeReturn,
+  returnAcknowledging,
+}) {
+  const [receiptFile, setReceiptFile] = useState(null);
+  const [receiptPreviewAvailable, setReceiptPreviewAvailable] = useState(true);
+  const [receiptZoneError, setReceiptZoneError] = useState("");
+  const [receiptZoneErrorKey, setReceiptZoneErrorKey] = useState(0);
+  const [paymentStatus, setPaymentStatus] = useState("pagado");
+  const [localError, setLocalError] = useState("");
+  const [creditClientRequired, setCreditClientRequired] = useState(false);
+  const [initialPaymentStatus, setInitialPaymentStatus] = useState(null);
+  const [receiptUrl, setReceiptUrl] = useState("");
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (open) {
+      setReceiptFile(null);
+      setReceiptPreviewAvailable(true);
+      setReceiptZoneError("");
+      setReceiptZoneErrorKey(0);
+      const defaultStatus = isPaymentPartial(order?.payment_status) ? PAYMENT_STATUS.PAID : order?.payment_status || PAYMENT_STATUS.PENDING;
+      setPaymentStatus(defaultStatus);
+      setInitialPaymentStatus(defaultStatus);
+      setLocalError("");
+      setCreditClientRequired(false);
+      setReceiptUrl("");
+    }
+  }, [open, order?.id, order?.payment_status]);
+
+  useEffect(() => {
+    if (paymentStatus !== PAYMENT_STATUS.CREDIT || order?.client_id) {
+      setCreditClientRequired(false);
+    }
+  }, [order?.client_id, paymentStatus]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadReceiptUrl = async () => {
+      if (!open || !order?.invoice_payment) {
+        if (active) setReceiptUrl("");
+        return;
+      }
+
+      const signedUrl = await createSignedOrderAssetUrlFromStoredUrl({
+        bucket: "payment-invoice",
+        url: order.invoice_payment,
+      });
+
+      if (active) {
+        setReceiptUrl(signedUrl || "");
+      }
+    };
+
+    loadReceiptUrl();
+
+    return () => {
+      active = false;
+    };
+  }, [open, order?.invoice_payment]);
+
+  const receiptPreviewUrl = useMemo(() => (
+    receiptFile && receiptPreviewAvailable ? URL.createObjectURL(receiptFile) : ""
+  ), [receiptFile, receiptPreviewAvailable]);
+
+  useEffect(() => () => {
+    if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+  }, [receiptPreviewUrl]);
+
+  if (!open || !order) return null;
+
+  const orderFiles = getOrderFiles(order);
+  const productionFiles = getProductionFiles(order);
+  const unclassifiedProductionFiles = productionFiles.filter((file) => !file.production_area_code).length;
+  const referenceImageUrls = getReferenceImages(order);
+  const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
+  const canConfirmPayment = isQuoteEditable(order);
+  const canSelectPendingPayment = !isPaymentPartial(order.payment_status);
+  const isCompletingPartialPayment = isPaymentPartial(order.payment_status);
+  const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && !isPaymentPaid(order?.payment_status) && !order?.is_archived_quote;
+  const canMoveToProduction = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && isPaymentProductionEligible(order?.payment_status) && !order?.is_archived_quote;
+  const returnedReason = String(order?.return_reason || "").trim();
+  const readonlyMessage =
+    order.is_archived_quote
+      ? "Esta orden está en modo lectura porque fue archivada en caja."
+      : isPaymentPaid(order.payment_status)
+        ? "Esta orden está en modo lectura porque el pago ya fue confirmado."
+        : "Esta orden está en modo lectura porque su estado actual no permite confirmar pago.";
+
+  const showReceiptZoneError = (message) => {
+    setReceiptZoneError(message || "No se pudo procesar la imagen del recibo.");
+    setReceiptZoneErrorKey(prev => prev + 1);
+  };
+
+  const handleReceiptAccepted = async ([nextFile], { showError } = {}) => {
+    const validation = await validateReceiptFile(nextFile);
+    if (!validation.isValid) {
+      const message = validation.error || "La imagen no cumple con los requisitos.";
+      if (showError) showError(message);
+      else showReceiptZoneError(message);
+      return;
+    }
+
+    setReceiptFile(nextFile);
+    setReceiptPreviewAvailable(validation.previewAvailable !== false);
+    setReceiptZoneError("");
+    setLocalError("");
+  };
+
+  const handleRemoveReceipt = () => {
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setReceiptFile(null);
+    setReceiptPreviewAvailable(true);
+    setReceiptZoneError("");
+    setReceiptZoneErrorKey(0);
+    setLocalError("");
+  };
+
+  const handleSubmit = async () => {
+    if (isPaymentPartial(order.payment_status) && paymentStatus === PAYMENT_STATUS.PENDING) {
+      const msg = "Una orden con pago parcial solo puede mantenerse parcial o cambiarse a pagado.";
+      setLocalError(msg);
+      if (onValidationError) onValidationError(order, msg);
+      return;
+    }
+
+    if (paymentStatus === PAYMENT_STATUS.CREDIT && !String(order.invoice_number || "").trim()) {
+      const msg = "La orden debe tener un numero de facturacion para vender a credito.";
+      setLocalError(msg);
+      if (onValidationError) onValidationError(order, msg);
+      return;
+    }
+
+    if (paymentStatus === PAYMENT_STATUS.CREDIT && !order.client_id) {
+      const msg = "Para crear una orden a crédito, el cliente debe estar registrado.";
+      setLocalError(msg);
+      setCreditClientRequired(true);
+      if (onValidationError) onValidationError(order, msg);
+      return;
+    }
+
+    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim()) {
+      const msg = "Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.";
+      // Mostramos error inline DENTRO del modal
+      setLocalError(msg);
+      // Y también mostramos un toast flotante para que el usuario no se lo pierda
+      if (onValidationError) onValidationError(order, msg);
+      return;
+    }
+
+    setLocalError("");
+    const result = await onConfirmPayment({ order, receiptFile, paymentStatus });
+    if (result?.receiptError) {
+      showReceiptZoneError(result.receiptError);
+    }
+  };
+
+  return (
+    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className="pq-modal">
+        <div className="pq-modal-header">
+          <div>
+            <span className="pq-modal-kicker">Detalle de caja</span>
+            <h2 className="pq-modal-title">Orden #{order.id?.slice(0, 8).toUpperCase()}</h2>
+          </div>
+          <button className="pq-icon-btn" onClick={onClose} aria-label="Cerrar detalle">
+            <Icons.X />
+          </button>
+        </div>
+
+        <div className="pq-modal-body">
+          <OrderReturnHandoffPanel
+            acknowledgementHandoff={returnAcknowledgement}
+            history={returnHistory}
+            onAcknowledge={onAcknowledgeReturn}
+            acknowledging={returnAcknowledging}
+          />
+          <div className="pq-flow-summary">
+            <StatusBadge status={order.status} className="pq-badge" order={order} />
+            <PaymentBadge status={order.payment_status} className="pq-badge" />
+            {isReturnedOrder(order) && <ReturnedBadge />}
+            <span className="pq-flow-date"><Icons.Clock /> {createdAt}</span>
+          </div>
+
+          <OrderReviewCard
+            pendingReview={pendingReview}
+            onAcknowledge={onAcknowledgeReview}
+            acknowledging={reviewAcknowledging}
+            error={reviewError}
+          />
+
+          <div className="pq-detail-grid">
+            <div className="pq-panel pq-info-panel">
+              <div className="pq-panel-title pq-panel-title--accent"><Icons.Clipboard /> Información de la orden</div>
+              <div className="pq-info-list">
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.User /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Cliente</span>
+                    <strong className="pq-info-value">{order.client_name || "No definido"}</strong>
+                  </div>
+                </div>
+
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.User /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Vendedor</span>
+                    <strong className="pq-info-value">{resolveSellerName(order, sellerDirectory)}</strong>
+                  </div>
+                </div>
+
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.Phone /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Teléfono</span>
+                    <strong className="pq-info-value">{order.client_contact || order.client_phone || "No definido"}</strong>
+                  </div>
+                </div>
+
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.FileText /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Núm. Facturación</span>
+                    <strong className="pq-info-value">{order.invoice_number || "No definido"}</strong>
+                  </div>
+                </div>
+
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.Clipboard /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Tipo</span>
+                    <strong className="pq-info-value">{order.order_type === "orden 911" ? "911" : "Normal"}</strong>
+                  </div>
+                </div>
+
+                {/* Materiales de la orden */}
+                <div className="pq-info-row">
+                  <span className="pq-info-icon"><Icons.Package /></span>
+                  <div className="pq-info-content">
+                    <span className="pq-info-label">Material</span>
+                    <strong className="pq-info-value">
+                      {order.material
+                        ? order.material.split(",").map(m => m.trim()).filter(Boolean).join(", ")
+                        : "No definido"}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+              <div className="pq-description-box">
+                <span className="pq-description-label"><Icons.Clipboard /> Descripción</span>
+                <p className="pq-description-text">{order.description || "Sin descripción"}</p>
+              </div>
+            </div>
+
+            <div className="pq-panel">
+              <div className="pq-panel-title pq-panel-title--accent"><Icons.Paperclip /> Archivos Adjuntos</div>
+              {orderFiles.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {orderFiles.map((fileUrl, index) => (
+                    <FileCard
+                      key={`${fileUrl}-${index}`}
+                      name={getFileNameFromUrl(fileUrl)}
+                      url={fileUrl}
+                      hideDownload
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="pq-empty-panel">No hay archivos principales disponibles.</div>
+              )}
+
+              <div className="pq-preview-block pq-preview-block--bare">
+                <span className="pq-description-label pq-description-label--soft" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
+                  <Icons.Eye /> Orden de Trabajo
+                </span>
+                {order.preview_image ? (
+                  <SecureImageLink
+                    url={order.preview_image}
+                    fileName={getFileNameFromUrl(order.preview_image)}
+                    className="pq-work-preview"
+                  >
+                    <span className="pq-work-preview-btn">
+                      <Icons.Eye /> Ver orden de trabajo
+                    </span>
+                  </SecureImageLink>
+                ) : (
+                  <span className="pq-preview-empty">No hay preview cargado.</span>
+                )}
+              </div>
+
+              {referenceImageUrls.length > 0 && (
+                <div className="pq-preview-block pq-preview-block--dashed" style={{ marginTop: 16 }}>
+                  <span className="pq-description-label pq-description-label--soft" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
+                    <Icons.Image /> Imágenes de referencia
+                  </span>
+                  <SecureImageGallery
+                    urls={referenceImageUrls}
+                    fileNames={referenceImageUrls.map(getFileNameFromUrl)}
+                    altPrefix="Referencia"
+                    itemClassName="pq-ref-item"
+                  />
+                </div>
+              )}
+              {productionFiles.length > 0 && (() => {
+                const areaCounts = PRODUCTION_AREAS.reduce((acc, area) => {
+                  acc[area.code] = productionFiles.filter(f => f.production_area_code === area.code).length;
+                  return acc;
+                }, {});
+                const classified = productionFiles.length - unclassifiedProductionFiles;
+                
+                return (
+                  <div className="pq-preview-block" style={{ marginTop: 16 }}>
+                    <div className="pq-production-status">
+                      <span className="pq-production-status-header">
+                        <Icons.Package /> Clasificación de producción
+                      </span>
+                      <span className="pq-production-status-text">
+                        {classified} de {productionFiles.length} archivos clasificados
+                      </span>
+                      <div className="pq-production-area-list">
+                        {PRODUCTION_AREAS.map(area => {
+                          const count = areaCounts[area.code] || 0;
+                          const percent = productionFiles.length > 0 ? Math.round((count / productionFiles.length) * 100) : 0;
+                          return (
+                            <div className="pq-production-area-row" key={area.code}>
+                              <span className="pq-production-area-label">{area.label}</span>
+                              <div className="pq-production-area-bar">
+                                <div className="pq-production-area-bar-fill" style={{ width: `${percent}%` }} />
+                              </div>
+                              <span className="pq-production-area-count">{count} {count === 1 ? 'archivo' : 'archivos'}</span>
+                              <span className="pq-production-area-percent">{percent}%</span>
+                            </div>
+                          );
+                        })}
+                        {unclassifiedProductionFiles > 0 && (
+                          <div className="pq-production-area-row">
+                            <span className="pq-production-area-label">Pendientes</span>
+                            <div className="pq-production-area-bar">
+                              <div className="pq-production-area-bar-fill" style={{ width: `${productionFiles.length > 0 ? Math.round((unclassifiedProductionFiles / productionFiles.length) * 100) : 0}%` }} />
+                            </div>
+                            <span className="pq-production-area-count">{unclassifiedProductionFiles} {unclassifiedProductionFiles === 1 ? 'archivo' : 'archivos'}</span>
+                            <span className="pq-production-area-percent">{productionFiles.length > 0 ? Math.round((unclassifiedProductionFiles / productionFiles.length) * 100) : 0}%</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {isReturnedOrder(order) && (
+            <div className="pq-panel pq-return-panel">
+              <div className="pq-panel-title">Motivo de devolución</div>
+              <div className="pq-return-reason">{returnedReason}</div>
+            </div>
+          )}
+
+            <div className="pq-panel pq-payment-panel">
+              <div className="pq-panel-title pq-panel-title--accent">Confirmación de pago</div>
+
+            {!canConfirmPayment && (
+              <div className={`pq-readonly-note ${isPaymentPaid(order.payment_status) ? "success" : ""}`}>
+                <Icons.Check />
+                {readonlyMessage}
+              </div>
+            )}
+
+            <div className="pq-payment-grid">
+              <div className="pq-payment-field">
+                <label><Icons.CheckCircle /> Estado del pago</label>
+                <select
+                  className="pq-input"
+                  value={paymentStatus}
+                  disabled={!canConfirmPayment || paymentSaving || isCompletingPartialPayment}
+                  onChange={event => setPaymentStatus(event.target.value)}
+                >
+                  <option value={PAYMENT_STATUS.PENDING} disabled={!canSelectPendingPayment}>Pendiente</option>
+                  <option value={PAYMENT_STATUS.PARTIAL}>Pago parcial</option>
+                  <option value={PAYMENT_STATUS.CREDIT}>Pago a crédito</option>
+                  <option value={PAYMENT_STATUS.PAID}>Pagado</option>
+                </select>
+              </div>
+
+              <div className="pq-payment-field">
+                <label><Icons.Receipt /> Recibo de factura</label>
+                {paymentStatus === PAYMENT_STATUS.PAID ? (
+                  receiptFile ? (
+                    <div className="pq-receipt-preview-card">
+                      <FileUploadZone
+                        mode="image"
+                        replaceMode
+                        inputRef={fileInputRef}
+                        className="file-upload-zone--hidden-picker"
+                        buttonLabel="Cambiar recibo"
+                        disabled={!canConfirmPayment || paymentSaving}
+                        externalError={receiptZoneError}
+                        externalErrorKey={receiptZoneErrorKey}
+                        onFilesAccepted={handleReceiptAccepted}
+                      />
+                      {receiptPreviewAvailable && receiptPreviewUrl ? (
+                        <a href={receiptPreviewUrl} target="_blank" rel="noreferrer">
+                          <img
+                            src={receiptPreviewUrl}
+                            alt="Vista previa del recibo"
+                            className="pq-receipt-preview-img"
+                          />
+                        </a>
+                      ) : (
+                        <div className="pq-receipt-preview-unavailable">
+                          <Icons.Image />
+                          <span>{receiptFile.name}</span>
+                          <small>Vista previa no disponible</small>
+                        </div>
+                      )}
+                      <div className="pq-receipt-preview-footer">
+                        <span className="pq-receipt-preview-name">{receiptFile.name}</span>
+                        <div className="pq-receipt-preview-actions">
+                          <button
+                            type="button"
+                            className="pq-receipt-preview-action"
+                            disabled={!canConfirmPayment || paymentSaving}
+                            aria-label="Cambiar recibo o factura"
+                            onClick={() => {
+                              if (fileInputRef.current) {
+                                fileInputRef.current.value = "";
+                                fileInputRef.current.click();
+                              }
+                            }}
+                          >
+                            <Icons.Edit /> Cambiar
+                          </button>
+                          <button
+                            type="button"
+                            className="pq-receipt-preview-action danger"
+                            disabled={!canConfirmPayment || paymentSaving}
+                            aria-label="Eliminar recibo o factura cargado"
+                            title="Eliminar recibo o factura"
+                            onClick={handleRemoveReceipt}
+                          >
+                            <Icons.Trash />
+                            <span>Eliminar</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <FileUploadZone
+                      mode="image"
+                      replaceMode
+                      inputRef={fileInputRef}
+                      buttonLabel="Seleccionar desde el ordenador"
+                      hint={PAYMENT_RECEIPT_HINT}
+                      className={paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim() ? "pq-receipt-required" : ""}
+                      disabled={!canConfirmPayment || paymentSaving}
+                      externalError={receiptZoneError}
+                      externalErrorKey={receiptZoneErrorKey}
+                      onFilesAccepted={handleReceiptAccepted}
+                    />
+                  )
+                ) : (
+                  <span className="pq-upload-hint">El campo de recibo solo se muestra cuando el estado es "Pagado". En pago parcial o crédito no se adjunta comprobante final.</span>
+                )}
+              </div>
+            </div>
+
+            {receiptUrl && (
+              <div className="pq-preview-block" style={{ marginTop: 16 }}>
+                <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icons.Eye /> Comprobante de pago
+                </span>
+                <a href={receiptUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                  <img
+                    src={receiptUrl}
+                    alt="Comprobante de pago"
+                      style={{
+                        width: "100%",
+                        maxHeight: 200,
+                        objectFit: "contain",
+                        background: "var(--pq-surface-alt, #f5f7fb)",
+                        borderRadius: "var(--pq-radius-md)",
+                        border: "1px solid var(--pq-border)",
+                        cursor: "pointer",
+                        transition: "transform 0.2s",
+                      }}
+                    onMouseEnter={e => { e.target.style.transform = "scale(1.02)"; }}
+                    onMouseLeave={e => { e.target.style.transform = "scale(1)"; }}
+                  />
+                </a>
+              </div>
+            )}
+
+            {/* Contenedor de errores */}
+            {localError && <div className="pq-inline-error">{localError}</div>}
+            {creditClientRequired && paymentStatus === PAYMENT_STATUS.CREDIT && !order.client_id && (
+              <div className="pq-credit-client-action">
+                <p className="pq-upload-hint">
+                  Esta es una orden heredada sin cliente registrado. Vincula un cliente existente antes de aprobar credito.
+                </p>
+                <button
+                  type="button"
+                  className="pq-btn pq-btn-secondary"
+                  onClick={() => onCreditClientRequired?.(order)}
+                  disabled={paymentSaving}
+                >
+                  <Icons.User />
+                  Vincular cliente registrado
+                </button>
+              </div>
+            )}
+
+            {/* Acciones del modal para cotizar orden */}
+            <div className="pq-modal-actions">
+              {canReturnToDesigner && (
+                <button className="pq-btn pq-btn-return" onClick={() => onOpenReturnModal(order)}>
+                  <Icons.ArrowLeft />
+                  {`Devolver al ${getReturnTargetLabel(order)}`}
+                </button>
+              )}
+              {canMoveToProduction && (
+                <button className="pq-btn pq-btn-primary" onClick={() => onOpenProductionModal(order)}>
+                  <Icons.Package />
+                  Dar paso a producción
+                </button>
+              )}
+              <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
+              <button className="pq-btn pq-btn-primary" onClick={handleSubmit} disabled={!canConfirmPayment || paymentSaving || paymentStatus === initialPaymentStatus || (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim())}>
+                {getPaymentConfirmButtonLabel(paymentStatus, paymentSaving)}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+function RegisteredClientLinkModal({
+  open,
+  order,
+  clients,
+  clientsLoading,
+  selectedClient,
+  onSelectClient,
+  onSearchClient,
+  onClose,
+  onConfirm,
+  loading,
+}) {
+  if (!open || !order) return null;
+
+  return (
+    <div className="pq-overlay" onClick={event => event.target === event.currentTarget && !loading && onClose()}>
+      <div className="pq-modal pq-modal-compact">
+        <div className="pq-modal-header">
+          <div>
+            <span className="pq-modal-kicker">Orden heredada</span>
+            <h2 className="pq-modal-title">Vincular cliente registrado</h2>
+          </div>
+          <button className="pq-icon-btn" onClick={onClose} aria-label="Cerrar vinculacion" disabled={loading}>
+            <Icons.X />
+          </button>
+        </div>
+
+        <div className="pq-modal-body">
+          <div className="pq-inline-error">
+            Esta orden no tiene un cliente registrado. Selecciona un cliente existente para continuar con credito y otros flujos criticos.
+          </div>
+
+          <div className="pq-info-list">
+            <div className="pq-info-row"><span>Dato heredado</span><strong>{order.client_name || "Sin nombre"}</strong></div>
+            <div className="pq-info-row"><span>Telefono heredado</span><strong>{order.client_contact || order.client_phone || "No definido"}</strong></div>
+          </div>
+
+          <div className="pq-payment-field">
+            <label>Cliente registrado</label>
+            <ClientSelect
+              clients={clients}
+              value={selectedClient?.id || null}
+              onSelect={onSelectClient}
+              onSearch={onSearchClient}
+              loading={clientsLoading}
+              placeholder="Seleccionar cliente registrado"
+              emptyText="No hay clientes registrados con esa busqueda."
+            />
+          </div>
+        </div>
+
+        <div className="pq-dialog-actions">
+          <button className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button className="pq-btn pq-btn-primary" onClick={onConfirm} disabled={loading || !selectedClient?.id}>
+            {loading ? "Vinculando..." : "Vincular cliente"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreditClientDetailView({
+  group,
+  selectedCreditOrderIds,
+  onToggleSelection,
+  onToggleAll,
+  onSettle,
+  onCreateReminder,
+  onViewOrder,
+  onBack,
+}) {
+  const clientId = group.client?.id;
+  const openInvoices = group.invoices.filter((item) => isOpenCreditReceivable(item));
+  const settledInvoicesCount = group.invoices.filter((item) => item.status === "resolved").length;
+  const selectedIds = selectedCreditOrderIds[clientId] || [];
+  const allOpenSelected = openInvoices.length > 0 && openInvoices.every((item) => selectedIds.includes(item.order_id));
+  const [detailSearch, setDetailSearch] = useState("");
+  const [detailFilter, setDetailFilter] = useState("all");
+  const [detailPage, setDetailPage] = useState(1);
+
+  const filteredInvoices = useMemo(() => {
+    const q = normalizeText(detailSearch);
+    return group.invoices.filter((item) => {
+      if (detailFilter === "open" && !isOpenCreditReceivable(item)) return false;
+      if (detailFilter === "resolved" && item.status !== "resolved") return false;
+      if (!q) return true;
+      return normalizeText(`${item.invoiceNumber || ""} ${item.order_id || ""}`).includes(q);
+    });
+  }, [detailFilter, detailSearch, group.invoices]);
+
+  const CREDIT_DETAIL_PAGE_SIZE = 7;
+  const detailTotalPages = Math.max(1, Math.ceil(filteredInvoices.length / CREDIT_DETAIL_PAGE_SIZE));
+  const safeDetailPage = Math.min(detailPage, detailTotalPages);
+  const paginatedInvoices = filteredInvoices.slice((safeDetailPage - 1) * CREDIT_DETAIL_PAGE_SIZE, safeDetailPage * CREDIT_DETAIL_PAGE_SIZE);
+
+  useEffect(() => {
+    setDetailPage(1);
+  }, [clientId, detailSearch, detailFilter]);
+
+  return (
+    <section className="pq-section pq-credit-layout">
+      <div className="pa-credit-detail-banner">
+        <div className="pa-credit-detail-banner-top">
+          <div className="pa-credit-detail-client-avatar">
+            {group.client?.name?.charAt(0)?.toUpperCase() || "?"}
+          </div>
+          <div className="pa-credit-detail-banner-info">
+            <h3>{group.client?.name || "Cliente sin nombre"}</h3>
+          </div>
+          <div className="pa-credit-detail-client-stats">
+            <span className="pq-greeting-count pq-greeting-count--pending">
+              <strong>{group.pendingCount}</strong> Pendientes
+            </span>
+            <span className="pq-greeting-count">
+              <strong>{group.invoices.length}</strong> Total
+            </span>
+            <span className="pq-greeting-count pq-greeting-count--paid-today">
+              <strong>{settledInvoicesCount}</strong> Saldadas
+            </span>
+          </div>
+        </div>
+        <div className="pa-credit-detail-banner-bottom">
+          <button className="pa-credit-detail-back" onClick={onBack}>
+            <Icons.ChevronLeft />
+            Volver a créditos
+          </button>
+          <button
+            className="pa-credit-detail-primary-btn"
+            onClick={() => onCreateReminder(group.client, openInvoices)}
+            disabled={openInvoices.length === 0}
+          >
+            <Icons.Clock />
+            Crear recordatorio
+          </button>
+        </div>
+      </div>
+
+      <div className="ps-filters">
+        <div className="ps-search-wrap">
+          <span className="ps-search-icon"><Icons.Search /></span>
+          <input
+            className="ps-input with-icon"
+            value={detailSearch}
+            onChange={(event) => setDetailSearch(event.target.value)}
+            placeholder="Buscar por factura u orden..."
+          />
+          {detailSearch && (
+            <button className="acm-search-clear" onClick={() => setDetailSearch("")} aria-label="Limpiar búsqueda">
+              <Icons.X />
+            </button>
+          )}
+        </div>
+        <div className="ps-select-wrap">
+          <select
+            className="ps-input"
+            value={detailFilter}
+            onChange={(event) => setDetailFilter(event.target.value)}
+            style={{ minWidth: 130, paddingRight: 32, cursor: "pointer", appearance: "none" }}
+          >
+            <option value="all">Todos</option>
+            <option value="open">Pendientes</option>
+            <option value="resolved">Resueltas</option>
+          </select>
+          <span className="ps-select-arrow"><Icons.ChevronDown /></span>
+        </div>
+      </div>
+
+      <div className="pq-panel pq-credit-panel">
+        <div className="pq-panel-head">
+          <div>
+            <span className="acm-badge info">Facturas</span>
+            <h2>Facturas del cliente</h2>
+          </div>
+          <span className="pa-credit-selection-count">
+            {selectedIds.length} seleccionada{selectedIds.length === 1 ? "" : "s"}
+          </span>
+        </div>
+
+        <div className="ps-table-wrap pa-credit-invoice-wrap">
+          <table className="ps-table acm-table">
+            <thead>
+              <tr>
+                <th className="pa-credit-check-cell">
+                  <input
+                    type="checkbox"
+                    checked={allOpenSelected}
+                    disabled={openInvoices.length === 0}
+                    onChange={() => onToggleAll(clientId, group.invoices)}
+                    aria-label="Seleccionar facturas pendientes"
+                  />
+                </th>
+                <th>Factura</th>
+                <th>Orden</th>
+                <th>Emisión</th>
+                <th>Estado</th>
+                <th className="pa-credit-invoice-actions-col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredInvoices.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="ps-table-empty">
+                    <div className="acm-empty-state">
+                      <Icons.Receipt />
+                      <strong>No hay facturas</strong>
+                      <span>{detailSearch || detailFilter !== "all" ? "Intenta con otros filtros o limpia la búsqueda." : "No hay facturas registradas para este cliente."}</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                paginatedInvoices.map((item) => {
+                  const itemOpen = isOpenCreditReceivable(item);
+                  const selected = selectedIds.includes(item.order_id);
+                  return (
+                    <tr
+                      key={item.id || item.order_id}
+                      className="row-hover acm-client-row"
+                      onClick={() => { if (item.order) onViewOrder(item.order); }}
+                      onKeyDown={(event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); if (item.order) onViewOrder(item.order); } }}
+                      tabIndex={0}
+                    >
+                      <td className="td-pad pa-credit-check-cell">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={!itemOpen || !item.order_id}
+                          onChange={() => onToggleSelection(clientId, item.order_id)}
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`Seleccionar factura ${item.invoiceNumber}`}
+                        />
+                      </td>
+                      <td className="td-pad td-name">{item.invoiceNumber}</td>
+                      <td className="td-pad td-id">{item.order_id?.slice(0, 8) || "---"}</td>
+                      <td className="td-pad">{formatCreditDate(item.creditIssuedAt)}</td>
+                      <td className="td-pad">
+                        <span className={`acm-badge ${itemOpen ? "warning" : "success"}`}>
+                          {getCreditReceivableStatusLabel(item.status)}
+                        </span>
+                      </td>
+                      <td className="td-pad td-actions">
+                        <div className="table-actions acm-row-actions">
+                          {item.order && (
+                            <button className="table-action-btn view" onClick={(event) => { event.stopPropagation(); onViewOrder(item.order); }} title="Ver orden">
+                              <Icons.Eye />
+                            </button>
+                          )}
+                          {itemOpen && (
+                            <button
+                              className="table-action-btn edit"
+                              onClick={(event) => { event.stopPropagation(); onCreateReminder(group.client, [item]); }}
+                              title="Crear recordatorio"
+                            >
+                              <Icons.Clock />
+                            </button>
+                          )}
+                          {itemOpen && (
+                            <button
+                              className="table-action-btn success"
+                              onClick={(event) => { event.stopPropagation(); onSettle({
+                                client: group.client,
+                                orderIds: [item.order_id],
+                                invoices: [item.invoiceNumber],
+                                mode: "single",
+                              }); }}
+                              title="Marcar factura saldada"
+                            >
+                              <Icons.Check />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {filteredInvoices.length > CREDIT_DETAIL_PAGE_SIZE && (
+          <div className="acm-pagination-footer">
+            <Pagination currentPage={safeDetailPage} totalPages={detailTotalPages} onPageChange={setDetailPage} />
+          </div>
+        )}
+
+        <div className="pa-credit-detail-actions-bar">
+          <div className="pa-credit-detail-actions">
+            <button
+          className="pa-credit-detail-primary-btn"
+              onClick={() => onToggleAll(clientId, group.invoices)}
+              disabled={openInvoices.length === 0}
+            >
+              {allOpenSelected ? "Limpiar selección" : "Seleccionar pendientes"}
+            </button>
+            <button
+              className="pa-credit-detail-primary-btn"
+              onClick={() => onSettle({
+                client: group.client,
+                orderIds: selectedIds,
+                invoices: group.invoices.filter((item) => selectedIds.includes(item.order_id)).map((item) => item.invoiceNumber),
+                mode: "selected",
+              })}
+              disabled={selectedIds.length === 0}
+            >
+              Marcar saldadas
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const mergeOrderWithProductionFiles = (baseOrder, nextOrder) => {
+  const mergedOrder = {
+    ...(baseOrder || {}),
+    ...(nextOrder || {}),
+  };
+
+  if (!Array.isArray(mergedOrder.order_production_files) && Array.isArray(baseOrder?.order_production_files)) {
+    mergedOrder.order_production_files = baseOrder.order_production_files;
+  }
+
+  return mergedOrder;
+};
+
+export default function PageQuote() {
+  const navigate = useNavigate();
+  const { user: authUser, profile: authProfile, signOut } = useAuth();
+
+  // ============= ESTADOS GLOBALES DEL COMPONENTE =============
+  // Estados de UI
+  const [sidebarOpen, setSidebarOpen] = useState(true); // Control del menú lateral
+  const [activeTab, setActiveTab] = useState("dashboard"); // Tab activo (dashboard, etc.)
+  
+  // Estados del usuario
+  const [user, setUser] = useState(null); // Usuario autenticado
+  const [profile, setProfile] = useState(null); // Perfil del usuario (nombre, rol, etc.)
+  
+  // Estados de órdenes
+  const [orders, setOrders] = useState([]); // Lista de todas las órdenes asignadas al usuario
+  const [loading, setLoading] = useState(true); // Indica si se están cargando órdenes
+  const [selectedOrder, setSelectedOrder] = useState(null); // Orden actualmente abierta en el modal
+  
+  // Estados para archivo
+  const [archivingOrder, setArchivingOrder] = useState(null); // Orden que se va a archivar
+  const [archiveLoading, setArchiveLoading] = useState(false); // Indica si se está archivando
+  
+  // Estados para devolución
+  const [returningOrder, setReturningOrder] = useState(null); // Orden que se va a devolver
+  const [returnLoading, setReturnLoading] = useState(false); // Indica si se está devolviendo
+  
+  // Estados para envío a producción
+  const [forwardToProductionOrder, setForwardToProductionOrder] = useState(null); // Orden que se enviará a producción
+  const [productionSaving, setProductionSaving] = useState(false); // Indica si se está enviando a producción
+  
+  // Estados de pago
+  const [paymentSaving, setPaymentSaving] = useState(false); // Indica si se está guardando pago
+  
+  // Estados de búsqueda y filtrado
+  const [search, setSearch] = useState(""); // Texto de búsqueda
+  const [filterType, setFilterType] = useState("all"); // Filtro por tipo de orden
+  const [filterStatus, setFilterStatus] = useState("all"); // Filtro por estado de orden
+  const [filterPayment, setFilterPayment] = useState("all"); // Filtro por estado de pago
+  const [filterDate, setFilterDate] = useState("all"); // Filtro por fecha
+  const [filterClient, setFilterClient] = useState("all"); // Filtro por cliente registrado
+  const [filterSeller, setFilterSeller] = useState("all"); // Filtro por vendedor responsable
+  const [filterOverdue, setFilterOverdue] = useState("all");
+  const [filterArchive, setFilterArchive] = useState("all");
+
+  const [viewMode, setViewMode] = useState("table"); // Vista predeterminada: tabla
+  const [clients, setClients] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [clientLinkOrder, setClientLinkOrder] = useState(null);
+  const [clientLinkSelection, setClientLinkSelection] = useState(null);
+  const [clientLinkLoading, setClientLinkLoading] = useState(false);
+  const [accountsReceivable, setAccountsReceivable] = useState([]);
+  const [accountsReceivableLoading, setAccountsReceivableLoading] = useState(true);
+  const [creditOrders, setCreditOrders] = useState([]);
+  const [creditSearch, setCreditSearch] = useState("");
+  const [creditStatusFilter, setCreditStatusFilter] = useState("open");
+  const [creditView, setCreditView] = useState("list");
+  const [creditDetailClientId, setCreditDetailClientId] = useState(null);
+  const [selectedCreditOrderIds, setSelectedCreditOrderIds] = useState({});
+  const [creditSettlementTarget, setCreditSettlementTarget] = useState(null);
+  const [creditSettlementNotes, setCreditSettlementNotes] = useState("");
+  const [creditSettlementLoading, setCreditSettlementLoading] = useState(false);
+  const [creditCustomReminders, setCreditCustomReminders] = useState([]);
+  const [creditReminderTarget, setCreditReminderTarget] = useState(null);
+  const [creditReminderForm, setCreditReminderForm] = useState({ remind_at: "", note: "", orderIds: [] });
+  const [creditReminderSaving, setCreditReminderSaving] = useState(false);
+  const [creditReminderDismissedIds, setCreditReminderDismissedIds] = useState([]);
+  const [creditReminderCompletingId, setCreditReminderCompletingId] = useState(null);
+  const [creditReminderNow, setCreditReminderNow] = useState(null);
+  const [creditPendingAlertDue, setCreditPendingAlertDue] = useState(false);
+  const [creditPendingAlertLoading, setCreditPendingAlertLoading] = useState(true);
+  const [creditPendingAlertSaving, setCreditPendingAlertSaving] = useState(false);
+  const creditReminderServerClockRef = useRef(null);
+  
+  // Directorio de vendedores (cache para no hacer múltiples queries)
+  const [sellerDirectory, setSellerDirectory] = useState({});
+
+  // Paginación
+  const [page, setPage] = useState(1);
+
+  // Hook personalizado para notificaciones y alertas
+  const notif = useNotifications(user?.id);
+  const orderReviews = useOrderEventReviews(user?.id);
+  const orderReturns = useOrderReturnHandoffs(user?.id);
+  const newOrderAssignments = useNewOrderAssignments(user?.id, "quote");
+  const pendingOrderReviews = orderReviews.pendingByOrder;
+  const pendingNewAssignments = newOrderAssignments.pendingByOrder;
+  const selectedOrderReview = selectedOrder ? pendingOrderReviews[selectedOrder.id] || null : null;
+
+  // ============= EFECTO 1: VALIDAR SESIÓN Y ROL =============
+  // Se ejecuta una sola vez al montar el componente
+  // Verifica que:
+  // 1. El usuario esté autenticado
+  // 2. El usuario tenga el rol "quote"
+  // Si no cumple, lo redirige al login
+  useEffect(() => {
+    setUser(authUser || null);
+    setProfile(authProfile || null);
+  }, [authProfile, authUser]);
+
+  const showCreditFeedback = useCallback((variant, title, message) => {
+    showCreditActionFeedback(notif, {
+      variant,
+      title,
+      message,
+      eventKind: "quote_credit_feedback",
+    });
+  }, [notif]);
+
+  const fetchClients = useCallback(async () => {
+    setClientsLoading(true);
+    try {
+      const data = await loadClients(supabase);
+      setClients(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.warn("No se pudieron cargar clientes para caja:", error?.message || error);
+      setClients([]);
+    } finally {
+      setClientsLoading(false);
+    }
+  }, []);
+
+  const handleClientSearch = useCallback(async (query) => searchClients(supabase, query), []);
+
+  const fetchAccountsReceivable = useCallback(async () => {
+    setAccountsReceivableLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("accounts_receivable")
+        .select("*")
+        .order("issued_at", { ascending: false });
+
+      if (error) throw error;
+
+      const receivables = Array.isArray(data) ? data : [];
+      setAccountsReceivable(receivables);
+
+      const orderIds = [...new Set(receivables.map(item => item.order_id).filter(Boolean))];
+      if (orderIds.length === 0) {
+        setCreditOrders([]);
+        return;
+      }
+
+      const { data: creditOrderData, error: creditOrdersError } = await supabase
+        .from("orders")
+        .select("*, order_production_files(*)")
+        .in("id", orderIds);
+
+      if (creditOrdersError) {
+        console.warn("No se pudieron cargar ordenes asociadas a credito:", creditOrdersError?.message || creditOrdersError);
+        setCreditOrders([]);
+        return;
+      }
+
+      setCreditOrders(Array.isArray(creditOrderData) ? creditOrderData : []);
+    } catch (error) {
+      console.warn("No se pudieron cargar cuentas por cobrar para caja:", error?.message || error);
+      setAccountsReceivable([]);
+      setCreditOrders([]);
+    } finally {
+      setAccountsReceivableLoading(false);
+    }
+  }, []);
+
+  const fetchCreditCustomReminders = useCallback(async () => {
+    if (!user?.id) {
+      setCreditCustomReminders([]);
+      return;
+    }
+
+    try {
+      const { data: reminders, error: remindersError } = await supabase
+        .from("credit_custom_reminders")
+        .select("*")
+        .in("status", ["scheduled", "due"])
+        .order("remind_at", { ascending: true });
+      if (remindersError) throw remindersError;
+
+      setCreditCustomReminders(Array.isArray(reminders) ? reminders : []);
+    } catch (error) {
+      if (!String(error?.message || "").includes("credit_custom_reminders")) {
+        console.warn("No se pudieron cargar recordatorios de credito en caja:", error?.message || error);
+      }
+      setCreditCustomReminders([]);
+    }
+  }, [user?.id]);
+
+  const dispatchDueCreditReminderNotifications = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      const { error } = await supabase.rpc("dispatch_due_credit_reminder_notifications");
+      if (error) throw error;
+    } catch (error) {
+      if (!String(error?.message || "").includes("dispatch_due_credit_reminder_notifications")) {
+        console.warn("No se pudieron emitir notificaciones de recordatorios en caja:", error?.message || error);
+      }
+    }
+  }, [user?.id]);
+
+  const syncCreditReminderServerTime = useCallback(async () => {
+    const { data, error } = await supabase.rpc("get_server_time");
+    if (error) {
+      console.warn("No se pudo sincronizar la hora del servidor para recordatorios de caja:", error.message || error);
+      return null;
+    }
+
+    const serverTimeValue = Array.isArray(data) ? data[0] : data;
+    const serverNowMs = new Date(serverTimeValue).getTime();
+    if (!Number.isFinite(serverNowMs)) {
+      console.warn("La hora del servidor para recordatorios de caja no es valida:", serverTimeValue);
+      return null;
+    }
+
+    const nextClock = {
+      serverNowMs,
+      clientMonotonicMs: getMonotonicNow(),
+    };
+
+    creditReminderServerClockRef.current = nextClock;
+    setCreditReminderNow(getCreditReminderServerNow(nextClock));
+    return nextClock;
+  }, []);
+
+  useEffect(() => {
+    fetchClients();
+  }, [fetchClients]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      creditReminderServerClockRef.current = null;
+      setCreditReminderNow(null);
+      return undefined;
+    }
+
+    syncCreditReminderServerTime();
+
+    const interval = setInterval(() => {
+      const serverNow = getCreditReminderServerNow(creditReminderServerClockRef.current);
+      if (serverNow !== null) {
+        setCreditReminderNow(serverNow);
+      }
+    }, CREDIT_REMINDER_FALLBACK_CHECK_MS);
+
+    const resyncInterval = setInterval(() => {
+      syncCreditReminderServerTime();
+    }, CREDIT_REMINDER_SERVER_TIME_RESYNC_MS);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(resyncInterval);
+    };
+  }, [syncCreditReminderServerTime, user?.id]);
+
+  const handleConfirmClientLink = async () => {
+    if (!clientLinkOrder?.id || !clientLinkSelection?.id) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Cliente requerido",
+        orderTitle: clientLinkOrder?.client_name || clientLinkOrder?.description || "Orden heredada",
+        message: "Debes seleccionar un cliente registrado.",
+      });
+      return;
+    }
+
+    const orderToLink = orders.find(item => item.id === clientLinkOrder.id) || selectedOrder || clientLinkOrder;
+    if (orderToLink?.client_id) {
+      setClientLinkOrder(null);
+      setClientLinkSelection(null);
+      setSelectedOrder(orderToLink);
+      return;
+    }
+
+    setClientLinkLoading(true);
+    const { data: linkedOrder, error } = await supabase
+      .rpc("quote_link_order_client", {
+        p_order_id: orderToLink.id,
+        p_client_id: clientLinkSelection.id,
+      });
+    setClientLinkLoading(false);
+
+    if (error || !linkedOrder) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Cliente no vinculado",
+        orderTitle: clientLinkOrder.client_name || clientLinkOrder.description || `Orden #${clientLinkOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: error?.message || "No se pudo vincular la orden al cliente registrado.",
+      });
+      return;
+    }
+
+    setOrders(prev => prev.map(item => item.id === linkedOrder.id ? linkedOrder : item));
+    setSelectedOrder(linkedOrder);
+    setClientLinkOrder(null);
+    setClientLinkSelection(null);
+    notif.showActionNotification({
+      type: "info",
+      title: "Cliente vinculado",
+      message: `Orden vinculada a "${linkedOrder.client_name}" correctamente.`,
+      metadata: { event_kind: "order_client_linked", order_id: linkedOrder.id, client_id: linkedOrder.client_id, variant: "success" },
+    });
+  };
+
+  const fetchOrders = async (...args) => fetchOrdersImpl(...args);
+  const fetchOrdersRef = useRef(fetchOrders);
+
+  const fetchOrderWithProductionFiles = useCallback(async (orderId) => {
+    if (!orderId) return null;
+
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*, order_production_files(*)")
+      .eq("id", orderId)
+      .single();
+
+    if (error) {
+      console.warn("No se pudo hidratar la orden con archivos de produccion:", error?.message || error);
+      return null;
+    }
+
+    return data || null;
+  }, []);
+
+  useEffect(() => {
+    fetchOrdersRef.current = fetchOrders;
+  });
+
+  const refreshQuoteOrdersSilently = useCallback(() => {
+    if (!user?.id) return Promise.resolve();
+    return fetchOrdersRef.current(user.id, true);
+  }, [user]);
+
+  useOrdersRealtimeSync({
+    userId: user?.id,
+    scope: "quote",
+    refreshOrders: refreshQuoteOrdersSilently,
+  });
+
+  const applyCreditToOrder = async (order) => {
+    if (!order?.client_id) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Cliente requerido",
+        orderTitle: order?.client_name || order?.description || `Orden #${order?.id?.slice(0, 8).toUpperCase()}`,
+        message: "Para crear una orden a crédito, el cliente debe estar registrado.",
+      });
+      return { ok: false };
+    }
+
+    setPaymentSaving(true);
+    const { data: updatedOrder, error } = await supabase
+        .rpc("mark_order_as_credit", {
+          p_order_id: order.id,
+          p_due_date: null,
+          p_expected_updated_at: order.updated_at,
+        });
+    if (error || !updatedOrder) {
+      setPaymentSaving(false);
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Crédito no aprobado",
+        orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+        message: error?.message || "No se pudo aprobar el pago a crédito.",
+      });
+      return { ok: false };
+    }
+
+    const hydratedOrder = await fetchOrderWithProductionFiles(updatedOrder.id);
+    setPaymentSaving(false);
+
+    const nextOrder = mergeOrderWithProductionFiles(order, hydratedOrder || updatedOrder);
+    setOrders(prev => prev.map(item => item.id === nextOrder.id ? mergeOrderWithProductionFiles(item, nextOrder) : item));
+    setSelectedOrder(nextOrder);
+    await fetchAccountsReceivable();
+    return { ok: true, order: nextOrder };
+  };
+
+  const openCreditClientRegistration = (order) => {
+    setClientLinkOrder(order);
+    setClientLinkSelection(null);
+    fetchClients();
+  };
+
+  const handleNewClientCreated = async (newClient, options = {}) => {
+    setClients(prev => {
+      const exists = prev.some(c => c.id === newClient.id);
+      return exists ? prev : [...prev, newClient].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    });
+    notif.showActionNotification({
+      type: "info",
+      title: options.reusedExisting ? "Cliente vinculado" : "Cliente registrado",
+      message: options.reusedExisting
+        ? `Cliente "${newClient.name}" encontrado y vinculado correctamente.`
+        : `Cliente "${newClient.name}" registrado correctamente.`,
+      metadata: { event_kind: options.reusedExisting ? "client_reused" : "client_created", client_id: newClient.id, variant: "success" },
+    });
+
+  };
+
+  // ============= EFECTO 2: SUSCRIPCIÓN EN TIEMPO REAL Y REFRESCO =============
+  // Se ejecuta cuando el user cambia
+  // Este es el corazón del sistema de actualización en tiempo real:
+  // 1. Carga las órdenes asignadas al usuario
+  // 2. Se suscribe a cambios en la tabla "orders"
+  // 3. Si una orden asignada a este usuario cambia, recarga la lista
+  // 4. Si la página pierde y recupera el foco, recarga las órdenes
+  // Esto asegura que el usuario siempre vea datos actualizados sin necesidad de F5
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    // Carga inicial de órdenes
+    fetchOrdersRef.current(user.id);
+    fetchClients();
+    fetchAccountsReceivable();
+    dispatchDueCreditReminderNotifications();
+    fetchCreditCustomReminders();
+    
+    // Datos relacionados conservan sus propios canales; las órdenes usan el hook híbrido compartido.
+    const channel = supabase
+      .channel(`quote-related-data-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "accounts_receivable" },
+        () => {
+          fetchAccountsReceivable();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "clients" },
+        () => {
+          fetchClients();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "credit_custom_reminders" },
+        () => {
+          fetchCreditCustomReminders();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "credit_custom_reminder_orders" },
+        () => {
+          fetchCreditCustomReminders();
+        }
+      )
+      .subscribe();
+
+    // LIMPIEZA: desuscribirse de Supabase y remover listeners al desmontar
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [dispatchDueCreditReminderNotifications, fetchAccountsReceivable, fetchClients, fetchCreditCustomReminders, user?.id]);
+
+
+  // ============= FUNCIÓN: SINCRONIZAR DIRECTORIO DE VENDEDORES =============
+  // Carga los nombres de los vendedores desde la tabla "profiles"
+  // Evita múltiples queries a BD usando un cache (sellerDirectory)
+  // Se ejecuta automáticamente después de cargar órdenes
+  const syncSellerDirectory = async (ordersToSync) => {
+    // Extrae IDs únicos de vendedores de las órdenes
+    const sellerIds = [...new Set(
+      (ordersToSync || [])
+        .map(order => resolveSellerId(order))
+        .filter(Boolean)
+    )];
+
+    if (sellerIds.length === 0) return;
+
+    // Solo consulta vendedores que aún no están en el cache
+    const missingSellerIds = sellerIds.filter(id => !sellerDirectory[id]);
+    if (missingSellerIds.length === 0) return;
+
+    // Query a BD para obtener nombres de vendedores
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, name")
+      .in("id", missingSellerIds);
+
+    if (!error && Array.isArray(data)) {
+      // Actualiza el cache con los nuevos vendedores
+      setSellerDirectory(prev => ({
+        ...prev,
+        ...Object.fromEntries(data.map(profile => [profile.id, profile.name || "Vendedor"]))
+      }));
+    }
+  };
+
+  // ============= FUNCIÓN: CARGAR ÓRDENES DEL USUARIO =============
+  async function fetchOrdersImpl(quoteUserId, silent = false) {
+    if (!silent) setLoading(true);
+
+    let fetchedOrders = [];
+    let fetchError = null;
+
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*, order_production_files(*)")
+      .eq("quote_id", quoteUserId)
+      .order("created_at", { ascending: false });
+
+    if (!error) {
+      fetchedOrders = (data || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
+    } else {
+      fetchError = error;
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from("orders")
+        .select("*, order_production_files(*)")
+        .order("created_at", { ascending: false });
+
+      if (!fallbackError) {
+        fetchedOrders = (fallbackData || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
+        fetchError = null;
+      }
+    }
+
+    if (fetchError) {
+      if (!silent) {
+        applyOrdersSnapshot({ orders: [], setOrders, setSelectedOrder, additionalOrders: creditOrders });
+      }
+      if (!silent) setLoading(false);
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al cargar",
+        orderTitle: "Órdenes de caja",
+        message: "No se pudieron cargar las órdenes asignadas a caja.",
+      });
+      return;
+    }
+
+    applyOrdersSnapshot({
+      orders: fetchedOrders,
+      setOrders,
+      setSelectedOrder,
+      additionalOrders: creditOrders,
+    });
+    await syncSellerDirectory(fetchedOrders);
+    if (!silent) setLoading(false);
+  }
+
+  // ============= FUNCIÓN: ABRIR DETALLE DE ORDEN =============
+  // Se ejecuta cuando el usuario hace click en una orden
+  // Refresca los datos desde BD antes de abrir el modal (asegura que siempre esté actualizado)
+  const handleViewOrder = async (order) => {
+    const { data } = await supabase
+      .from("orders")
+      .select("*, order_production_files(*)")
+      .eq("id", order.id)
+      .single();
+
+    const nextOrder = data || order;
+    await syncSellerDirectory([nextOrder]);
+    setSelectedOrder(nextOrder);
+    if (pendingNewAssignments[order.id]) {
+      void newOrderAssignments.acknowledgeOrder(order.id);
+    }
+  };
+
+  // ============= FUNCIÓN: CONFIRMAR PAGO DE ORDEN =============
+  // Este es uno de los procesos más complejos:
+  // 1. Valida que se haya subido un recibo si el pago es "Pagado"
+  // 2. Valida que la imagen sea JPG o PNG válida
+  // 3. Sube la imagen a Supabase Storage
+  // 4. Actualiza la BD con el nuevo estado de pago y URL del recibo
+  // 5. Notifica al usuario del resultado
+  const handleConfirmPayment = async ({ order, receiptFile, paymentStatus }) => {
+    // Validación inicial: si es pagado, debe haber recibo
+    if (isPaymentPartial(order?.payment_status) && paymentStatus === PAYMENT_STATUS.PENDING) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Cambio no permitido",
+        orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+        message: "Una orden con pago parcial solo puede mantenerse parcial o cambiarse a pagado.",
+      });
+      return { ok: false };
+    }
+
+    if (paymentStatus === PAYMENT_STATUS.CREDIT) {
+      if (!String(order?.invoice_number || "").trim()) {
+        notif.showActionNotification({
+          type: "order_cancelled",
+          label: "Facturacion requerida",
+          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+          message: "La orden debe tener un numero de facturacion para vender a credito.",
+        });
+        return { ok: false };
+      }
+
+      if (!order?.client_id) {
+        notif.showActionNotification({
+          type: "order_cancelled",
+          label: "Cliente requerido",
+          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+          message: "Para crear una orden a crédito, el cliente debe estar registrado.",
+        });
+        return { ok: false };
+      }
+
+      return applyCreditToOrder(order);
+    }
+
+    if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !String(order?.invoice_number || "").trim()) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Comprobante requerido",
+        orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+        message: "Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.",
+      });
+      return { ok: false };
+    }
+
+    setPaymentSaving(true);
+
+    let invoicePaymentUrl = null;
+
+    // PASO 1: Si hay archivo, validar formato y subir a Storage
+    if (receiptFile) {
+      // Validar que sea una imagen válida (JPG/PNG, tamaño razonable)
+      const validation = await validateReceiptFile(receiptFile);
+
+      if (!validation.isValid) {
+        const message = validation.error || "La imagen no cumple con los requisitos. Asegurate de que sea una imagen valida.";
+        setPaymentSaving(false);
+        notif.showActionNotification({
+          type: "order_cancelled",
+          label: "Imagen inválida",
+          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+          message,
+        });
+        return { ok: false, receiptError: message };
+      }
+
+      // Construir ruta: /order-{orderId}/payment-{timestamp}.jpg
+      const filePath = buildPaymentReceiptPath(order.id, receiptFile.name);
+
+      try {
+        // Subir a Storage en el bucket "payment-invoice" (compartido con módulo Admin)
+        invoicePaymentUrl = await uploadOrderAsset({
+          bucket: "payment-invoice",
+          path: filePath,
+          file: receiptFile,
+        });
+
+        if (!invoicePaymentUrl) {
+          const message = "No se pudo obtener la URL de la imagen. Intentalo nuevamente.";
+          setPaymentSaving(false);
+          notif.showActionNotification({
+            type: "order_cancelled",
+            label: "Error al subir",
+            orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+            message,
+          });
+          return { ok: false, receiptError: message };
+        }
+      } catch (uploadError) {
+        const message = uploadError?.message || "No se pudo subir la imagen del comprobante. Intentalo nuevamente.";
+        console.error("Error uploading image:", uploadError);
+        setPaymentSaving(false);
+        notif.showActionNotification({
+          type: "order_cancelled",
+          label: "Error al subir",
+          orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+          message,
+        });
+        return { ok: false, receiptError: message };
+      }
+    }
+
+    // PASO 2: Actualizar BD con nuevo estado de pago
+    // El campo "invoice_payment" es estándar y se usa en Admin también
+    const updatePayload = {
+      payment_status: paymentStatus,
+    };
+
+    if (paymentStatus === PAYMENT_STATUS.PARTIAL) {
+      updatePayload[INVOICE_PAYMENT_FIELD] = null;
+    }
+
+    // Solo incluir invoice_payment si hay URL final de pago completo
+    if (invoicePaymentUrl) {
+      updatePayload[INVOICE_PAYMENT_FIELD] = invoicePaymentUrl;
+    }
+
+    const { data: updatedOrder, error: updateError } = await supabase
+        .rpc("quote_set_order_payment", {
+          p_order_id: order.id,
+          p_payment_status: updatePayload.payment_status,
+          p_invoice_payment: updatePayload[INVOICE_PAYMENT_FIELD] || null,
+          p_expected_updated_at: order.updated_at,
+        });
+
+    setPaymentSaving(false);
+
+    // Manejar errores de actualización
+    if (updateError || !updatedOrder) {
+      console.error("Error updating order:", updateError);
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al confirmar",
+        orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+        message: updateError?.message || "No se pudo guardar los cambios de pago. Verifica la conexión a la base de datos.",
+      });
+      return;
+    }
+
+    // Actualiza estado local con los nuevos datos
+    setOrders(prev => prev.map(item => item.id === updatedOrder.id ? updatedOrder : item));
+    setSelectedOrder(updatedOrder);
+    return { ok: true };
+
+  };
+
+  // Muestra un toast de error cuando el usuario intenta confirmar el pago
+  // sin haber seleccionado una imagen de comprobante.
+  // Se dispara desde QuoteOrderDetailModal.handleSubmit
+  const handlePaymentValidationError = (order, message) => {
+    notif.showActionNotification({
+      type: "order_cancelled",
+      label: "Validación requerida",
+      orderTitle: order?.client_name || order?.description || `Orden #${order?.id?.slice(0, 8).toUpperCase()}`,
+      message,
+    });
+  };
+
+  // Abre el modal para seleccionar un impresor antes de enviar a producción.
+  const handleOpenProductionModal = async (order) => {
+    if (!order?.id) return;
+
+    const hydratedOrder = await fetchOrderWithProductionFiles(order?.id);
+    const nextOrder = mergeOrderWithProductionFiles(order, hydratedOrder);
+
+    setOrders(prev => prev.map(item => item.id === nextOrder.id ? mergeOrderWithProductionFiles(item, nextOrder) : item));
+    setSelectedOrder(prev => prev?.id === nextOrder.id ? mergeOrderWithProductionFiles(prev, nextOrder) : prev);
+    setForwardToProductionOrder(nextOrder);
+  };
+
+  // Envía la orden a producción asignándola al impresor seleccionado.
+  const handleConfirmSendToProduction = async (areaAssignments) => {
+    if (!forwardToProductionOrder) return;
+
+    setProductionSaving(true);
+
+    const { data: updatedOrder, error } = await supabase
+      .rpc("send_order_to_production", {
+        p_order_id: forwardToProductionOrder.id,
+        p_area_assignments: areaAssignments,
+      });
+
+    setProductionSaving(false);
+
+    if (error || !updatedOrder) {
+      console.error("Error moving to production:", error);
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al enviar",
+        orderTitle: forwardToProductionOrder.client_name || forwardToProductionOrder.description || `Orden #${forwardToProductionOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: error?.message || "No se pudo enviar la orden a producción.",
+      });
+      return;
+    }
+
+    const nextOrder = {
+      ...forwardToProductionOrder,
+      ...updatedOrder,
+      order_production_files: updatedOrder.order_production_files || forwardToProductionOrder.order_production_files,
+    };
+
+    setOrders(prev => prev.map(item => item.id === nextOrder.id ? { ...item, ...nextOrder } : item));
+    setSelectedOrder(nextOrder);
+    setForwardToProductionOrder(null);
+    if (user?.id) {
+      await fetchOrdersRef.current(user.id, true);
+    }
+  };
+
+  // Archiva órdenes en el campo específico del rol Quote.
+  const handleConfirmArchive = async () => {
+    if (!archivingOrder) return;
+    if (!canArchiveQuoteOrder(archivingOrder, user?.id)) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Archivado no permitido",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "Solo puedes archivar órdenes con el pago confirmado.",
+      });
+      return;
+    }
+
+    setArchiveLoading(true);
+    const { error } = await archiveOrder(archivingOrder, ARCHIVE_MODULES.QUOTE);
+    setArchiveLoading(false);
+
+    if (error) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al archivar",
+        orderTitle: archivingOrder.client_name || archivingOrder.description || `Orden #${archivingOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: "No se pudo archivar la orden.",
+      });
+      return;
+    }
+
+    const nextOrder = { ...archivingOrder, is_archived_quote: true };
+    setOrders(prev => prev.map(order => order.id === archivingOrder.id ? nextOrder : order));
+    if (selectedOrder?.id === archivingOrder.id) {
+      setSelectedOrder(nextOrder);
+    }
+
+    setArchivingOrder(null);
+  };
+
+  // Devuelve una orden al diseñador para correcciones.
+  const handleConfirmReturn = async (reason) => {
+    if (!returningOrder) return;
+
+    setReturnLoading(true);
+    const isExternalDesign = returningOrder.order_design_type === "EXTERNAL_DESING";
+    const { data: updatedOrder, error } = await supabase.rpc("return_quote_order_for_correction", {
+      p_order_id: returningOrder.id,
+      p_reason: reason,
+    });
+
+    setReturnLoading(false);
+
+    if (error) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Error al devolver",
+        orderTitle: returningOrder.client_name || returningOrder.description || `Orden #${returningOrder.id?.slice(0, 8).toUpperCase()}`,
+        message: isExternalDesign
+          ? "No se pudo devolver la orden al vendedor."
+          : "No se pudo devolver la orden al diseñador.",
+      });
+      return;
+    }
+
+    const nextOrder = updatedOrder || returningOrder;
+    setOrders(prev => (
+      isExternalDesign
+        ? prev.filter(order => order.id !== returningOrder.id)
+        : prev.map(order => order.id === returningOrder.id ? nextOrder : order)
+    ));
+    if (selectedOrder?.id === returningOrder.id) {
+      setSelectedOrder(nextOrder);
+    }
+
+    setReturningOrder(null);
+    await orderReturns.refresh();
+  };
+
+  const handleAcknowledgeReturn = async (handoff) => {
+    if (!handoff?.id) return;
+    const { error } = await supabase.rpc("acknowledge_order_return", { p_handoff_id: handoff.id });
+    if (error) {
+      showCreditFeedback("error", "No se pudo confirmar", error.message || "Intenta nuevamente.");
+      return;
+    }
+    await orderReturns.refresh();
+    await notif.refresh();
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/");
+  };
+
+  // Filtros principales del módulo, alineados con la lógica de Designer.
+  const quoteCreditOrdersById = useMemo(() => {
+    const byId = new Map();
+    [...creditOrders, ...orders].forEach((order) => {
+      if (order?.id) byId.set(order.id, order);
+    });
+    return Object.fromEntries(byId);
+  }, [creditOrders, orders]);
+
+  const clientsById = useMemo(() => Object.fromEntries(clients.map(client => [client.id, client])), [clients]);
+
+  const creditRows = useMemo(() => (
+    accountsReceivable
+      .filter(item => item?.client_id)
+      .map(item => {
+        const order = quoteCreditOrdersById[item.order_id] || null;
+        const client = clientsById[item.client_id] || null;
+        return {
+          ...item,
+          order,
+          client,
+          clientName: client?.name || order?.client_name || "Cliente sin nombre",
+          clientPhone: client?.phone || order?.client_contact || "---",
+          invoiceNumber: item.invoice_number || order?.invoice_number || "---",
+          creditIssuedAt: getCreditIssuedAt({ ...item, order }),
+        };
+      })
+  ), [accountsReceivable, clientsById, quoteCreditOrdersById]);
+
+  const buildCreditClientGroups = useCallback((rows) => {
+    const grouped = rows.reduce((acc, item) => {
+      const clientKey = item.client_id;
+      const current = acc[clientKey] || {
+        client: item.client || { id: item.client_id, name: item.clientName, phone: item.clientPhone },
+        invoices: [],
+        pendingCount: 0,
+        oldestIssuedAt: null,
+        newestIssuedAt: null,
+      };
+      const issuedAt = item.creditIssuedAt || null;
+      const issuedTime = issuedAt ? new Date(issuedAt).getTime() : null;
+      const oldestTime = current.oldestIssuedAt ? new Date(current.oldestIssuedAt).getTime() : null;
+      const newestTime = current.newestIssuedAt ? new Date(current.newestIssuedAt).getTime() : null;
+
+      acc[clientKey] = {
+        ...current,
+        invoices: [...current.invoices, item],
+        pendingCount: current.pendingCount + (isOpenCreditReceivable(item) ? 1 : 0),
+        oldestIssuedAt: issuedTime && (!oldestTime || issuedTime < oldestTime) ? issuedAt : current.oldestIssuedAt,
+        newestIssuedAt: issuedTime && (!newestTime || issuedTime > newestTime) ? issuedAt : current.newestIssuedAt,
+      };
+      return acc;
+    }, {});
+
+    return Object.values(grouped)
+      .map(group => ({
+        ...group,
+        invoices: [...group.invoices].sort((a, b) => new Date(b.issued_at || b.created_at || 0) - new Date(a.issued_at || a.created_at || 0)),
+      }))
+      .sort((a, b) => String(a.client?.name || "").localeCompare(String(b.client?.name || "")));
+  }, []);
+
+  const allCreditClientGroups = useMemo(() => buildCreditClientGroups(creditRows), [buildCreditClientGroups, creditRows]);
+
+  const creditClientGroups = useMemo(() => {
+    const q = normalizeText(creditSearch);
+    const filtered = creditRows.filter(item => {
+      const matchesStatus = creditStatusFilter === "all"
+        || (creditStatusFilter === "open" && isOpenCreditReceivable(item))
+        || item.status === creditStatusFilter;
+      const matchesSearch = !q || [
+        item.clientName,
+        item.clientPhone,
+        item.invoiceNumber,
+        item.order_id,
+        item.order?.id,
+      ].some(value => normalizeText(value).includes(q));
+      return matchesStatus && matchesSearch;
+    });
+
+    return buildCreditClientGroups(filtered);
+  }, [buildCreditClientGroups, creditRows, creditSearch, creditStatusFilter]);
+
+  const creditDetailClient = useMemo(() => (
+    allCreditClientGroups.find(group => group.client?.id === creditDetailClientId) || null
+  ), [allCreditClientGroups, creditDetailClientId]);
+
+  const creditPendingInvoicesCount = useMemo(() => (
+    creditRows.filter(item => isOpenCreditReceivable(item)).length
+  ), [creditRows]);
+
+  const creditPendingClientCount = useMemo(() => (
+    new Set(creditRows.filter(item => isOpenCreditReceivable(item)).map(item => item.client_id)).size
+  ), [creditRows]);
+
+  const creditPendingClientGroups = useMemo(() => (
+    allCreditClientGroups.filter(group => group.pendingCount > 0)
+  ), [allCreditClientGroups]);
+
+  useEffect(() => {
+    let active = true;
+    if (!user?.id || creditPendingInvoicesCount === 0) {
+      setCreditPendingAlertDue(false);
+      setCreditPendingAlertLoading(false);
+      return undefined;
+    }
+
+    setCreditPendingAlertLoading(true);
+    supabase.rpc("credit_pending_alert_is_due")
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (active) setCreditPendingAlertDue(data === true);
+      })
+      .catch(error => {
+        console.warn("No se pudo consultar el aviso de créditos pendientes:", error?.message || error);
+        if (active) setCreditPendingAlertDue(false);
+      })
+      .finally(() => {
+        if (active) setCreditPendingAlertLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [creditPendingInvoicesCount, user?.id]);
+
+  const acknowledgeCreditPendingAlert = async ({ review = false } = {}) => {
+    setCreditPendingAlertSaving(true);
+    try {
+      const { error } = await supabase.rpc("acknowledge_credit_pending_alert");
+      if (error) throw error;
+      setCreditPendingAlertDue(false);
+      if (review) {
+        setActiveTab("credits");
+        setCreditStatusFilter("open");
+        setCreditView("list");
+      }
+    } catch (error) {
+      showCreditFeedback("error", "No se pudo guardar el aviso", error?.message || "Intenta nuevamente.");
+    } finally {
+      setCreditPendingAlertSaving(false);
+    }
+  };
+
+  const creditCustomReminderRows = useMemo(() => (
+    creditCustomReminders.map((reminder) => {
+      const client = clientsById[reminder.client_id] || { id: reminder.client_id, name: "Cliente sin nombre", phone: "" };
+      const invoices = creditRows.filter(item => item.client_id === reminder.client_id && isOpenCreditReceivable(item));
+
+      return { ...reminder, client, invoices };
+    })
+  ), [clientsById, creditCustomReminders, creditRows]);
+
+  const dueCreditCustomReminders = useMemo(() => {
+    const dismissed = new Set(creditReminderDismissedIds);
+    return creditCustomReminderRows
+      .filter((reminder) => (
+        ["scheduled", "due"].includes(reminder.status)
+        && reminder.remind_at
+        && creditReminderNow !== null
+        && new Date(reminder.remind_at).getTime() <= creditReminderNow
+        && !dismissed.has(reminder.id)
+      ))
+      .sort((a, b) => new Date(a.remind_at || 0) - new Date(b.remind_at || 0));
+  }, [creditCustomReminderRows, creditReminderDismissedIds, creditReminderNow]);
+
+  useEffect(() => {
+    if (creditReminderNow === null) return undefined;
+
+    const dismissed = new Set(creditReminderDismissedIds);
+    const serverNow = getCreditReminderServerNow(creditReminderServerClockRef.current) ?? creditReminderNow;
+    const nextReminderTime = creditCustomReminderRows
+      .filter((reminder) => (
+        ["scheduled", "due"].includes(reminder.status)
+        && reminder.remind_at
+        && !dismissed.has(reminder.id)
+      ))
+      .map((reminder) => new Date(reminder.remind_at).getTime())
+      .filter((time) => Number.isFinite(time))
+      .sort((a, b) => a - b)
+      .find((time) => time > serverNow);
+
+    if (!nextReminderTime) return undefined;
+
+    const delay = Math.min(Math.max(nextReminderTime - serverNow + 250, 0), CREDIT_REMINDER_MAX_TIMEOUT_MS);
+    const timeout = setTimeout(async () => {
+      await syncCreditReminderServerTime();
+      await dispatchDueCreditReminderNotifications();
+      fetchCreditCustomReminders();
+    }, delay);
+
+    return () => clearTimeout(timeout);
+  }, [creditCustomReminderRows, creditReminderDismissedIds, creditReminderNow, dispatchDueCreditReminderNotifications, fetchCreditCustomReminders, syncCreditReminderServerTime]);
+
+  const openCreditOrderIds = useMemo(() => new Set(
+    creditRows.filter(item => isOpenCreditReceivable(item) && item.order_id).map(item => item.order_id)
+  ), [creditRows]);
+
+  useEffect(() => {
+    setSelectedCreditOrderIds(prev => {
+      let changed = false;
+      const next = {};
+
+      Object.entries(prev).forEach(([clientId, orderIds]) => {
+        const keptOrderIds = orderIds.filter(orderId => openCreditOrderIds.has(orderId));
+        if (keptOrderIds.length !== orderIds.length) changed = true;
+        if (keptOrderIds.length > 0) next[clientId] = keptOrderIds;
+      });
+
+      return changed ? next : prev;
+    });
+  }, [openCreditOrderIds]);
+
+  useEffect(() => {
+    if (creditView !== "detail" || !creditDetailClientId) return;
+    if (creditDetailClient) return;
+
+    setCreditView("list");
+    setCreditDetailClientId(null);
+  }, [creditDetailClient, creditDetailClientId, creditView]);
+
+  const toggleCreditOrderSelection = (clientId, orderId) => {
+    if (!clientId || !orderId) return;
+    setSelectedCreditOrderIds(prev => {
+      const current = new Set(prev[clientId] || []);
+      if (current.has(orderId)) current.delete(orderId);
+      else current.add(orderId);
+      return { ...prev, [clientId]: [...current] };
+    });
+  };
+
+  const toggleAllCreditOrdersForClient = (clientId, invoices) => {
+    if (!clientId) return;
+    const openOrderIds = invoices.filter(item => isOpenCreditReceivable(item) && item.order_id).map(item => item.order_id);
+    setSelectedCreditOrderIds(prev => {
+      const selected = prev[clientId] || [];
+      const allSelected = openOrderIds.length > 0 && openOrderIds.every(orderId => selected.includes(orderId));
+      return { ...prev, [clientId]: allSelected ? [] : openOrderIds };
+    });
+  };
+
+  const openCreditSettlementModal = ({ client, orderIds, invoices, mode }) => {
+    const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
+    if (uniqueOrderIds.length === 0) {
+      showCreditFeedback("error", "Sin facturas pendientes", "No hay facturas pendientes para cerrar.");
+      return;
+    }
+
+    setCreditSettlementTarget({
+      client,
+      orderIds: uniqueOrderIds,
+      invoices: [...new Set((invoices || []).filter(Boolean))],
+      mode,
+    });
+    setCreditSettlementNotes("");
+  };
+
+  const handleConfirmCreditSettlement = async () => {
+    const target = creditSettlementTarget;
+    if (!target) return;
+
+    setCreditSettlementLoading(true);
+    const { error } = await supabase.rpc("settle_credit_orders", {
+      p_order_ids: target.orderIds,
+      p_receipt_url: null,
+      p_notes: creditSettlementNotes || null,
+    });
+    setCreditSettlementLoading(false);
+
+    if (error) {
+      showCreditFeedback("error", "Crédito no cerrado", error.message || "No se pudo registrar el cierre del crédito.");
+      return;
+    }
+
+    if (target.client?.id) {
+      setSelectedCreditOrderIds(prev => ({ ...prev, [target.client.id]: [] }));
+    }
+    setCreditSettlementTarget(null);
+    setCreditSettlementNotes("");
+    await Promise.all([fetchOrdersRef.current(user?.id, true), fetchAccountsReceivable()]);
+    showCreditFeedback("success", "Crédito saldado", target.orderIds.length === 1 ? "Factura marcada como saldada correctamente." : "Facturas marcadas como saldadas correctamente.");
+  };
+
+  const openCreditReminderModal = (client, invoices = []) => {
+    if (!client?.id) {
+      showCreditFeedback("error", "Cliente requerido", "Selecciona un cliente válido para crear el recordatorio.");
+      return;
+    }
+
+    const openInvoices = invoices.filter(item => isOpenCreditReceivable(item) && item.order_id);
+    const serverNow = getCreditReminderServerNow(creditReminderServerClockRef.current) ?? creditReminderNow;
+    setCreditReminderTarget({ client, invoices: openInvoices });
+    setCreditReminderForm({
+      remind_at: getDefaultCreditReminderAt(serverNow),
+      note: "",
+      orderIds: [...new Set(openInvoices.map(item => item.order_id).filter(Boolean))],
+    });
+  };
+
+  const closeCreditReminderModal = () => {
+    setCreditReminderTarget(null);
+    setCreditReminderForm({ remind_at: "", note: "", orderIds: [] });
+  };
+
+  const handleSaveCreditReminder = async () => {
+    if (!user?.id) {
+      showCreditFeedback("error", "Sesión no válida", "No se pudo identificar el usuario actual.");
+      return;
+    }
+    if (!creditReminderTarget?.client?.id) {
+      showCreditFeedback("error", "Cliente requerido", "Selecciona un cliente para el recordatorio.");
+      return;
+    }
+
+    if (!(creditReminderTarget.invoices || []).some(isOpenCreditReceivable)) {
+      showCreditFeedback("error", "Sin pendientes", "El cliente ya no tiene órdenes a crédito pendientes.");
+      return;
+    }
+
+    const reminderNote = (creditReminderForm.note || "").trim();
+    if (!reminderNote) {
+      showCreditFeedback("error", "Nota requerida", "Describe la razón del recordatorio antes de continuar.");
+      return;
+    }
+
+    const reminderAtValue = (creditReminderForm.remind_at || "").trim();
+    if (!reminderAtValue) {
+      showCreditFeedback("error", "Fecha requerida", "Selecciona una fecha antes de continuar.");
+      return;
+    }
+
+    const remindAtMs = zonedDatetimeLocalToUtcMs(reminderAtValue, CREDIT_REMINDER_TIME_ZONE);
+    if (!Number.isFinite(remindAtMs)) {
+      showCreditFeedback("error", "Fecha inválida", "La fecha del recordatorio no es válida.");
+      return;
+    }
+
+    const serverClock = await syncCreditReminderServerTime();
+    if (!serverClock) {
+      showCreditFeedback("error", "Hora no validada", "No se pudo validar la hora del servidor. Intenta nuevamente.");
+      return;
+    }
+
+    const serverNowMs = getCreditReminderServerNow(serverClock);
+    if (serverNowMs !== null && remindAtMs <= serverNowMs) {
+      showCreditFeedback("error", "Fecha futura requerida", "Selecciona una fecha y hora futura para el recordatorio.");
+      return;
+    }
+
+    setCreditReminderSaving(true);
+    try {
+      const { error } = await supabase.rpc("create_credit_client_reminder", {
+        p_client_id: creditReminderTarget.client.id,
+        p_remind_at: new Date(remindAtMs).toISOString(),
+        p_note: reminderNote,
+      });
+
+      if (error) throw error;
+
+      closeCreditReminderModal();
+      await syncCreditReminderServerTime();
+      await fetchCreditCustomReminders();
+      showCreditFeedback("success", "Recordatorio creado", "Recordatorio de crédito creado correctamente.");
+    } catch (error) {
+      showCreditFeedback("error", "Recordatorio no creado", error?.message || "No se pudo crear el recordatorio.");
+    } finally {
+      setCreditReminderSaving(false);
+    }
+  };
+
+  const dismissDueCreditReminders = async (reminders = dueCreditCustomReminders) => {
+    const ids = reminders.map(item => item.id).filter(Boolean);
+    if (ids.length === 0) return;
+
+    setCreditReminderDismissedIds(prev => [...new Set([...prev, ...ids])]);
+    await supabase.rpc("touch_credit_custom_reminders", { p_reminder_ids: ids });
+  };
+
+  const handleAcknowledgeCreditReminder = async (reminderId) => {
+    if (!reminderId) return;
+    setCreditReminderCompletingId(reminderId);
+    try {
+      const { error } = await supabase.rpc("acknowledge_credit_custom_reminder", {
+        p_reminder_id: reminderId,
+      });
+
+      if (error) throw error;
+      setCreditReminderDismissedIds(prev => [...new Set([...prev, reminderId])]);
+      await fetchCreditCustomReminders();
+      showCreditFeedback("success", "Recordatorio atendido", "Recordatorio marcado como atendido.");
+    } catch (error) {
+      showCreditFeedback("error", "Recordatorio no actualizado", error?.message || "No se pudo marcar el recordatorio.");
+    } finally {
+      setCreditReminderCompletingId(null);
+    }
+  };
+
+  const handleReviewCreditReminder = async (reminder) => {
+    if (!reminder) return;
+    await dismissDueCreditReminders([reminder]);
+    setActiveTab("credits");
+    setCreditStatusFilter("open");
+    if (reminder.client_id) {
+      setCreditDetailClientId(reminder.client_id);
+      setCreditView("detail");
+    } else {
+      setCreditView("list");
+    }
+  };
+
+  const filteredOrders = useMemo(() => {
+    const query = normalizeText(search);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    const threeDaysAgo = new Date(now);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    return orders.filter(order => {
+      const searchableValues = [
+        order.client_name,
+        order.description,
+        order.invoice_number,
+        order.id,
+        order.material,
+        resolveSellerName(order, sellerDirectory),
+      ];
+
+      const orderTypeValue = String(order.order_type || "normal").trim().toLowerCase();
+      const matchesType =
+        filterType === "all" ||
+        (filterType === "911" && (orderTypeValue === "orden 911" || orderTypeValue.includes("911"))) ||
+        (filterType === "normal" && orderTypeValue !== "orden 911" && !orderTypeValue.includes("911"));
+
+      const matchesSearch = !query || searchableValues.some(value => normalizeText(value).includes(query));
+      const matchesStatus = filterStatus === "all" || isOrderStatus(order.status, filterStatus);
+      const matchesPayment = filterPayment === "all" || order.payment_status === filterPayment;
+      const matchesClient = orderMatchesClientFilter(order, filterClient);
+      const sellerId = resolveSellerId(order);
+      const matchesSeller = filterSeller === "all" || sellerId === filterSeller;
+      const matchesOverdue = filterOverdue === "all" || isOrderOverdue(order);
+      const matchesArchive =
+        filterArchive === "all" ||
+        (filterArchive === "active" && !order.is_archived_quote) ||
+        (filterArchive === "archived" && order.is_archived_quote) ||
+        (filterArchive === "cancelled" && isOrderStatus(order.status, ORDER_STATUS.CANCELLED)) ||
+        (filterArchive === "returned" && isReturnedOrder(order));
+
+      const createdAt = new Date(order.created_at);
+      const matchesDate =
+        filterDate === "all" ||
+        (filterDate === "today" && createdAt >= startOfToday) ||
+        (filterDate === "yesterday" && createdAt >= startOfYesterday && createdAt < startOfToday) ||
+        (filterDate === "3days" && createdAt >= threeDaysAgo) ||
+        (filterDate === "7days" && createdAt >= sevenDaysAgo) ||
+        (filterDate === "month" && createdAt >= startOfMonth);
+
+      return matchesType && matchesSearch && matchesStatus && matchesPayment && matchesClient && matchesSeller && matchesArchive && matchesDate && matchesOverdue;
+    });
+  }, [orders, search, filterType, filterStatus, filterPayment, filterClient, filterSeller, filterOverdue, filterArchive, filterDate, sellerDirectory]);
+
+  const effectivePerPage = viewMode === "cards" ? 10 : PER_PAGE;
+  const totalPages = Math.ceil(filteredOrders.length / effectivePerPage) || 1;
+  const safePage = Math.min(page, totalPages);
+  const paginatedOrders = filteredOrders.slice((safePage - 1) * effectivePerPage, safePage * effectivePerPage);
+
+  useEffect(() => { setPage(1); }, [filteredOrders.length]);
+  useEffect(() => { setPage(1); }, [viewMode]);
+
+  const activeOrdersCount = orders.filter(o => !o.is_archived_quote).length;
+  const activeOrders = useMemo(() => orders.filter(o => !o.is_archived_quote), [orders]);
+  const archivedOrders = useMemo(() => orders.filter(o => o.is_archived_quote), [orders]);
+  const cancelledOrders = useMemo(() => orders.filter(o => isOrderStatus(o.status, ORDER_STATUS.CANCELLED)), [orders]);
+  const returnedOrders = useMemo(() => orders.filter(o => isReturnedOrder(o)), [orders]);
+  const pendingPaymentCount = orders.filter(o => o.payment_status !== "pagado" && !o.is_archived_quote).length;
+  const partialPaymentCount = orders.filter(o => isPaymentPartial(o.payment_status)).length;
+  const paidTodayCount = orders.filter(o => {
+    if (!isPaymentPaid(o.payment_status)) return false;
+    const updated = new Date(o.updated_at);
+    const now = new Date();
+    return updated.toDateString() === now.toDateString();
+  }).length;
+
+  const CARD_ACCENTS = [
+    { color: "#0284C7", bg: "#E0F2FE" },
+    { color: "#F59E0B", bg: "#FEF3C7" },
+    { color: "#10B981", bg: "#DCFCE7" },
+    { color: "#8B5CF6", bg: "#EDE9FE" },
+    { color: "#F5A215", bg: "#FEF3C7" },
+  ];
+
+  const metrics = [
+    { label: "Órdenes asignadas", value: orders.length, icon: <Icons.Orders />, accentIdx: 0, sub: "Activas en caja", subColor: "#1E40AF" },
+    { label: "Pendientes de pago", value: orders.filter(order => order.payment_status !== "pagado" && !order.is_archived_quote).length, icon: <Icons.Money />, accentIdx: 1, sub: "Requieren seguimiento" },
+    { label: "Pagadas", value: orders.filter(order => order.payment_status === "pagado").length, icon: <Icons.Check />, accentIdx: 2, sub: "Completadas" },
+    { label: "Crédito pendiente", value: accountsReceivableLoading ? "..." : creditPendingInvoicesCount, icon: <Icons.Receipt />, accentIdx: 3, sub: "Por cobrar" },
+    { label: "Archivadas", value: orders.filter(order => order.is_archived_quote).length, icon: <Icons.Archive />, accentIdx: 4, sub: "Solo consulta" },
+  ];
+
+  function MetricCard({ icon, label, value, sub, subColor, accentIdx = 0 }) {
+    const acc = CARD_ACCENTS[accentIdx];
+    return (
+      <article className="pq-metric-card">
+        <div className="pq-metric-icon" style={{ background: acc.bg, color: acc.color }}>{icon}</div>
+        <div className="pq-metric-value">{value}</div>
+        <div className="pq-metric-label">{label}</div>
+        {sub && <div className="pq-metric-sub" style={{ color: subColor || acc.color }}>{sub}</div>}
+      </article>
+    );
+  }
+
+  const getSidebarBadge = (isLoading, value) => (isLoading ? "..." : value);
+
+  const menuItems = [
+    { id: "dashboard", label: "Resumen", icon: <Icons.Dashboard /> },
+    { id: "orders", label: "Mis órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loading, orders.filter(order => !order.is_archived_quote).length) },
+    { id: "credits", label: "Créditos", icon: <Icons.Receipt />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
+    { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount },
+    { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
+  ];
+
+  const dashboardRecentOrders = orders
+    .filter(order => !order.is_archived_quote)
+    .slice(0, 5);
+
+  return (
+    <div className="pq-root">
+      <Sidebar
+        isOpen={sidebarOpen}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        role="Caja"
+        userName={profile?.name || "Usuario Caja"}
+        menuItems={menuItems}
+        onLogout={handleLogout}
+      />
+
+      <main className="pq-main">
+        <header className="pq-header">
+          <div className="pq-header-left">
+            <button className="pq-icon-btn" onClick={() => setSidebarOpen(prev => !prev)}>
+              {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
+            </button>
+            <div>
+              {/* Nombre del apartado de la pantalla */}
+              <div className="pq-header-title">
+                {activeTab === "dashboard" ? "Panel Principal" : activeTab === "credits" ? "Gestión de Créditos" : activeTab === "notifications" ? "Notificaciones" : activeTab === "profile" ? "Mi Perfil" : "Mis órdenes de caja"}
+              </div>
+              <div className="pq-page-date">
+                {new Date().toLocaleDateString("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+              </div>
+            </div>
+          </div>
+
+          <div className="pq-header-actions">
+            <button className="pq-icon-btn" onClick={() => fetchOrdersRef.current(user?.id)} title="Recargar" aria-label="Recargar">
+              <Icons.Refresh />
+            </button>
+            <button className="pq-header-client-btn" onClick={() => setShowNewClientModal(true)} title="Agregar nuevo cliente">
+              <Icons.Plus /> Nuevo Cliente
+            </button>
+            <button className="pq-header-client-btn" onClick={() => setActiveTab("orders")} title="Gestionar órdenes">
+              <Icons.Orders /> Gestionar Órdenes
+            </button>
+            <NotificationCenter
+              notifications={notif.notifications}
+              unreadCount={notif.unreadCount}
+              toasts={notif.toasts}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDismissToast={notif.dismissToast}
+              onViewAll={() => setActiveTab("notifications")}
+            />
+          </div>
+        </header>
+
+        {activeTab === "dashboard" && (
+          <section className="pq-section">
+            <div className="pq-greeting">
+              <div className="pq-greeting-copy">
+                <h2>Bienvenido, <span>{profile?.name || "Caja"}</span></h2>
+                <p>Aquí tienes el resumen de tu actividad de hoy.</p>
+                <div className="pq-greeting-badges">
+                  <div className="pq-greeting-count">
+                    <Icons.Orders />
+                    <strong>{activeOrdersCount}</strong> Órdenes activas
+                  </div>
+                  <div className="pq-greeting-count pq-greeting-count--pending">
+                    <Icons.Money />
+                    <strong>{pendingPaymentCount}</strong> Pendientes de pago
+                  </div>
+                  <div className="pq-greeting-count pq-greeting-count--partial">
+                    <Icons.Clock />
+                    <strong>{partialPaymentCount}</strong> Pago parcial
+                  </div>
+                  <div className="pq-greeting-count pq-greeting-count--credit">
+                    <Icons.Receipt />
+                    <strong>{accountsReceivableLoading ? "..." : creditPendingInvoicesCount}</strong> Crédito pendiente
+                  </div>
+                  <div className="pq-greeting-count pq-greeting-count--paid-today">
+                    <Icons.Check />
+                    <strong>{paidTodayCount}</strong> Pagadas hoy
+                  </div>
+                </div>
+              </div>
+              <div className="pq-greeting-actions">
+                <button type="button" className="pq-header-client-btn" onClick={() => setShowNewClientModal(true)}>
+                  <Icons.Plus />
+                  Nuevo Cliente
+                </button>
+              </div>
+            </div>
+
+            <div className="pq-metrics-grid">
+              {metrics.map((m, i) => (
+                <MetricCard key={i} {...m} />
+              ))}
+            </div>
+
+            <section className="pa-panel acm-table-panel pq-recent-panel">
+              <div className="pa-panel-stripe" />
+              <div className="pa-panel-head pa-panel-head-results pq-panel-head">
+                <div>
+                  <h2>Órdenes recientes</h2>
+                  <p className="acm-panel-description">Las 5 órdenes más recientes del área de caja.</p>
+                </div>
+                <button className="pq-link-btn" onClick={() => setActiveTab("orders")}>
+                  <span>Ver todas</span>
+                  <Icons.ArrowRight />
+                </button>
+              </div>
+              <div className="ps-table-wrap pq-recent-table-wrap">
+                <table className="ps-table pq-table pq-recent-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Tipo de orden</th>
+                      <th>Estado</th>
+                      <th>Pago</th>
+                      <th aria-label="Acciones" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr><td colSpan={5} className="ps-table-empty pq-table-empty">Cargando órdenes...</td></tr>
+                    ) : dashboardRecentOrders.length === 0 ? (
+                      <tr><td colSpan={5} className="ps-table-empty pq-table-empty">No hay órdenes asignadas actualmente.</td></tr>
+                    ) : (
+                      dashboardRecentOrders.map(order => {
+                        return (
+                          <tr key={order.id} className="row-hover pq-order-row"
+                              onClick={() => handleViewOrder(order)}
+                              tabIndex={0}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleViewOrder(order); } }}>
+                            <td className="td-pad td-name">
+                              <div className="pq-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                                <span className="pq-client-cell-main">
+                                  <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                </span>
+                              </div>
+                            </td>
+                            <td className="td-pad td-order-type">
+                              {String(order.order_type || "normal").trim().toLowerCase() === "orden 911"
+                                ? <span className="pq-order-type-badge pq-order-type-badge--alert">911</span>
+                                : <span className="pq-order-type-badge pq-order-type-badge--normal">Normal</span>
+                              }
+                            </td>
+                            <td className="td-pad">
+                              <div className="pq-status-stack">
+                                <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
+                                {isReturnedOrder(order) && <ReturnedBadge compact />}
+                                <StatusBadge status={order.status} className="pq-badge" order={order} />
+                              </div>
+                            </td>
+                            <td className="td-pad">
+                              <PaymentBadge status={order.payment_status} className="pq-badge" />
+                            </td>
+                            <td className="td-pad td-actions" data-row-action>
+                            <div className="table-actions" data-row-action>
+                              <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
+                                <Icons.Eye />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        )}
+        {activeTab === "credits" && creditView === "list" && (
+          <section className="pq-section pq-credit-section">
+            <div className="pq-filters">
+              <div className="pq-search-box">
+                <Icons.Search />
+                <input
+                  type="text"
+                  className="pq-search-input"
+                  placeholder="Buscar por cliente, teléfono, factura u orden..."
+                  value={creditSearch}
+                  onChange={event => setCreditSearch(event.target.value)}
+                />
+              </div>
+              <select className="pq-input" value={creditStatusFilter} onChange={event => setCreditStatusFilter(event.target.value)}>
+                <option value="all">Todos</option>
+                <option value="open">Pendientes</option>
+                <option value="resolved">Resueltas</option>
+              </select>
+              <span className="pq-results-count">{creditClientGroups.length} cliente{creditClientGroups.length !== 1 ? "s" : ""}</span>
+            </div>
+
+            <div className="pq-credit-metrics" aria-label="Resumen de créditos">
+              <article className="pq-credit-summary-card">
+                <span className="pq-credit-summary-icon client"><Icons.User /></span>
+                <div><strong>{creditClientGroups.length}</strong><span>Clientes filtrados</span></div>
+              </article>
+              <article className="pq-credit-summary-card">
+                <span className="pq-credit-summary-icon pending"><Icons.Receipt /></span>
+                <div><strong>{creditPendingInvoicesCount}</strong><span>Pendientes</span></div>
+              </article>
+              <article className="pq-credit-summary-card">
+                <span className="pq-credit-summary-icon followup"><Icons.AlertCircle /></span>
+                <div><strong>{creditPendingClientCount}</strong><span>Clientes con pendientes</span></div>
+              </article>
+            </div>
+
+            {creditPendingInvoicesCount > 0 && (
+              <div className="pq-credit-pending-banner" role="status">
+                <span className="pq-credit-pending-banner-icon"><Icons.AlertCircle /></span>
+                <div>
+                  <strong>{creditPendingInvoicesCount} factura{creditPendingInvoicesCount === 1 ? "" : "s"} a crédito pendiente{creditPendingInvoicesCount === 1 ? "" : "s"}</strong>
+                  <span>{creditPendingClientCount} cliente{creditPendingClientCount === 1 ? "" : "s"} requiere{creditPendingClientCount === 1 ? "" : "n"} seguimiento de Caja.</span>
+                </div>
+                <button className="pq-btn pq-btn-secondary" onClick={() => setCreditStatusFilter("open")}>
+                  Revisar créditos pendientes
+                </button>
+              </div>
+            )}
+
+            <div className="pq-panel pq-credit-panel">
+              <div className="pq-panel-head">
+                <div>
+                  <span className="pq-section-kicker">Seguimiento</span>
+                  <h2>Créditos agrupados por cliente</h2>
+                </div>
+                <span className="pq-orders-count">{creditClientGroups.length} cliente{creditClientGroups.length === 1 ? "" : "s"}</span>
+              </div>
+
+              <div className="pq-credit-table-wrap">
+                <table className="pq-credit-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Número</th>
+                      <th>Facturas</th>
+                      <th>Fechas</th>
+                      <th>Estado</th>
+                      <th>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accountsReceivableLoading || clientsLoading ? (
+                      <tr>
+                        <td colSpan={6} className="pq-credit-empty">Cargando créditos...</td>
+                      </tr>
+                    ) : creditClientGroups.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="pq-credit-empty">No hay créditos que coincidan con los filtros.</td>
+                      </tr>
+                    ) : (
+                      creditClientGroups.map(group => {
+                        const clientId = group.client?.id;
+                        const openInvoices = group.invoices.filter(item => isOpenCreditReceivable(item));
+                        const openClientDetail = () => {
+                          if (!clientId) return;
+                          setCreditDetailClientId(clientId);
+                          setCreditView("detail");
+                        };
+                        const handleClientRowKeyDown = (event) => {
+                          if (event.key !== "Enter" && event.key !== " ") return;
+                          event.preventDefault();
+                          openClientDetail();
+                        };
+                        return (
+                          <tr
+                            key={clientId}
+                            className="pq-credit-client-row"
+                            onClick={openClientDetail}
+                            onKeyDown={handleClientRowKeyDown}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Ver facturas de ${group.client?.name || "cliente sin nombre"}`}
+                          >
+                            <td>
+                              <div className="acm-client-cell">
+                                <span className="acm-avatar acm-avatar-small">{getInitials(group.client?.name)}</span>
+                                <span>
+                                  <strong>{group.client?.name || "Cliente sin nombre"}</strong>
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              <span className="pq-credit-phone">{formatPhone(group.client?.phone) || "Sin teléfono"}</span>
+                            </td>
+                            <td>
+                              <span className="pq-badge" style={getCreditReceivableStatusStyle(openInvoices.length > 0 ? "open" : "resolved")}>
+                                {group.pendingCount} factura{group.pendingCount === 1 ? "" : "s"}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="pq-credit-date-stack">
+                                <span>Antigua: <strong>{formatCreditDate(group.oldestIssuedAt)}</strong></span>
+                                <span>Reciente: <strong>{formatCreditDate(group.newestIssuedAt)}</strong></span>
+                              </div>
+                            </td>
+                            <td>
+                              <span className="pq-badge" style={group.pendingCount > 0 ? getCreditReceivableStatusStyle("open") : getCreditReceivableStatusStyle("resolved")}>
+                                {group.pendingCount > 0 ? "Con saldo pendiente" : "Sin pendientes"}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="table-actions">
+                                <button
+                                  className="table-action-btn view"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openClientDetail();
+                                  }}
+                                  title="Ver facturas del cliente"
+                                >
+                                  <Icons.Eye />
+                                </button>
+                                {openInvoices.length > 0 && (
+                                  <button
+                                    className="table-action-btn edit"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openCreditReminderModal(group.client, openInvoices);
+                                    }}
+                                    title="Crear recordatorio"
+                                  >
+                                    <Icons.Clock />
+                                  </button>
+                                )}
+                                {openInvoices.length > 0 && (
+                                  <button
+                                    className="table-action-btn success"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openCreditSettlementModal({
+                                        client: group.client,
+                                        orderIds: openInvoices.map((item) => item.order_id),
+                                        invoices: openInvoices.map((item) => item.invoiceNumber),
+                                        mode: "all",
+                                      });
+                                    }}
+                                    title="Marcar todas como saldadas"
+                                  >
+                                    <Icons.Check />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "credits" && creditView === "detail" && creditDetailClient && (
+          <CreditClientDetailView
+            group={creditDetailClient}
+            selectedCreditOrderIds={selectedCreditOrderIds}
+            onToggleSelection={toggleCreditOrderSelection}
+            onToggleAll={toggleAllCreditOrdersForClient}
+            onSettle={openCreditSettlementModal}
+            onCreateReminder={openCreditReminderModal}
+            onViewOrder={handleViewOrder}
+            onBack={() => { setCreditView("list"); setCreditDetailClientId(null); }}
+          />
+        )}
+
+        {activeTab === "orders" && (
+          <section className="pq-section">
+            <div className="pp-filters">
+              <label className="pp-filter-control pp-filter-search">
+                <Icons.Search />
+                <input
+                  type="search"
+                  placeholder="Buscar por cliente, factura, vendedor o descripción..."
+                  value={search}
+                  onChange={event => { setSearch(event.target.value); setPage(1); }}
+                />
+                {search && (
+                  <button type="button" onClick={() => { setSearch(""); setPage(1); }} aria-label="Limpiar búsqueda">
+                    <Icons.X />
+                  </button>
+                )}
+              </label>
+
+              <FilterSelect
+                icon={<Icons.FileText />}
+                value={filterType}
+                onChange={value => { setFilterType(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todos los tipos" },
+                  { value: "normal", label: "Normal" },
+                  { value: "911", label: "911 - Urgente" },
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.FileText />}
+                value={filterStatus}
+                onChange={value => { setFilterStatus(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todos los estados" },
+                  ...STATUS_OPTIONS.map(status => ({ value: status, label: getOrderStatusConfig(status).label })),
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.Money />}
+                value={filterPayment}
+                onChange={value => { setFilterPayment(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Pago: Todos" },
+                  ...Object.entries(PAYMENT_COLORS).map(([key, val]) => ({ value: key, label: val.label })),
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.Calendar />}
+                value={filterDate}
+                onChange={value => { setFilterDate(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todas las fechas" },
+                  { value: "today", label: "Hoy" },
+                  { value: "yesterday", label: "Ayer" },
+                  { value: "3days", label: "Últimos 3 días" },
+                  { value: "7days", label: "Últimos 7 días" },
+                  { value: "month", label: "Este mes" },
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.Users />}
+                value={filterClient}
+                onChange={value => { setFilterClient(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todos los clientes" },
+                  { value: NO_CLIENT_FILTER_VALUE, label: "Sin cliente registrado" },
+                  ...clients.map(c => ({ value: c.id, label: c.name })),
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.Users />}
+                value={filterSeller}
+                onChange={value => { setFilterSeller(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todos los vendedores" },
+                  ...Object.entries(sellerDirectory).map(([sellerId, sellerName]) => ({ value: sellerId, label: sellerName || "Vendedor" })),
+                ]}
+              />
+
+              <FilterSelect
+                icon={<Icons.AlertCircle />}
+                value={filterOverdue}
+                onChange={value => { setFilterOverdue(value); setPage(1); }}
+                options={[
+                  { value: "all", label: "Todas las fechas de entrega" },
+                  { value: "overdue", label: "Atrasadas" },
+                ]}
+              />
+
+              <span className="pp-filters-count">{filteredOrders.length} resultado{filteredOrders.length !== 1 ? "s" : ""}</span>
+            </div>
+
+            <div className="pq-workbench-panel">
+              <div className="pq-workbench-heading">
+                <div>
+                  <span className="pq-workbench-kicker">Bandeja de trabajo</span>
+                  <h3>{filterArchive === "all" ? "Todas las órdenes" : filterArchive === "archived" ? "Órdenes archivadas" : filterArchive === "cancelled" ? "Órdenes canceladas" : filterArchive === "returned" ? "Órdenes devueltas" : "Órdenes activas"}</h3>
+                </div>
+                <div className="pq-workbench-tools">
+                  <div className="pq-workbench-tabs" role="tablist" aria-label="Filtro de archivo de órdenes">
+                    <button
+                      type="button"
+                      className={filterArchive === "all" ? "active" : ""}
+                      onClick={() => { setFilterArchive("all"); setPage(1); }}
+                      aria-selected={filterArchive === "all"}
+                    >
+                      <Icons.Clipboard />
+                      <span>Todas</span>
+                      <strong>{orders.length}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={filterArchive === "active" ? "active" : ""}
+                      onClick={() => { setFilterArchive("active"); setPage(1); }}
+                      aria-selected={filterArchive === "active"}
+                    >
+                      <Icons.Package />
+                      <span>Activas</span>
+                      <strong>{activeOrders.length}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={filterArchive === "archived" ? "active" : ""}
+                      onClick={() => { setFilterArchive("archived"); setPage(1); }}
+                      aria-selected={filterArchive === "archived"}
+                    >
+                      <Icons.Archive />
+                      <span>Archivadas</span>
+                      <strong>{archivedOrders.length}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={filterArchive === "cancelled" ? "active" : ""}
+                      onClick={() => { setFilterArchive("cancelled"); setPage(1); }}
+                      aria-selected={filterArchive === "cancelled"}
+                    >
+                      <Icons.Trash />
+                      <span>Canceladas</span>
+                      <strong>{cancelledOrders.length}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={filterArchive === "returned" ? "active" : ""}
+                      onClick={() => { setFilterArchive("returned"); setPage(1); }}
+                      aria-selected={filterArchive === "returned"}
+                    >
+                      <Icons.ArrowLeft />
+                      <span>Devueltas</span>
+                      <strong>{returnedOrders.length}</strong>
+                    </button>
+                  </div>
+                  <div className="pq-workbench-view-toggle" aria-label="Modo de vista">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("table")}
+                      className={viewMode === "table" ? "active" : ""}
+                      title="Vista de tabla"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("cards")}
+                      className={viewMode === "cards" ? "active" : ""}
+                      title="Vista de tarjetas"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pq-workbench-body">
+              {loading ? (
+                <div className="ps-cards-empty">Cargando órdenes...</div>
+              ) : filteredOrders.length === 0 ? (
+                <div className="ps-cards-empty">No hay órdenes que coincidan con los filtros.</div>
+              ) : viewMode === "table" ? (
+                <div className="pq-workbench-list ps-table-wrap">
+                  <table className="ps-table">
+                    <thead>
+                      <tr>
+                        <th>Cliente</th>
+                        <th>Tipo</th>
+                        <th>Estado</th>
+                        <th>Pago</th>
+                        <th>Fecha</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedOrders.map(order => (
+                        <tr
+                          key={order.id}
+                          className="row-hover ps-order-row"
+                          tabIndex={0}
+                          onClick={() => handleViewOrder(order)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              handleViewOrder(order);
+                            }
+                          }}
+                        >
+                          <td className="td-pad td-name">
+                            <div className="ps-client-cell">
+                              <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                              <span className="ps-client-cell-main">
+                                <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                                <span className="ps-client-cell-badges">
+                                  <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                                  {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                                  {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
+                                  {isReturnedOrder(order) && <ReturnedBadge compact />}
+                                </span>
+                              </span>
+                            </div>
+                          </td>
+                          <td className="td-pad">
+                            {String(order.order_type || "normal").trim().toLowerCase() === "orden 911" || String(order.order_type || "normal").trim().toLowerCase().includes("911") ? (
+                              <span className="pq-order-type-badge pq-order-type-badge--alert">911</span>
+                            ) : (
+                              <span className="pq-order-type-badge pq-order-type-badge--normal">Normal</span>
+                            )}
+                          </td>
+                          <td className="td-pad"><StatusBadge status={order.status} className="pq-badge" order={order} /></td>
+                          <td className="td-pad"><PaymentBadge status={order.payment_status} className="pq-badge" /></td>
+                          <td className="td-pad td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "long", year: "numeric" })}</td>
+                          <td className="td-pad td-actions" data-row-action>
+                            <div className="table-actions" data-row-action>
+                              <button className="table-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
+                                <Icons.Eye />
+                              </button>
+                              {canArchiveQuoteOrder(order, user?.id) && (
+                                <button className="table-action-btn archive" onClick={event => { event.stopPropagation(); setArchivingOrder(order); }} title="Archivar orden">
+                                  <Icons.Archive />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="ps-cards-grid">
+                  {paginatedOrders.map(order => {
+                    const isUrgent = String(order.order_type || "").toLowerCase().includes("911");
+                    return (
+                    <article
+                      key={order.id}
+                      className="ps-order-card"
+                      onClick={() => handleViewOrder(order)}
+                      data-order-type={isUrgent ? "911" : "normal"}
+                    >
+                      {/* Cliente: Avatar + Nombre + ID + Badges */}
+                      <div className="ps-order-card-client">
+                        <span className="acm-avatar acm-avatar-small">{getInitials(order.client_name)}</span>
+                        <span className="ps-order-card-client-main">
+                          <strong title={order.client_name || "Sin cliente"}>{order.client_name || "Sin cliente"}</strong>
+                          <span className="ps-order-card-client-badges">
+                            <span className="ps-order-card-id">#{order.id?.slice(0, 8).toUpperCase()}</span>
+                            <OrderReviewBadge review={pendingOrderReviews[order.id]} />
+                            {pendingNewAssignments[order.id] && <NewOrderBadge compact />}
+                            {orderReturns.acknowledgementByOrder[order.id] && <ReturnedToCashierBadge compact />}
+                            {isReturnedOrder(order) && <ReturnedBadge compact />}
+                          </span>
+                        </span>
+                      </div>
+
+                      {/* Tipo + Estado */}
+                      <div className="ps-order-card-fields">
+                        <div className="ps-order-card-field">
+                          <span className="ps-order-card-field-label">Tipo</span>
+                          {isUrgent
+                            ? <span className="acm-badge danger">911</span>
+                            : <span className="acm-badge neutral">Normal</span>
+                          }
+                        </div>
+                        <div className="ps-order-card-field">
+                          <span className="ps-order-card-field-label">Estado</span>
+                          <StatusBadge status={order.status} className="acm-badge" bordered showDot={false} order={order} />
+                        </div>
+                      </div>
+
+                      {/* Pago + Fecha */}
+                      <div className="ps-order-card-fields">
+                        <div className="ps-order-card-field">
+                          <span className="ps-order-card-field-label">Pago</span>
+                          <PaymentBadge status={order.payment_status} className="acm-badge" bordered showDot={false} />
+                        </div>
+                        <div className="ps-order-card-field">
+                          <span className="ps-order-card-field-label">Fecha</span>
+                          <span className="ps-order-card-date">
+                            {new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Acciones */}
+                      <div className="ps-order-card-actions">
+                        <button className="card-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
+                          <Icons.Eye />
+                        </button>
+                        {canArchiveQuoteOrder(order, user?.id) && (
+                          <button className="card-action-btn archive" onClick={event => { event.stopPropagation(); setArchivingOrder(order); }} title="Archivar orden">
+                            <Icons.Archived />
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                    );
+                  })}
+                </div>
+              )}
+
+              <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+            </div>
+              </div>
+          </section>
+        )}
+
+        {activeTab === "profile" && (
+          <section className="pq-section">
+            <QuoteProfileModule authUser={user} fallbackProfile={profile} />
+          </section>
+        )}
+
+        {activeTab === "notifications" && (
+          <section className="pq-section">
+            <DesignerNotificationsModule
+              notifications={notif.notifications}
+              archivedNotifications={notif.archivedNotifications}
+              unreadCount={notif.unreadCount}
+              loading={notif.loading}
+              archivedLoading={notif.archivedLoading}
+              onMarkAsRead={notif.markAsRead}
+              onMarkAllAsRead={notif.markAllAsRead}
+              onArchive={notif.archive}
+              onDelete={notif.deleteNotification}
+              onDeleteAll={notif.deleteNotificationsByScope}
+              notificationSoundEnabled={notif.notificationSoundEnabled}
+              notificationSoundLoading={notif.notificationSoundLoading}
+              onNotificationSoundChange={notif.setNotificationSoundEnabled}
+            />
+          </section>
+        )}
+      </main>
+
+      <QuoteOrderDetailModal
+        open={!!selectedOrder}
+        onClose={() => setSelectedOrder(null)}
+        order={selectedOrder}
+        onConfirmPayment={handleConfirmPayment}
+        paymentSaving={paymentSaving}
+        sellerDirectory={sellerDirectory}
+        onOpenReturnModal={setReturningOrder}
+        onValidationError={handlePaymentValidationError}
+        onOpenProductionModal={handleOpenProductionModal}
+        onCreditClientRequired={openCreditClientRegistration}
+        pendingReview={selectedOrderReview}
+        onAcknowledgeReview={selectedOrderReview ? () => orderReviews.acknowledgeOrder(selectedOrder.id) : undefined}
+        reviewAcknowledging={orderReviews.acknowledgingOrderId === selectedOrder?.id}
+        reviewError={orderReviews.acknowledgeError}
+        returnAcknowledgement={selectedOrder ? orderReturns.acknowledgementByOrder[selectedOrder.id] : null}
+        returnHistory={selectedOrder ? orderReturns.historyByOrder[selectedOrder.id] || [] : []}
+        onAcknowledgeReturn={handleAcknowledgeReturn}
+        returnAcknowledging={false}
+      />
+
+      <ArchiveOrderModal
+        open={!!archivingOrder}
+        onClose={() => setArchivingOrder(null)}
+        onConfirm={handleConfirmArchive}
+        order={archivingOrder}
+        loading={archiveLoading}
+      />
+
+      <ReturnToDesignerModal
+        open={!!returningOrder}
+        onClose={() => setReturningOrder(null)}
+        onConfirm={handleConfirmReturn}
+        order={returningOrder}
+        loading={returnLoading}
+      />
+
+      <ProductionAssignmentModal
+        open={!!forwardToProductionOrder}
+        onClose={() => setForwardToProductionOrder(null)}
+        onConfirm={handleConfirmSendToProduction}
+        order={forwardToProductionOrder}
+        loading={productionSaving}
+      />
+
+      <CreateClientModal
+        open={showNewClientModal}
+        onClose={() => {
+          setShowNewClientModal(false);
+        }}
+        onCreated={handleNewClientCreated}
+        supabase={supabase}
+        userId={user?.id}
+      />
+
+      <RegisteredClientLinkModal
+        open={!!clientLinkOrder}
+        order={clientLinkOrder}
+        clients={clients}
+        clientsLoading={clientsLoading}
+        selectedClient={clientLinkSelection}
+        onSelectClient={setClientLinkSelection}
+        onSearchClient={handleClientSearch}
+        onClose={() => {
+          setClientLinkOrder(null);
+          setClientLinkSelection(null);
+        }}
+        onConfirm={handleConfirmClientLink}
+        loading={clientLinkLoading}
+      />
+
+      <SettleCreditModal
+        open={!!creditSettlementTarget}
+        onClose={() => {
+          setCreditSettlementTarget(null);
+          setCreditSettlementNotes("");
+        }}
+        onConfirm={handleConfirmCreditSettlement}
+        clientName={creditSettlementTarget?.client?.name}
+        invoiceCount={creditSettlementTarget?.orderIds?.length || 0}
+        invoices={creditSettlementTarget?.invoices || []}
+        loading={creditSettlementLoading}
+        notes={creditSettlementNotes}
+        onNotesChange={setCreditSettlementNotes}
+      />
+
+      <CreditReminderCreateModal
+        open={!!creditReminderTarget}
+        variant="quote"
+        target={creditReminderTarget}
+        form={creditReminderForm}
+        onFormChange={setCreditReminderForm}
+        onClose={closeCreditReminderModal}
+        onSubmit={handleSaveCreditReminder}
+        saving={creditReminderSaving}
+        minReminderAt={getMinimumCreditReminderAt(creditReminderNow)}
+        formatCreditDate={formatCreditDate}
+        isOpenCreditReceivable={isOpenCreditReceivable}
+      />
+
+      <CreditPendingAlertModal
+        open={creditPendingAlertDue && !creditPendingAlertLoading}
+        invoiceCount={creditPendingInvoicesCount}
+        clientCount={creditPendingClientCount}
+        clients={creditPendingClientGroups}
+        saving={creditPendingAlertSaving}
+        onClose={() => acknowledgeCreditPendingAlert()}
+        onReview={() => acknowledgeCreditPendingAlert({ review: true })}
+      />
+
+      <CreditCustomReminderDueModal
+        open={!creditPendingAlertDue && dueCreditCustomReminders.length > 0}
+        variant="quote"
+        reminders={dueCreditCustomReminders}
+        completingId={creditReminderCompletingId}
+        onClose={() => dismissDueCreditReminders()}
+        onAcknowledge={handleAcknowledgeCreditReminder}
+        onReview={handleReviewCreditReminder}
+        formatCreditDate={formatCreditDate}
+      />
+
+    </div>
+  );
+}

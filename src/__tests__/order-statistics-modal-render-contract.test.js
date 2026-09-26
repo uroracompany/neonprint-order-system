@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 
 const dashboard = fs.readFileSync(
   path.resolve(process.cwd(), "src/pages/dashboard.jsx"),

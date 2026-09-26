@@ -1,0 +1,520 @@
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import useNotifications from "../hooks/useNotifications";
+import { supabase } from "../../supabaseClient";
+
+vi.mock("../../supabaseClient", () => ({
+  supabase: {
+    from: vi.fn(),
+    rpc: vi.fn(),
+    channel: vi.fn(),
+    removeChannel: vi.fn(),
+  },
+}));
+
+const userId = "11111111-1111-4111-8111-111111111111";
+const secondUserId = "22222222-2222-4222-8222-222222222222";
+
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+};
+
+const makeNotification = (overrides = {}) => ({
+  id: "notification-1",
+  user_id: userId,
+  type: "info",
+  title: "Cliente registrado",
+  message: 'Cliente "Acme" registrado correctamente.',
+  order_id: null,
+  metadata: { event_kind: "client_created", client_id: "client-1", variant: "success", order_title: null },
+  created_at: new Date("2026-06-17T12:00:00Z").toISOString(),
+  is_read: false,
+  is_archived: false,
+  deleted_at: null,
+  ...overrides,
+});
+
+const setupSupabase = ({
+  persistedNotification = makeNotification(),
+  notificationRows = [],
+  notificationResults = null,
+  mutationResults = null,
+  profileSoundEnabled = true,
+} = {}) => {
+  const subscriptions = {};
+  const queuedNotificationResults = Array.isArray(notificationResults) ? [...notificationResults] : null;
+  const queuedMutationResults = Array.isArray(mutationResults) ? [...mutationResults] : null;
+  const channel = {
+    on: vi.fn((event, filter, callback) => {
+      subscriptions[filter.event] = callback;
+      return channel;
+    }),
+    subscribe: vi.fn(() => channel),
+  };
+
+  supabase.channel.mockReturnValue(channel);
+  supabase.removeChannel.mockResolvedValue({});
+  supabase.rpc.mockResolvedValue({ data: 1, error: null });
+  supabase.from.mockImplementation(() => {
+    const resolveLimit = () => {
+      if (queuedNotificationResults?.length) {
+        return queuedNotificationResults.shift();
+      }
+      return Promise.resolve({ data: notificationRows, error: null });
+    };
+    const resolveMutation = () => {
+      if (queuedMutationResults?.length) {
+        return Promise.resolve(queuedMutationResults.shift());
+      }
+      return Promise.resolve({ data: [persistedNotification], error: null });
+    };
+
+    const builder = {
+      select: vi.fn(() => builder),
+      update: vi.fn(() => builder),
+      eq: vi.fn(() => builder),
+      in: vi.fn(() => builder),
+      or: vi.fn(() => builder),
+      is: vi.fn(() => builder),
+      order: vi.fn(() => builder),
+      limit: vi.fn(resolveLimit),
+      single: vi.fn(async () => ({ data: persistedNotification, error: null })),
+      maybeSingle: vi.fn(async () => ({ data: { notification_sound_enabled: profileSoundEnabled }, error: null })),
+      then: (resolve, reject) => resolveMutation().then(resolve, reject),
+    };
+    return builder;
+  });
+
+  return { subscriptions };
+};
+
+describe("useNotifications", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupSupabase();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("shows an optimistic toast immediately and does not duplicate it after persistence", async () => {
+    const rpcRequest = deferred();
+    supabase.rpc.mockReturnValue(rpcRequest.promise);
+    const { result } = renderHook(() => useNotifications(userId));
+
+    let actionPromise;
+    act(() => {
+      actionPromise = result.current.showActionNotification({
+        type: "info",
+        title: "Cliente registrado",
+        message: 'Cliente "Acme" registrado correctamente.',
+        metadata: { event_kind: "client_created", client_id: "client-1", variant: "success" },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.toasts).toHaveLength(1);
+    });
+    expect(result.current.toasts[0].id).toMatch(/^local-toast-/);
+    expect(result.current.toasts[0].metadata.variant).toBe("success");
+
+    await act(async () => {
+      rpcRequest.resolve({ data: "notification-1", error: null });
+      await actionPromise;
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+    expect(result.current.notifications[0].id).toBe("notification-1");
+    expect(result.current.toasts).toHaveLength(1);
+    expect(result.current.toasts[0].id).toMatch(/^local-toast-/);
+  });
+
+  it("keeps the optimistic toast visible when notification persistence fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    supabase.rpc.mockResolvedValue({ data: null, error: { message: "RPC failed" } });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await act(async () => {
+      await result.current.showActionNotification({
+        type: "info",
+        title: "Cliente registrado",
+        message: 'Cliente "Acme" registrado correctamente.',
+        metadata: { event_kind: "client_created", client_id: "client-1", variant: "success" },
+      });
+    });
+
+    expect(result.current.toasts).toHaveLength(1);
+    expect(result.current.toasts[0].id).toMatch(/^local-toast-/);
+    expect(result.current.notifications).toHaveLength(0);
+  });
+
+  it("filters archived and deleted notifications on initial load", async () => {
+    setupSupabase({
+      notificationRows: [
+        makeNotification({ id: "active-notification" }),
+        makeNotification({ id: "archived-notification", is_archived: true }),
+        makeNotification({ id: "deleted-notification", deleted_at: "2026-06-17T13:00:00Z" }),
+      ],
+    });
+
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+    expect(result.current.notifications[0].id).toBe("active-notification");
+    expect(result.current.archivedNotifications).toHaveLength(1);
+    expect(result.current.archivedNotifications[0].id).toBe("archived-notification");
+    expect(result.current.archivedCount).toBe(1);
+    expect(result.current.unreadCount).toBe(1);
+  });
+
+  it("defaults sound to enabled when a profile has no stored preference and persists changes", async () => {
+    setupSupabase({ profileSoundEnabled: null });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notificationSoundLoading).toBe(false);
+    });
+    expect(result.current.notificationSoundEnabled).toBe(true);
+
+    let actionResult;
+    await act(async () => {
+      supabase.rpc.mockResolvedValueOnce({ data: false, error: null });
+      actionResult = await result.current.setNotificationSoundEnabled(false);
+    });
+
+    expect(actionResult).toEqual({ ok: true });
+    expect(result.current.notificationSoundEnabled).toBe(false);
+    expect(supabase.rpc).toHaveBeenCalledWith("set_notification_sound_enabled", { p_enabled: false });
+  });
+
+  it("keeps an archived notification hidden after remounting the hook", async () => {
+    supabase.rpc.mockResolvedValue({ data: 1, error: null });
+    setupSupabase({ notificationRows: [makeNotification()] });
+    const first = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(first.result.current.notifications).toHaveLength(1);
+    });
+
+    await act(async () => {
+      await first.result.current.archive("notification-1");
+    });
+    expect(first.result.current.notifications).toHaveLength(0);
+    expect(first.result.current.archivedNotifications).toHaveLength(1);
+    expect(first.result.current.archivedNotifications[0].id).toBe("notification-1");
+    first.unmount();
+
+    setupSupabase({ notificationRows: [makeNotification({ is_archived: true })] });
+    const second = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(second.result.current.loading).toBe(false);
+    });
+    expect(second.result.current.notifications).toHaveLength(0);
+    expect(second.result.current.archivedNotifications).toHaveLength(1);
+  });
+
+  it("keeps a deleted notification hidden after remounting the hook", async () => {
+    supabase.rpc.mockResolvedValue({ data: 1, error: null });
+    setupSupabase({
+      notificationRows: [
+        makeNotification(),
+        makeNotification({ id: "archived-notification", is_archived: true }),
+      ],
+    });
+    const first = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(first.result.current.notifications).toHaveLength(1);
+    });
+
+    await act(async () => {
+      await first.result.current.deleteNotification("notification-1");
+    });
+    expect(first.result.current.notifications).toHaveLength(0);
+    first.unmount();
+
+    setupSupabase({ notificationRows: [makeNotification({ deleted_at: "2026-06-17T13:00:00Z" })] });
+    const second = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(second.result.current.loading).toBe(false);
+    });
+    expect(second.result.current.notifications).toHaveLength(0);
+  });
+
+  it("persists the read timestamp before updating the active notification", async () => {
+    setupSupabase({
+      notificationRows: [makeNotification()],
+    });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+
+    let actionResult;
+    await act(async () => {
+      actionResult = await result.current.markAsRead("notification-1");
+    });
+
+    expect(actionResult).toEqual({ ok: true });
+    expect(result.current.notifications[0]).toMatchObject({
+      id: "notification-1",
+      is_read: true,
+    });
+    expect(result.current.notifications[0].read_at).toEqual(expect.any(String));
+    expect(supabase.rpc).toHaveBeenCalledWith("mark_notification_read", { p_notification_id: "notification-1" });
+  });
+
+  it("does not mark a notification as read locally when no database row was updated", async () => {
+    setupSupabase({
+      notificationRows: [makeNotification()],
+    });
+    supabase.rpc.mockResolvedValue({ data: 0, error: null });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+
+    let actionResult;
+    await act(async () => {
+      actionResult = await result.current.markAsRead("notification-1");
+    });
+
+    expect(actionResult.ok).toBe(false);
+    expect(result.current.notifications[0].is_read).toBe(false);
+  });
+
+  it("archives only the selected notification when similar notifications exist", async () => {
+    supabase.rpc.mockResolvedValue({ data: 1, error: null });
+    const secondNotification = makeNotification({ id: "notification-2" });
+    setupSupabase({ notificationRows: [makeNotification(), secondNotification] });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(2);
+    });
+
+    await act(async () => {
+      await result.current.archive("notification-1");
+    });
+
+    expect(result.current.notifications.map((notification) => notification.id)).toEqual(["notification-2"]);
+    expect(result.current.archivedNotifications.map((notification) => notification.id)).toEqual(["notification-1"]);
+    expect(supabase.rpc).toHaveBeenCalledWith("archive_notification", { p_notification_id: "notification-1" });
+  });
+
+  it("removes an archived notification only after the database confirms deletion", async () => {
+    supabase.rpc.mockResolvedValue({ data: 1, error: null });
+    setupSupabase({ notificationRows: [makeNotification({ is_archived: true })] });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.archivedNotifications).toHaveLength(1);
+    });
+
+    let actionResult;
+    await act(async () => {
+      actionResult = await result.current.deleteNotification("notification-1");
+    });
+
+    expect(actionResult).toEqual({ ok: true });
+    expect(result.current.archivedNotifications).toHaveLength(0);
+    expect(supabase.rpc).toHaveBeenCalledWith("dismiss_notification", { p_notification_id: "notification-1" });
+  });
+
+  it("keeps the notification visible when archive confirmation affects zero rows", async () => {
+    setupSupabase({ notificationRows: [makeNotification()] });
+    supabase.rpc.mockResolvedValue({ data: 0, error: null });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+    });
+
+    let actionResult;
+    await act(async () => {
+      actionResult = await result.current.archive("notification-1");
+    });
+
+    expect(actionResult.ok).toBe(false);
+    expect(result.current.notifications).toHaveLength(1);
+    expect(result.current.archivedNotifications).toHaveLength(0);
+  });
+
+  it("bulk deletes notifications by scope and clears the matching local list", async () => {
+    setupSupabase({
+      notificationRows: [
+        makeNotification({ id: "active-notification" }),
+        makeNotification({ id: "archived-notification", is_archived: true }),
+      ],
+      mutationResults: [
+        { data: [{ id: "archived-notification" }], error: null },
+        { data: [{ id: "active-notification" }], error: null },
+      ],
+    });
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+      expect(result.current.archivedNotifications).toHaveLength(1);
+    });
+
+    await act(async () => {
+      await result.current.deleteNotificationsByScope("archived");
+    });
+
+    expect(result.current.notifications).toHaveLength(1);
+    expect(result.current.archivedNotifications).toHaveLength(0);
+
+    await act(async () => {
+      await result.current.deleteNotificationsByScope("active");
+    });
+
+    expect(result.current.notifications).toHaveLength(0);
+  });
+
+  it("clears visible notifications immediately when the authenticated user changes", async () => {
+    setupSupabase({
+      notificationRows: [
+        makeNotification(),
+        makeNotification({ id: "archived-notification", is_archived: true }),
+      ],
+    });
+    const { result, rerender } = renderHook(({ id }) => useNotifications(id), {
+      initialProps: { id: userId },
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+      expect(result.current.archivedNotifications).toHaveLength(1);
+    });
+    expect(result.current.unreadCount).toBe(1);
+
+    setupSupabase({ notificationRows: [] });
+    rerender({ id: secondUserId });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(0);
+    });
+    expect(result.current.archivedNotifications).toHaveLength(0);
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.toasts).toHaveLength(0);
+  });
+
+  it("ignores stale notification loads from a previous authenticated user", async () => {
+    const staleLoad = deferred();
+    setupSupabase({
+      notificationResults: [
+        staleLoad.promise,
+        Promise.resolve({ data: [], error: null }),
+      ],
+    });
+
+    const { result, rerender } = renderHook(({ id }) => useNotifications(id), {
+      initialProps: { id: userId },
+    });
+
+    await waitFor(() => {
+      expect(supabase.from).toHaveBeenCalled();
+    });
+
+    rerender({ id: secondUserId });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(result.current.notifications).toHaveLength(0);
+
+    await act(async () => {
+      staleLoad.resolve({ data: [makeNotification()], error: null });
+      await staleLoad.promise;
+    });
+
+    expect(result.current.notifications).toHaveLength(0);
+    expect(result.current.unreadCount).toBe(0);
+  });
+
+  it("ignores realtime inserts that are already archived or deleted", async () => {
+    const { subscriptions } = setupSupabase();
+    const { result } = renderHook(() => useNotifications(userId));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    act(() => {
+      subscriptions.INSERT({ new: makeNotification({ is_archived: true }) });
+      subscriptions.INSERT({
+        new: makeNotification({
+          id: "deleted-notification",
+          deleted_at: "2026-06-17T13:00:00Z",
+        }),
+      });
+    });
+
+    expect(result.current.notifications).toHaveLength(0);
+    expect(result.current.toasts).toHaveLength(0);
+  });
+
+  it("removes notifications and toasts when realtime marks them archived or deleted", async () => {
+    const { subscriptions } = setupSupabase();
+    const { result } = renderHook(() => useNotifications(userId));
+
+    act(() => {
+      subscriptions.INSERT({ new: makeNotification() });
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+      expect(result.current.toasts).toHaveLength(1);
+    });
+
+    act(() => {
+      subscriptions.UPDATE({ new: makeNotification({ is_archived: true }) });
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(0);
+      expect(result.current.archivedNotifications).toHaveLength(1);
+      expect(result.current.toasts).toHaveLength(0);
+    });
+
+    act(() => {
+      subscriptions.INSERT({ new: makeNotification({ id: "notification-2" }) });
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(1);
+      expect(result.current.toasts).toHaveLength(1);
+    });
+
+    act(() => {
+      subscriptions.UPDATE({
+        new: makeNotification({
+          id: "notification-2",
+          deleted_at: "2026-06-17T13:00:00Z",
+        }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.notifications).toHaveLength(0);
+      expect(result.current.toasts).toHaveLength(0);
+    });
+  });
+});

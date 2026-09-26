@@ -81,10 +81,12 @@ export default function FileCard({
             {actions.map((action, i) => (
               <button
                 key={i}
-                className="fc-file-action"
+                type="button"
+                className={`fc-file-action${action.attention ? " fc-file-action-attention" : ""}`}
                 onClick={action.onClick}
                 disabled={action.disabled}
                 title={action.title}
+                data-details-pending={action.attention ? "true" : undefined}
               >
                 {action.icon}
                 {action.label && <span>{action.label}</span>}
@@ -92,6 +94,7 @@ export default function FileCard({
             ))}
             {onRemove && (
               <button
+                type="button"
                 className="fc-file-action fc-file-action-remove"
                 onClick={onRemove}
                 title={removeTitle}

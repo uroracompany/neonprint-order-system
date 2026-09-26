@@ -1,0 +1,204 @@
+import { act, useState } from "react";
+import userEvent from "@testing-library/user-event";
+import { createRoot } from "react-dom/client";
+import { describe, expect, it, vi } from "vitest";
+import { Modal } from "../components/orders/CreateOrderModal";
+
+vi.mock("../../supabaseClient", () => ({
+  supabase: {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          single: () => Promise.resolve({ data: null, error: null }),
+        }),
+      }),
+    }),
+  },
+}));
+
+function NestedModal({ onClose = () => {} }) {
+  return (
+    <div data-testid="nested-host">
+      <Modal open onClose={onClose} title="Detalle de orden" wide closeOnBackdrop closeOnEscape>
+        <button type="button">Accion interna</button>
+      </Modal>
+    </div>
+  );
+}
+
+function ClosingHarness() {
+  const [open, setOpen] = useState(true);
+  return (
+    <div data-testid="nested-host">
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Detalle de orden"
+        closeOnBackdrop
+        closeOnEscape
+      >
+        <button type="button">Accion interna</button>
+      </Modal>
+    </div>
+  );
+}
+
+function FocusRetentionHarness() {
+  const [open, setOpen] = useState(true);
+  const [value, setValue] = useState("");
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => setOpen(false)}
+      title="Nueva Orden"
+      stickyHeader
+    >
+      <input
+        aria-label="Numero de Facturacion"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+      />
+    </Modal>
+  );
+}
+
+function ThreeLayerHarness() {
+  const [middleOpen, setMiddleOpen] = useState(true);
+  const [topOpen, setTopOpen] = useState(true);
+
+  return (
+    <Modal open onClose={() => {}} title="Orden">
+      {middleOpen && (
+        <Modal open onClose={() => setMiddleOpen(false)} title="Agregar archivo">
+          {topOpen && (
+            <Modal open onClose={() => setTopOpen(false)} title="Detalles de archivo" overlayClassName="ps-file-details-overlay">
+              <button type="button">Guardar detalles</button>
+            </Modal>
+          )}
+        </Modal>
+      )}
+    </Modal>
+  );
+}
+
+function renderReact(ui) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  act(() => {
+    root.render(ui);
+  });
+
+  return {
+    container,
+    unmount: () => {
+      act(() => {
+        root.unmount();
+      });
+      container.remove();
+    },
+  };
+}
+
+const nextFrame = () => new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+describe("shared Modal portal behavior", () => {
+  it("monta el overlay en document.body aunque se renderice dentro de un contenedor anidado", async () => {
+    const view = renderReact(<NestedModal />);
+
+    await act(async () => {
+      await nextFrame();
+    });
+
+    const host = view.container.querySelector("[data-testid='nested-host']");
+    const overlay = document.body.querySelector(".ps-modal-overlay");
+    const dialog = document.body.querySelector("[role='dialog']");
+    const closeButton = document.body.querySelector("[aria-label='Cerrar modal']");
+
+    expect(overlay).toBeTruthy();
+    expect(overlay.parentElement).toBe(document.body);
+    expect(host.contains(overlay)).toBe(false);
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveTextContent("Detalle de orden");
+    expect(document.body.style.overflow).toBe("hidden");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.activeElement).toBe(closeButton);
+
+    view.unmount();
+  });
+
+  it("cierra por Escape, desmonta el portal y restaura el scroll", async () => {
+    renderReact(<ClosingHarness />);
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+
+    expect(document.body.querySelector("[role='dialog']")).toBeNull();
+    expect(document.body.querySelector(".ps-modal-overlay")).toBeNull();
+    expect(document.body.style.overflow).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
+  });
+
+  it("cierra al hacer click en el backdrop sin depender del arbol local", async () => {
+    renderReact(<ClosingHarness />);
+
+    act(() => {
+      document
+        .body
+        .querySelector(".ps-modal-overlay")
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(document.body.querySelector("[role='dialog']")).toBeNull();
+    expect(document.body.querySelector(".ps-modal-overlay")).toBeNull();
+  });
+
+  it("mantiene el foco del campo activo cuando el formulario se actualiza al escribir", async () => {
+    const user = userEvent.setup();
+    const view = renderReact(<FocusRetentionHarness />);
+
+    await act(async () => {
+      await nextFrame();
+    });
+
+    const closeButton = document.body.querySelector("[aria-label='Cerrar modal']");
+    const input = document.body.querySelector("[aria-label='Numero de Facturacion']");
+
+    expect(document.activeElement).toBe(closeButton);
+
+    await user.click(input);
+    await user.keyboard("A");
+
+    expect(input).toHaveValue("A");
+    expect(document.activeElement).toBe(input);
+
+    view.unmount();
+  });
+
+  it("conserva los modales padres y el bloqueo de scroll al cerrar cada nivel anidado", async () => {
+    const user = userEvent.setup();
+    const view = renderReact(<ThreeLayerHarness />);
+    const closeFor = (title) => Array.from(document.body.querySelectorAll("[role='dialog']"))
+      .find((dialog) => dialog.textContent.includes(title))
+      ?.querySelector("[aria-label='Cerrar modal']");
+
+    expect(document.body.querySelectorAll("[role='dialog']")).toHaveLength(3);
+    const fileDetailsOverlay = document.body.querySelector(".ps-file-details-overlay");
+    expect(fileDetailsOverlay).toBeTruthy();
+    await user.click(fileDetailsOverlay);
+    expect(document.body.querySelectorAll("[role='dialog']")).toHaveLength(3);
+    await user.click(closeFor("Detalles de archivo"));
+    expect(document.body.querySelectorAll("[role='dialog']")).toHaveLength(2);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    await user.click(closeFor("Agregar archivo"));
+    expect(document.body.querySelectorAll("[role='dialog']")).toHaveLength(1);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    view.unmount();
+    expect(document.body.style.overflow).toBe("");
+  });
+});

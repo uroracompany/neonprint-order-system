@@ -1,0 +1,14 @@
+.profile-progress-pagination { display: flex; min-height: 248px; flex-direction: column; justify-content: space-between; gap: 14px; }
+.profile-progress-list { display: flex; flex-direction: column; gap: 12px; }
+.profile-progress-row { display: flex; flex-direction: column; gap: 6px; }
+.profile-progress-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+.profile-progress-top strong { min-width: 0; overflow: hidden; color: #0f1e40; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.profile-progress-top span, .profile-progress-row small { color: #64748b; font-size: 11px; font-weight: 600; }
+.profile-progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+.profile-progress-track span { display: block; height: 100%; border-radius: inherit; transition: width 0.25s ease; }
+.profile-progress-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: #64748b; font-size: 11px; font-weight: 700; }
+.profile-progress-controls button { display: inline-grid; width: 28px; height: 28px; place-items: center; border: 1px solid #d7e0ee; border-radius: 6px; background: #fff; color: #1d4ed8; cursor: pointer; }
+.profile-progress-controls button:disabled { cursor: not-allowed; opacity: 0.45; }
+.profile-progress-controls svg { width: 15px; height: 15px; }
+.profile-progress-empty { display: flex; min-height: 180px; align-items: center; justify-content: center; gap: 8px; color: #64748b; font-size: 12px; font-weight: 600; }
+.profile-progress-empty svg { width: 20px; height: 20px; }

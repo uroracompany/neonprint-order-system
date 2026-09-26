@@ -84,6 +84,24 @@
   background: #f0f9ff;
 }
 
+.pa-order-action-production {
+  color: #fff;
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--primary) 24%, transparent);
+}
+
+.pa-order-action-production:hover:not(:disabled) {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--primary) 88%, #000);
+  background: color-mix(in srgb, var(--primary) 88%, #000);
+}
+
+.pa-order-action:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
 .pa-order-action-cash {
   color: #047857;
   border-color: #a7f3d0;

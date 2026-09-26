@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import process from 'node:process'
 
 const migration = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20260921000000_admin_orders_statistics.sql'),

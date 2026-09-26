@@ -45,6 +45,37 @@
 .sa-op-field input:disabled, .sa-op-field select:disabled, .sa-op-delivery-select select:disabled { cursor: not-allowed; color: var(--text-muted); background: var(--surface-alt); }
 
 .sa-op-action-line { display: flex; justify-content: flex-end; }
+.sa-op-action-line--stacked {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding-top: 2px;
+}
+.sa-op-action-line--stacked .sa-op-field { gap: 6px; }
+.sa-op-action-line--stacked .sa-op-button {
+  min-width: 168px;
+  max-width: 190px;
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 11px;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.sa-op-action-line--stacked .sa-op-button:disabled {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  opacity: 1;
+}
+.sa-op-button--return:disabled {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  opacity: 1;
+  box-shadow: none;
+}
 .sa-op-button { min-height: 38px; border: 1px solid transparent; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 12px; font-weight: 750; line-height: 1.2; cursor: pointer; transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, border-color 150ms ease; }
 .sa-op-button--primary { color: #fff; background: var(--primary); box-shadow: 0 2px 5px color-mix(in srgb, var(--primary) 22%, transparent); }
 .sa-op-button--soft { color: #1e40af; background: #eff6ff; border-color: #bfdbfe; }
@@ -89,6 +120,8 @@
   .sa-op-payment-fields, .sa-op-credit-row, .sa-op-file-grid--assignment { grid-template-columns: 1fr; }
   .sa-op-action-line { justify-content: stretch; }
   .sa-op-action-line .sa-op-button, .sa-op-production-footer .sa-op-button { width: 100%; }
+  .sa-op-action-line--stacked { grid-template-columns: 1fr; align-items: stretch; }
+  .sa-op-action-line--stacked .sa-op-button { width: 100%; max-width: none; }
   .sa-op-file-actions { align-items: stretch; }
   .sa-op-responsibility-row, .sa-op-responsibility-row > div { align-items: stretch; flex-direction: column; }
   .sa-op-responsibility-row select { max-width: none; }

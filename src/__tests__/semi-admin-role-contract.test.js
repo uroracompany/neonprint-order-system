@@ -97,7 +97,13 @@ describe("Semi-Administrador authorization contract", () => {
     expect(operationalPanel).toContain("onOpenQuoteAssignment");
     expect(operationalPanel).not.toContain("Responsable de Caja</span><select");
     expect(operationalPanel).toContain('run("return_design_to_sales", { reason: returnReason })');
+    expect(operationalPanel).toContain("const hasReturnReason = returnReason.trim().length > 0");
+    expect(operationalPanel).toContain('disabled={busy || !hasReturnReason}');
+    expect(operationalPanel).toContain('sa-op-button--return sa-op-button--advanced');
     expect(operationalStyles).toContain('.sa-op-design-action--forward { grid-template-columns:');
+    expect(operationalStyles).toContain('.sa-op-button--return:disabled');
+    expect(operationalStyles).toContain('color: #fff;');
+    expect(operationalStyles).toContain('background: var(--primary);');
     expect(operationalStyles).toContain('@media (max-width: 760px)');
   });
 

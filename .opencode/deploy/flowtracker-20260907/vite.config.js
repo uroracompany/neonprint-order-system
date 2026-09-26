@@ -1,0 +1,215 @@
+import { defineConfig, loadEnv } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { handleAdminCreateUser } from './server/admin-create-user-handler.js'
+import { handleAdminUpdateUser } from './server/admin-update-user-handler.js'
+import { handleAdminListOrders } from './server/admin-list-orders-handler.js'
+import { handleAdminListUsers } from './server/admin-list-users-handler.js'
+import { handleAdminSetUserStatus } from './server/admin-set-user-status-handler.js'
+import { handleAdminRetireClient, handleAdminRetireUser, handleAdminRestoreClient, handleAdminRestoreUser, handleAdminUserRetirementPreflight } from './server/admin-retirement-handler.js'
+import { handleGetUserEmail } from './server/get-user-email-handler.js'
+import { handleChangeUserPassword } from './server/change-user-password-handler.js'
+import { handleKpiData } from './server/kpi-data-handler.js'
+import { handleSellerProfile } from './server/seller-profile-handler.js'
+import { handleDesignerProfile } from './server/designer-profile-handler.js'
+import { handleQuoteProfile } from './server/quote-profile-handler.js'
+import { handleProductionProfile } from './server/production-profile-handler.js'
+import { handleDeliveryProfile } from './server/delivery-profile-handler.js'
+import { handleAdminProfile } from './server/admin-profile-handler.js'
+import { handleSellerOrderAction } from './server/seller-order-actions-handler.js'
+import {
+  handleAdminDeleteOrderWithFiles,
+  handleCompleteFileUpload,
+  handleFileDownloadUrl,
+  handleImportRemoteFile,
+  handleInitiateFileUpload,
+  handleResolveOrderAssetDownload,
+} from './server/storage-gateway.js'
+function createApiHandler(path, handler, { timeoutMs = 20000 } = {}) {
+  return {
+    name: `api-handler-${path}`,
+    configureServer(server) {
+      const env = loadEnv(server.config.mode, process.cwd(), "");
+      
+      server.middlewares.use(path, async (req, res, next) => {
+        if (req.method !== "POST") {
+          return next();
+        }
+
+        let rawBody = "";
+        let bodyTooLarge = false;
+        req.on("data", (chunk) => {
+          if (bodyTooLarge) return;
+          rawBody += chunk;
+          bodyTooLarge = rawBody.length > 1_000_000;
+        });
+
+        req.on("end", async () => {
+          try {
+            if (bodyTooLarge) {
+              res.statusCode = 413;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ code: "PAYLOAD_TOO_LARGE", error: "La solicitud supera el limite permitido." }));
+              return;
+            }
+            const body = rawBody ? JSON.parse(rawBody) : {};
+            const authHeader = req.headers["authorization"] || "";
+            const HANDLER_TIMEOUT_MS = timeoutMs;
+
+            const result = await Promise.race([
+              handler(body, { ...env, authHeader }),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("El servicio no respondio a tiempo.")), HANDLER_TIMEOUT_MS)
+              ),
+            ]);
+
+            res.statusCode = result.status;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify(result.body));
+          } catch {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({
+              code: "INTERNAL",
+              error: "Ocurrió un problema interno. Inténtalo nuevamente en unos minutos.",
+            }));
+          }
+        });
+      });
+    },
+  };
+}
+
+const ADMIN_ACTIONS = {
+  "list-orders": handleAdminListOrders,
+  "list-users": handleAdminListUsers,
+  "create-user": handleAdminCreateUser,
+  "update-user": handleAdminUpdateUser,
+  "set-user-status": handleAdminSetUserStatus,
+  "retirement-preflight": handleAdminUserRetirementPreflight,
+  "retire-user": handleAdminRetireUser,
+  "restore-user": handleAdminRestoreUser,
+  "retire-client": handleAdminRetireClient,
+  "restore-client": handleAdminRestoreClient,
+  "delete-order": handleAdminDeleteOrderWithFiles,
+};
+
+const FILES_ACTIONS = {
+  "initiate-upload": handleInitiateFileUpload,
+  "import-url": handleImportRemoteFile,
+  "download-url": handleFileDownloadUrl,
+  "resolve-download": handleResolveOrderAssetDownload,
+  "complete-upload": handleCompleteFileUpload,
+};
+
+function createConsolidatedAdminHandler() {
+  return createConsolidatedHandler("/api/admin", ADMIN_ACTIONS);
+}
+
+function createConsolidatedFilesHandler() {
+  return createConsolidatedHandler("/api/files", FILES_ACTIONS);
+}
+
+function createConsolidatedHandler(path, actionsMap) {
+  return {
+    name: `api-handler-${path}-consolidated`,
+    configureServer(server) {
+      const env = loadEnv(server.config.mode, process.cwd(), "");
+
+      server.middlewares.use(path, async (req, res, next) => {
+        if (req.method !== "POST") {
+          return next();
+        }
+
+        let rawBody = "";
+        let bodyTooLarge = false;
+        req.on("data", (chunk) => {
+          if (bodyTooLarge) return;
+          rawBody += chunk;
+          bodyTooLarge = rawBody.length > 1_000_000;
+        });
+
+        req.on("end", async () => {
+          try {
+            if (bodyTooLarge) {
+              res.statusCode = 413;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ code: "PAYLOAD_TOO_LARGE", error: "La solicitud supera el limite permitido." }));
+              return;
+            }
+            const body = rawBody ? JSON.parse(rawBody) : {};
+            const authHeader = req.headers["authorization"] || "";
+            const { action, ...payload } = body;
+            const handler = actionsMap[action];
+
+            if (!handler) {
+              res.statusCode = 400;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: `Accion no valida: ${action}` }));
+              return;
+            }
+
+            const HANDLER_TIMEOUT_MS = 20000;
+            const result = await Promise.race([
+              handler(payload, { ...env, authHeader }),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("El servicio no respondio a tiempo.")), HANDLER_TIMEOUT_MS)
+              ),
+            ]);
+
+            res.statusCode = result.status;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify(result.body));
+          } catch {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({
+              code: "INTERNAL",
+              error: "Ocurrió un problema interno. Inténtalo nuevamente en unos minutos.",
+            }));
+          }
+        });
+      });
+    },
+  };
+}
+
+// https://vite.dev/config/
+export default defineConfig(({ mode }) => {
+return {
+    plugins: [
+      react(),
+      tailwindcss(),
+      createConsolidatedAdminHandler(),
+      createConsolidatedFilesHandler(),
+      createApiHandler("/api/admin-list-orders", handleAdminListOrders),
+      createApiHandler("/api/admin-list-users", handleAdminListUsers),
+      createApiHandler("/api/admin-create-user", handleAdminCreateUser),
+      createApiHandler("/api/admin-update-user", handleAdminUpdateUser),
+      createApiHandler("/api/admin-set-user-status", handleAdminSetUserStatus),
+      createApiHandler("/api/get-user-email", handleGetUserEmail),
+      createApiHandler("/api/change-user-password", handleChangeUserPassword),
+      // The executive KPI aggregates several independent analytics sources.
+      // Keep the normal API guardrail for all endpoints, while allowing this
+      // one complete local request to finish instead of being cut off at 20s.
+      createApiHandler("/api/kpi-data", handleKpiData, { timeoutMs: 60000 }),
+      createApiHandler("/api/seller-profile", handleSellerProfile),
+      createApiHandler("/api/designer-profile", handleDesignerProfile),
+      createApiHandler("/api/quote-profile", handleQuoteProfile),
+      createApiHandler("/api/production-profile", handleProductionProfile),
+      createApiHandler("/api/delivery-profile", handleDeliveryProfile),
+      createApiHandler("/api/admin-profile", handleAdminProfile),
+      createApiHandler("/api/seller-orders", handleSellerOrderAction),
+      createApiHandler("/api/files-initiate-upload", handleInitiateFileUpload),
+      createApiHandler("/api/files-complete-upload", handleCompleteFileUpload),
+      createApiHandler("/api/files-download-url", handleFileDownloadUrl),
+      createApiHandler("/api/files-import-url", handleImportRemoteFile),
+      createApiHandler("/api/admin-delete-order", handleAdminDeleteOrderWithFiles),
+    ],
+    optimizeDeps: {
+      include: ['recharts', 'es-toolkit', 'lodash'],
+    },
+    // Production clients must not receive raw errors through browser console output.
+    esbuild: mode === "production" ? { drop: ["console", "debugger"] } : undefined,
+  };
+})

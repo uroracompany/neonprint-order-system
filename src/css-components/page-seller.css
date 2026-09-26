@@ -828,6 +828,18 @@
   border-color: #d97706;
 }
 
+.table-action-btn.design {
+  color: #7c3aed;
+  border-color: #ddd6fe;
+  background: #f5f3ff;
+}
+
+.table-action-btn.design:hover {
+  background: #7c3aed;
+  color: #fff;
+  border-color: #7c3aed;
+}
+
 .table-action-btn.cancel {
   color: #dc2626;
   border-color: #fecaca;
@@ -1248,6 +1260,18 @@
   gap: 10px;
 }
 
+.table-action-btn.production {
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.table-action-btn.production:hover {
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #1d4ed8;
+}
+
 .ps-file-details-modal {
   max-width: 560px;
   display: flex;
@@ -1497,6 +1521,178 @@
 
 .ps-file-details-modal .ps-termination-selector select.ps-form-input option[value=""] {
   color: var(--text-muted);
+}
+
+/* Shared visual language for order creation and file details.  The creation
+   flow keeps its wider field layout, while using the same compact surfaces,
+   controls and action hierarchy as the file-details editor. */
+.ps-create-order-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+}
+
+.ps-create-order-modal .ps-modal-footer {
+  flex: 0 0 auto;
+  padding: 14px 20px;
+  border-top: 1px solid #dce4ef;
+  background: #ffffff;
+}
+
+.ps-modal-form-visual .ps-modal-header {
+  padding: 18px 20px;
+}
+
+.ps-modal-form-visual .ps-modal-title {
+  margin: 0;
+  color: #0f1e40;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.ps-modal-form-visual .ps-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: scroll;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+  scrollbar-gutter: stable;
+  padding: 22px 20px 24px;
+}
+
+.ps-create-order-modal .ps-modal-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.ps-modal-form-visual .ps-label {
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.ps-modal-form-visual .ps-form-input {
+  width: 100%;
+  min-height: 42px;
+  height: 42px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-family: 'Poppins', sans-serif;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.ps-modal-form-visual .ps-form-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+  background-color: var(--surface-alt);
+}
+
+.ps-modal-form-visual .ps-form-input:hover:not(:disabled):not(:focus) {
+  border-color: var(--border-hov);
+}
+
+.ps-modal-form-visual .ps-form-input:disabled {
+  background: var(--surface-alt);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ps-modal-form-visual .ps-form-input::placeholder {
+  color: var(--text-muted);
+  font-family: 'Poppins', sans-serif;
+  font-size: 13px;
+}
+
+.ps-modal-form-visual .ps-form-grid {
+  gap: 0 18px;
+}
+
+.ps-create-order-modal .ps-form-grid {
+  padding-top: 2px;
+}
+
+.ps-modal-form-visual .ps-form-actions {
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.ps-create-order-modal .ps-modal-footer .ps-form-actions {
+  margin-top: 0;
+}
+
+.ps-modal-form-visual .ps-btn-cancel,
+.ps-modal-form-visual .ps-btn-submit {
+  flex: none;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.ps-modal-form-visual .ps-btn-cancel {
+  background: #f8fafc;
+  color: #4a5e80;
+  border: 1.5px solid #dce4ef;
+  box-shadow: none;
+}
+
+.ps-modal-form-visual .ps-btn-cancel:hover:not(:disabled) {
+  border-color: #c9d4e5;
+  color: #0f1e40;
+}
+
+.ps-modal-form-visual .ps-btn-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #091127;
+  color: #ffffff;
+  box-shadow: 0 9px 20px rgba(9, 17, 39, 0.13);
+}
+
+.ps-modal-form-visual .ps-btn-submit:hover:not(:disabled) {
+  background: #17284f;
+}
+
+.ps-modal-form-visual .ps-btn-submit:disabled {
+  background: #091127;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.6;
+}
+
+@media (max-width: 680px) {
+  .ps-modal-form-visual .ps-modal-header {
+    padding: 16px;
+  }
+
+  .ps-modal-form-visual .ps-modal-body {
+    padding: 18px 16px 22px;
+  }
+
+  .ps-create-order-modal .ps-modal-footer {
+    padding: 12px 16px 16px;
+  }
+
+  .ps-modal-form-visual .ps-form-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .ps-modal-form-visual .ps-btn-cancel,
+  .ps-modal-form-visual .ps-btn-submit {
+    width: 100%;
+  }
 }
 
 @media (max-width: 760px) {
@@ -2228,34 +2424,6 @@ button.ps-multimat-option {
 .ps-multimat-custom-btn:hover { opacity: 0.9; }
 .ps-multimat-custom-btn:disabled { opacity: 0.5; cursor: default; }
 
-.ps-multimat-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 10px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-alt);
-}
-.ps-multimat-actions button {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 7px 12px;
-  font: 600 12px 'Poppins', sans-serif;
-  cursor: pointer;
-}
-.ps-multimat-cancel {
-  color: var(--text-sub);
-  background: var(--surface);
-}
-.ps-multimat-cancel:hover { background: var(--surface-alt); }
-.ps-multimat-confirm {
-  color: #fff;
-  background: var(--primary);
-  border-color: var(--primary) !important;
-}
-.ps-multimat-confirm:hover { opacity: 0.9; }
-.ps-multimat-confirm:disabled { opacity: 0.5; cursor: default; }
-
 /* ── Tipo de orden / diseño — cards radio ─────────────────────── */
 .ps-order-type-group {
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
@@ -2665,6 +2833,19 @@ button.ps-multimat-option {
   color: #fff;
   border-color: #d97706;
   box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
+}
+
+.card-action-btn.design {
+  color: #7c3aed;
+  border-color: #ddd6fe;
+  background: #f5f3ff;
+}
+
+.card-action-btn.design:hover {
+  background: #7c3aed;
+  color: #fff;
+  border-color: #7c3aed;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
 }
 
 .card-action-btn.cancel {
@@ -3846,6 +4027,19 @@ button.ps-multimat-option {
   }
 }
 
+.card-action-btn.production {
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.card-action-btn.production:hover {
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.25);
+}
+
 /* ── Responsive hardening: Sales workspaces ─────────────────────── */
 .ps-topbar,
 .ps-topbar-left,
@@ -4100,4 +4294,11 @@ button.ps-multimat-option {
     min-width: 38px;
     min-height: 38px;
   }
+}
+
+/* Nueva orden debe conservar una superficie plana en todos sus controles y
+   tarjetas internas. La sombra exterior del modal sigue perteneciendo a
+   .ps-modal y no se elimina. */
+.ps-create-order-modal * {
+  box-shadow: none !important;
 }

@@ -1,0 +1,1 @@
+import{j as t}from"./index-CsgR_Ucb.js";function a({review:r,className:n=""}){if(!r)return null;const e=Number(r.count||r.reviews?.length||1);return t.jsxs("span",{className:`order-review-badge ${n}`.trim(),children:[r.label||"Editada por Admin",e>1?` · ${e}`:""]})}export{a as O};

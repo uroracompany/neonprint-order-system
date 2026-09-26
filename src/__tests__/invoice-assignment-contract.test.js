@@ -10,6 +10,7 @@ describe("invoice assignment mode contract", () => {
   const paymentModal = read("src/components/ui/PaymentFormModal.jsx");
   const quotePage = read("src/pages/page-quote.jsx");
   const sharedSelect = read("src/utils/orderListSelect.js");
+  const strictPaymentMigration = read("supabase/migrations/20260926112516_payment_authorization_production_gate.sql");
 
   it("keeps old orders seller-owned and adds explicit cashier mode", () => {
     expect(migration).toContain("add column if not exists invoice_assignment_mode text not null default 'seller'");
@@ -37,7 +38,12 @@ describe("invoice assignment mode contract", () => {
     expect(paymentModal).toContain("canAssignInvoiceCode");
     expect(paymentModal).toContain("Código de facturación");
     expect(paymentModal).toContain("invoiceNumber");
-    expect(paymentModal).toContain("receiptNumber");
+    expect(paymentModal).not.toContain("receiptNumber");
+    expect(paymentModal).not.toContain("allowReceiptNumber");
+    expect(paymentModal).toContain("validateReceiptFile");
+    expect(strictPaymentMigration).toContain("public.order_has_confirmable_payment");
+    expect(strictPaymentMigration).toContain("public.quote_has_uploaded_payment_receipt");
+    expect(strictPaymentMigration).toContain("código de facturación y adjuntar un comprobante de imagen verificado");
     expect(quotePage).toContain("handleAssignInvoiceCode");
     expect(quotePage).toContain('rpc("quote_assign_invoice_code"');
     expect(quotePage).toContain('rpc("quote_set_order_payment"');

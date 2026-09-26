@@ -8,5 +8,11 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.js'],
     globals: true,
     css: true,
+    exclude: [
+      'node_modules/**',
+      'dist/**',
+      '.opencode/deploy/**',
+      '.opencode/runs/**',
+    ],
   },
 })

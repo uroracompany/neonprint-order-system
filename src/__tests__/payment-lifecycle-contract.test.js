@@ -7,11 +7,16 @@ const projectFile = (file) => readFileSync(resolve(file), "utf8");
 describe("global payment lifecycle contract", () => {
   const migration = projectFile("supabase/migrations/20260905185147_global_payment_lifecycle_and_semi_admin_access.sql");
   const reconciliation = projectFile("supabase/migrations/20260906110000_semi_admin_client_cancel_payment.sql");
+  const strictPaymentMigration = projectFile("supabase/migrations/20260926112516_payment_authorization_production_gate.sql");
 
-  it("requires receipt or registered receipt number when marking paid", () => {
-    expect(migration).toContain("new.invoice_payment");
-    expect(migration).toContain("new.invoice_number");
-    expect(migration).toContain("Para marcar la orden como pagada debes adjuntar un comprobante/factura o ingresar un número de comprobante.");
+  it("requires a billing code plus a verified image when marking paid", () => {
+    expect(strictPaymentMigration).toContain("create or replace function public.order_has_confirmable_payment");
+    expect(strictPaymentMigration).toContain("nullif(btrim(coalesce(p_invoice_number, '')), '') is not null");
+    expect(strictPaymentMigration).toContain("public.quote_has_uploaded_payment_receipt");
+    expect(strictPaymentMigration).toContain("código de facturación y adjuntar un comprobante de imagen verificado");
+    const paymentModal = projectFile("src/components/ui/PaymentFormModal.jsx");
+    expect(paymentModal).not.toContain("allowReceiptNumber");
+    expect(paymentModal).not.toContain("receiptNumber");
   });
 
   it("blocks pending payment from Production and partial payment from Delivery", () => {
@@ -44,6 +49,9 @@ describe("global payment lifecycle contract", () => {
     expect(storageGateway).toContain("order.seller_id === userId");
     expect(storageGateway).toContain("order.created_by === userId");
     expect(storageGateway).toContain("Solo el responsable o creador Semi-Admin puede adjuntar comprobantes");
-    expect(projectFile("src/components/ui/PaymentFormModal.jsx")).toContain("allowReceiptNumber");
+    const paymentModal = projectFile("src/components/ui/PaymentFormModal.jsx");
+    expect(paymentModal).toContain("Código de facturación");
+    expect(paymentModal).toContain("validateReceiptFile");
+    expect(paymentModal).not.toContain("allowReceiptNumber");
   });
 });
