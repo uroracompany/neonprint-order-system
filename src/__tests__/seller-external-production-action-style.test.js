@@ -30,7 +30,7 @@ describe("acción externa Enviar a producción de Ventas", () => {
     expect(sellerCss).toContain("color: #1d4ed8;");
     expect(sellerCss).toContain("border-color: #bfdbfe;");
     expect(sellerCss).toContain("background: #eff6ff;");
-    expect(sellerCss).toContain("box-shadow: 0 4px 12px rgba(29, 78, 216, 0.25);");
+    expect(sellerCss).toContain("box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);");
     expect(sellerCss).toContain(".table-action-btn.design {");
     expect(sellerCss).toContain(".table-action-btn.edit {");
   });
