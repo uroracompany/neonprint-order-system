@@ -55,7 +55,7 @@ describe("payment state integration source guards", () => {
     expect(source).toContain('{ value: PAYMENT_STATUS.CREDIT, label: "Pago a crédito" }');
     expect(source).toContain('{ value: PAYMENT_STATUS.PAID, label: "Pagado" }');
     expect(source).toContain("paymentOptions.map((opt) => <option");
-    expect(source).toContain("correctionMode && ![PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL].includes(paymentStatus)");
+    expect(source).toContain("const isCorrectionStatus = [PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL].includes(paymentStatus);");
     expect(source).toContain("Guardar corrección");
   });
 
@@ -76,7 +76,7 @@ describe("payment state integration source guards", () => {
     expect(source).toContain("Seleccionar desde el ordenador");
     expect(source).toContain("URL.createObjectURL(receiptFile)");
     expect(source).toContain("URL.revokeObjectURL");
-    expect(source).toContain("!receiptFile && !hasVerifiedPaymentReceipt");
+    expect(source).toContain("const hasPaymentEvidence = Boolean(receiptFile || hasVerifiedPaymentReceipt);");
     expect(source).toContain("validateReceiptFile");
     expect(source).toContain("{paymentStatus === PAYMENT_STATUS.PAID && !correctionMode && (");
     expect(source).not.toContain("No existe un comprobante de pago");

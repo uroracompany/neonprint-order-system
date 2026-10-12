@@ -36,6 +36,7 @@ export default function PaymentFormModal({
   const [receiptZoneErrorKey, setReceiptZoneErrorKey] = useState(0);
   const [internalError, setInternalError] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [savedInvoiceNumber, setSavedInvoiceNumber] = useState(order?.invoice_number || "");
   const [invoiceCodeSaving, setInvoiceCodeSaving] = useState(false);
   const orderId = order?.id;
   const orderPaymentStatus = order?.payment_status;
@@ -49,6 +50,7 @@ export default function PaymentFormModal({
     setReceiptZoneErrorKey(0);
     setInternalError("");
     setInvoiceNumber(order?.invoice_number || "");
+    setSavedInvoiceNumber(order?.invoice_number || "");
     setInvoiceCodeSaving(false);
     if (receiptInputRef.current) receiptInputRef.current.value = "";
   }, [open, orderId, orderPaymentStatus, order?.invoice_number, correctionMode]);
@@ -120,6 +122,59 @@ export default function PaymentFormModal({
     ];
   }, [correctionMode, order?.status]);
 
+  const paymentEligibility = useMemo(() => {
+    if (loading) return { eligible: false, error: "" };
+    if (!canManagePayment) return { eligible: false, error: "Esta orden está en modo lectura para Caja." };
+
+    if (correctionMode) {
+      const isCorrectionStatus = [PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL].includes(paymentStatus);
+      return isCorrectionStatus
+        ? { eligible: true, error: "" }
+        : { eligible: false, error: "Selecciona Pendiente o Pago parcial para corregir el estado." };
+    }
+
+    const hasSavedInvoice = Boolean(savedInvoiceNumber.trim());
+    const hasPaymentEvidence = Boolean(receiptFile || hasVerifiedPaymentReceipt);
+
+    if (paymentStatus === PAYMENT_STATUS.PENDING) {
+      return { eligible: false, error: "El pago no puede confirmarse como Pendiente." };
+    }
+    if (paymentStatus === PAYMENT_STATUS.PARTIAL && !hasSavedInvoice) {
+      return { eligible: false, error: "Para marcar la orden como pago parcial debes registrar el código de facturación." };
+    }
+    if (paymentStatus === PAYMENT_STATUS.CREDIT) {
+      if (!hasSavedInvoice) {
+        return { eligible: false, error: "La orden debe tener un número de facturación para vender a crédito." };
+      }
+      if (!order?.client_id) {
+        return { eligible: false, error: "Para vender a crédito debes registrar y vincular este cliente." };
+      }
+    }
+    if (paymentStatus === PAYMENT_STATUS.PAID) {
+      if (!hasSavedInvoice) {
+        return { eligible: false, error: "Para marcar la orden como pagada debes registrar el código de facturación." };
+      }
+      if (!hasPaymentEvidence) {
+        return { eligible: false, error: "Para marcar la orden como pagada debes adjuntar un comprobante de imagen verificado." };
+      }
+    }
+
+    if (![PAYMENT_STATUS.PARTIAL, PAYMENT_STATUS.CREDIT, PAYMENT_STATUS.PAID].includes(paymentStatus)) {
+      return { eligible: false, error: "Selecciona un estado de pago válido." };
+    }
+
+    return { eligible: true, error: "" };
+  }, [
+    canManagePayment,
+    correctionMode,
+    hasVerifiedPaymentReceipt,
+    loading,
+    order?.client_id,
+    paymentStatus,
+    receiptFile,
+    savedInvoiceNumber,
+  ]);
+
   const handleReceiptAccepted = async ([file]) => {
     if (!file) return;
     const validation = await validateReceiptFile(file);
@@ -143,32 +198,9 @@ export default function PaymentFormModal({
 
   const handleSubmit = async () => {
     setInternalError("");
-    if (!canManagePayment) {
-      setInternalError("Esta orden está en modo lectura para Caja.");
+    if (!paymentEligibility.eligible) {
+      if (paymentEligibility.error) setInternalError(paymentEligibility.error);
       return;
-    }
-    if (correctionMode && ![PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL].includes(paymentStatus)) {
-      setInternalError("Selecciona Pendiente o Pago parcial para corregir el estado.");
-      return;
-    }
-    const hasPaymentEvidence = Boolean(receiptFile || hasVerifiedPaymentReceipt);
-    const hasInvoiceCode = Boolean(invoiceNumber.trim() || order?.invoice_number?.trim());
-
-    if (paymentStatus === PAYMENT_STATUS.CREDIT) {
-      if (!hasInvoiceCode) {
-        return setInternalError("La orden debe tener un número de facturación para vender a crédito.");
-      }
-      if (!order?.client_id) {
-        return setInternalError("Para vender a crédito debes registrar y vincular este cliente.");
-      }
-    }
-
-    if (paymentStatus === PAYMENT_STATUS.PAID && !hasInvoiceCode) {
-      return setInternalError("Para marcar la orden como pagada debes registrar el código de facturación.");
-    }
-
-    if (paymentStatus === PAYMENT_STATUS.PAID && !hasPaymentEvidence) {
-      return setInternalError("Para marcar la orden como pagada debes adjuntar un comprobante de imagen verificado.");
     }
 
     try {
@@ -192,7 +224,11 @@ export default function PaymentFormModal({
     setInvoiceCodeSaving(true);
     try {
       const updated = await onAssignInvoiceCode(order, nextInvoiceNumber);
-      if (updated?.invoice_number) setInvoiceNumber(updated.invoice_number);
+      if (updated?.invoice_number) {
+        const persistedInvoiceNumber = String(updated.invoice_number).trim();
+        setInvoiceNumber(persistedInvoiceNumber);
+        setSavedInvoiceNumber(persistedInvoiceNumber);
+      }
     } catch (err) {
       setInternalError(err?.message || "No se pudo guardar el código de facturación.");
     } finally {
@@ -218,15 +254,8 @@ export default function PaymentFormModal({
         type="button"
         className="pq-btn pq-btn-primary"
         onClick={handleSubmit}
-        disabled={
-          loading ||
-          !canManagePayment ||
-          (correctionMode && ![PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL].includes(paymentStatus)) ||
-          (paymentStatus === PAYMENT_STATUS.PAID && (
-            (!invoiceNumber.trim() && !order?.invoice_number?.trim())
-            || (!receiptFile && !hasVerifiedPaymentReceipt)
-          ))
-        }
+        disabled={!paymentEligibility.eligible}
+        aria-describedby={!correctionMode && !paymentEligibility.eligible && paymentEligibility.error ? "pfm-payment-block-reason" : undefined}
       >
         {confirmLabel}
       </button>
@@ -279,6 +308,12 @@ export default function PaymentFormModal({
           </div>
         )}
 
+        {!correctionMode && !paymentEligibility.eligible && paymentEligibility.error && (
+          <div id="pfm-payment-block-reason" className="pfm-error" role="status" aria-live="polite" aria-atomic="true">
+            <Icons.AlertCircle aria-hidden="true" />{paymentEligibility.error}
+          </div>
+        )}
+
           <div className="pfm-field">
             <span id="pfm-payment-status-label" className="pfm-label">Estado de pago</span>
             <div className="pfm-select-wrap">
@@ -297,7 +332,7 @@ export default function PaymentFormModal({
           {paymentStatus === PAYMENT_STATUS.CREDIT && (
             <div className="pfm-credit-info">
               <Icons.AlertCircle />
-              <span>Facturación: <strong>{order?.invoice_number || "No definido"}</strong></span>
+              <span>Facturación: <strong>{savedInvoiceNumber || "No definido"}</strong></span>
               {!order?.client_id && onCreditClientRequired && (
                 <button type="button" className="pq-btn pq-btn-secondary pfm-credit-client-btn" onClick={() => onCreditClientRequired(order)} disabled={loading}>
                   <Icons.User /> Vincular cliente
