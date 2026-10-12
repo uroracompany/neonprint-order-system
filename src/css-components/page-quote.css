@@ -2413,7 +2413,31 @@
 }
 
 .pq-payment-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   background: var(--pq-surface, #ffffff);
+}
+
+.pq-payment-panel > .pq-panel-title,
+.pq-payment-panel > .pq-readonly-note,
+.pq-payment-panel > .pq-preview-block,
+.pq-payment-panel > .pq-upload-hint,
+.pq-payment-panel .pq-manage-payment-btn {
+  margin: 0;
+}
+
+.pq-payment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.pq-payment-actions > .pq-manage-payment-btn {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
 }
 
 .pq-payment-readonly-row {
@@ -2437,10 +2461,6 @@
 .pq-payment-readonly-row strong {
   color: var(--pq-text);
   font-size: 13px;
-}
-
-.pq-manage-payment-btn {
-  margin-top: 16px;
 }
 
 .pq-payment-field {

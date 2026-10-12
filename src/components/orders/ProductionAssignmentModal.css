@@ -24,6 +24,21 @@
   box-shadow: 0 22px 55px rgba(15, 30, 64, 0.18);
 }
 
+.pq-dialog--production-assignment .ams-body {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.pq-dialog--production-assignment .ams-body > p {
+  display: none;
+}
+
+.pq-dialog--production-assignment .ams-body > .pq-production-dialog-body {
+  flex: 1 1 auto;
+}
+
 .pq-dialog--production-assignment .pq-dialog-header {
   display: flex;
   flex: 0 0 auto;

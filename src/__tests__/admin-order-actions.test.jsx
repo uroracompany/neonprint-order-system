@@ -17,7 +17,7 @@ const paidCashOrder = {
 };
 
 describe("AdminOrderActions", () => {
-  it("exposes every row operation in the modal and delegates to existing handlers", () => {
+  it("keeps administration out of payment operations while delegating operational handlers", () => {
     const handlers = {
       onAdvanced: vi.fn(),
       onPayment: vi.fn(),
@@ -28,12 +28,12 @@ describe("AdminOrderActions", () => {
     render(<AdminOrderActions order={cashOrder} variant="modal" {...handlers} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Configuración avanzada" }));
-    fireEvent.click(screen.getByRole("button", { name: "Pago" }));
     fireEvent.click(screen.getByRole("button", { name: "Editar orden" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancelar orden" }));
 
     expect(handlers.onAdvanced).toHaveBeenCalledWith(cashOrder);
-    expect(handlers.onPayment).toHaveBeenCalledWith(cashOrder);
+    expect(screen.queryByRole("button", { name: "Pago" })).not.toBeInTheDocument();
+    expect(handlers.onPayment).not.toHaveBeenCalled();
     expect(handlers.onEdit).toHaveBeenCalledWith(cashOrder);
     expect(handlers.onCancel).toHaveBeenCalledWith(cashOrder);
   });

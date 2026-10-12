@@ -101,7 +101,7 @@
   border: 1.5px solid var(--pp-border);
   border-radius: var(--pp-radius-sm);
   cursor: pointer;
-  color: var(--pp-text-sub);
+  color: #1E40AF;
   transition: all 0.15s ease;
   flex-shrink: 0;
 }
@@ -235,8 +235,8 @@
   z-index: 1;
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--pp-text-sub);
-  line-height: 1.5;
+  color: #1E40AF;
+  font-weight: 600; line-height: 1.5;
 }
 
 .pq-greeting-copy,
@@ -269,7 +269,7 @@
   border: 1px solid #dbe3ef;
   border-radius: 20px;
   background: #f8fafc;
-  color: var(--pp-text-sub);
+  color: #1E40AF;
   font-size: 12px;
   font-weight: 600;
   line-height: 1;
@@ -646,8 +646,12 @@
   flex-wrap: wrap;
 }
 
+.pp-panel .pp-table .acm-client-cell > span:last-child > .pd-new-order-badge {
+  align-self: flex-start;
+}
+
 .td-desc {
-  color: var(--pp-text-sub);
+  color: #1E40AF;
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -655,11 +659,11 @@
 }
 
 .td-material {
-  color: var(--pp-text-sub);
+  color: #1E40AF;
 }
 
 .td-qty {
-  color: var(--pp-text-sub);
+  color: #1E40AF;
   text-align: center;
 }
 
@@ -770,7 +774,7 @@
   align-items: center;
   justify-content: center;
   transition: all 0.15s ease;
-  color: var(--pp-text-sub);
+  color: #1E40AF;
   padding: 0 12px;
 }
 
@@ -976,7 +980,7 @@
   border: 1.5px solid var(--pp-border);
   border-radius: var(--pp-radius-sm);
   cursor: pointer;
-  color: var(--pp-text-sub);
+  color: #1E40AF;
   transition: all 0.15s;
 }
 
@@ -1086,7 +1090,7 @@
 .pp-team-progress-head span {
   margin-top: 2px;
   font-size: 11px;
-  color: var(--pp-text-sub);
+  color: #1E40AF;
 }
 
 .pp-team-progress-head em {
@@ -1227,8 +1231,8 @@
 
 .pp-modal-description {
   font-size: 13px;
-  color: var(--pp-text-sub);
-  line-height: 1.5;
+  color: #1E40AF;
+  font-weight: 600; line-height: 1.5;
   padding: 12px;
   background: var(--pp-surface-alt);
   border-radius: var(--pp-radius-sm);
@@ -1369,9 +1373,11 @@
   white-space: nowrap;
 }
 
+.pp-transfer-button:focus-visible { outline: 3px solid var(--pp-primary-light); outline-offset: 2px; }
+
 .pp-transfer-button:hover:not(:disabled) { background: #1a3060; }
 .pp-transfer-button:disabled { cursor: not-allowed; opacity: .55; }
-.pp-transfer-button svg { width: 13px; height: 13px; }
+.pp-transfer-button svg { width: 13px; height: 13px; color: #fff; }
 
 .pp-transfer-history-card { padding-bottom: 14px; }
 .pp-transfer-history-empty { margin: 12px 0 0; color: var(--pp-text-muted); font-size: 12px; }
@@ -1381,7 +1387,7 @@
 .pp-transfer-history-list strong { display: inline-flex; align-items: center; gap: 5px; color: var(--pp-text); font-size: 12px; }
 .pp-transfer-history-list strong svg { width: 13px; height: 13px; color: #1d4ed8; }
 .pp-transfer-history-list span, .pp-transfer-history-list time { color: #64748b; font-size: 11px; }
-.pp-transfer-history-list p { margin: 5px 0 3px; color: var(--pp-text-sub); font-size: 12px; line-height: 1.45; }
+.pp-transfer-history-list p { margin: 5px 0 3px; color: #1E40AF; font-size: 12px; line-height: 1.45; }
 
 @media (max-width: 560px) {
   .pp-files-title-with-action { align-items: flex-start; flex-direction: column; }
@@ -1534,7 +1540,7 @@
 
 .pp-btn-secondary {
   background: var(--pp-surface-alt);
-  color: var(--pp-text-sub);
+  color: #1E40AF;
   border: 1.5px solid var(--pp-border);
 }
 
@@ -1640,7 +1646,7 @@
 .pp-assign-text {
   font-size: 13px;
   color: var(--pp-text-muted);
-  line-height: 1.5;
+  font-weight: 600; line-height: 1.5;
   margin: 0;
 }
 
@@ -1660,7 +1666,7 @@
 
 .pp-assign-order-name {
   font-size: 13px;
-  color: var(--pp-text-sub);
+  color: #1E40AF;
   margin-left: 4px;
 }
 
@@ -2047,7 +2053,7 @@
 }
 .pp-confirm-text-em {
   font-size: 14px;
-  line-height: 1.5;
+  font-weight: 600; line-height: 1.5;
   color: #0f1e40;
   margin: 0;
   font-weight: 600;
@@ -2072,7 +2078,7 @@
 }
 .pp-confirm-alert-text {
   font-size: 12.5px;
-  line-height: 1.5;
+  font-weight: 600; line-height: 1.5;
   color: #374151;
   margin: 0;
 }
@@ -2081,7 +2087,7 @@
 }
 .pp-confirm-text {
   font-size: 13.5px;
-  line-height: 1.5;
+  font-weight: 600; line-height: 1.5;
   color: #6b7280;
   margin: 0 0 2px;
   font-weight: 500;

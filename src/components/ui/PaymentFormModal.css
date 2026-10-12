@@ -206,6 +206,22 @@
   opacity: 0.65;
 }
 
+.pfm-receipt-number-input[readonly] {
+  cursor: text;
+  background: #f8fbff;
+}
+
+.pfm-existing-receipt-state {
+  margin: 0 0 18px;
+  padding: 11px 13px;
+  border: 1px solid #dbe5f2;
+  border-radius: 10px;
+  background: #f8fbff;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .pfm-receipt-number-hint {
   color: var(--text-muted);
   font-size: 11px;

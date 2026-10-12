@@ -1,7 +1,18 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { adminApiFetch } from "../utils/adminApi";
 import AdminClientsModule from "../components/clients/AdminClientsModule";
+
+vi.setConfig({ testTimeout: 15000 });
+
+vi.mock("../utils/adminApi", () => ({ adminApiFetch: vi.fn() }));
+
+vi.mock("recharts", () => {
+  const Container = ({ children }) => <svg>{children}</svg>;
+  const Empty = () => null;
+  return { ResponsiveContainer: Container, AreaChart: Container, PieChart: Container, Area: Empty, CartesianGrid: Empty, Cell: Empty, Pie: Empty, Tooltip: Empty, XAxis: Empty, YAxis: Empty };
+});
 
 const makeClient = (index, overrides = {}) => ({
   id: `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,
@@ -68,6 +79,26 @@ const orderListResponse = [{
   total_count: 1,
 }];
 
+const workspaceResponse = {
+  client: {
+    client_id: listRows[0].id,
+    client_name: listRows[0].name,
+    total_orders: 3,
+    cancelled_orders: 0,
+    normal_orders: 2,
+    urgent_911_orders: 1,
+    internal_design_orders: 2,
+    external_design_orders: 1,
+    cancel_rate: 0,
+    avg_orders_per_month: 1.5,
+    activity: "Media",
+    health_score: 71,
+    health: "Buena",
+    payment: { credit_active: 1, partial_active: 0, pending_active: 0 },
+    monthly_activity: [{ month: "2026-01", orders: 2 }, { month: "2026-02", orders: 1 }],
+  },
+};
+
 const createSupabaseMock = () => ({
   rpc: vi.fn(async (name) => {
     if (name === "admin_get_client_detail") return { data: detailResponse, error: null };
@@ -89,6 +120,13 @@ const renderModule = (supabase = createSupabaseMock()) => {
     onViewOrders: vi.fn(),
     onManageCredit: vi.fn(),
   };
+  adminApiFetch.mockImplementation(async (_path, payload) => {
+    const source = listRows.find((client) => client.id === payload?.client_id) || listRows[0];
+    return {
+      response: { ok: true, status: 200 },
+      result: { client: { ...workspaceResponse.client, client_id: source.id, client_name: source.name } },
+    };
+  });
   return { ...render(<AdminClientsModule {...props} />), props, supabase };
 };
 
@@ -130,28 +168,86 @@ describe("AdminClientsModule", () => {
     });
   });
 
-  it("abre el subapartado integrado y expone sus acciones rápidas", async () => {
-    const user = userEvent.setup();
-    const { props, supabase } = renderModule();
-    await user.click(await screen.findByText("Cliente 1"));
+  it("abre el modal KPI desde la fila y el ojo con una consulta individual", async () => {
+    const { supabase } = renderModule();
+    fireEvent.click(await screen.findByText("Cliente 1"));
+    expect(adminApiFetch).toHaveBeenCalled();
 
-    expect(await screen.findByRole("heading", { name: "Cliente 1" })).toBeInTheDocument();
-    expect(screen.getByText("Información personal")).toBeInTheDocument();
-    expect(screen.getByText("Resumen comercial")).toBeInTheDocument();
-    expect(screen.getByText("Ordenes 911")).toBeInTheDocument();
-    expect(screen.getByText("Ordenes normales")).toBeInTheDocument();
-    expect(screen.getByText("Órdenes diseño interno")).toBeInTheDocument();
-    expect(screen.getByText("Órdenes diseño externo")).toBeInTheDocument();
-    expect(screen.getByText("Actividad reciente")).toBeInTheDocument();
-    expect(supabase.rpc).toHaveBeenCalledWith("admin_get_client_detail", {
-      p_client_id: listRows[0].id,
+    expect(await screen.findByRole("dialog")).toHaveTextContent("911 vs. normal");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Estados de pago activos");
+    expect(screen.queryByText("Información personal")).not.toBeInTheDocument();
+    expect(adminApiFetch).toHaveBeenCalledWith("/api/kpi-data", {
+      action: "client_workspace_detail",
+      client_id: listRows[0].id,
+    });
+    expect(supabase.rpc).not.toHaveBeenCalledWith("admin_get_client_detail", expect.anything());
+  });
+
+  it("abre el mismo modal desde el ojo sin cambiar de vista", async () => {
+    renderModule();
+    const eye = await screen.findByRole("button", { name: `Ver estadísticas de ${listRows[1].name}` });
+    eye.focus();
+    fireEvent.click(eye);
+    expect(await screen.findByRole("dialog")).toHaveTextContent("911 vs. normal");
+    expect(adminApiFetch).toHaveBeenCalledWith("/api/kpi-data", {
+      action: "client_workspace_detail",
+      client_id: listRows[1].id,
     });
 
-    await user.click(screen.getByRole("button", { name: "Nueva orden" }));
-    expect(props.onCreateOrder).toHaveBeenCalledWith(expect.objectContaining({ id: listRows[0].id }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(document.activeElement).toBe(eye);
+  });
 
-    await user.click(screen.getByRole("button", { name: "Volver a clientes" }));
-    expect(await screen.findByText("Clientes registrados")).toBeInTheDocument();
+  it("muestra error y permite reintentar la carga individual", async () => {
+    renderModule();
+    adminApiFetch.mockRejectedValueOnce(new Error("Servicio no disponible"));
+    fireEvent.click(await screen.findByRole("button", { name: `Ver estadísticas de ${listRows[0].name}` }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Servicio no disponible");
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Estados de pago activos");
+  });
+
+  it("conserva las acciones operativas en el menú separado", async () => {
+    const { props } = renderModule();
+    await screen.findByText("Cliente 1");
+
+    fireEvent.click(screen.getByRole("button", { name: `Más acciones de ${listRows[0].name}` }));
+    fireEvent.click(within(screen.getAllByRole("row")[1]).getByRole("button", { name: "Nueva orden" }));
+    expect(props.onCreateOrder).toHaveBeenCalledWith(expect.objectContaining({ id: listRows[0].id }));
+  });
+
+  it("coloca el menú después del zafacón y usa un icono de despliegue", async () => {
+    renderModule();
+    await screen.findByText("Cliente 1");
+    const row = within(screen.getAllByRole("row")[1]);
+    const actions = row.getAllByRole("button").filter((action) => action.getAttribute("aria-label"));
+
+    expect(actions.map((action) => action.getAttribute("aria-label"))).toEqual([
+      `Ver estadísticas de ${listRows[0].name}`,
+      `Editar ${listRows[0].name}`,
+      `Eliminar ${listRows[0].name}`,
+      `Más acciones de ${listRows[0].name}`,
+    ]);
+    expect(actions[3].querySelector("polyline")).toBeInTheDocument();
+  });
+
+  it("cierra el menú al pulsar fuera o presionar Escape", async () => {
+    renderModule();
+    const summary = await screen.findByRole("button", { name: `Más acciones de ${listRows[0].name}` });
+    const details = summary.closest("details");
+
+    fireEvent.click(summary);
+    expect(details).toHaveAttribute("open");
+
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(details).not.toHaveAttribute("open"));
+
+    fireEvent.click(summary);
+    expect(details).toHaveAttribute("open");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(details).not.toHaveAttribute("open"));
   });
 
   it("muestra al cliente retirado y solo permite restaurarlo", async () => {

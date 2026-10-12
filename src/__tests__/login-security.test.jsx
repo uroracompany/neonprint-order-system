@@ -17,6 +17,8 @@ const authMock = vi.hoisted(() => ({
 const fromMock = vi.hoisted(() => vi.fn());
 const signOutAuthMock = vi.hoisted(() => vi.fn(async () => undefined));
 const setAuthSessionPersistenceMock = vi.hoisted(() => vi.fn());
+const isAuthSessionPersistenceEnabledMock = vi.hoisted(() => vi.fn(() => false));
+const authContextMock = vi.hoisted(() => ({ user: null, profile: undefined }));
 
 vi.mock("../../supabaseClient", () => ({
   supabase: {
@@ -26,9 +28,13 @@ vi.mock("../../supabaseClient", () => ({
 }));
 
 vi.mock("../utils/authManager", () => ({
-  isAuthSessionPersistenceEnabled: vi.fn(() => false),
+  isAuthSessionPersistenceEnabled: isAuthSessionPersistenceEnabledMock,
   setAuthSessionPersistence: setAuthSessionPersistenceMock,
   signOutAuth: signOutAuthMock,
+}));
+
+vi.mock("../hooks/useAuth", () => ({
+  useAuth: () => authContextMock,
 }));
 
 const mockProfile = (profile = { role: "delivery", employment_status: true }) => {
@@ -51,6 +57,8 @@ let Lobby;
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  authContextMock.user = null;
+  authContextMock.profile = undefined;
   mockProfile();
   authMock.signInWithPassword.mockResolvedValue({
     data: { user: { id: "delivery-user" } },
@@ -149,6 +157,7 @@ describe("secure login", () => {
   });
 
   it("uses a generic error message for failed login attempts", async () => {
+    isAuthSessionPersistenceEnabledMock.mockReturnValue(true);
     authMock.signInWithPassword.mockResolvedValue({
       data: null,
       error: { status: 404, message: "User not found" },
@@ -163,7 +172,8 @@ describe("secure login", () => {
 
     expect(await screen.findByText(/correo o contraseña incorrectos/i)).toBeInTheDocument();
     expect(screen.queryByText(/cuenta no encontrada|user not found/i)).not.toBeInTheDocument();
-    expect(signOutAuthMock).toHaveBeenCalled();
+    expect(signOutAuthMock).not.toHaveBeenCalled();
+    expect(setAuthSessionPersistenceMock).toHaveBeenNthCalledWith(2, true);
   });
 
   it("shows a clear connection message instead of calling a technical failure invalid credentials", async () => {
@@ -178,6 +188,29 @@ describe("secure login", () => {
 
     expect(await screen.findByText(/no pudimos conectarnos/i)).toBeInTheDocument();
     expect(screen.queryByText(/correo o contraseña incorrectos/i)).not.toBeInTheDocument();
+  });
+
+  it("cleans only the new local session when profile validation fails after login", async () => {
+    authMock.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "delivery-user" }, session: { access_token: "new-session-token" } },
+      error: null,
+    });
+    fromMock.mockReturnValue({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          single: vi.fn(async () => ({ data: null, error: new Error("profile unavailable") })),
+        })),
+      })),
+    });
+
+    const user = userEvent.setup();
+    renderLobby();
+    await user.type(screen.getByLabelText("Correo electrónico"), "delivery@example.com");
+    await user.type(screen.getByLabelText("Contraseña"), "SecurePass123");
+    await user.click(screen.getByRole("button", { name: /acceder al sistema/i }));
+
+    expect(await screen.findByText(/no pudimos validar tu perfil/i)).toBeInTheDocument();
+    expect(signOutAuthMock).toHaveBeenCalledWith({ scope: "local" });
   });
 
   it("requires MFA verification for admin profiles", async () => {

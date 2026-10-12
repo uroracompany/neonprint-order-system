@@ -863,7 +863,7 @@ export default function CreateOrderModal({
       setMissingLabelIndices([]);
     }
     if (form.design_type === "EXTERNAL_DESING" && !form.design_preview) {
-      errors.design_preview = "Debe agregar una imagen de la orden de trabajo.";
+      errors.design_preview = "Debe agregar una imagen de orden de trabajo.";
     }
 
     return errors;
@@ -1269,14 +1269,14 @@ export default function CreateOrderModal({
             </div>
 
             <div className="col-full">
-              <Field label="Imagen de la orden de trabajo" required error={fieldErrors.design_preview} hint="Vista previa del diseño (obligatorio)">
+              <Field label="Imagen de orden de trabajo" required error={fieldErrors.design_preview} hint="Imagen de orden de trabajo obligatoria">
                 {!form.design_preview ? (
                   <FileUploadZone
                     mode="image"
                     replaceMode
                     inputRef={previewInputRef}
-                    buttonLabel="Subir imagen de preview"
-                    hint="Imagen de la orden de trabajo (PNG, JPG...)"
+                    buttonLabel="Subir imagen de orden de trabajo"
+                    hint="Subir imagen de orden de trabajo (PNG, JPG...)"
                     onFilesAccepted={([file]) => {
                       setFieldErrors(previous => ({ ...previous, design_preview: "" }));
                       set("design_preview", file);
@@ -1289,18 +1289,18 @@ export default function CreateOrderModal({
                       replaceMode
                       inputRef={previewInputRef}
                       className="file-upload-zone--hidden-picker"
-                      buttonLabel="Cambiar imagen"
+                      buttonLabel="Cambiar imagen de orden de trabajo"
                       onFilesAccepted={([file]) => {
                         setFieldErrors(previous => ({ ...previous, design_preview: "" }));
                         set("design_preview", file);
                       }}
                     />
                     <div className="ps-preview-card">
-                      <img src={URL.createObjectURL(form.design_preview)} alt="Preview" className="ps-preview-img-main" />
+                      <img src={URL.createObjectURL(form.design_preview)} alt="Imagen de orden de trabajo" className="ps-preview-img-main" />
                       <div className="ps-preview-card-overlay">
-                        <span className="ps-preview-card-label">Vista previa del diseño</span>
+                        <span className="ps-preview-card-label">Imagen de orden de trabajo</span>
                         <div className="ps-preview-card-actions">
-                          <button className="ps-preview-change-btn" onClick={() => previewInputRef.current?.click()}>Cambiar</button>
+                          <button className="ps-preview-change-btn" onClick={() => previewInputRef.current?.click()}>Cambiar imagen de orden de trabajo</button>
                           <button className="ps-preview-del-btn" onClick={() => set("design_preview", null)}><Icons.Trash /></button>
                         </div>
                       </div>

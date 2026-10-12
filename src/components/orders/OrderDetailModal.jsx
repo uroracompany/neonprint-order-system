@@ -546,13 +546,13 @@ export default function OrderDetailModal({
               return (
               <div>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--pink)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icons.Eye /> Orden de Trabajo
+                  <Icons.Eye /> Imagen de orden de trabajo
                 </p>
                 {previewUrl ? (
                   <a href={previewUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
                     <img
                       src={previewUrl}
-                      alt="preview"
+                      alt="Imagen de orden de trabajo"
                       style={{
                         width: "100%",
                         borderRadius: "var(--radius-md)",

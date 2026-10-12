@@ -8,15 +8,13 @@ import SharedOrderDetailModal from "../components/orders/OrderDetailModal";
 import AdminAdvancedSettings from "../components/orders/AdminAdvancedSettings";
 import AdminClientsModule from "../components/clients/AdminClientsModule";
 import AdminEmployeeModule from "../components/employees/AdminEmployeeModule";
+import AdminEmployeeTeamModule from "../components/employees/AdminEmployeeTeamModule";
 import AdminOrderActions from "../components/orders/AdminOrderActions";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
-import PaymentFormModal from "../components/ui/PaymentFormModal";
 import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";
 import CreateClientModal from "../components/ui/CreateClientModal";
-import { validateReceiptFile } from "../utils/receiptValidation";
 import { executeAdminOrderCommand } from "../utils/adminOrderCommands";
 import {
-  buildPaymentReceiptPath,
   buildStorageSafeFileName,
   createSignedOrderAssetUrlFromStoredUrl,
   uploadOrderAsset,
@@ -26,7 +24,6 @@ import { StatusBadge, PaymentBadge, RoleBadge } from "../components/ui/Badge";
 import { getMinimumDeliveryDate } from "../utils/deliveryDate";
 import { AssignModal } from "../components/ui/AssignModal";
 import ArchiveOrderModal from "../components/ui/ArchiveOrderModal";
-import SettleCreditModal from "../components/ui/SettleCreditModal";
 import {
   CreditCustomReminderDueModal,
   CreditReminderCreateModal,
@@ -37,7 +34,6 @@ import { SalesFilterToolbar } from "../components/ui/SalesFilterToolbar";
 import FileUploadZone from "../components/ui/FileUploadZone";
 import {
   ORDER_STATUS,
-  PAYMENT_STATUS,
   STATUS_LABELS,
   getPaymentStatusLabel,
   MATERIAL_OPTIONS,
@@ -97,6 +93,7 @@ import "../css-components/page-admin.css";
 
 const KPIModule = lazy(() => import("../components/kpi/KPIModule"));
 const MaterialDetailModal = lazy(() => import("../components/kpi/MaterialDetailModal"));
+const TerminationDetailModal = lazy(() => import("../components/kpi/TerminationDetailModal"));
 const MaterialAnalyticsOverviewModal = lazy(() => import("../components/kpi/MaterialAnalyticsOverviewModal"));
 const OrderStatisticsModal = lazy(() => import("../components/orders/OrderStatisticsModal"));
 
@@ -125,10 +122,6 @@ const DEFAULT_ORDER_FORM = {
 };
 const DEFAULT_USER_FORM = { name: "", email: "", password: "", confirmPassword: "", role: "seller", employment_status: true };
 const DEFAULT_CLIENT_FORM = { name: "", phone: "", email: "", address: "", notes: "" };
-const getOpenCreditReceivables = (items = []) => items.filter((item) => (
-  item?.client_id && item.status === "open"
-));
-
 const isOpenCreditReceivable = (item) => item?.status === "open";
 const formatCreditDate = (value) => (value ? formatDate(value) : "---");
 const formatOverviewDeliveryDate = (value) => {
@@ -351,7 +344,7 @@ function OrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onSubmit
         <label className="pa-field full"><span>Descripción</span><textarea rows={3} value={orderForm.description} onChange={(e) => setOrderForm(prev => ({ ...prev, description: e.target.value }))} /></label>
         <label className="pa-field"><span>Material</span><select value={orderForm.material} onChange={(e) => setOrderForm(prev => ({ ...prev, material: e.target.value }))}><option value="">Seleccionar material</option>{simpleMaterials.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}</select></label>
         <label className="pa-field"><span>Tipo de orden</span><select value={orderForm.order_type} onChange={(e) => setOrderForm(prev => ({ ...prev, order_type: e.target.value }))}><option value="normal">Normal</option><option value="orden 911">Orden 911</option></select></label>
-        <label className="pa-field full"><span>Preview / Orden de trabajo</span><input value={orderForm.preview_image} onChange={(e) => setOrderForm(prev => ({ ...prev, preview_image: e.target.value }))} placeholder="https://..." /></label>
+        <label className="pa-field full"><span>Imagen de orden de trabajo</span><input value={orderForm.preview_image} onChange={(e) => setOrderForm(prev => ({ ...prev, preview_image: e.target.value }))} placeholder="https://..." /></label>
         <label className="pa-field full"><span>Archivos de diseño</span><textarea rows={4} value={orderForm.order_file_url} onChange={(e) => setOrderForm(prev => ({ ...prev, order_file_url: e.target.value }))} placeholder="Una URL por línea o separadas por coma" /></label>
       </div>
       <div className="pa-modal-actions">
@@ -500,12 +493,12 @@ function OrderDetailInfo({ order, usersById, assignmentAction = null }) {
               {preview && (
                 <div>
                   <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sub)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                    <Icons.Eye /> Orden de Trabajo
+                    <Icons.Eye /> Imagen de orden de trabajo
                   </p>
                   <SecureImageLink url={preview} fileName={getFileNameFromUrl(preview)}>
                     <SecureImage
                       url={preview}
-                      alt="preview"
+                      alt="Imagen de orden de trabajo"
                       style={{
                         width: "100%",
                         borderRadius: "var(--radius-md)",
@@ -905,7 +898,7 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
         <section className="pa-form-section">
           <div className="pa-form-section-head">
             <span className="pa-form-section-kicker">Archivos</span>
-            <h5>Diseños y orden de trabajo</h5>
+            <h5>Diseños e imagen de orden de trabajo</h5>
           </div>
 
           <div className="pa-form-grid">
@@ -947,27 +940,27 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
             </div>
 
             <div className="pa-field full">
-              <span>Preview / Orden de trabajo</span>
+              <span>Imagen de orden de trabajo</span>
               {previewSource ? (
                 <div className="pa-preview-card">
                   {previewSource.startsWith("blob:") ? (
-                    <img src={previewSource} alt="Preview de la orden" className="pa-preview-image" />
+                    <img src={previewSource} alt="Imagen de orden de trabajo" className="pa-preview-image" />
                   ) : (
                     <SecureImageLink url={previewSource} fileName={getFileNameFromUrl(previewSource)}>
                       <SecureImage
                         url={previewSource}
-                        alt="Preview de la orden"
+                        alt="Imagen de orden de trabajo"
                         className="pa-preview-image"
                       />
                     </SecureImageLink>
                   )}
                   <div className="pa-preview-card-footer">
                     <div>
-                      <strong>{orderForm.newPreview ? orderForm.newPreview.name : "Preview actual"}</strong>
+                      <strong>{orderForm.newPreview ? orderForm.newPreview.name : "Imagen de orden de trabajo actual"}</strong>
                       <small>{orderForm.newPreview ? "Se reemplazará al guardar" : "Archivo guardado"}</small>
                     </div>
                     <div className="pa-upload-chip-actions">
-                      <button type="button" className="pa-btn ghost pa-btn-sm" onClick={() => previewInputRef.current?.click()}>Cambiar</button>
+                      <button type="button" className="pa-btn ghost pa-btn-sm" onClick={() => previewInputRef.current?.click()}>Cambiar imagen de orden de trabajo</button>
                       <button type="button" className="pa-btn danger pa-btn-sm" onClick={handleRemovePreview}>Quitar</button>
                     </div>
                   </div>
@@ -976,7 +969,7 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
                     replaceMode
                     inputRef={previewInputRef}
                     className="file-upload-zone--hidden-picker"
-                    buttonLabel="Cambiar preview"
+                    buttonLabel="Cambiar imagen de orden de trabajo"
                     onFilesAccepted={handlePreviewChange}
                   />
                 </div>
@@ -985,8 +978,8 @@ function AdminOrderFormModal({ open, mode, orderForm, setOrderForm, onClose, onS
                   mode="image"
                   replaceMode
                   inputRef={previewInputRef}
-                  buttonLabel="Subir preview"
-                  hint="Imagen opcional para mostrar la orden de trabajo dentro del detalle."
+                  buttonLabel="Subir imagen de orden de trabajo"
+                  hint="Imagen opcional de orden de trabajo para mostrar dentro del detalle."
                   onFilesAccepted={handlePreviewChange}
                 />
               )}
@@ -1183,7 +1176,7 @@ function OrderDetailModal({ open, order, usersById, onClose, onEdit, onCancel })
             <div><span>Pago</span><strong><PaymentBadge status={order.payment_status} className="ps-badge" bordered /></strong></div>
             <div><span>Facturacion</span><strong>{order.invoice_number || "No definido"}</strong></div>
             <div><span>Precio</span><strong>{order.price ? `RD$${Number(order.price).toLocaleString("es-DO")}` : "Precio pendiente"}</strong></div>
-            <div><span>Preview</span><strong>{order.preview_image ? <SecureImageLink url={order.preview_image} fileName={getFileNameFromUrl(order.preview_image)}>Ver preview</SecureImageLink> : "Sin preview"}</strong></div>
+            <div><span>Imagen de orden de trabajo</span><strong>{order.preview_image ? <SecureImageLink url={order.preview_image} fileName={getFileNameFromUrl(order.preview_image)}>Ver imagen de orden de trabajo</SecureImageLink> : "Sin imagen de orden de trabajo"}</strong></div>
           </div>
           {files.length > 0 ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
@@ -1576,8 +1569,6 @@ export default function Dashboard() {
   const [assigningOrder, setAssigningOrder] = useState(null);
   const [assigningRole, setAssigningRole] = useState(null);
   const [assigningLoading, setAssigningLoading] = useState(false);
-  const [paymentModalOrder, setPaymentModalOrder] = useState(null);
-  const [paymentModalLoading, setPaymentModalLoading] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelOrderData, setCancelOrderData] = useState(null);
   const [_savingOrder, setSavingOrder] = useState(false);
@@ -1603,6 +1594,7 @@ export default function Dashboard() {
   const USERS_PER_PAGE = 7;
   // userViewMode eliminado: solo vista tabla
   const [employeeDetailView, setEmployeeDetailView] = useState(false);
+  const [employeeTeamView, setEmployeeTeamView] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
   const [employeeToDelete, setEmployeeToDelete] = useState(null);
   const [employeeDeleteLoading, setEmployeeDeleteLoading] = useState(false);
@@ -1643,6 +1635,7 @@ export default function Dashboard() {
   const [materialToDelete, setMaterialToDelete] = useState(null);
   const [materialDeleteLoading, setMaterialDeleteLoading] = useState(false);
   const [selectedMaterialAnalytics, setSelectedMaterialAnalytics] = useState(null);
+  const [selectedTerminationAnalytics, setSelectedTerminationAnalytics] = useState(null);
 const [showMaterialAnalyticsOverview, setShowMaterialAnalyticsOverview] = useState(false);
   const [showOrderStatisticsModal, setShowOrderStatisticsModal] = useState(false);
   const [materialSearch, setMaterialSearch] = useState("");
@@ -1660,21 +1653,12 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
   const [clientsLoading, setClientsLoading] = useState(true);
   const [accountsReceivable, setAccountsReceivable] = useState([]);
   const [accountsReceivableLoading, setAccountsReceivableLoading] = useState(true);
-  const [recordPaymentClient, setRecordPaymentClient] = useState(null);
-  const [recordPaymentForm, setRecordPaymentForm] = useState({ amount: "", payment_method: "", notes: "" });
-  const [recordPaymentLoading, setRecordPaymentLoading] = useState(false);
   const [creditSearch, setCreditSearch] = useState("");
   const [creditStatusFilter, setCreditStatusFilter] = useState("open");
   const [creditPage, setCreditPage] = useState(1);
   const [creditView, setCreditView] = useState("list");
   const [creditDetailClientId, setCreditDetailClientId] = useState(null);
   const [selectedCreditOrderIds, setSelectedCreditOrderIds] = useState({});
-  const [creditSettleAllTarget, setCreditSettleAllTarget] = useState(null);
-  const [creditSettleAllNotes, setCreditSettleAllNotes] = useState("");
-  const [creditSettleAllLoading, setCreditSettleAllLoading] = useState(false);
-  const [creditSettlementTarget, setCreditSettlementTarget] = useState(null);
-  const [creditSettlementNotes, setCreditSettlementNotes] = useState("");
-  const [creditSettlementLoading, setCreditSettlementLoading] = useState(false);
   const [creditAlertAcknowledged, setCreditAlertAcknowledged] = useState(true);
   const [creditAlertLoading, setCreditAlertLoading] = useState(false);
   const [creditAlertSaving, setCreditAlertSaving] = useState(false);
@@ -1693,6 +1677,7 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
   const [creditReminderNow, setCreditReminderNow] = useState(null);
   const creditReminderServerClockRef = useRef(null);
   const materialAnalyticsTriggerRef = useRef(null);
+  const terminationAnalyticsTriggerRef = useRef(null);
   const materialAnalyticsOverviewTriggerRef = useRef(null);
   const [showClientModal, setShowClientModal] = useState(false);
   const [showOrderClientModal, setShowOrderClientModal] = useState(false);
@@ -1904,7 +1889,7 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
         orders: result?.orders,
         setOrders,
         setSelectedOrder,
-        openOrderSetters: [setSettingsOrder, setPaymentModalOrder],
+        openOrderSetters: [setSettingsOrder],
         openOrderContainers: [{ setter: setAdvancedProduction }],
         preserveMissingOpenOrders: silent,
       });
@@ -2554,109 +2539,6 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
     showFeedback("success", `Orden asignada a ${isDesigner ? "diseñador" : "caja"} correctamente.`);
   };
 
-  const openPaymentModal = (order) => {
-    setPaymentModalOrder(order);
-  };
-
-  const handlePaymentConfirm = async ({ paymentStatus, receiptFile, invoiceNumber }) => {
-    let currentOrder = paymentModalOrder;
-    if (!currentOrder) return;
-
-    const requestedInvoiceNumber = String(invoiceNumber || "").trim();
-    if (currentOrder.invoice_assignment_mode === "cashier"
-      && requestedInvoiceNumber
-      && requestedInvoiceNumber !== String(currentOrder.invoice_number || "").trim()) {
-      setPaymentModalLoading(true);
-      const { data: assignedOrder, error: assignError } = await supabase.rpc("quote_assign_invoice_code", {
-        p_order_id: currentOrder.id,
-        p_invoice_number: requestedInvoiceNumber,
-        p_expected_updated_at: currentOrder.updated_at,
-      });
-      setPaymentModalLoading(false);
-      if (assignError || !assignedOrder) {
-        throw new Error(assignError?.message || "No se pudo guardar el código de facturación.");
-      }
-      currentOrder = { ...currentOrder, ...assignedOrder };
-      setPaymentModalOrder(currentOrder);
-    }
-
-    if (paymentStatus === PAYMENT_STATUS.CREDIT) {
-      setPaymentModalLoading(true);
-        const { error } = await supabase.rpc("mark_order_as_credit", {
-          p_order_id: currentOrder.id,
-          p_due_date: null,
-          p_expected_updated_at: currentOrder.updated_at,
-        });
-      setPaymentModalLoading(false);
-
-      if (error) {
-        throw new Error(error.message || "No se pudo aprobar el crédito.");
-      }
-
-      setPaymentModalOrder(null);
-      await Promise.all([loadOrders(), fetchAccountsReceivable()]);
-      return;
-    }
-
-    setPaymentModalLoading(true);
-
-    let paymentInvoiceUrl = null;
-
-    if (receiptFile) {
-      const validation = await validateReceiptFile(receiptFile);
-      if (!validation.isValid) {
-        setPaymentModalLoading(false);
-        throw new Error(validation.error || "La imagen no es válida.");
-      }
-
-      try {
-        const filePath = buildPaymentReceiptPath(currentOrder.id, receiptFile.name);
-        const publicUrl = await uploadOrderAsset({
-          bucket: "payment-invoice",
-          path: filePath,
-          file: receiptFile,
-        });
-        if (publicUrl) {
-          paymentInvoiceUrl = publicUrl;
-        } else {
-          setPaymentModalLoading(false);
-          throw new Error("Error al subir la imagen de pago.");
-        }
-      } catch (uploadError) {
-        setPaymentModalLoading(false);
-        throw new Error(uploadError?.message || "Error al subir la imagen de pago.");
-      }
-    }
-
-    let commandError;
-    try {
-      await executeAdminOrderCommand(supabase, {
-        orderId: currentOrder.id,
-        action: "register_payment",
-        payload: {
-          payment_status: paymentStatus,
-          invoice_payment: paymentInvoiceUrl,
-          invoice_number: requestedInvoiceNumber || undefined,
-        },
-        reasonCategory: "workflow_correction",
-        reasonDetail: "Pago registrado por Administración desde el listado de órdenes.",
-        expectedUpdatedAt: currentOrder.updated_at,
-      });
-    } catch (error) {
-      commandError = error;
-    }
-
-    setPaymentModalLoading(false);
-
-    if (commandError) {
-      throw new Error(commandError.message || "Error al actualizar la orden.");
-    }
-
-    setPaymentModalOrder(null);
-    await loadOrders();
-    showFeedback("success", paymentStatus === PAYMENT_STATUS.PARTIAL ? "Pago parcial registrado correctamente." : "Orden cotizada correctamente.");
-  };
-
   const fetchAdvancedOrderForProduction = useCallback(async (order) => {
     if (!order?.id) return order;
     try {
@@ -3070,9 +2952,16 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
   };
 
   const openEmployeeDetail = (profile) => {
+    setEmployeeTeamView(false);
     setSelectedEmployeeId(profile?.id || null);
     setUserDetailModalOpen(false);
     setEmployeeDetailView(true);
+  };
+
+  const openEmployeeTeamView = () => {
+    setEmployeeDetailView(false);
+    setSelectedEmployeeId(null);
+    setEmployeeTeamView(true);
   };
 
   const closeEmployeeDetail = () => {
@@ -3418,102 +3307,6 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
     setCreditView(clientId ? "detail" : "list");
   }, [selectAdminTab]);
 
-  const handleConfirmCreditSettleAll = async () => {
-    const target = creditSettleAllTarget;
-    if (!target) return;
-    await handleSettleCreditOrders({
-      orderIds: target.orderIds,
-      notes: creditSettleAllNotes,
-      setLoadingState: setCreditSettleAllLoading,
-      onSuccess: () => {
-        setCreditSettleAllTarget(null);
-        setCreditSettleAllNotes("");
-        if (target.client?.id) {
-          setSelectedCreditOrderIds((prev) => ({ ...prev, [target.client.id]: [] }));
-        }
-      },
-    });
-  };
-
-  const openCreditSettlementModal = ({ client, orderIds, invoices, mode }) => {
-    const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
-    if (uniqueOrderIds.length === 0) {
-      showFeedback("error", "No hay pendientes para cerrar.");
-      return;
-    }
-
-    setCreditSettlementTarget({
-      client,
-      orderIds: uniqueOrderIds,
-      invoices: [...new Set((invoices || []).filter(Boolean))],
-      mode,
-    });
-    setCreditSettlementNotes("");
-  };
-
-  const handleSettleCreditOrders = async ({ orderIds, notes, onSuccess, setLoadingState }) => {
-    const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
-    if (uniqueOrderIds.length === 0) {
-      showFeedback("error", "No hay pendientes para cerrar.");
-      return false;
-    }
-
-    setLoadingState(true);
-    const { error } = await supabase.rpc("settle_credit_orders", {
-      p_order_ids: uniqueOrderIds,
-      p_receipt_url: null,
-      p_notes: notes || null,
-    });
-    setLoadingState(false);
-
-    if (error) {
-      showFeedback("error", error.message || "No se pudo registrar el cierre del seguimiento.");
-      return false;
-    }
-
-    await Promise.all([loadOrders(true), fetchAccountsReceivable()]);
-    if (onSuccess) onSuccess();
-    showFeedback("success", uniqueOrderIds.length === 1 ? "Factura marcada como saldada correctamente." : "Pendientes cerrados correctamente.");
-    return true;
-  };
-
-  const handleRecordClientPayment = async () => {
-    if (!recordPaymentClient?.id) return;
-    const orderIds = receivablesByClient[recordPaymentClient.id]?.orderIds || [];
-    if (orderIds.length === 0) {
-      showFeedback("error", "El cliente no tiene pendientes para cerrar.");
-      return;
-    }
-
-    await handleSettleCreditOrders({
-      orderIds,
-      notes: recordPaymentForm.notes,
-      setLoadingState: setRecordPaymentLoading,
-      onSuccess: () => {
-        setRecordPaymentClient(null);
-        setRecordPaymentForm({ amount: "", payment_method: "", notes: "" });
-      },
-    });
-  };
-
-  const handleConfirmCreditSettlement = async () => {
-    const target = creditSettlementTarget;
-    if (!target) return;
-
-    await handleSettleCreditOrders({
-      orderIds: target.orderIds,
-      notes: creditSettlementNotes,
-      setLoadingState: setCreditSettlementLoading,
-      onSuccess: () => {
-        if (target.client?.id) {
-          setSelectedCreditOrderIds(prev => ({ ...prev, [target.client.id]: [] }));
-        }
-        setCreditSettlementTarget(null);
-        setCreditSettlementNotes("");
-      },
-    });
-  };
-
   const openCreditReminderModal = (client, invoices = []) => {
     if (!client?.id) {
       showFeedback("error", "Selecciona un cliente valido para crear el recordatorio.");
@@ -3686,20 +3479,6 @@ const [materialAreaFilter, setMaterialAreaFilter] = useState("all");
   const totalPages = Math.ceil(ordersTotal / PER_PAGE) || 1;
   const safePage = Math.min(page, totalPages);
   const paginatedOrders = filteredOrders;
-
-  const receivablesByClient = (() => {
-    return getOpenCreditReceivables(accountsReceivable).reduce((acc, item) => {
-      const current = acc[item.client_id] || { count: 0, orderIds: [], invoices: [], oldestIssuedAt: null };
-      const issuedAt = item.issued_at || item.created_at || null;
-      acc[item.client_id] = {
-        count: current.count + 1,
-        orderIds: [...current.orderIds, item.order_id].filter(Boolean),
-        invoices: [...current.invoices, item.invoice_number].filter(Boolean),
-        oldestIssuedAt: !current.oldestIssuedAt || (issuedAt && issuedAt < current.oldestIssuedAt) ? issuedAt : current.oldestIssuedAt,
-      };
-      return acc;
-    }, {});
-  })();
 
   const ordersById = useMemo(() => Object.fromEntries(orders.map(order => [order.id, order])), [orders]);
   const clientsById = useMemo(() => Object.fromEntries(clients.map(client => [client.id, client])), [clients]);
@@ -4043,8 +3822,6 @@ const filteredMaterials = useMemo(() => {
 
   const advancedSettingsOpen = settingsView === "detail" && Boolean(settingsOrder);
 
-  // payment label is handled inside PaymentFormModal component
-
   return (
     // Apartado principal totalmente flexible
     <div className="pa-root">
@@ -4349,7 +4126,6 @@ const filteredMaterials = useMemo(() => {
                                   order={order}
                                   onEdit={openEditOrder}
                                   onAdvanced={openAdvancedSettings}
-                                  onPayment={openPaymentModal}
                                   onCancel={openCancelModal}
                                   onAuthorizeProduction={handleAuthorizeProduction}
                                   onProduction={handleDirectProductionAssignment}
@@ -4563,7 +4339,6 @@ const filteredMaterials = useMemo(() => {
             selectedCreditOrderIds={selectedCreditOrderIds}
             onToggleSelection={toggleCreditOrderSelection}
             onToggleAll={toggleAllCreditOrdersForClient}
-            onSettle={openCreditSettlementModal}
             onCreateReminder={openCreditReminderModal}
             onViewOrder={setSelectedOrder}
             onBack={() => { setCreditView("list"); setCreditDetailClientId(null); }}
@@ -4588,92 +4363,6 @@ const filteredMaterials = useMemo(() => {
             onManageCredit={handleManageClientCredit}
           />
         )}
-
-        <ModalShell open={!!recordPaymentClient} onClose={() => setRecordPaymentClient(null)} title="Cerrar pendientes" size="compact">
-          <div style={{ minWidth: 320 }}>
-            <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
-              {recordPaymentClient?.name}
-            </p>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 18 }}>
-              Pendientes abiertos: {receivablesByClient[recordPaymentClient?.id]?.count || 0}
-            </p>
-
-            {(receivablesByClient[recordPaymentClient?.id]?.invoices || []).length > 0 && (
-              <div className="pa-field">
-                <span>Referencias</span>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {receivablesByClient[recordPaymentClient?.id].invoices.map((invoiceNumber) => (
-                    <span key={invoiceNumber} className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>
-                      {invoiceNumber}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <label className="pa-field">
-              <span>Nota de cierre</span>
-              <textarea
-                value={recordPaymentForm.notes}
-                onChange={(event) => setRecordPaymentForm(prev => ({ ...prev, notes: event.target.value }))}
-                rows={3}
-                placeholder="Ej: Seguimiento revisado por administración"
-              />
-            </label>
-
-            <div className="pa-modal-actions">
-              <button className="pa-btn secondary" onClick={() => setRecordPaymentClient(null)} disabled={recordPaymentLoading}>
-                Cancelar
-              </button>
-              <button className="pa-btn primary" onClick={handleRecordClientPayment} disabled={recordPaymentLoading}>
-                {recordPaymentLoading ? "Cerrando..." : "Cerrar pendientes"}
-              </button>
-            </div>
-          </div>
-        </ModalShell>
-
-        <ModalShell open={!!creditSettlementTarget} onClose={() => setCreditSettlementTarget(null)} title="Cerrar pendientes" size="compact">
-          <div style={{ minWidth: 320 }}>
-            <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
-              {creditSettlementTarget?.client?.name || "Cliente sin nombre"}
-            </p>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 18 }}>
-              Pendientes a cerrar: {creditSettlementTarget?.orderIds?.length || 0}
-            </p>
-
-            {(creditSettlementTarget?.invoices || []).length > 0 && (
-              <div className="pa-field">
-                <span>Referencias</span>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {creditSettlementTarget.invoices.map((invoiceNumber) => (
-                    <span key={invoiceNumber} className="ps-badge" style={{ background: "#E8EDF8", color: "#0f1e40", border: "1px solid #0f1e4020" }}>
-                      {invoiceNumber}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <label className="pa-field">
-              <span>Nota de cierre</span>
-              <textarea
-                value={creditSettlementNotes}
-                onChange={(event) => setCreditSettlementNotes(event.target.value)}
-                rows={3}
-                placeholder="Ej: Seguimiento revisado por administración"
-              />
-            </label>
-
-            <div className="pa-modal-actions">
-              <button className="pa-btn secondary" onClick={() => setCreditSettlementTarget(null)} disabled={creditSettlementLoading}>
-                Cancelar
-              </button>
-              <button className="pa-btn primary" onClick={handleConfirmCreditSettlement} disabled={creditSettlementLoading}>
-                {creditSettlementLoading ? "Cerrando..." : "Marcar todas como saldadas"}
-              </button>
-            </div>
-          </div>
-        </ModalShell>
 
         {showClientModal && (
           <div className="pa-overlay">
@@ -4993,6 +4682,24 @@ const filteredMaterials = useMemo(() => {
                             <td className="td-pad td-name">{termination.name}</td>
                             <td className="td-pad">{productionAreas.find((area) => area.code === termination.production_area_code)?.label || termination.production_area_code}</td>
                             <td className="td-pad td-actions"><div className="table-actions mat-row-actions">
+                              <button
+                                type="button"
+                                className="table-action-btn view"
+                                title={`Ver actividad de ${termination.name}`}
+                                aria-label={`Ver actividad de ${termination.name}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  terminationAnalyticsTriggerRef.current = event.currentTarget;
+                                  setSelectedTerminationAnalytics({
+                                    termination_id: termination.id,
+                                    name: termination.name,
+                                    production_area_code: termination.production_area_code,
+                                    production_area_label: productionAreas.find((area) => area.code === termination.production_area_code)?.label || termination.production_area_code,
+                                  });
+                                }}
+                              >
+                                <Icons.Eye />
+                              </button>
                               <button className="table-action-btn edit" onClick={() => openTerminationModal(termination)} title="Editar terminación"><Icons.Edit /></button>
                               <button className="table-action-btn cancel" onClick={() => handleDeleteTermination(termination)} title="Eliminar terminación"><Icons.Trash /></button>
                             </div></td>
@@ -5012,7 +4719,7 @@ const filteredMaterials = useMemo(() => {
           </section>
         )}
 
-        {(selectedMaterialAnalytics || showMaterialAnalyticsOverview) && (
+        {(selectedMaterialAnalytics || selectedTerminationAnalytics || showMaterialAnalyticsOverview) && (
           <Suspense fallback={null}>
             {selectedMaterialAnalytics && (
               <MaterialDetailModal
@@ -5032,6 +4739,17 @@ const filteredMaterials = useMemo(() => {
                 userId={authUser?.id}
                 returnFocusRef={materialAnalyticsOverviewTriggerRef}
                 onClose={() => setShowMaterialAnalyticsOverview(false)}
+              />
+            )}
+            {selectedTerminationAnalytics && (
+              <TerminationDetailModal
+                termination={selectedTerminationAnalytics}
+                previousTermination={null}
+                totalReferences={0}
+                userId={authUser?.id}
+                source="catalog"
+                returnFocusRef={terminationAnalyticsTriggerRef}
+                onClose={() => setSelectedTerminationAnalytics(null)}
               />
             )}
           </Suspense>
@@ -5147,7 +4865,9 @@ const filteredMaterials = useMemo(() => {
           <p className="archive-modal-hint">Esta acción no se puede deshacer. El cliente será eliminado permanentemente del sistema.</p>
         </ArchiveOrderModal>
 
-        {activeTab === "users" && employeeDetailView && selectedEmployeeId ? (
+        {activeTab === "users" && employeeTeamView ? (
+          <AdminEmployeeTeamModule onBack={() => setEmployeeTeamView(false)} />
+        ) : activeTab === "users" && employeeDetailView && selectedEmployeeId ? (
           <AdminEmployeeModule
             profile={usersById[selectedEmployeeId]}
             onBack={closeEmployeeDetail}
@@ -5170,9 +4890,14 @@ const filteredMaterials = useMemo(() => {
                   </div>
                 )}
               </div>
-              <button className="pa-btn primary" onClick={openCreateUserModal}>
+              <div className="acm-heading-actions">
+                <button className="pa-btn primary" type="button" onClick={openEmployeeTeamView}>
+                  <Icons.BarChart /> Estadísticas de equipo
+                </button>
+                <button className="pa-btn primary" onClick={openCreateUserModal}>
                 <Icons.Plus /> Crear empleado
-              </button>
+                </button>
+              </div>
             </div>
 
             <SalesFilterToolbar
@@ -5200,7 +4925,7 @@ const filteredMaterials = useMemo(() => {
                   <h2>Empleados del sistema</h2>
                 </div>
                 <div className="mat-panel-tools">
-                  <div className="mat-tabs" role="tablist" ariaLabel="Filtro de empleados">
+                  <div className="mat-tabs" role="tablist" aria-label="Filtro de empleados">
                     <button
                       type="button"
                       className={employmentFilter === "all" ? "active" : ""}
@@ -5404,7 +5129,6 @@ const filteredMaterials = useMemo(() => {
               variant="modal"
               onEdit={openEditOrder}
               onAdvanced={openAdvancedSettings}
-              onPayment={openPaymentModal}
               onCancel={openCancelModal}
               onAuthorizeProduction={handleAuthorizeProduction}
               onProduction={handleDirectProductionAssignment}
@@ -5431,14 +5155,6 @@ const filteredMaterials = useMemo(() => {
         title={advancedProduction?.action === "reassign_production" ? "Reasignar Producción" : undefined}
         onClose={() => setAdvancedProduction(null)}
         onConfirm={handleAdvancedProductionConfirm}
-      />
-      <PaymentFormModal
-        open={!!paymentModalOrder}
-        order={paymentModalOrder}
-        loading={paymentModalLoading}
-        canAssignInvoiceCode
-        onClose={() => setPaymentModalOrder(null)}
-        onConfirm={handlePaymentConfirm}
       />
       <ModalShell open={cancelModalOpen} onClose={() => setCancelModalOpen(false)} title="Confirmar Cancelación" size="compact">
         <div className="pa-confirm-modal-body">
@@ -5475,17 +5191,6 @@ const filteredMaterials = useMemo(() => {
       <UserFormModal open={userModalOpen} mode={userModalMode} userForm={userForm} setUserForm={setUserForm} onClose={closeUserModal} onSubmit={handleSaveUser} saving={savingUser} submissionError={userModalError} onClearSubmissionError={() => setUserModalError("")} />
       <UserDetailModal open={userDetailModalOpen} user={selectedUser} onClose={() => setUserDetailModalOpen(false)} onEdit={openEditUserModal} onCreateOrder={handleCreateOrderFromUser} onRequestEmploymentToggle={openEmploymentStatusConfirm} onShowFeedback={showFeedback} currentUserId={user?.id} />
       <EmploymentStatusConfirmModal open={employmentStatusConfirmOpen} pendingChange={pendingEmploymentStatusChange} onClose={closeEmploymentStatusConfirm} onConfirm={confirmEmploymentStatusChange} saving={savingEmploymentStatus} />
-      <SettleCreditModal
-        open={!!creditSettleAllTarget}
-        onClose={() => { setCreditSettleAllTarget(null); setCreditSettleAllNotes(""); }}
-        onConfirm={handleConfirmCreditSettleAll}
-        clientName={creditSettleAllTarget?.client?.name}
-        invoiceCount={creditSettleAllTarget?.orderIds?.length}
-        invoices={creditSettleAllTarget?.invoices}
-        loading={creditSettleAllLoading}
-        notes={creditSettleAllNotes}
-        onNotesChange={setCreditSettleAllNotes}
-      />
       <CreditReminderCreateModal
         open={!!creditReminderTarget}
         variant="admin"

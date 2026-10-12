@@ -38,20 +38,25 @@ describe("payment state integration source guards", () => {
     expect(source).toContain("isPaymentProductionEligible(order.payment_status)");
   });
 
-  it("permite al admin elegir cualquier estado de pago sin restriccion de parcial", () => {
+  it("does not expose payment mutation to Admin while Caja keeps the shared payment modal contract", () => {
     const dashboard = readSource("src/pages/dashboard.jsx");
     const source = readSource("src/components/ui/PaymentFormModal.jsx");
 
-    expect(dashboard).toContain("<PaymentFormModal");
+    expect(dashboard).not.toContain("<PaymentFormModal");
+    expect(dashboard).not.toContain("mark_order_as_credit");
+    expect(dashboard).not.toContain("settle_credit_orders");
     expect(source).not.toContain("isPaymentPartial(order.payment_status) ? PAYMENT_STATUS.PAID");
     expect(source).not.toContain("isCompletingPartialPayment");
     expect(source).toContain("<PaymentBadge status={order.payment_status}");
-    expect(source).toContain('setPaymentStatus(orderPaymentStatus || "Pending_Payment")');
+    expect(source).toContain('setPaymentStatus(correctionMode ? "" : (orderPaymentStatus || "Pending_Payment"))');
+    expect(source).toContain('{ value: "", label: "Selecciona el estado correcto" }');
     expect(source).toContain('{ value: PAYMENT_STATUS.PENDING, label: "Pendiente" }');
     expect(source).toContain('{ value: PAYMENT_STATUS.PARTIAL, label: "Pago parcial" }');
     expect(source).toContain('{ value: PAYMENT_STATUS.CREDIT, label: "Pago a crédito" }');
     expect(source).toContain('{ value: PAYMENT_STATUS.PAID, label: "Pagado" }');
     expect(source).toContain("paymentOptions.map((opt) => <option");
+    expect(source).toContain("correctionMode && ![PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL].includes(paymentStatus)");
+    expect(source).toContain("Guardar corrección");
   });
 
   it("muestra comprobante de pago condicional en PAID con preview y boton estilo caja", () => {
@@ -73,7 +78,7 @@ describe("payment state integration source guards", () => {
     expect(source).toContain("URL.revokeObjectURL");
     expect(source).toContain("!receiptFile && !hasVerifiedPaymentReceipt");
     expect(source).toContain("validateReceiptFile");
-    expect(source).toContain("{paymentStatus === PAYMENT_STATUS.PAID && (");
+    expect(source).toContain("{paymentStatus === PAYMENT_STATUS.PAID && !correctionMode && (");
     expect(source).not.toContain("No existe un comprobante de pago");
     expect(source).not.toContain("Imagen de Recibo/Factura");
     expect(source).not.toContain("variant=\"compact\"");

@@ -39,12 +39,14 @@ describe("Semi-Admin Caja/audit synchronization contract", () => {
     expect(handler).toContain("from(\"order_events\")");
   });
 
-  it("keeps the Caja UI catalog-driven and the asset editor mounted", () => {
+  it("keeps payment management exclusively in Caja while preserving routing and the asset editor", () => {
     expect(panel).toContain("hasPendingPayment = order.payment_status === \"Pending_Payment\"");
-    expect(panel).toContain("hasAction(\"register_payment\")");
+    expect(panel).not.toContain("hasAction(\"register_payment\")");
+    expect(panel).toContain('hasAction("route_production")');
     expect(panel).toContain("onOpenQuoteReturn");
     expect(editor).toContain("keepOpenAfterAssetSave");
     expect(editor).toContain("hideStripe={semiAdminVariant}");
+    expect(sellerPage).not.toContain("onOpenPayment={() => setSemiAdminPaymentOrder(selectedOrder)}");
   });
 
   it("subscribes Semi-Administración to production-file changes for open-order refresh", () => {

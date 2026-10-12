@@ -37,6 +37,10 @@ const PREORDER_R2_ROLES = new Set(["admin", "seller", "semi_admin", "designer"])
 const SELLER_FILE_WRITE_BLOCKED_STATUSES = new Set(["in_Quote"]);
 const ORDER_ASSET_BUCKETS = new Set(["order-docs", "order-previews", "payment-invoice"]);
 const TERMINAL_ORDER_STATUSES = new Set(["in_Completed", "in_Delivered", "cancelled"]);
+const SEMI_ADMIN_ASSET_MANAGE_STATUSES = new Set([
+  "Pending", "pending", "in_Design", "In_Design", "in_Quote",
+  "in_Production", "in_Termination", "in_Completed",
+]);
 
 const ORDER_FILE_BUCKET_LIMITS = {
   "order-docs": 200 * MB,
@@ -524,15 +528,30 @@ const loadOrderForAccess = async ({ supabaseAdmin, orderId, userId, role }) => {
   return { order };
 };
 
-const validateOrderAssetAction = ({ order, role, userId, category, action }) => {
+export const validateOrderAssetAction = ({ order, role, userId, category, action }) => {
   if (!order || !role) return jsonResponse(403, { error: "No se pudo validar el acceso al archivo." });
   if (action === "read") return null;
-  const canCompletePartialPayment = role === "semi_admin"
-    && category === "payment"
-    && order.payment_status === "parcial"
-    && ["in_Completed", "in_Delivered"].includes(order.status)
-    && (order.designer_id === userId || order.quote_id === userId || order.seller_id === userId || order.created_by === userId);
-  if ((TERMINAL_ORDER_STATUSES.has(order.status) && !canCompletePartialPayment) || order.is_archived_admin) {
+  if (category === "payment") {
+    return role === "quote" && order.status === "in_Quote" && order.quote_id === userId
+      && !order.is_archived && !order.is_archived_admin && order.operational_status !== "blocked"
+      ? null
+      : jsonResponse(403, { error: "Solo el responsable asignado de Caja puede cargar o reemplazar comprobantes." });
+  }
+  const isSemiAdminAssetParticipant = role === "semi_admin"
+    && category !== "payment"
+    && SEMI_ADMIN_ASSET_MANAGE_STATUSES.has(order.status)
+    && (order.created_by === userId
+      || order.seller_id === userId
+      || order.designer_id === userId
+      || order.quote_id === userId
+      || order.delivery_id === userId);
+  const canManageSemiAdminAssets = isSemiAdminAssetParticipant
+    && !order.is_archived
+    && !order.is_archived_admin
+    && order.operational_status !== "blocked";
+  if ((TERMINAL_ORDER_STATUSES.has(order.status) && !canManageSemiAdminAssets)
+      || order.is_archived_admin
+      || order.is_archived) {
     return jsonResponse(409, { error: "No se pueden modificar archivos de una orden cerrada o archivada." });
   }
   if (role === "seller" && SELLER_FILE_WRITE_BLOCKED_STATUSES.has(order?.status)) {
@@ -559,20 +578,8 @@ const validateOrderAssetAction = ({ order, role, userId, category, action }) => 
       : jsonResponse(403, { error: "Ventas solo puede modificar archivos de diseño externo mientras la orden esta en Ventas." });
   }
   if (role === "semi_admin") {
-    if (category === "payment") {
-      const isResponsibleOrCreator = order.designer_id === userId
-        || order.quote_id === userId
-        || order.seller_id === userId
-        || order.created_by === userId;
-      const paymentIsStillMutable = !["in_Production", "in_Termination", "in_Completed", "in_Delivered"].includes(order.status)
-        || order.payment_status === "parcial";
-      return isResponsibleOrCreator && paymentIsStillMutable
-        ? null
-        : jsonResponse(403, { error: "Solo el responsable o creador Semi-Admin puede adjuntar comprobantes; después de Producción únicamente se completa Pago parcial a Pagado." });
-    }
-    if (order.status === "in_Design" && order.designer_id === userId) return null;
-    if (order.status === "in_Quote" && order.quote_id === userId) return null;
-    return jsonResponse(403, { error: "Debes ser responsable de Diseño o Caja para modificar archivos de esta orden." });
+    if (canManageSemiAdminAssets) return null;
+    return jsonResponse(403, { error: "Debes ser participante de una etapa permitida para gestionar archivos de esta orden." });
   }
   return jsonResponse(403, { error: "Tu rol solo tiene acceso de lectura a los archivos de esta orden." });
 };
@@ -957,6 +964,12 @@ export async function handleInitiateFileUpload(payload = {}, env = process.env) 
   const access = await loadOrderForAccess({ supabaseAdmin, orderId, userId: user.id, role: profile.role });
   if (access.error) {
     if (access.error.status === 404) {
+      // Payment evidence belongs to a persisted order with an assigned Caja
+      // owner; unlike design assets, it must never use the pre-order upload
+      // reservation flow.
+      if (category === "payment") {
+        return jsonResponse(403, { error: "Los comprobantes de pago requieren una orden existente y un responsable de Caja asignado." });
+      }
       if (
         PREORDER_R2_ROLES.has(profile.role) &&
         UUID_PATTERN.test(orderId) &&

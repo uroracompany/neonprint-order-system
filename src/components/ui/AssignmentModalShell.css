@@ -1,0 +1,17 @@
+.ams-overlay { position:fixed; inset:0; z-index:10000; display:grid; place-items:center; padding:20px; background:rgba(15,30,64,.35); backdrop-filter:blur(5px); }
+.ams-dialog { width:min(620px,100%); max-height:calc(100vh - 40px); display:flex; flex-direction:column; overflow:hidden; border:1px solid #dbe3ef; border-radius:16px; background:#fff; box-shadow:0 20px 60px rgba(15,30,64,.3); }
+.ams-header,.ams-footer { display:flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:16px; padding:16px 22px; border-bottom:1px solid #dbe3ef; }
+.ams-header h3 { margin:0; color:#0f1e40; font-size:17px; }.ams-header span,.ams-body>p { color:#4a5e80; font-size:13px; }.ams-header button { border:0; background:transparent; color:#4a5e80; cursor:pointer; }.ams-header button:focus-visible { outline:3px solid rgba(6,182,212,.3); outline-offset:2px; }.ams-body { flex:1 1 auto; min-height:0; overflow:auto; padding:20px 22px; }.ams-body>p { margin:0 0 16px; }.ams-footer { border-top:1px solid #dbe3ef; border-bottom:0; justify-content:flex-end; }
+@media (max-width:560px){.ams-overlay{padding:12px}.ams-header,.ams-footer,.ams-body{padding-left:16px;padding-right:16px}}
+.ams-order-summary { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
+.ams-dialog--quote .ams-header h3 { font-weight:600; }
+.ams-dialog--quote .ams-order-id { color:#1E40AF; font-weight:600; }
+.ams-dialog--quote .ams-order-client { color:#111827; font-weight:600; }
+.ams-dialog--quote .ams-order-separator { color:#64748b; }
+.ams-dialog--quote .ams-body>p { color:#1E40AF; font-weight:600; }
+.ams-dialog--designer .ams-order-id { color:#4A4EAADF; font-weight:600; }
+.ams-dialog--designer .ams-order-client { color:#111827; font-weight:600; }
+.ams-dialog--designer .ams-body>p { color:#7C3AED; font-weight:600; }
+.ams-dialog--delivery .ams-order-id { color:#047857; font-weight:600; }
+.ams-dialog--delivery .ams-order-client { color:#111827; font-weight:600; }
+.ams-dialog--delivery .ams-body>p { color:#047857; font-weight:600; }

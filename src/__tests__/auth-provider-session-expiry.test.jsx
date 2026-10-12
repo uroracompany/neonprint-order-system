@@ -9,10 +9,9 @@ const authManagerMock = vi.hoisted(() => ({
   clearCachedAuthSession: vi.fn(),
   consumeAuthNotice: vi.fn(() => null),
   getAuthSession: vi.fn(),
-  maintainAuthSession: vi.fn(),
+  refreshAuthSession: vi.fn(),
   setCachedAuthSession: vi.fn(),
   signOutAuth: vi.fn(),
-  startAuthSessionMonitor: vi.fn(() => vi.fn()),
   subscribeToAuthInvalidation: vi.fn(),
 }));
 
@@ -26,6 +25,16 @@ const authMock = vi.hoisted(() => ({
 }));
 
 const profileQueryMock = vi.hoisted(() => vi.fn());
+
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+};
 
 vi.mock("../utils/authManager", () => ({
   ...authManagerMock,
@@ -97,6 +106,70 @@ beforeEach(async () => {
 });
 
 describe("AuthProvider session expiration", () => {
+  it("does not let a delayed null INITIAL_SESSION overwrite a completed SIGNED_IN", async () => {
+    const initialSession = deferred();
+    authManagerMock.getAuthSession.mockReturnValue(initialSession.promise);
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={["/delivery"]}>
+          <Routes>
+            <Route path="/delivery" element={<ProtectedRoute allowed={["delivery"]}><div>Delivery ready</div></ProtectedRoute>} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(authMock.authChangeHandler).toEqual(expect.any(Function)));
+
+    act(() => {
+      authMock.authChangeHandler("SIGNED_IN", {
+        access_token: "signed-in-token",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: { id: "delivery-user" },
+      });
+    });
+
+    await act(async () => {
+      initialSession.resolve({ data: { session: null } });
+    });
+
+    expect(await screen.findByText("Delivery ready")).toBeInTheDocument();
+    expect(screen.queryByText("Verificando sesión...")).not.toBeInTheDocument();
+  });
+
+  it("does not clear a completed SIGNED_IN when the initial session read fails late", async () => {
+    const initialSession = deferred();
+    authManagerMock.getAuthSession.mockReturnValue(initialSession.promise);
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={["/delivery"]}>
+          <Routes>
+            <Route path="/delivery" element={<ProtectedRoute allowed={["delivery"]}><div>Delivery ready</div></ProtectedRoute>} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(authMock.authChangeHandler).toEqual(expect.any(Function)));
+
+    act(() => {
+      authMock.authChangeHandler("SIGNED_IN", {
+        access_token: "signed-in-token",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: { id: "delivery-user" },
+      });
+    });
+
+    await act(async () => {
+      initialSession.reject(new Error("initial session unavailable"));
+    });
+
+    expect(await screen.findByText("Delivery ready")).toBeInTheDocument();
+    expect(screen.queryByText("Verificando sesión...")).not.toBeInTheDocument();
+  });
+
   it("mantiene visible un perfil de administrador durante la renovacion del token", async () => {
     authManagerMock.getAuthSession.mockResolvedValue({
       access_token: "valid-admin-token",
@@ -200,7 +273,7 @@ describe("AuthProvider session expiration", () => {
 
   it("mantiene el árbol protegido y el borrador durante una revalidación del mismo usuario", async () => {
     let resolveMaintenance;
-    authManagerMock.maintainAuthSession.mockReturnValue(new Promise((resolve) => {
+    authManagerMock.refreshAuthSession.mockReturnValue(new Promise((resolve) => {
       resolveMaintenance = resolve;
     }));
 

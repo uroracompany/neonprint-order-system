@@ -57,6 +57,8 @@ export default function EditOrderModal({
   assetsOnly = false,
   requireWorkOrder = false,
   semiAdminVariant = false,
+  isSemiAdmin = false,
+  actorId = "",
   keepOpenAfterAssetSave = false,
 }) {
   const fileInputRef = useRef(null);
@@ -101,6 +103,26 @@ export default function EditOrderModal({
   const existingFileReplaceInputRef = useRef(null);
   const [replaceExistingFileIndex, setReplaceExistingFileIndex] = useState(null);
   const isSellerEdit = editMode === "seller";
+  const normalizedOrderStatus = String(order?.status || "").trim().toLowerCase();
+  const isCashierInvoice = order?.invoice_assignment_mode === "cashier";
+  const isOwnedByActor = Boolean(actorId && (
+    order?.seller_id === actorId || order?.created_by === actorId
+  ));
+  const isProductionAuthorized = Boolean(order?.production_authorized_at || order?.production_authorized_by);
+  const isAdminEdit = !isSellerEdit;
+  const canEditInvoiceNumber = !assetsOnly
+    && !isProductionAuthorized
+    && !order?.is_archived
+    && !order?.is_archived_admin
+    && order?.operational_status !== "blocked"
+    && !["cancelled", "in_delivered", "in_completed"].includes(normalizedOrderStatus)
+    && (
+      isAdminEdit
+      || (!isCashierInvoice && isOwnedByActor && (
+        (isSemiAdmin && ["pending", "in_design"].includes(normalizedOrderStatus))
+        || (!isSemiAdmin && normalizedOrderStatus === "pending")
+      ))
+    );
   const isSemiAdminAssetEdit = Boolean(isSellerEdit && semiAdminVariant && assetsOnly);
   const isSellerEditBlocked = isSellerEdit && (isSemiAdminAssetEdit
     ? !SEMI_ADMIN_ASSET_EDITABLE_STATUSES.has(order?.status)
@@ -202,11 +224,11 @@ export default function EditOrderModal({
     setResolvedExistingPreview("");
     resolveOrderAssetUrl(existingPreview)
       .then((url) => {
-        if (!url) throw new Error("No se pudo cargar la Orden de Trabajo.");
+        if (!url) throw new Error("No se pudo cargar la imagen de orden de trabajo.");
         if (active) setResolvedExistingPreview(url);
       })
       .catch((resolutionError) => {
-        if (active) setPreviewError(resolutionError?.message || "No se pudo cargar la Orden de Trabajo.");
+        if (active) setPreviewError(resolutionError?.message || "No se pudo cargar la imagen de orden de trabajo.");
       })
       .finally(() => {
         if (active) setPreviewLoading(false);
@@ -296,7 +318,7 @@ export default function EditOrderModal({
       setMissingLabelIndices([]);
     }
     if (requireWorkOrder && !existingPreview && !newPreview) {
-      errors.order_work = "La Orden de Trabajo es obligatoria. Adjunta la Orden de Trabajo antes de continuar.";
+      errors.order_work = "La imagen de orden de trabajo es obligatoria. Adjunta la imagen de orden de trabajo antes de continuar.";
     }
     return errors;
   };
@@ -468,7 +490,7 @@ export default function EditOrderModal({
   const handleRemoveExistingPreview = () => {
     if (!existingPreview) return;
     if (!canMutateStandaloneAsset) {
-      setError("La Orden de Trabajo ya está en proceso y no puede eliminarse en esta etapa.");
+      setError("La imagen de orden de trabajo ya está en proceso y no puede eliminarse en esta etapa.");
       return;
     }
     void persistAssetRemoval({ urls: [existingPreview], nextPreview: null });
@@ -480,7 +502,7 @@ export default function EditOrderModal({
       return;
     }
     if (existingPreview && !canMutateStandaloneAsset) {
-      setError("La Orden de Trabajo ya está en proceso y no puede reemplazarse en esta etapa.");
+      setError("La imagen de orden de trabajo ya está en proceso y no puede reemplazarse en esta etapa.");
       return;
     }
     const file = Array.from(filesOrEvent?.target?.files || filesOrEvent || [])[0];
@@ -609,7 +631,7 @@ export default function EditOrderModal({
         });
       } catch (uploadError) {
         setLoading(false);
-        setError(uploadError?.message || "Error al subir el preview de la orden.");
+        setError(uploadError?.message || "Error al subir la imagen de orden de trabajo.");
         return;
       }
     } else if (!existingPreview) {
@@ -788,6 +810,91 @@ export default function EditOrderModal({
 
   const selectedDetailsFile = detailsFileIndex === null ? null : newFiles[detailsFileIndex];
   const selectedExistingDetailsFile = detailsExistingFileIndex === null ? null : existingFileRows[detailsExistingFileIndex];
+  const showSemiAdminDesignUploadFirst = isSemiAdminAssetEdit && order?.status === "in_Design";
+  const existingAndNewFiles = (
+    <>
+      {existingFiles.length > 0 && (
+        <div className="ps-files-list" style={{ marginBottom: 12 }}>
+          {existingFiles.map((url, index) => {
+            const row = existingFileRows[index] || { url };
+            const replacement = existingFileReplacements[index];
+            const displayName = replacement?.name || row.filename || parseFileName(url);
+            return (
+              <FileCard
+                key={`${url}-${index}`}
+                name={displayName}
+                url={url}
+                detailText={!canMutateExistingAsset(row) ? `${row.public_label || "Detalles pendientes"} · Archivo en proceso` : (row.public_label || "Detalles pendientes")}
+                actions={[
+                  {
+                    title: `Editar archivo y detalles de ${displayName}`,
+                    label: "Editar detalles",
+                    icon: <Icons.Edit />,
+                    onClick: () => {
+                      setDetailsExistingFileIndex(index);
+                      setDetailsFileIndex(null);
+                    },
+                  },
+                  ...(canMutateExistingAsset(row) ? [{
+                    title: `Reemplazar ${displayName}`,
+                    label: "Reemplazar",
+                    icon: <Icons.Upload />,
+                    onClick: () => {
+                      setReplaceExistingFileIndex(index);
+                      requestAnimationFrame(() => existingFileReplaceInputRef.current?.click());
+                    },
+                  }] : []),
+                ]}
+                onRemove={canMutateExistingAsset(row) ? () => handleRemoveExistingFile(url) : undefined}
+              />
+            );
+          })}
+          <input
+            ref={existingFileReplaceInputRef}
+            type="file"
+            className="sr-only"
+            accept=".pdf,.ai,.png,.jpg,.jpeg,.webp,.svg"
+            onChange={handleExistingFileReplaceInput}
+            aria-label="Seleccionar archivo de reemplazo"
+          />
+        </div>
+      )}
+      {newFiles.length > 0 && (
+        <div className="ps-files-list" style={{ marginBottom: 12 }}>
+          {newFiles.map((file, index) => (
+            <div key={`${file.name}-${index}`} className={missingLabelIndices.includes(index) || missingAreaIndices.includes(index) ? "ps-file-missing" : ""}>
+              <FileCard
+                name={file.name}
+                secondaryText={formatFileSize(file.size)}
+                detailText={newFileLabels[index] ? `Seguimiento: ${newFileLabels[index]}` : "Detalles pendientes"}
+                actions={[{
+                  title: `Ver detalles de ${file.name}`,
+                  label: "Detalles",
+                  icon: <Icons.Edit />,
+                  attention: pendingDetailsIndices.includes(index),
+                  onClick: () => {
+                    setPendingDetailsIndices(previous => previous.filter((pendingIndex) => pendingIndex !== index));
+                    setDetailsFileIndex(index);
+                  },
+                }]}
+                onRemove={() => handleRemoveNewFile(index)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+  const addFilesZone = (
+    <FileUploadZone
+      mode="attachment"
+      multiple
+      inputRef={fileInputRef}
+      buttonLabel="Agregar archivos"
+      hint="PDF, AI, PNG, JPG..."
+      onFilesAccepted={handleAddNewFiles}
+    />
+  );
 
   return (
     <>
@@ -836,6 +943,24 @@ export default function EditOrderModal({
           </div>
           <div className="ps-form-grid">
             <div className="col-full">
+              <Field
+                label="Número de Facturación"
+                optional={isCashierInvoice}
+                hint={isCashierInvoice
+                  ? "Caja administra este código de facturación."
+                  : (canEditInvoiceNumber ? "Identificador de facturación de la orden." : "El número no puede modificarse en esta etapa.")}
+              >
+                <input
+                  className="ps-form-input"
+                  value={form.invoice_number}
+                  onChange={event => set("invoice_number", event.target.value)}
+                  disabled={!canEditInvoiceNumber}
+                  placeholder="Ej: FAC-001-2026"
+                  aria-label="Número de Facturación"
+                />
+              </Field>
+            </div>
+            <div className="col-full">
               <Field label="Descripcion" required error={fieldErrors.description}>
                 <textarea className="ps-form-input textarea" value={form.description} onChange={event => set("description", event.target.value)} />
               </Field>
@@ -855,94 +980,21 @@ export default function EditOrderModal({
       {canEditAssets ? (
         <>
           <div className="ps-form-section-title" style={{ marginTop: 20 }}>
-            <span className="ps-form-section-num">{assetsOnly ? <Icons.Paperclip /> : "3"}</span> Archivos y Orden de Trabajo
+            <span className="ps-form-section-num">{assetsOnly ? <Icons.Paperclip /> : "3"}</span> Archivos e imagen de orden de trabajo
           </div>
           <div className="ps-form-grid">
         <div className="col-full">
           <Field label="Archivos adjuntos" hint="Archivos de diseño existentes y nuevos" error={fieldErrors.order_files}>
-            {existingFiles.length > 0 && (
-              <div className="ps-files-list" style={{ marginBottom: 12 }}>
-                {existingFiles.map((url, index) => {
-                  const row = existingFileRows[index] || { url };
-                  const replacement = existingFileReplacements[index];
-                  const displayName = replacement?.name || row.filename || parseFileName(url);
-                  return (
-                    <FileCard
-                      key={`${url}-${index}`}
-                      name={displayName}
-                      url={url}
-                      detailText={!canMutateExistingAsset(row) ? `${row.public_label || "Detalles pendientes"} · Archivo en proceso` : (row.public_label || "Detalles pendientes")}
-                      actions={[
-                        {
-                          title: `Editar archivo y detalles de ${displayName}`,
-                          label: "Editar detalles",
-                          icon: <Icons.Edit />,
-                          onClick: () => {
-                            setDetailsExistingFileIndex(index);
-                            setDetailsFileIndex(null);
-                          },
-                        },
-                        ...(canMutateExistingAsset(row) ? [{
-                          title: `Reemplazar ${displayName}`,
-                          label: "Reemplazar",
-                          icon: <Icons.Upload />,
-                          onClick: () => {
-                            setReplaceExistingFileIndex(index);
-                            requestAnimationFrame(() => existingFileReplaceInputRef.current?.click());
-                          },
-                        }] : []),
-                      ]}
-                      onRemove={canMutateExistingAsset(row) ? () => handleRemoveExistingFile(url) : undefined}
-                    />
-                  );
-                })}
-                <input
-                  ref={existingFileReplaceInputRef}
-                  type="file"
-                  className="sr-only"
-                  accept=".pdf,.ai,.png,.jpg,.jpeg,.webp,.svg"
-                  onChange={handleExistingFileReplaceInput}
-                  aria-label="Seleccionar archivo de reemplazo"
-                />
-              </div>
+            {showSemiAdminDesignUploadFirst ? (
+              <>{addFilesZone}{existingAndNewFiles}</>
+            ) : (
+              <>{existingAndNewFiles}{addFilesZone}</>
             )}
-            {newFiles.length > 0 && (
-              <div className="ps-files-list" style={{ marginBottom: 12 }}>
-                {newFiles.map((file, index) => (
-                  <div key={`${file.name}-${index}`} className={missingLabelIndices.includes(index) || missingAreaIndices.includes(index) ? "ps-file-missing" : ""}>
-                    <FileCard
-                      name={file.name}
-                      secondaryText={formatFileSize(file.size)}
-                      detailText={newFileLabels[index] ? `Seguimiento: ${newFileLabels[index]}` : "Detalles pendientes"}
-                      actions={[{
-                        title: `Ver detalles de ${file.name}`,
-                        label: "Detalles",
-                        icon: <Icons.Edit />,
-                        attention: pendingDetailsIndices.includes(index),
-                        onClick: () => {
-                          setPendingDetailsIndices(previous => previous.filter((pendingIndex) => pendingIndex !== index));
-                          setDetailsFileIndex(index);
-                        },
-                      }]}
-                      onRemove={() => handleRemoveNewFile(index)}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            <FileUploadZone
-              mode="attachment"
-              multiple
-              inputRef={fileInputRef}
-              buttonLabel="Agregar archivos"
-              hint="PDF, AI, PNG, JPG..."
-              onFilesAccepted={handleAddNewFiles}
-            />
           </Field>
         </div>
 
         <div className="col-full">
-          <Field label="Orden de Trabajo" required={requireWorkOrder} hint="Archivo obligatorio para continuar con la orden" error={fieldErrors.order_work}>
+          <Field label="Imagen de orden de trabajo" required={requireWorkOrder} hint="Imagen obligatoria para continuar con la orden" error={fieldErrors.order_work}>
             {(existingPreview || newPreview) ? (
               <div className="ps-preview-showcase">
                 <FileUploadZone
@@ -950,38 +1002,38 @@ export default function EditOrderModal({
                   replaceMode
                   inputRef={previewInputRef}
                   className="file-upload-zone--hidden-picker"
-                  buttonLabel="Cambiar Orden de Trabajo"
+                  buttonLabel="Cambiar imagen de orden de trabajo"
                   disabled={existingPreviewLocked}
                   onFilesAccepted={handleAddNewPreview}
                 />
                 {newPreview || resolvedExistingPreview ? <div className="ps-preview-card">
                   <img
                     src={newPreview ? URL.createObjectURL(newPreview) : resolvedExistingPreview}
-                    alt="Orden de Trabajo"
+                    alt="Imagen de orden de trabajo"
                     className="ps-preview-img-main"
                   />
                   <div className="ps-preview-card-overlay">
                     <span className="ps-preview-card-label">
-                      {newPreview ? "Nueva Orden de Trabajo" : "Orden de Trabajo actual"}
+                      {newPreview ? "Nueva imagen de orden de trabajo" : "Imagen de orden de trabajo actual"}
                     </span>
                     <div className="ps-preview-card-actions">
-                      <button type="button" className="ps-preview-change-btn" disabled={existingPreviewLocked} title={existingPreviewLocked ? "La Orden de Trabajo está protegida mientras el archivo está en proceso." : undefined} onClick={() => previewInputRef.current?.click()}>
-                        {newPreview ? "Cancelar" : "Cambiar"}
+                      <button type="button" className="ps-preview-change-btn" disabled={existingPreviewLocked} title={existingPreviewLocked ? "La imagen de orden de trabajo está protegida mientras el archivo está en proceso." : undefined} onClick={() => previewInputRef.current?.click()}>
+                        {newPreview ? "Cancelar" : "Cambiar imagen de orden de trabajo"}
                       </button>
-                      <button type="button" className="ps-preview-del-btn" disabled={existingPreviewLocked} title={existingPreviewLocked ? "La Orden de Trabajo no puede eliminarse en esta etapa." : "Eliminar Orden de Trabajo"} onClick={newPreview ? () => setNewPreview(null) : handleRemoveExistingPreview}>
+                      <button type="button" className="ps-preview-del-btn" disabled={existingPreviewLocked} title={existingPreviewLocked ? "La imagen de orden de trabajo no puede eliminarse en esta etapa." : "Eliminar imagen de orden de trabajo"} onClick={newPreview ? () => setNewPreview(null) : handleRemoveExistingPreview}>
                         <Icons.Trash />
                       </button>
                     </div>
                   </div>
-                </div> : <div className="ps-preview-resolution-state" role="status">{previewLoading ? "Cargando Orden de Trabajo…" : previewError}</div>}
+                </div> : <div className="ps-preview-resolution-state" role="status">{previewLoading ? "Cargando imagen de orden de trabajo…" : previewError}</div>}
               </div>
             ) : (
               <FileUploadZone
                 mode="image"
                 replaceMode
                 inputRef={previewInputRef}
-                buttonLabel="Subir Orden de Trabajo"
-                hint="Adjunta la Orden de Trabajo (PNG, JPG, WebP...)"
+                buttonLabel="Subir imagen de orden de trabajo"
+                hint="Adjunta la imagen de orden de trabajo (PNG, JPG, WebP...)"
                 onFilesAccepted={handleAddNewPreview}
               />
             )}

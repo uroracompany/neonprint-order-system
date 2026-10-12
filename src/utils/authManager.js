@@ -8,68 +8,32 @@ import {
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
 const TOKEN_REFRESH_RETRY_MS = 15_000;
 const TOKEN_REFRESH_BACKOFF_MAX_MS = 120_000;
-// Supabase Auth uses a token bucket with a burst capacity. When a company
-// shares one public IP, sessions created around the same time can otherwise
-// all refresh in the same second and hit that burst limit even when the
-// configured five-minute quota is high.
-const TOKEN_REFRESH_JITTER_MAX_MS = 90_000;
 const TOKEN_REFRESH_RETRY_JITTER_MAX_MS = 10_000;
-const MIN_REFRESH_SCHEDULE_DELAY_MS = 1_000;
 const USER_CACHE_TTL_MS = 30_000;
-const AUTH_REFRESH_LOCK_NAME = "np-auth-refresh-session";
-const AUTH_REFRESH_CHANNEL_NAME = "np-auth-refresh-coordination";
 
-let authQueue = Promise.resolve();
 let sessionPromise = null;
 let refreshPromise = null;
 let userPromise = null;
+let sessionEndPromise = null;
 let cachedSession = null;
 let cachedUser = null;
 let lastUserCheckedAt = 0;
 let pendingAuthNotice = null;
-let refreshTimer = null;
-let expiryTimer = null;
-let sessionEndPromise = null;
-let monitorReferences = 0;
-let monitorListenersAttached = false;
 let refreshFailureCount = 0;
 let refreshBlockedUntil = 0;
-let refreshCoordinationChannel = null;
 const invalidationListeners = new Set();
 
 const isAuthDebugEnabled = () => import.meta.env?.VITE_AUTH_DEBUG === "1";
 
+// Keep auth diagnostics deliberately allow-listed: provider messages and request
+// context can contain user-supplied values and are not safe to print verbatim.
 const logAuthDebug = (operation, phase, detail = {}) => {
   if (!isAuthDebugEnabled()) return;
-
-  const safeDetail = Object.fromEntries(
-    Object.entries(detail).filter(([key]) => !/token|email|password|key/i.test(key))
-  );
-
+  const safeDetail = {};
+  if (Number.isFinite(detail.durationMs)) safeDetail.durationMs = detail.durationMs;
+  if (Number.isFinite(detail.status)) safeDetail.status = detail.status;
+  if (typeof detail.code === "string") safeDetail.code = detail.code.slice(0, 64);
   console.info("[auth-manager]", operation, phase, safeDetail);
-};
-
-const enqueueAuthOperation = (operation, task) => {
-  const startedAt = Date.now();
-  const run = authQueue
-    .catch(() => undefined)
-    .then(async () => {
-      logAuthDebug(operation, "start");
-      try {
-        const result = await task();
-        logAuthDebug(operation, "end", { durationMs: Date.now() - startedAt });
-        return result;
-      } catch (error) {
-        logAuthDebug(operation, "error", {
-          durationMs: Date.now() - startedAt,
-          message: error?.message || "unknown",
-        });
-        throw error;
-      }
-    });
-
-  authQueue = run.catch(() => undefined);
-  return run;
 };
 
 const isSessionFreshEnough = (session) => {
@@ -78,71 +42,17 @@ const isSessionFreshEnough = (session) => {
   return session.expires_at * 1000 - Date.now() > TOKEN_REFRESH_BUFFER_MS;
 };
 
-const getSessionExpiryMs = (session) => {
-  const expiresAt = Number(session?.expires_at);
-  return Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt * 1000 : null;
-};
-
-const getBoundedJitterMs = (maxMs) => {
-  if (!Number.isFinite(maxMs) || maxMs <= 0) return 0;
-  const random = Number(Math.random());
-  if (!Number.isFinite(random) || random <= 0) return 0;
-  return Math.floor(Math.min(random, 0.999999) * (maxMs + 1));
-};
-
-const isSessionExpired = (session) => {
-  const expiresAt = getSessionExpiryMs(session);
-  return expiresAt !== null && expiresAt <= Date.now();
-};
-
-const canUseBrowserEvents = () => typeof window !== "undefined" && typeof document !== "undefined";
-
-const canUseRefreshCoordination = () => (
-  typeof globalThis !== "undefined"
-  && typeof globalThis.BroadcastChannel === "function"
+const isRateLimitError = (error) => (
+  Number(error?.status) === 429
+  || ["over_request_rate_limit", "rate_limit_exceeded"].includes(String(error?.code || "").toLowerCase())
+  || /too many requests|rate.?limit|\b429\b/i.test(String(error?.message || ""))
 );
 
-const getRefreshCoordinationChannel = () => {
-  if (!canUseRefreshCoordination()) return null;
-  if (refreshCoordinationChannel) return refreshCoordinationChannel;
-
-  try {
-    refreshCoordinationChannel = new globalThis.BroadcastChannel(AUTH_REFRESH_CHANNEL_NAME);
-    refreshCoordinationChannel.addEventListener("message", ({ data }) => {
-      if (data?.type === "rate_limited" && Number.isFinite(Number(data.retryAt))) {
-        refreshBlockedUntil = Math.max(refreshBlockedUntil, Number(data.retryAt));
-        refreshFailureCount = Math.max(refreshFailureCount, Number(data.failureCount) || 1);
-      }
-
-      if (data?.type === "refresh_succeeded") {
-        refreshBlockedUntil = 0;
-        refreshFailureCount = 0;
-      }
-    });
-  } catch {
-    refreshCoordinationChannel = null;
-  }
-
-  return refreshCoordinationChannel;
-};
-
-const broadcastRefreshEvent = (event) => {
-  try {
-    getRefreshCoordinationChannel()?.postMessage(event);
-  } catch {
-    // BroadcastChannel is optional; auth must work when it is unavailable.
-  }
-};
-
-const isRefreshRateLimitError = (error) => {
-  const status = Number(error?.status);
-  const code = String(error?.code || "").toLowerCase();
-  const message = String(error?.message || "").toLowerCase();
-  return status === 429
-    || code === "over_request_rate_limit"
-    || code === "rate_limit_exceeded"
-    || /too many requests|rate.?limit|429/.test(message);
-};
+export const isInvalidRefreshTokenError = (error) => (
+  ["refresh_token_not_found", "refresh_token_already_used", "invalid_refresh_token"]
+    .includes(String(error?.code || "").toLowerCase())
+  || /invalid refresh token|refresh token.*(not found|revoked|already used)/i.test(String(error?.message || ""))
+);
 
 const getRetryAfterMs = (error) => {
   const directValue = error?.retryAfter ?? error?.retry_after;
@@ -154,116 +64,50 @@ const getRetryAfterMs = (error) => {
   return value > 86_400 ? value : value * 1_000;
 };
 
-const createRefreshRateLimitError = () => Object.assign(
-  new Error("La sesión está temporalmente limitada. Reintentaremos automáticamente."),
-  {
-    code: "AUTH_REFRESH_RATE_LIMITED",
-    status: 429,
-    retryAt: refreshBlockedUntil,
-  },
-);
-
-const registerRefreshRateLimit = (error) => {
+const registerRateLimit = (error) => {
   refreshFailureCount = Math.min(refreshFailureCount + 1, 8);
   const exponentialDelay = Math.min(
     TOKEN_REFRESH_BACKOFF_MAX_MS,
     TOKEN_REFRESH_RETRY_MS * (2 ** (refreshFailureCount - 1)),
   );
+  const randomJitter = Math.floor(Math.random() * (TOKEN_REFRESH_RETRY_JITTER_MAX_MS + 1));
   const retryDelay = Math.min(
     TOKEN_REFRESH_BACKOFF_MAX_MS,
-    (getRetryAfterMs(error) || exponentialDelay) + getBoundedJitterMs(TOKEN_REFRESH_RETRY_JITTER_MAX_MS),
+    (getRetryAfterMs(error) || exponentialDelay) + randomJitter,
   );
   refreshBlockedUntil = Math.max(refreshBlockedUntil, Date.now() + retryDelay);
-  broadcastRefreshEvent({
-    type: "rate_limited",
-    retryAt: refreshBlockedUntil,
-    failureCount: refreshFailureCount,
-  });
 };
 
-const resetRefreshBackoff = () => {
+const resetRateLimit = () => {
   refreshFailureCount = 0;
   refreshBlockedUntil = 0;
-  broadcastRefreshEvent({ type: "refresh_succeeded" });
 };
 
-const getRefreshCooldownMs = () => Math.max(0, refreshBlockedUntil - Date.now());
-
-const runWithRefreshLock = async (task) => {
-  const locks = globalThis?.navigator?.locks;
-  if (typeof locks?.request !== "function") return task();
-  return locks.request(AUTH_REFRESH_LOCK_NAME, { mode: "exclusive" }, task);
-};
-
-const clearSessionTimers = () => {
-  if (refreshTimer) clearTimeout(refreshTimer);
-  if (expiryTimer) clearTimeout(expiryTimer);
-  refreshTimer = null;
-  expiryTimer = null;
-};
+const createRateLimitError = () => Object.assign(
+  new Error("La autenticación está temporalmente limitada. Intenta nuevamente en unos minutos."),
+  { code: "AUTH_RATE_LIMITED", status: 429, retryAt: refreshBlockedUntil },
+);
 
 const notifyInvalidation = (notice) => {
   invalidationListeners.forEach((listener) => {
     try {
       listener({ notice });
     } catch {
-      // A stale React subscription must not prevent local credential cleanup.
+      // A stale React subscription must not block local credential cleanup.
     }
   });
-};
-
-const scheduleRetryBeforeExpiry = (session) => {
-  if (cachedSession !== session) return;
-  const expiresAt = getSessionExpiryMs(session);
-  if (!expiresAt || expiresAt <= Date.now()) return;
-
-  if (refreshTimer) clearTimeout(refreshTimer);
-  const retryDelay = Math.min(
-    Math.max(1_000, expiresAt - Date.now()),
-    Math.max(TOKEN_REFRESH_RETRY_MS, getRefreshCooldownMs()),
-  );
-  refreshTimer = setTimeout(() => {
-    void maintainAuthSession({ forceRefresh: true, invalidateAtExpiry: true }).catch(() => undefined);
-  }, retryDelay);
-};
-
-const scheduleSessionMaintenance = (session) => {
-  clearSessionTimers();
-
-  const expiresAt = getSessionExpiryMs(session);
-  if (!expiresAt) return;
-
-  const refreshLeadTime = TOKEN_REFRESH_BUFFER_MS + getBoundedJitterMs(TOKEN_REFRESH_JITTER_MAX_MS);
-  const refreshDelay = Math.max(MIN_REFRESH_SCHEDULE_DELAY_MS, expiresAt - Date.now() - refreshLeadTime);
-  refreshTimer = setTimeout(() => {
-    if (cachedSession !== session) return;
-    void maintainAuthSession({ forceRefresh: true, invalidateAtExpiry: false }).catch(() => {
-      scheduleRetryBeforeExpiry(session);
-    });
-  }, refreshDelay);
-
-  expiryTimer = setTimeout(() => {
-    if (cachedSession !== session) return;
-    void maintainAuthSession({ forceRefresh: true, invalidateAtExpiry: true }).catch(() => undefined);
-  }, Math.max(0, expiresAt - Date.now()));
 };
 
 export function setCachedAuthSession(session) {
   cachedSession = session || null;
   cachedUser = session?.user || null;
-  if (!session) {
-    lastUserCheckedAt = 0;
-    clearSessionTimers();
-    return;
-  }
-  scheduleSessionMaintenance(session);
+  if (!session) lastUserCheckedAt = 0;
 }
 
 export function clearCachedAuthSession() {
   cachedSession = null;
   cachedUser = null;
   lastUserCheckedAt = 0;
-  clearSessionTimers();
 }
 
 export function markAuthNotice(code) {
@@ -279,167 +123,148 @@ export function consumeAuthNotice() {
 export { isAuthSessionPersistenceEnabled, setAuthSessionPersistence };
 
 export async function getAuthSession({ forceRefresh = false } = {}) {
-  if (!forceRefresh && isSessionFreshEnough(cachedSession)) {
-    return cachedSession;
-  }
+  if (!forceRefresh && sessionPromise) return sessionPromise;
 
-  if (!forceRefresh && sessionPromise) {
-    return sessionPromise;
-  }
+  const startedAt = Date.now();
+  const request = supabase.auth.getSession()
+    .then(({ data, error }) => {
+      if (error) throw error;
+      const session = data?.session || null;
+      setCachedAuthSession(session);
+      logAuthDebug("getSession", "end", { durationMs: Date.now() - startedAt });
+      return session;
+    })
+    .catch((error) => {
+      logAuthDebug("getSession", "error", { durationMs: Date.now() - startedAt, status: error?.status, code: error?.code });
+      throw error;
+    })
+    .finally(() => {
+      if (sessionPromise === request) sessionPromise = null;
+    });
 
-  sessionPromise = enqueueAuthOperation("getSession", async () => {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) throw error;
-    setCachedAuthSession(data?.session || null);
-    return cachedSession;
-  }).finally(() => {
-    sessionPromise = null;
-  });
-
-  return sessionPromise;
+  if (!forceRefresh) sessionPromise = request;
+  return request;
 }
 
-export async function refreshAuthSession({ forceRefresh = false } = {}) {
+/**
+ * Refresh on demand only (for an explicit refresh or an API request rejected
+ * with 401). Supabase owns scheduled refresh and cross-tab locking. The
+ * rejectedAccessToken lets late 401s reuse the newer session instead of
+ * rotating its refresh token again.
+ */
+export async function refreshAuthSession({ forceRefresh = false, rejectedAccessToken = null } = {}) {
   if (refreshPromise) return refreshPromise;
 
-  refreshPromise = enqueueAuthOperation("refreshSession", async () => {
-    return runWithRefreshLock(async () => {
-      // Another tab may have refreshed while this request waited for the
-      // shared lock. Re-read storage before consuming the refresh token.
-      const latestResult = await supabase.auth.getSession();
-      if (latestResult.error) throw latestResult.error;
-      const latestSession = latestResult.data?.session || null;
-      const latestSessionIsNewer = Boolean(
-        latestSession?.access_token
-        && (!cachedSession?.access_token || latestSession.access_token !== cachedSession.access_token)
-      );
-      if (
-        latestSession?.access_token
-        && isSessionFreshEnough(latestSession)
-        && (!forceRefresh || latestSessionIsNewer)
-      ) {
-        setCachedAuthSession(latestSession);
-        resetRefreshBackoff();
-        return cachedSession;
-      }
+  const request = (async () => {
+    const latestSession = await getAuthSession({ forceRefresh: true });
+    if (rejectedAccessToken && latestSession?.access_token !== rejectedAccessToken) {
+      return latestSession;
+    }
+    if (!forceRefresh && isSessionFreshEnough(latestSession)) return latestSession;
+    if (refreshBlockedUntil > Date.now()) throw createRateLimitError();
 
-      if (getRefreshCooldownMs() > 0) throw createRefreshRateLimitError();
-
+    const startedAt = Date.now();
+    try {
       const { data, error } = await supabase.auth.refreshSession();
       if (error) throw error;
-      setCachedAuthSession(data?.session || null);
-      resetRefreshBackoff();
-      return cachedSession;
-    });
-  }).catch((error) => {
-    if (isRefreshRateLimitError(error) && error?.code !== "AUTH_REFRESH_RATE_LIMITED") {
-      registerRefreshRateLimit(error);
+      const refreshed = data?.session || null;
+      setCachedAuthSession(refreshed);
+      resetRateLimit();
+      logAuthDebug("refreshSession", "end", { durationMs: Date.now() - startedAt });
+      return refreshed;
+    } catch (error) {
+      logAuthDebug("refreshSession", "error", { durationMs: Date.now() - startedAt, status: error?.status, code: error?.code });
+      if (isRateLimitError(error)) registerRateLimit(error);
+      throw error;
     }
-    throw error;
-  }).finally(() => {
-    refreshPromise = null;
+  })().finally(() => {
+    if (refreshPromise === request) refreshPromise = null;
   });
 
-  return refreshPromise;
+  refreshPromise = request;
+  return request;
 }
 
 export async function maintainAuthSession({ forceRefresh = false, invalidateAtExpiry = false } = {}) {
-  let session;
   try {
-    session = await getAuthSession();
+    const session = await getAuthSession();
+    if (!session?.access_token) return null;
+    if (!forceRefresh && isSessionFreshEnough(session)) return session;
+    return await refreshAuthSession({ forceRefresh: true });
   } catch (error) {
-    if (invalidateAtExpiry || isSessionExpired(cachedSession)) await expireAuthSession();
-    throw error;
-  }
-
-  if (!session?.access_token) {
-    if (invalidateAtExpiry || isSessionExpired(cachedSession)) await expireAuthSession();
-    return null;
-  }
-
-  const requiresRefresh = forceRefresh || !isSessionFreshEnough(session);
-  if (!requiresRefresh) return session;
-
-  try {
-    const refreshedSession = await refreshAuthSession({ forceRefresh });
-    if (!refreshedSession?.access_token) {
-      throw new Error("Tu sesion expiro. Inicia sesion nuevamente.");
-    }
-    return refreshedSession;
-  } catch (error) {
-    // A 429 is a temporary throttle. Keep a still-valid session alive and let
-    // the scheduled backoff retry instead of logging users out.
-    if (isRefreshRateLimitError(error)) {
-      if (isSessionExpired(session)) await expireAuthSession();
-      scheduleRetryBeforeExpiry(session);
-    } else if (invalidateAtExpiry || isSessionExpired(session)) {
+    const expiry = Number(cachedSession?.expires_at) * 1_000;
+    if (isInvalidRefreshTokenError(error) || (invalidateAtExpiry && expiry && expiry <= Date.now())) {
       await expireAuthSession();
     }
     throw error;
   }
 }
 
-export async function getFreshAccessToken({ forceRefresh = false } = {}) {
+export async function getFreshAccessToken({ forceRefresh = false, rejectedAccessToken = null } = {}) {
   let session = await getAuthSession();
 
+  if (rejectedAccessToken && session?.access_token && session.access_token !== rejectedAccessToken) {
+    return session.access_token;
+  }
+
   if (!session?.access_token && !forceRefresh) {
-    throw new Error("Tu sesion expiro. Inicia sesion nuevamente.");
+    throw new Error("Tu sesión expiró. Inicia sesión nuevamente.");
   }
 
   if (forceRefresh || !isSessionFreshEnough(session)) {
-    session = await refreshAuthSession({ forceRefresh });
+    session = await refreshAuthSession({
+      forceRefresh,
+      rejectedAccessToken: rejectedAccessToken || null,
+    });
   }
 
-  if (!session?.access_token) {
-    throw new Error("Tu sesion expiro. Inicia sesion nuevamente.");
-  }
-
+  if (!session?.access_token) throw new Error("Tu sesión expiró. Inicia sesión nuevamente.");
   return session.access_token;
 }
 
 export async function getVerifiedUser({ force = false } = {}) {
   const now = Date.now();
-  if (!force && cachedUser && now - lastUserCheckedAt < USER_CACHE_TTL_MS) {
-    return cachedUser;
-  }
-
+  if (!force && cachedUser && now - lastUserCheckedAt < USER_CACHE_TTL_MS) return cachedUser;
   if (!force && userPromise) return userPromise;
 
-  userPromise = enqueueAuthOperation("getUser", async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    cachedUser = data?.user || null;
-    lastUserCheckedAt = Date.now();
-    return cachedUser;
-  }).finally(() => {
-    userPromise = null;
-  });
+  const request = supabase.auth.getUser()
+    .then(({ data, error }) => {
+      if (error) throw error;
+      cachedUser = data?.user || null;
+      lastUserCheckedAt = Date.now();
+      return cachedUser;
+    })
+    .finally(() => {
+      if (userPromise === request) userPromise = null;
+    });
 
-  return userPromise;
+  if (!force) userPromise = request;
+  return request;
 }
 
 async function endAuthSession({ scope = "global", notice = null, suppressRemoteError = false } = {}) {
   if (notice) markAuthNotice(notice);
   if (sessionEndPromise) return sessionEndPromise;
 
-  sessionEndPromise = enqueueAuthOperation("signOut", async () => {
+  const request = (async () => {
     try {
       const { error } = await supabase.auth.signOut({ scope });
       if (error && !suppressRemoteError) throw error;
     } finally {
       clearCachedAuthSession();
-      clearAuthSessionStorage();
+      if (scope === "global") clearAuthSessionStorage();
       if (notice) notifyInvalidation(notice);
     }
-  }).finally(() => {
-    sessionEndPromise = null;
+  })().finally(() => {
+    if (sessionEndPromise === request) sessionEndPromise = null;
   });
 
-  return sessionEndPromise;
+  sessionEndPromise = request;
+  return request;
 }
 
-export async function signOutAuth() {
-  return endAuthSession();
+export async function signOutAuth(options = {}) {
+  return endAuthSession(options);
 }
 
 export async function expireAuthSession() {
@@ -455,54 +280,20 @@ export function subscribeToAuthInvalidation(listener) {
   return () => invalidationListeners.delete(listener);
 }
 
-const revalidateWhenActive = () => {
-  if (document.visibilityState && document.visibilityState !== "visible") return;
-  void maintainAuthSession({ invalidateAtExpiry: true }).catch(() => undefined);
-};
-
+// Compatibility no-op for any legacy caller. Supabase's browser SDK now owns
+// foreground visibility handling and scheduled refresh.
 export function startAuthSessionMonitor() {
-  if (!canUseBrowserEvents()) return () => undefined;
-
-  monitorReferences += 1;
-  if (!monitorListenersAttached) {
-    window.addEventListener("focus", revalidateWhenActive);
-    window.addEventListener("online", revalidateWhenActive);
-    document.addEventListener("visibilitychange", revalidateWhenActive);
-    monitorListenersAttached = true;
-  }
-
-  return () => {
-    monitorReferences = Math.max(0, monitorReferences - 1);
-    if (monitorReferences || !monitorListenersAttached) return;
-    window.removeEventListener("focus", revalidateWhenActive);
-    window.removeEventListener("online", revalidateWhenActive);
-    document.removeEventListener("visibilitychange", revalidateWhenActive);
-    monitorListenersAttached = false;
-  };
+  return () => undefined;
 }
 
 export function __resetAuthManagerForTests() {
-  authQueue = Promise.resolve();
   sessionPromise = null;
   refreshPromise = null;
   userPromise = null;
   pendingAuthNotice = null;
   sessionEndPromise = null;
-  monitorReferences = 0;
-  if (monitorListenersAttached && canUseBrowserEvents()) {
-    window.removeEventListener("focus", revalidateWhenActive);
-    window.removeEventListener("online", revalidateWhenActive);
-    document.removeEventListener("visibilitychange", revalidateWhenActive);
-  }
-  monitorListenersAttached = false;
   refreshFailureCount = 0;
   refreshBlockedUntil = 0;
-  try {
-    refreshCoordinationChannel?.close?.();
-  } catch {
-    // Ignore optional coordination cleanup failures in tests/hardened browsers.
-  }
-  refreshCoordinationChannel = null;
   invalidationListeners.clear();
   clearCachedAuthSession();
 }

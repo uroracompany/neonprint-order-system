@@ -3,8 +3,7 @@ export const KPI_DEFAULT_TAB = 'overview'
 
 const STORAGE_VERSION = 1
 const MAX_AGE_MS = 12 * 60 * 60 * 1000
-const KPI_TABS = new Set(['overview', 'orders', 'clients', 'users', 'production'])
-const DETAIL_TYPES = new Set(['seller', 'designer', 'quote', 'production-area', 'production-employee', 'delivery-user'])
+const KPI_TABS = new Set(['overview', 'orders'])
 
 const storageKey = userId => `neonprint:kpi-workspace:v${STORAGE_VERSION}:${userId}`
 const stringValue = value => typeof value === 'string' ? value : ''
@@ -22,13 +21,7 @@ export function getKpiTabSearch(search = '', tab = KPI_DEFAULT_TAB) {
   return nextSearch ? `?${nextSearch}` : ''
 }
 
-function normalizeDetail(detail) {
-  if (!detail || !DETAIL_TYPES.has(detail.type)) return null
-  if (detail.type === 'production-employee') {
-    return detail.employeeId && detail.areaCode ? { type: detail.type, employeeId: detail.employeeId, areaCode: detail.areaCode } : null
-  }
-  return detail.id ? { type: detail.type, id: detail.id } : null
-}
+const normalizeDetail = () => null
 
 export function readKpiWorkspace(userId, storage = globalThis.sessionStorage) {
   if (!userId || !storage) return null

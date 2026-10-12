@@ -10,23 +10,12 @@ import KPIStatusTrend from './KPIStatusTrend'
 import KPICreditsSummary from './KPICreditsSummary'
 import KPIQualityMetrics from './KPIQualityMetrics'
 import KPIOrdersAnalytics from './KPIOrdersAnalytics'
-import KPIClientAnalytics from './KPIClientAnalytics'
-import KPIUserAnalytics from './KPIUserAnalytics'
-import KPIProductionInsights from './KPIProductionInsights'
-import { SellerDetailView } from './KPISellerIntelligence'
-import { DesignerDetailView } from './KPIDesignIntelligence'
-import { QuoteDetailView } from './KPIQuoteIntelligence'
-import { ProductionAreaDetailView, ProductionEmployeeDetailView } from './KPIProductionIntelligence'
-import { DeliveryDetailView } from './KPIDeliveryIntelligence'
 import { getKpiTabFromSearch, getKpiTabSearch, KPI_TAB_PARAM, readKpiWorkspace, writeKpiWorkspace } from '../../utils/kpiWorkspace'
 import '../../css-components/page-kpi.css'
 
 const TABS = [
   { id: 'overview', label: 'Resumen Ejecutivo', icon: <Icons.Dashboard /> },
   { id: 'orders', label: 'Órdenes', icon: <Icons.Orders /> },
-  { id: 'clients', label: 'Clientes', icon: <Icons.User /> },
-  { id: 'users', label: 'Empleados', icon: <Icons.Users /> },
-  { id: 'production', label: 'Producción', icon: <Icons.Brush /> },
 ]
 
 export default function KPIModule({ userId }) {
@@ -40,79 +29,15 @@ export default function KPIModule({ userId }) {
 
   const [activeTab, setActiveTab] = useState(() => hasRouteKpiTab ? getKpiTabFromSearch(location.search) : initialWorkspace?.activeTab || 'overview')
   const [pipelineFilters, setPipelineFilters] = useState(() => initialWorkspace?.pipelineFilters || { designType: 'all', orderType: 'all' })
-  const [sellerDetailId, setSellerDetailId] = useState(() => initialWorkspace?.detail?.type === 'seller' ? initialWorkspace.detail.id : null)
-  const [designerDetailId, setDesignerDetailId] = useState(() => initialWorkspace?.detail?.type === 'designer' ? initialWorkspace.detail.id : null)
-  const [quoteDetailId, setQuoteDetailId] = useState(() => initialWorkspace?.detail?.type === 'quote' ? initialWorkspace.detail.id : null)
-  const [productionAreaCode, setProductionAreaCode] = useState(() => initialWorkspace?.detail?.type === 'production-area' ? initialWorkspace.detail.id : null)
-  const [productionEmployeeDetail, setProductionEmployeeDetail] = useState(() => initialWorkspace?.detail?.type === 'production-employee' ? { employeeId: initialWorkspace.detail.employeeId, areaCode: initialWorkspace.detail.areaCode } : null)
-  const [deliveryUserId, setDeliveryUserId] = useState(() => initialWorkspace?.detail?.type === 'delivery-user' ? initialWorkspace.detail.id : null)
   const scrollYRef = useRef(initialWorkspace?.scrollY || 0)
   const restoredScrollRef = useRef(false)
   const restoredWorkspaceUserRef = useRef(null)
 
-  const getDateBounds = useCallback(() => {
-    if (period === 'custom' && customDateFrom && customDateTo) {
-      return { date_from: customDateFrom, date_to: customDateTo }
-    }
-    const now = new Date()
-    let start, end
-    switch (period) {
-      case 'today': {
-        start = new Date(now)
-        start.setHours(0, 0, 0, 0)
-        end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
-        break
-      }
-      case 'week': {
-        start = new Date(now)
-        start.setDate(now.getDate() - now.getDay())
-        start.setHours(0, 0, 0, 0)
-        end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000)
-        break
-      }
-      case 'year':
-        start = new Date(now.getFullYear(), 0, 1)
-        end = new Date(now.getFullYear() + 1, 0, 1)
-        break
-      case 'general': {
-        start = new Date('1970-01-01T00:00:00.000Z')
-        end = new Date(now)
-        end.setHours(0, 0, 0, 0)
-        end.setDate(end.getDate() + 1)
-        break
-      }
-      default:
-        start = new Date(now.getFullYear(), now.getMonth(), 1)
-        end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    }
-    return { date_from: start.toISOString(), date_to: end.toISOString() }
-  }, [period, customDateFrom, customDateTo])
-
-  const clearDetail = useCallback(() => {
-    setSellerDetailId(null)
-    setDesignerDetailId(null)
-    setQuoteDetailId(null)
-    setProductionAreaCode(null)
-    setProductionEmployeeDetail(null)
-    setDeliveryUserId(null)
-  }, [])
-
   const selectKpiTab = useCallback((nextTab, { replace = false } = {}) => {
-    clearDetail()
     setActiveTab(nextTab)
     const nextSearch = getKpiTabSearch(location.search, nextTab)
     if (nextSearch !== location.search) navigate({ pathname: location.pathname, search: nextSearch }, { replace })
-  }, [clearDetail, location.pathname, location.search, navigate])
-
-  const workspaceDetail = useMemo(() => {
-    if (sellerDetailId) return { type: 'seller', id: sellerDetailId }
-    if (designerDetailId) return { type: 'designer', id: designerDetailId }
-    if (quoteDetailId) return { type: 'quote', id: quoteDetailId }
-    if (productionEmployeeDetail) return { type: 'production-employee', ...productionEmployeeDetail }
-    if (productionAreaCode) return { type: 'production-area', id: productionAreaCode }
-    if (deliveryUserId) return { type: 'delivery-user', id: deliveryUserId }
-    return null
-  }, [deliveryUserId, designerDetailId, productionAreaCode, productionEmployeeDetail, quoteDetailId, sellerDetailId])
+  }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
     if (!userId || restoredWorkspaceUserRef.current === userId) return
@@ -123,21 +48,15 @@ export default function KPIModule({ userId }) {
     setPeriod(restored.period, restored.customDateFrom, restored.customDateTo)
     setPipelineFilters(restored.pipelineFilters)
     scrollYRef.current = restored.scrollY
-    const detail = restored.detail
-    if (!detail) return
-    if (detail.type === 'seller') setSellerDetailId(detail.id)
-    if (detail.type === 'designer') setDesignerDetailId(detail.id)
-    if (detail.type === 'quote') setQuoteDetailId(detail.id)
-    if (detail.type === 'production-area') setProductionAreaCode(detail.id)
-    if (detail.type === 'production-employee') setProductionEmployeeDetail({ employeeId: detail.employeeId, areaCode: detail.areaCode })
-    if (detail.type === 'delivery-user') setDeliveryUserId(detail.id)
   }, [location.search, setPeriod, userId])
 
   useEffect(() => {
     if (!new URLSearchParams(location.search).has(KPI_TAB_PARAM)) return
-    clearDetail()
-    setActiveTab(getKpiTabFromSearch(location.search))
-  }, [clearDetail, location.search])
+    const normalizedTab = getKpiTabFromSearch(location.search)
+    setActiveTab(normalizedTab)
+    const nextSearch = getKpiTabSearch(location.search, normalizedTab)
+    if (nextSearch !== location.search) navigate({ pathname: location.pathname, search: nextSearch }, { replace: true })
+  }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
     const persistWorkspace = () => writeKpiWorkspace(userId, {
@@ -146,7 +65,6 @@ export default function KPIModule({ userId }) {
       customDateFrom,
       customDateTo,
       pipelineFilters,
-      detail: workspaceDetail,
       scrollY: scrollYRef.current,
     })
     const captureScroll = () => { scrollYRef.current = window.scrollY }
@@ -161,7 +79,7 @@ export default function KPIModule({ userId }) {
       window.removeEventListener('pagehide', persistWorkspace)
       document.removeEventListener('visibilitychange', persistWorkspace)
     }
-  }, [activeTab, customDateFrom, customDateTo, period, pipelineFilters, userId, workspaceDetail])
+  }, [activeTab, customDateFrom, customDateTo, period, pipelineFilters, userId])
 
   useEffect(() => {
     if (restoredScrollRef.current || loading || !data) return
@@ -169,20 +87,6 @@ export default function KPIModule({ userId }) {
     window.requestAnimationFrame(() => window.scrollTo({ top: scrollYRef.current, behavior: 'auto' }))
   }, [data, loading])
 
-  const handleSellerClick = useCallback((sellerId) => { setSellerDetailId(sellerId) }, [])
-  const handleSellerBack = useCallback(() => { setSellerDetailId(null) }, [])
-  const handleDesignerClick = useCallback((designerId) => { setDesignerDetailId(designerId) }, [])
-  const handleDesignerBack = useCallback(() => { setDesignerDetailId(null) }, [])
-  const handleQuoteClick = useCallback((quoteId) => { setQuoteDetailId(quoteId) }, [])
-  const handleQuoteBack = useCallback(() => { setQuoteDetailId(null) }, [])
-  const handleProductionAreaClick = useCallback((areaCode) => { setProductionAreaCode(areaCode) }, [])
-  const handleProductionAreaBack = useCallback(() => { setProductionAreaCode(null); setProductionEmployeeDetail(null) }, [])
-  const handleProductionEmployeeClick = useCallback((employeeId, areaCode) => {
-    setProductionEmployeeDetail({ employeeId, areaCode })
-  }, [])
-  const handleProductionEmployeeBack = useCallback(() => { setProductionEmployeeDetail(null) }, [])
-  const handleDeliveryUserClick = useCallback((userId) => { setDeliveryUserId(userId) }, [])
-  const handleDeliveryUserBack = useCallback(() => { setDeliveryUserId(null) }, [])
   if (loading && !data) {
     return (
       <section className="pa-section" style={{ minHeight: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -211,68 +115,35 @@ export default function KPIModule({ userId }) {
 
   return (
     <section className="pa-section">
-      {sellerDetailId ? (
-        <SellerDetailView sellerId={sellerDetailId} getDateBounds={getDateBounds} onBack={handleSellerBack} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} />
-      ) : designerDetailId ? (
-        <DesignerDetailView designerId={designerDetailId} onBack={handleDesignerBack} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} />
-      ) : quoteDetailId ? (
-        <QuoteDetailView quoteId={quoteDetailId} onBack={handleQuoteBack} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} />
-      ) : productionEmployeeDetail ? (
-        <ProductionEmployeeDetailView
-          employeeId={productionEmployeeDetail.employeeId}
-          areaCode={productionEmployeeDetail.areaCode}
-          onBack={handleProductionEmployeeBack}
-          period={period}
-          customDateFrom={customDateFrom}
-          customDateTo={customDateTo}
-        />
-      ) : productionAreaCode ? (
-        <ProductionAreaDetailView
-          areaCode={productionAreaCode}
-          onBack={handleProductionAreaBack}
-          onEmployeeClick={handleProductionEmployeeClick}
-          period={period}
-          customDateFrom={customDateFrom}
-          customDateTo={customDateTo}
-        />
-      ) : deliveryUserId ? (
-        <DeliveryDetailView deliveryUserId={deliveryUserId} onBack={handleDeliveryUserBack} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} />
-      ) : (
-        <>
-          <KPIHeader
-            meta={data?.executive_summary?.meta}
-          />
+      <KPIHeader
+        meta={data?.executive_summary?.meta}
+      />
 
-          <div className="kpi-tabs">
-            {TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => selectKpiTab(tab.id)}
-                className={`kpi-tab ${activeTab === tab.id ? 'active' : ''}`}
-              >
-                {tab.icon}
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
+      <div className="kpi-tabs">
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => selectKpiTab(tab.id)}
+            className={`kpi-tab ${activeTab === tab.id ? 'active' : ''}`}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
 
-          {activeTab === 'overview' && (
-            <div className="kpi-tab-content kpi-executive-overview" key="overview">
-              <KPISummaryCards data={data} />
-              <KPIOrderPipeline data={data} filters={pipelineFilters} onFiltersChange={setPipelineFilters} />
-              <KPIProductionMini data={data} />
-              <KPIStatusTrend data={data} />
-              <KPICreditsSummary data={data} />
-              <KPIQualityMetrics data={data} />
-            </div>
-          )}
-
-          {activeTab === 'orders' && <div className="kpi-tab-content" key="orders"><KPIOrdersAnalytics data={data} /></div>}
-          {activeTab === 'clients' && <div className="kpi-tab-content" key="clients"><KPIClientAnalytics data={data} /></div>}
-          {activeTab === 'users' && <div className="kpi-tab-content" key="users"><KPIUserAnalytics data={data} period={period} customDateFrom={customDateFrom} customDateTo={customDateTo} onSellerClick={handleSellerClick} onDesignerClick={handleDesignerClick} onQuoteClick={handleQuoteClick} onProductionAreaClick={handleProductionAreaClick} onProductionEmployeeClick={handleProductionEmployeeClick} onDeliveryUserClick={handleDeliveryUserClick} /></div>}
-          {activeTab === 'production' && <div className="kpi-tab-content" key="production"><KPIProductionInsights data={data} onAreaClick={handleProductionAreaClick} /></div>}
-        </>
+      {activeTab === 'overview' && (
+        <div className="kpi-tab-content kpi-executive-overview" key="overview">
+          <KPISummaryCards data={data} />
+          <KPIOrderPipeline data={data} filters={pipelineFilters} onFiltersChange={setPipelineFilters} />
+          <KPIProductionMini data={data} />
+          <KPIStatusTrend data={data} />
+          <KPICreditsSummary data={data} />
+          <KPIQualityMetrics data={data} />
+        </div>
       )}
+
+      {activeTab === 'orders' && <div className="kpi-tab-content" key="orders"><KPIOrdersAnalytics data={data} /></div>}
     </section>
   )
 }

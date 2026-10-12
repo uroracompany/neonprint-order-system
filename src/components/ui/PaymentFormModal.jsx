@@ -22,11 +22,14 @@ export default function PaymentFormModal({
   onCreditClientRequired,
   canManagePayment = true,
   hasVerifiedPaymentReceipt = false,
+  correctionMode = false,
   nested = false,
 }) {
-  const [paymentStatus, setPaymentStatus] = useState("Pending_Payment");
+  const [paymentStatus, setPaymentStatus] = useState(correctionMode ? "" : "Pending_Payment");
   const [receiptFile, setReceiptFile] = useState(null);
   const [existingReceiptUrl, setExistingReceiptUrl] = useState("");
+  const [existingReceiptLoadState, setExistingReceiptLoadState] = useState("idle");
+  const [existingReceiptPreviewFailed, setExistingReceiptPreviewFailed] = useState(false);
   const receiptInputRef = useRef(null);
   const [receiptPreviewAvailable, setReceiptPreviewAvailable] = useState(true);
   const [receiptZoneError, setReceiptZoneError] = useState("");
@@ -39,7 +42,7 @@ export default function PaymentFormModal({
 
   useEffect(() => {
     if (!open || !orderId) return;
-    setPaymentStatus(orderPaymentStatus || "Pending_Payment");
+    setPaymentStatus(correctionMode ? "" : (orderPaymentStatus || "Pending_Payment"));
     setReceiptFile(null);
     setReceiptPreviewAvailable(true);
     setReceiptZoneError("");
@@ -48,20 +51,37 @@ export default function PaymentFormModal({
     setInvoiceNumber(order?.invoice_number || "");
     setInvoiceCodeSaving(false);
     if (receiptInputRef.current) receiptInputRef.current.value = "";
-  }, [open, orderId, orderPaymentStatus, order?.invoice_number]);
+  }, [open, orderId, orderPaymentStatus, order?.invoice_number, correctionMode]);
 
   useEffect(() => {
     let active = true;
     const loadReceipt = async () => {
       if (!order?.invoice_payment) {
-        if (active) setExistingReceiptUrl("");
+        if (active) {
+          setExistingReceiptUrl("");
+          setExistingReceiptLoadState("none");
+          setExistingReceiptPreviewFailed(false);
+        }
         return;
       }
-      const signedUrl = await createSignedOrderAssetUrlFromStoredUrl({
-        bucket: "payment-invoice",
-        url: order.invoice_payment,
-      });
-      if (active) setExistingReceiptUrl(signedUrl || "");
+      setExistingReceiptUrl("");
+      setExistingReceiptLoadState("loading");
+      setExistingReceiptPreviewFailed(false);
+      try {
+        const signedUrl = await createSignedOrderAssetUrlFromStoredUrl({
+          bucket: "payment-invoice",
+          url: order.invoice_payment,
+        });
+        if (active) {
+          setExistingReceiptUrl(signedUrl || "");
+          setExistingReceiptLoadState(signedUrl ? "ready" : "error");
+        }
+      } catch {
+        if (active) {
+          setExistingReceiptUrl("");
+          setExistingReceiptLoadState("error");
+        }
+      }
     };
     loadReceipt();
     return () => { active = false; };
@@ -79,11 +99,18 @@ export default function PaymentFormModal({
   }, [receiptPreviewUrl]);
 
   const confirmLabel = useMemo(
-    () => getPaymentConfirmButtonLabel(paymentStatus, loading),
-    [paymentStatus, loading],
+    () => (correctionMode ? (loading ? "Guardando..." : "Guardar corrección") : getPaymentConfirmButtonLabel(paymentStatus, loading)),
+    [correctionMode, paymentStatus, loading],
   );
 
   const paymentOptions = useMemo(() => {
+    if (correctionMode) {
+      return [
+        { value: "", label: "Selecciona el estado correcto" },
+        { value: PAYMENT_STATUS.PENDING, label: "Pendiente" },
+        { value: PAYMENT_STATUS.PARTIAL, label: "Pago parcial" },
+      ];
+    }
     const isInProduction = order?.status === ORDER_STATUS.IN_PRODUCTION || order?.status === ORDER_STATUS.IN_TERMINATION || order?.status === ORDER_STATUS.IN_COMPLETED || order?.status === ORDER_STATUS.IN_DELIVERED;
     return [
       ...(isInProduction ? [] : [{ value: PAYMENT_STATUS.PENDING, label: "Pendiente" }]),
@@ -91,7 +118,7 @@ export default function PaymentFormModal({
       { value: PAYMENT_STATUS.CREDIT, label: "Pago a crédito" },
       { value: PAYMENT_STATUS.PAID, label: "Pagado" },
     ];
-  }, [order?.status]);
+  }, [correctionMode, order?.status]);
 
   const handleReceiptAccepted = async ([file]) => {
     if (!file) return;
@@ -120,6 +147,10 @@ export default function PaymentFormModal({
       setInternalError("Esta orden está en modo lectura para Caja.");
       return;
     }
+    if (correctionMode && ![PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL].includes(paymentStatus)) {
+      setInternalError("Selecciona Pendiente o Pago parcial para corregir el estado.");
+      return;
+    }
     const hasPaymentEvidence = Boolean(receiptFile || hasVerifiedPaymentReceipt);
     const hasInvoiceCode = Boolean(invoiceNumber.trim() || order?.invoice_number?.trim());
 
@@ -145,6 +176,7 @@ export default function PaymentFormModal({
         paymentStatus,
         receiptFile,
         invoiceNumber: invoiceNumber.trim(),
+        isPaymentCorrection: correctionMode,
       });
       if (result?.ok === false) return;
     } catch (err) {
@@ -189,6 +221,7 @@ export default function PaymentFormModal({
         disabled={
           loading ||
           !canManagePayment ||
+          (correctionMode && ![PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL].includes(paymentStatus)) ||
           (paymentStatus === PAYMENT_STATUS.PAID && (
             (!invoiceNumber.trim() && !order?.invoice_number?.trim())
             || (!receiptFile && !hasVerifiedPaymentReceipt)
@@ -240,10 +273,17 @@ export default function PaymentFormModal({
           </div>
         )}
 
+        {correctionMode && (
+          <div className="pfm-readonly-note" role="status">
+            Corrige el estado del pago antes de autorizar Producción. El código de factura y el comprobante actual no se modificarán; el comprobante dejará de estar asociado al pago confirmado.
+          </div>
+        )}
+
           <div className="pfm-field">
-            <span className="pfm-label">Estado de pago</span>
+            <span id="pfm-payment-status-label" className="pfm-label">Estado de pago</span>
             <div className="pfm-select-wrap">
               <select
+                aria-labelledby="pfm-payment-status-label"
                 value={paymentStatus}
                 onChange={(e) => setPaymentStatus(e.target.value)}
                 disabled={loading || !canManagePayment}
@@ -273,7 +313,8 @@ export default function PaymentFormModal({
                 className="pfm-receipt-number-input"
                 value={invoiceNumber}
                 onChange={(event) => setInvoiceNumber(event.target.value)}
-                disabled={loading || !canAssignInvoiceCode || !canManagePayment}
+                readOnly={correctionMode}
+                disabled={!correctionMode && (loading || !canAssignInvoiceCode || !canManagePayment)}
                 placeholder="Código de facturación"
                 aria-describedby="pfm-invoice-number-hint"
               />
@@ -288,11 +329,11 @@ export default function PaymentFormModal({
                 </button>
               )}
               <small id="pfm-invoice-number-hint" className="pfm-receipt-number-hint pfm-invoice-code-hint">
-                {canAssignInvoiceCode ? "Guarda el código antes de completar el pago." : "El código registrado es requerido antes de completar el pago."}
+                {correctionMode ? "El código de facturación se conserva sin cambios durante la corrección." : (canAssignInvoiceCode ? "Guarda el código antes de completar el pago." : "El código registrado es requerido antes de completar el pago.")}
               </small>
           </div>
 
-          {paymentStatus === PAYMENT_STATUS.PAID && (
+          {paymentStatus === PAYMENT_STATUS.PAID && !correctionMode && (
             <div className="pfm-receipt-section">
               <span className="pfm-label">Comprobante de pago</span>
               {receiptFile ? (
@@ -359,6 +400,39 @@ export default function PaymentFormModal({
                   </a>
                 </div>
               )}
+            </div>
+          )}
+
+          {correctionMode && existingReceiptUrl && (
+            <div className="pfm-existing-receipt">
+              <span className="pfm-label">Comprobante actual (solo lectura)</span>
+              <a href={existingReceiptUrl} target="_blank" rel="noreferrer" aria-label="Abrir comprobante de pago actual">
+                {existingReceiptPreviewFailed ? (
+                  <div className="pfm-receipt-no-preview">
+                    <Icons.Image aria-hidden="true" />
+                    <span>Vista previa no disponible</span>
+                    <small>El archivo original sigue conservado.</small>
+                  </div>
+                ) : (
+                  <img
+                    src={existingReceiptUrl}
+                    alt="Comprobante de pago actual"
+                    className="pfm-receipt-preview"
+                    onError={() => setExistingReceiptPreviewFailed(true)}
+                  />
+                )}
+              </a>
+            </div>
+          )}
+
+          {correctionMode && order?.invoice_payment && existingReceiptLoadState === "loading" && (
+            <div className="pfm-existing-receipt-state" role="status" aria-live="polite">
+              Cargando comprobante actual…
+            </div>
+          )}
+          {correctionMode && order?.invoice_payment && existingReceiptLoadState === "error" && (
+            <div className="pfm-existing-receipt-state" role="status">
+              No se pudo cargar la vista previa del comprobante. Puedes guardar la corrección; el archivo almacenado no se eliminará.
             </div>
           )}
 

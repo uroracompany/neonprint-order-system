@@ -95,14 +95,19 @@ describe("flujo de produccion en caja", () => {
 
   it("muestra solo areas participantes en el modal de asignacion de produccion", () => {
     const modal = readProjectFile("src/components/orders/ProductionAssignmentModal.jsx");
+    const shell = readProjectFile("src/components/ui/AssignmentModalShell.jsx");
 
     expect(modal).toContain("getParticipatingProductionAreaCodes");
     expect(modal).toContain("source.filter((item) => participating.includes(item.code))");
     expect(modal).toContain("hasUnclassifiedProductionFiles");
     expect(modal).toContain("Clasifica todos los archivos antes de continuar.");
     expect(modal).toContain("pq-dialog--production-assignment pq-dialog--return-designer");
-    expect(modal).toContain("pq-dialog-header pq-dialog-header--delivery");
-    expect(modal).toContain("pq-production-header-code");
+    expect(modal).toContain("<AssignmentModalShell");
+    expect(modal).toContain('titleId="pam-title" descriptionId="pam-description"');
+    expect(shell).toContain('role="dialog" aria-modal="true"');
+    expect(shell).toContain("aria-labelledby={titleId}");
+    expect(shell).toContain("aria-describedby={descriptionId}");
+    expect(shell).toContain('aria-label="Cerrar"');
     expect(modal).not.toContain("pq-dialog-icon production");
     expect(modal).toContain("pq-dialog-actions");
   });
@@ -172,7 +177,7 @@ describe("flujo de produccion en caja", () => {
     expect(cardActions).toContain("setArchivingOrder(order)");
     expect(cardActions).toContain("Archivar");
     expect(quote).toContain('<StatusBadge status={order.status} className="acm-badge" bordered showDot={false} order={order} />');
-    expect(quote).toContain('<PaymentBadge status={order.payment_status} className="acm-badge" bordered showDot={false} />');
+    expect(quote).toContain('<PaymentBadge status={order.payment_status} labelOverride={CASHIER_PAYMENT_LABEL_OVERRIDES[order.payment_status]} className="acm-badge" bordered showDot={false} />');
   });
 
   it("elimina el circulo decorativo de las metricas de caja sin quitar sus iconos", () => {

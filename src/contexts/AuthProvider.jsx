@@ -4,11 +4,12 @@ import { AuthContext } from "./authStateContext";
 import {
   clearCachedAuthSession,
   consumeAuthNotice,
+  expireAuthSession,
   getAuthSession,
-  maintainAuthSession,
+  isInvalidRefreshTokenError,
+  refreshAuthSession,
   setCachedAuthSession,
   signOutAuth,
-  startAuthSessionMonitor,
   subscribeToAuthInvalidation,
 } from "../utils/authManager";
 import { AUTH_NOTICE, getLoginErrorCode } from "../utils/authFeedback";
@@ -17,6 +18,8 @@ import { getAuthMfaState } from "../utils/authMfa";
 
 export function AuthProvider({ children }) {
   const activeRef = useRef(true);
+  const providerLifecycleRef = useRef(0);
+  const authEventSequenceRef = useRef(0);
   const userIdRef = useRef(null);
   const sessionGenerationRef = useRef(0);
   const mfaRequestGenerationRef = useRef(0);
@@ -113,15 +116,17 @@ export function AuthProvider({ children }) {
     return nextLevel;
   }, []);
 
-  const applySession = useCallback(async (nextSession, event = "UNKNOWN") => {
+  const applySession = useCallback(async (nextSession, event = "UNKNOWN", lifecycle = null) => {
     const generation = sessionGenerationRef.current + 1;
     sessionGenerationRef.current = generation;
     const nextUserId = nextSession?.user?.id || null;
     const isCurrent = () => (
       activeRef.current
+      && (lifecycle === null || providerLifecycleRef.current === lifecycle)
       && sessionGenerationRef.current === generation
       && userIdRef.current === nextUserId
     );
+    if (!activeRef.current || (lifecycle !== null && providerLifecycleRef.current !== lifecycle)) return;
     setCachedAuthSession(nextSession);
 
     const nextUser = nextSession?.user || null;
@@ -193,12 +198,18 @@ export function AuthProvider({ children }) {
     setAuthError(null);
 
     try {
-      const nextSession = await maintainAuthSession({ forceRefresh: true, invalidateAtExpiry: true });
+      const nextSession = await refreshAuthSession({ forceRefresh: true });
       if (!nextSession) return null;
       await applySession(nextSession);
       return nextSession;
     } catch (error) {
-      clearAuthState({ notice: getLoginErrorCode(error), error });
+      const errorCode = getLoginErrorCode(error);
+      if ([AUTH_NOTICE.RATE_LIMITED, AUTH_NOTICE.NETWORK, AUTH_NOTICE.TIMEOUT].includes(errorCode)) {
+        setAuthError({ code: errorCode, cause: error });
+      } else {
+        if (isInvalidRefreshTokenError(error)) await expireAuthSession();
+        clearAuthState({ notice: errorCode, error });
+      }
       return null;
     } finally {
       if (activeRef.current) setBackgroundRefreshing(false);
@@ -212,37 +223,50 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     activeRef.current = true;
+    const lifecycle = providerLifecycleRef.current + 1;
+    providerLifecycleRef.current = lifecycle;
 
     const initialize = async () => {
       setInitialLoading(true);
       setAuthError(null);
+      const authEventSequenceAtStart = authEventSequenceRef.current;
 
       try {
         const initialSession = await getAuthSession();
-        await applySession(initialSession);
+        // A SIGNED_IN/SIGNED_OUT event that arrived while the initial read was
+        // pending is authoritative. Applying this older snapshot could erase
+        // a session that was just created and leave ProtectedRoute loading
+        // until the browser is reloaded.
+        if (authEventSequenceRef.current !== authEventSequenceAtStart) return;
+        await applySession(initialSession, "INITIAL_SESSION", lifecycle);
       } catch (error) {
-        clearAuthState({ notice: getLoginErrorCode(error), error });
+        if (
+          providerLifecycleRef.current === lifecycle
+          && authEventSequenceRef.current === authEventSequenceAtStart
+        ) {
+          clearAuthState({ notice: getLoginErrorCode(error), error });
+        }
       } finally {
-        if (activeRef.current) setInitialLoading(false);
+        if (activeRef.current && providerLifecycleRef.current === lifecycle) setInitialLoading(false);
       }
     };
 
-    const stopSessionMonitor = startAuthSessionMonitor();
     const unsubscribeInvalidation = subscribeToAuthInvalidation(({ notice }) => {
-      clearAuthState({ notice });
+      if (providerLifecycleRef.current === lifecycle) clearAuthState({ notice });
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      authEventSequenceRef.current += 1;
+      void applySession(nextSession, event, lifecycle).catch(() => undefined);
     });
 
     initialize();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      void applySession(nextSession, event).catch(() => undefined);
-    });
-
     return () => {
       activeRef.current = false;
+      if (providerLifecycleRef.current === lifecycle) providerLifecycleRef.current += 1;
       subscription.unsubscribe();
       unsubscribeInvalidation();
-      stopSessionMonitor();
     };
   }, [applySession, clearAuthState, updateProfile]);
 

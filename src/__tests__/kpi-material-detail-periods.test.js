@@ -7,7 +7,8 @@ import { getMaterialGlobalBounds, getMaterialPeriodBounds, MATERIAL_TIMEZONE } f
 const readProjectFile = path => readFileSync(join(process.cwd(), path), 'utf8')
 
 describe('modal de material: períodos y fuente del detalle', () => {
-  const modal = () => readProjectFile('src/components/kpi/MaterialDetailModal.jsx')
+  const modal = () => readProjectFile('src/components/kpi/CatalogAnalyticsDetailModal.jsx')
+  const adapter = () => readProjectFile('src/components/kpi/MaterialDetailModal.jsx')
 
   it('calcula el histórico y períodos de materiales en la zona empresarial', () => {
     const now = new Date('2026-09-20T02:30:00.000Z')
@@ -26,18 +27,19 @@ describe('modal de material: períodos y fuente del detalle', () => {
     expect(modal()).toContain("source === 'catalog' ? 'history' : 'current'")
     expect(modal()).toContain("if (periodMode === 'history') return getMaterialGlobalBounds()")
     expect(modal()).toContain("if (periodMode === 'current' && source === 'kpi') return null")
-    expect(modal()).toContain("useKPISingle('materials_analytics', requestBounds, userId, shouldQuery)")
+    expect(modal()).toContain('useKPISingle(analyticsAction, analyticsParams, userId, shouldQuery)')
+    expect(adapter()).toContain('analyticsAction="materials_analytics"')
   })
 
   it('usa id estricto, conserva la compatibilidad no ambigua por nombre y no consulta cancelaciones aparte', () => {
-    expect(modal()).toContain('normalizeId(row?.material_id) === targetId')
+    expect(modal()).toContain('normalizeId(row?.[idField]) === targetId')
     expect(modal()).toContain('return matches.length === 1 ? matches[0] : null')
     expect(modal()).not.toContain("material_cancellation_stats")
-    expect(modal()).toContain('activeMaterial?.cancelled_orders')
+    expect(modal()).toContain('activeEntity?.cancelled_orders')
   })
 
   it('consume la granularidad de tendencia enviada por la RPC', () => {
-    expect(modal()).toContain("activeMaterial?.trend_granularity || 'day'")
+    expect(modal()).toContain("activeEntity?.trend_granularity || 'day'")
     expect(modal()).toContain('labelFormatter={value => formatTrendPeriod(value, granularity)}')
   })
 })

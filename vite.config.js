@@ -6,6 +6,8 @@ import { handleAdminUpdateUser } from './server/admin-update-user-handler.js'
 import { handleAdminListOrders } from './server/admin-list-orders-handler.js'
 import { handleAdminListUsers } from './server/admin-list-users-handler.js'
 import { handleAdminSetUserStatus } from './server/admin-set-user-status-handler.js'
+import { handleAdminEmployeeDetail } from './server/admin-employee-detail-handler.js'
+import { handleAdminEmployeeTeamPerformance } from './server/admin-employee-team-performance-handler.js'
 import { handleAdminRetireClient, handleAdminRetireUser, handleAdminRestoreClient, handleAdminRestoreUser, handleAdminUserRetirementPreflight } from './server/admin-retirement-handler.js'
 import { handleGetUserEmail } from './server/get-user-email-handler.js'
 import { handleChangeUserPassword } from './server/change-user-password-handler.js'
@@ -86,6 +88,8 @@ const ADMIN_ACTIONS = {
   "create-user": handleAdminCreateUser,
   "update-user": handleAdminUpdateUser,
   "set-user-status": handleAdminSetUserStatus,
+  "employee-detail": handleAdminEmployeeDetail,
+  "employee-team-performance": handleAdminEmployeeTeamPerformance,
   "retirement-preflight": handleAdminUserRetirementPreflight,
   "retire-user": handleAdminRetireUser,
   "restore-user": handleAdminRestoreUser,

@@ -2,7 +2,7 @@
 .kpi-material-detail-overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(9, 17, 39, .38); backdrop-filter: blur(5px); animation: kpi-alert-modal-fade 160ms ease both; }
 .kpi-material-detail-modal { display: flex; width: min(920px, calc(100vw - 48px)); max-height: min(760px, calc(100dvh - 48px)); flex-direction: column; overflow: hidden; border: 1px solid #dbe3ef; border-radius: 16px; background: #fff; box-shadow: 0 20px 56px rgba(15, 30, 64, .18); animation: kpi-alert-modal-enter 180ms ease both; font-family: 'Poppins', sans-serif; }
 .kpi-material-overview-modal { width: min(1000px, calc(100vw - 48px)); }
-.kpi-material-detail-modal-scroll { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: #c9d5e7 transparent; scrollbar-width: thin; }
+.kpi-material-detail-modal-scroll { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; overflow-y: auto; padding-bottom: 16px; overscroll-behavior: contain; scrollbar-color: #c9d5e7 transparent; scrollbar-width: thin; }
 .kpi-material-detail-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 14px; padding: 22px 24px 20px; border-bottom: 1px solid #e6edf6; background: #fff; }
 .kpi-material-detail-icon { display: grid; width: 46px; height: 46px; place-items: center; border-radius: 12px; background: #edf3ff; color: #1E40AF; }
 .kpi-material-detail-icon svg { width: 20px; height: 20px; }

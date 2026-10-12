@@ -31,8 +31,9 @@ export function StatusBadge({ status, className = "badge", showDot = true, borde
   </>;
 }
 
-export function PaymentBadge({ status, className = "badge", bordered = false, showDot = true }) {
+export function PaymentBadge({ status, className = "badge", bordered = false, showDot = true, labelOverride }) {
   const cfg = PAYMENT_COLORS[status] || PAYMENT_COLORS["Pending_Payment"];
+  const label = typeof labelOverride === "string" && labelOverride.trim() ? labelOverride.trim() : cfg.label;
   return (
     <span className={className} style={{
       background: cfg.bg,
@@ -40,7 +41,7 @@ export function PaymentBadge({ status, className = "badge", bordered = false, sh
       ...(bordered ? { border: `1px solid ${cfg.color}20` } : {}),
     }}>
       {showDot && <span className={`${className}-dot`} style={{ background: cfg.dot || cfg.color }} />}
-      {cfg.label}
+      {label}
     </span>
   );
 }

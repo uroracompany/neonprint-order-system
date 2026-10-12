@@ -4,6 +4,7 @@ import { SalesFilterToolbar } from "../ui/SalesFilterToolbar";
 import { Icons } from "../../utils/icons";
 import { getOrderStatusLabel, getPaymentStatusLabel, STATUS_OPTIONS, PAYMENT_OPTIONS, formatDate, isProductionRole } from "../../utils/constants";
 import { adminApiFetch } from "../../utils/adminApi";
+import AdminEmployeeTeamModule from "./AdminEmployeeTeamModule";
 import "./AdminEmployeeModule.css";
 
 const ORDER_PAGE_SIZE = 7;
@@ -85,8 +86,16 @@ function EmployeeMetricsCards({ profile }) {
         if (res.response.ok && !cancelled) {
           setMetrics(res.result?.metrics || EMPTY_METRICS);
           setProductionMetrics(res.result?.productionMetrics || null);
+        } else if (!cancelled) {
+          setMetrics(EMPTY_METRICS);
+          setProductionMetrics(null);
         }
-      } catch { /* ignore */ }
+      } catch {
+        if (!cancelled) {
+          setMetrics(EMPTY_METRICS);
+          setProductionMetrics(null);
+        }
+      }
       if (!cancelled) setLoadingMetrics(false);
     }
     fetchEmployeeMetrics();
@@ -395,6 +404,8 @@ function EmployeeOrdersPanel({ profile, onViewOrder }) {
 }
 
 export default function AdminEmployeeModule({ profile, onBack, onEditUser, onViewOrder, onDeleteUser, onRestoreUser, currentUserId }) {
+  const [teamView, setTeamView] = useState(false);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, []);
@@ -411,6 +422,10 @@ export default function AdminEmployeeModule({ profile, onBack, onEditUser, onVie
         </div>
       </section>
     );
+  }
+
+  if (teamView) {
+    return <AdminEmployeeTeamModule profile={profile} onBack={() => setTeamView(false)} />;
   }
 
   const isActive = profile?.employment_status !== false && !profile?.deleted_at;
@@ -440,6 +455,9 @@ export default function AdminEmployeeModule({ profile, onBack, onEditUser, onVie
           </div>
         </div>
         <div className="acm-detail-actions">
+          <button type="button" className="pa-btn primary" onClick={() => setTeamView(true)} aria-label="Abrir estadísticas de equipo">
+            <Icons.BarChart /> Estadísticas de equipo
+          </button>
           {!profile.deleted_at && <button className="pa-btn secondary" onClick={() => onEditUser?.(profile)}>
             <Icons.Edit /> Editar empleado
           </button>}

@@ -757,6 +757,26 @@
 .acm-more-menu button.danger { color: var(--danger); }
 .acm-more-menu button.danger:hover { background: #fef2f2; }
 
+.acm-row-more-menu {
+  display: inline-block;
+}
+
+.acm-row-more-menu summary {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.acm-row-more-menu summary svg {
+  width: 16px;
+  height: 16px;
+}
+
+.acm-row-more-menu > div {
+  top: 38px;
+  width: 210px;
+}
+
 .acm-detail-grid {
   display: grid;
   grid-template-columns: 1.08fr 1fr 1fr;

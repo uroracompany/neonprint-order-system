@@ -44,6 +44,12 @@ const orderSuccessToasts = [
   { id: "paid", type: "order_updated", title: "Pago confirmado", message: "La orden fue marcada como pagada.", metadata: { event_kind: "payment_confirmed", variant: "payment_confirmed" } },
 ];
 
+const legacyPaymentToasts = [
+  { id: "legacy-paid", type: "order_updated", title: "Pago actualizado", message: "La orden de JP MORGAN fue marcada como pagada.", metadata: { event_kind: "payment_updated", payment_status: "pagado" } },
+  { id: "legacy-partial", type: "order_updated", title: "Pago actualizado", message: "La orden tiene pago parcial.", metadata: { event_kind: "payment_updated", payment_status: "parcial" } },
+  { id: "legacy-credit", type: "order_updated", title: "Pago actualizado", message: "La orden está a crédito.", metadata: { event_kind: "payment_updated", payment_status: "credito" } },
+];
+
 describe("NotificationCenter", () => {
   afterEach(() => {
     cleanup();
@@ -282,23 +288,138 @@ describe("NotificationCenter", () => {
     expect(paid.querySelector(".nc-toast-icon circle")).toBeInTheDocument();
   });
 
-  it("renders the Caja to Producción confirmation once in green", () => {
+  it("normalizes legacy paid-payment toast presentation without treating partial or credit as paid", () => {
     render(
       <NotificationCenter
         {...baseProps}
-        toasts={[{
-          id: "cash-to-production",
-          type: "info",
-          title: "Orden enviada a Producción",
-          message: "Orden enviada a producción exitosamente",
-          metadata: { event_kind: "production_assignment_confirmation", variant: "success" },
-        }]}
+        toasts={legacyPaymentToasts}
         onDismissToast={vi.fn()}
       />
     );
 
-    const confirmation = screen.getByText("Orden enviada a producción exitosamente");
-    expect(screen.getAllByText("Orden enviada a producción exitosamente")).toHaveLength(1);
-    expect(confirmation.closest(".nc-toast")).toHaveClass("completed");
+    const paid = screen.getByText("Pago confirmado").closest(".nc-toast");
+    expect(paid).toHaveClass("payment");
+    expect(paid.querySelector(".nc-toast-icon circle")).toBeInTheDocument();
+    expect(screen.getByText("La orden de JP MORGAN fue marcada como pagada.")).toBeInTheDocument();
+    const nonPaidToasts = screen.getAllByText("Pago actualizado").map((title) => title.closest(".nc-toast"));
+    expect(nonPaidToasts).toHaveLength(2);
+    for (const toast of nonPaidToasts) {
+      expect(toast).toHaveClass("updated");
+      expect(toast.querySelector(".nc-toast-icon circle")).not.toBeInTheDocument();
+    }
+  });
+
+  it("shows the normalized paid title in the persistent notification panel too", () => {
+    render(
+      <NotificationCenter
+        {...baseProps}
+        notifications={[legacyPaymentToasts[0]]}
+        onDismissToast={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Notificaciones" }));
+
+    expect(screen.getByText("Pago confirmado")).toBeInTheDocument();
+    expect(screen.getByText("La orden de JP MORGAN fue marcada como pagada.")).toBeInTheDocument();
+  });
+
+  it("shows production authorization as Orden Autorizada with a green check in Caja", () => {
+    const authorized = {
+      id: "production-authorized",
+      type: "order_assigned",
+      title: "Orden autorizada para Producción",
+      message: "La orden #09160e68 fue autorizada y está lista para Producción.",
+      metadata: { event_kind: "production_authorized" },
+      created_at: new Date("2026-09-27T12:00:00Z").toISOString(),
+      is_archived: false,
+      deleted_at: null,
+      is_read: false,
+    };
+    const ordinaryAssignment = {
+      id: "ordinary-assignment",
+      type: "order_assigned",
+      title: "Orden asignada",
+      message: "La orden fue asignada a Caja.",
+      metadata: {},
+    };
+
+    render(
+      <NotificationCenter
+        {...baseProps}
+        notifications={[authorized]}
+        unreadCount={1}
+        toasts={[authorized, ordinaryAssignment]}
+        onDismissToast={vi.fn()}
+      />
+    );
+
+    const authorizationMessage = screen.getByText(authorized.message);
+    const authorizationToast = authorizationMessage.closest(".nc-toast");
+    expect(authorizationToast).toHaveClass("completed");
+    expect(authorizationToast.querySelector(".nc-toast-icon polyline")).toBeInTheDocument();
+    expect(authorizationToast).toHaveTextContent("Orden Autorizada");
+
+    const ordinaryToast = screen.getByText(ordinaryAssignment.message).closest(".nc-toast");
+    expect(ordinaryToast).toHaveClass("assigned");
+    expect(ordinaryToast.querySelector(".nc-toast-icon polyline")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Notificaciones, 1 sin leer" }));
+    expect(document.querySelector(".nc-panel")).toHaveTextContent("Orden Autorizada");
+    expect(document.querySelector(".nc-panel")).toHaveTextContent(authorized.message);
+  });
+
+  it("renders the Caja to Producción confirmation once in green", () => {
+    const rawProductionRoute = {
+      id: "raw-production-route",
+      type: "order_assigned",
+      title: "Orden enviada a Producción",
+      message: "La orden #09160e68 fue enviada a Producción.",
+      metadata: { event_kind: "production_routed" },
+    };
+    const normalizedProductionRoute = {
+      id: "normalized-production-route",
+      type: "order_assigned",
+      title: "Orden enviada a Producción",
+      message: "Orden enviada a producción exitosamente",
+      metadata: { event_kind: "production_routed_confirmation", variant: "success" },
+    };
+    const productionAssignment = {
+      id: "production-assignment",
+      type: "order_assigned",
+      title: "Asignación de Producción",
+      message: "La orden fue asignada a tu área.",
+      metadata: { event_kind: "production_assigned", variant: "production_assignment" },
+    };
+    const ordinaryAssignment = {
+      id: "ordinary-assignment",
+      type: "order_assigned",
+      title: "Orden asignada",
+      message: "La orden fue asignada a Caja.",
+      metadata: {},
+    };
+
+    render(
+      <NotificationCenter
+        {...baseProps}
+        toasts={[rawProductionRoute, normalizedProductionRoute, productionAssignment, ordinaryAssignment]}
+        onDismissToast={vi.fn()}
+      />
+    );
+
+    const rawConfirmation = screen.getByText(rawProductionRoute.message).closest(".nc-toast");
+    const normalizedConfirmation = screen.getByText(normalizedProductionRoute.message).closest(".nc-toast");
+    const assignment = screen.getByText(productionAssignment.message).closest(".nc-toast");
+    const ordinary = screen.getByText(ordinaryAssignment.message).closest(".nc-toast");
+
+    for (const confirmation of [rawConfirmation, normalizedConfirmation]) {
+      expect(confirmation).toHaveClass("completed");
+      expect(confirmation.querySelector(".nc-toast-icon polyline")).toBeInTheDocument();
+    }
+    expect(rawConfirmation).toHaveTextContent("Orden enviada a Producción");
+    expect(assignment).toHaveClass("production-assignment");
+    expect(assignment.querySelector(".nc-toast-icon polyline")).toBeInTheDocument();
+    expect(ordinary).toHaveClass("assigned");
+    expect(ordinary.querySelector(".nc-toast-icon polyline")).not.toBeInTheDocument();
   });
 });

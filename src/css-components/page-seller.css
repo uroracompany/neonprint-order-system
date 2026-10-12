@@ -840,6 +840,18 @@
   border-color: #7c3aed;
 }
 
+.table-action-btn.quote {
+  color: #0284c7;
+  border-color: #bae6fd;
+  background: #e0f2fe;
+}
+
+.table-action-btn.quote:hover {
+  background: #0284c7;
+  color: #fff;
+  border-color: #0284c7;
+}
+
 .table-action-btn.cancel {
   color: #dc2626;
   border-color: #fecaca;
@@ -2835,6 +2847,19 @@ button.ps-multimat-option {
   box-shadow: 0 4px 12px rgba(217, 119, 6, 0.25);
 }
 
+.card-action-btn.quote {
+  color: #0284c7;
+  border-color: #bae6fd;
+  background: #e0f2fe;
+}
+
+.card-action-btn.quote:hover {
+  background: #0284c7;
+  color: #fff;
+  border-color: #0284c7;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+}
+
 .card-action-btn.design {
   color: #7c3aed;
   border-color: #ddd6fe;
@@ -4040,6 +4065,94 @@ button.ps-multimat-option {
   box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
 }
 
+/* Only the two direct Semi-Admin assignment actions use this flex group.
+   Existing view/edit/cancel buttons keep their original table/card layout. */
+.semi-admin-direct-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.semi-admin-direct-actions--card {
+  grid-column: 1 / -1;
+}
+
+.semi-admin-direct-action {
+  flex: 0 0 40px;
+  width: 40px;
+  min-width: 40px;
+}
+
+.semi-admin-direct-actions .table-action-btn.semi-admin-direct-action--send_to_designer,
+.semi-admin-direct-actions .card-action-btn.semi-admin-direct-action--send_to_designer {
+  color: #7c3aed;
+  border-color: #ddd6fe;
+  background: #f5f3ff;
+}
+
+.semi-admin-direct-actions .table-action-btn.semi-admin-direct-action--send_to_quote,
+.semi-admin-direct-actions .card-action-btn.semi-admin-direct-action--send_to_quote {
+  color: #0284c7;
+  border-color: #bae6fd;
+  background: #e0f2fe;
+}
+
+.semi-admin-direct-actions .table-action-btn.semi-admin-direct-action--route_production,
+.semi-admin-direct-actions .card-action-btn.semi-admin-direct-action--route_production {
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.semi-admin-direct-actions .table-action-btn.semi-admin-direct-action--send_to_designer:hover,
+.semi-admin-direct-actions .card-action-btn.semi-admin-direct-action--send_to_designer:hover {
+  color: #fff;
+  border-color: #7c3aed;
+  background: #7c3aed;
+  filter: none;
+}
+
+.semi-admin-direct-actions .table-action-btn.semi-admin-direct-action--send_to_quote:hover,
+.semi-admin-direct-actions .card-action-btn.semi-admin-direct-action--send_to_quote:hover {
+  color: #fff;
+  border-color: #0284c7;
+  background: #0284c7;
+  filter: none;
+}
+
+.semi-admin-direct-actions .table-action-btn.semi-admin-direct-action--route_production:hover,
+.semi-admin-direct-actions .card-action-btn.semi-admin-direct-action--route_production:hover {
+  color: #fff;
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  filter: none;
+}
+
+.semi-admin-direct-action:focus-visible {
+  outline: 3px solid rgba(30, 64, 175, .32);
+  outline-offset: 2px;
+}
+
+.semi-admin-direct-action:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 560px) {
+  .semi-admin-direct-actions {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+}
+
 /* ── Responsive hardening: Sales workspaces ─────────────────────── */
 .ps-topbar,
 .ps-topbar-left,
@@ -4062,6 +4175,22 @@ button.ps-multimat-option {
   max-width: 100%;
   overscroll-behavior-inline: contain;
   scrollbar-gutter: stable both-edges;
+}
+
+/* Recent-order actions stay horizontal; narrow screens can scroll the table. */
+.ps-recent-orders-panel .ps-table .td-actions > .table-actions {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  width: max-content;
+  margin-left: auto;
+}
+
+.ps-recent-orders-panel .ps-table .td-actions > .table-actions > .semi-admin-direct-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  min-width: max-content;
 }
 
 .ps-table {

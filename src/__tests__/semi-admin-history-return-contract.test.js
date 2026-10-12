@@ -35,7 +35,9 @@ describe("Semi-Administración history-verified return contract", () => {
     expect(handler).toContain("Regresar a Ventas");
     expect(handler).toContain("Regresar a Diseño");
     expect(handler).toContain("manage_design_assets");
-    expect(handler).toContain("ORDER_STATUS.PENDING, ORDER_STATUS.IN_DESIGN");
+    expect(handler).toContain("const SEMI_ADMIN_ASSET_EDITABLE_STATUSES = new Set([");
+    expect(handler).toContain("ORDER_STATUS.PENDING");
+    expect(handler).toContain("ORDER_STATUS.IN_DESIGN");
   });
 
   it("keeps Semi-Admin return reasons non-empty without imposing ten characters", () => {

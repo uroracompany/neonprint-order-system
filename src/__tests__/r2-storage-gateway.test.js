@@ -91,7 +91,7 @@ describe("Cloudflare R2 hybrid storage", () => {
   it("resolves downloads only through the catalogued, authorized gateway path", () => {
     const gateway = readProjectFile("server/storage-gateway.js");
     const readCheck = gateway.indexOf('if (action === "read") return null;');
-    const terminalWriteCheck = gateway.indexOf("if (TERMINAL_ORDER_STATUSES.has(order.status)");
+    const terminalWriteCheck = gateway.indexOf("if ((TERMINAL_ORDER_STATUSES.has(order.status)");
 
     expect(readCheck).toBeGreaterThan(-1);
     expect(terminalWriteCheck).toBeGreaterThan(readCheck);

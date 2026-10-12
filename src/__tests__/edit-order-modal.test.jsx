@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import EditOrderModal from "../components/orders/EditOrderModal";
@@ -44,6 +44,9 @@ const completeOrder = {
   delivery_date: "2026-09-15T12:00:00.000Z",
   status: "Pending",
   order_design_type: "EXTERNAL_DESING",
+  invoice_assignment_mode: "seller",
+  seller_id: "seller-1",
+  created_by: "seller-1",
   order_file_url: [],
   reference_images: [],
 };
@@ -60,6 +63,7 @@ const renderModal = (order = completeOrder, props = {}) => render(
       terminations: { ploteo: ["Mate"] },
     }}
     clients={[{ id: "client-1", name: "JP Morgan", phone: "809-293-2323" }]}
+    actorId="seller-1"
     {...props}
   />
 );
@@ -82,12 +86,72 @@ describe("EditOrderModal seller hydration", () => {
   it("keeps legacy order-wide material and termination summaries out of the form", () => {
     renderModal();
 
+    expect(screen.getByLabelText("Número de Facturación")).toHaveValue("FAC-001");
+    expect(screen.getByLabelText("Número de Facturación")).toBeEnabled();
     expect(screen.getByDisplayValue("809-293-2323")).toBeDisabled();
     expect(screen.getByDisplayValue("Impresion de lona para evento")).toBeVisible();
     expect(screen.getByDisplayValue("2026-09-15")).toBeVisible();
     expect(screen.queryByDisplayValue("Mate")).not.toBeInTheDocument();
     expect(screen.queryByText("Lona")).not.toBeInTheDocument();
     expect(screen.queryByText("Vinil")).not.toBeInTheDocument();
+  });
+
+  it("persiste el número de facturación desde Editar orden", async () => {
+    adminApiFetch.mockResolvedValue({
+      response: { ok: true },
+      result: { order: { ...completeOrder, invoice_number: "FAC-002" } },
+    });
+    renderModal();
+
+    const invoiceInput = screen.getByLabelText("Número de Facturación");
+    fireEvent.change(invoiceInput, { target: { value: "FAC-002" } });
+    fireEvent.click(screen.getByRole("button", { name: /Guardar Cambios/i }));
+
+    await waitFor(() => expect(adminApiFetch).toHaveBeenCalledWith("/api/seller-orders", expect.objectContaining({
+      action: "update",
+      changes: expect.objectContaining({ invoice_number: "FAC-002" }),
+    })));
+  });
+
+  it("mantiene el código de Caja visible pero de solo lectura", () => {
+    renderModal({
+      ...completeOrder,
+      invoice_assignment_mode: "cashier",
+      invoice_number: "FAC-CAJA-001",
+    });
+
+    expect(screen.getByLabelText("Número de Facturación")).toHaveValue("FAC-CAJA-001");
+    expect(screen.getByLabelText("Número de Facturación")).toBeDisabled();
+    expect(screen.getByText("Caja administra este código de facturación.")).toBeVisible();
+  });
+
+  it("permite a Semi-Admin editar su código en Diseño, pero no el de Caja", () => {
+    const designOrder = {
+      ...completeOrder,
+      status: "in_Design",
+      order_design_type: "INTERNAL_DESING",
+    };
+    const { rerender } = renderModal(designOrder, {
+      isSemiAdmin: true,
+      actorId: "seller-1",
+    });
+
+    expect(screen.getByLabelText("Número de Facturación")).toBeEnabled();
+
+    rerender(
+      <EditOrderModal
+        open
+        onClose={vi.fn()}
+        onUpdated={vi.fn()}
+        order={{ ...designOrder, invoice_assignment_mode: "cashier" }}
+        editMode="seller"
+        isSemiAdmin
+        actorId="seller-1"
+        productionCatalog={{}}
+        clients={[]}
+      />,
+    );
+    expect(screen.getByLabelText("Número de Facturación")).toBeDisabled();
   });
 
   it("conserva el teléfono internacional del cliente al editar una orden", () => {
@@ -148,9 +212,10 @@ describe("EditOrderModal seller hydration", () => {
     expect(screen.queryByText("Datos del cliente")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Cliente registrado")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Descripcion")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Número de Facturación")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Fecha de entrega")).not.toBeInTheDocument();
-    expect(screen.getByText("Archivos y Orden de Trabajo")).toBeVisible();
-    expect(screen.getByText("Orden de Trabajo")).toBeVisible();
+    expect(screen.getByText("Archivos e imagen de orden de trabajo")).toBeVisible();
+    expect(screen.getByText("Imagen de orden de trabajo")).toBeVisible();
     expect(screen.queryByText("Imagen de preview")).not.toBeInTheDocument();
     expect(screen.queryByText("Vista previa del diseño")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Guardar archivos ->" })).toBeVisible();
@@ -167,13 +232,58 @@ describe("EditOrderModal seller hydration", () => {
     })));
   });
 
-  it("bloquea el guardado de Semi-Admin sin una Orden de Trabajo", async () => {
+  it("shows the add-files zone before existing files and work-order image in Semi-Admin Design", async () => {
+    const designOrder = {
+      ...completeOrder,
+      status: "in_Design",
+      preview_image: "https://assets.example.test/work-order.webp",
+      order_production_files: [{
+        id: "production-file-1",
+        url: "https://assets.example.test/La-Oracion.pdf",
+        filename: "La Oracion.pdf",
+        status: "pending",
+      }],
+    };
+    renderModal(designOrder, { assetsOnly: true, semiAdminVariant: true });
+    await screen.findByAltText("Imagen de orden de trabajo");
+
+    const addFiles = screen.getByRole("group", { name: "Agregar archivos" });
+    const existingFile = screen.getByText("La Oracion.pdf");
+    const workOrderLabel = screen.getByText("Imagen de orden de trabajo", { selector: ".ps-label" });
+
+    expect(addFiles.compareDocumentPosition(existingFile) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(existingFile.compareDocumentPosition(workOrderLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const editButton = screen.getByRole("button", { name: "Editar detalles" });
+    expect(editButton).toBeVisible();
+    expect(editButton).toHaveAttribute("title", "Editar archivo y detalles de La Oracion.pdf");
+  });
+
+  it("preserves the existing attachment order outside Semi-Admin Design", () => {
+    const designOrder = {
+      ...completeOrder,
+      status: "in_Design",
+      order_production_files: [{
+        id: "production-file-1",
+        url: "https://assets.example.test/La-Oracion.pdf",
+        filename: "La Oracion.pdf",
+        status: "pending",
+      }],
+    };
+    renderModal(designOrder, { assetsOnly: true });
+
+    const existingFile = screen.getByText("La Oracion.pdf");
+    const addFiles = screen.getByRole("group", { name: "Agregar archivos" });
+
+    expect(existingFile.compareDocumentPosition(addFiles) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("bloquea el guardado de Semi-Admin sin una imagen de orden de trabajo", async () => {
     const user = userEvent.setup();
     renderModal(completeOrder, { assetsOnly: true, requireWorkOrder: true });
 
     await user.click(screen.getByRole("button", { name: "Guardar archivos ->" }));
 
-    expect(screen.getAllByText("La Orden de Trabajo es obligatoria. Adjunta la Orden de Trabajo antes de continuar.")[0]).toBeVisible();
+    expect(screen.getAllByText("La imagen de orden de trabajo es obligatoria. Adjunta la imagen de orden de trabajo antes de continuar.")[0]).toBeVisible();
     expect(adminApiFetch).not.toHaveBeenCalled();
   });
 
@@ -183,7 +293,7 @@ describe("EditOrderModal seller hydration", () => {
       preview_image: "supabase://order-previews/orders/order-1/preview.webp",
     }, { assetsOnly: true });
 
-    const preview = await screen.findByAltText("Orden de Trabajo");
+    const preview = await screen.findByAltText("Imagen de orden de trabajo");
     expect(preview).toHaveAttribute("src", "https://signed.example.test/preview.webp");
     expect(resolveOrderAssetUrl).toHaveBeenCalledWith("supabase://order-previews/orders/order-1/preview.webp");
   });
@@ -260,7 +370,7 @@ describe("EditOrderModal seller hydration", () => {
     })));
   });
 
-  it("elimina de forma persistente la Orden de Trabajo guardada", async () => {
+  it("elimina de forma persistente la imagen de orden de trabajo guardada", async () => {
     const user = userEvent.setup();
     const updatedOrder = {
       ...completeOrder,
@@ -274,7 +384,7 @@ describe("EditOrderModal seller hydration", () => {
       preview_image: "supabase://order-previews/orders/order-1/preview.webp",
     }, { assetsOnly: true, requireWorkOrder: true });
 
-    await screen.findByAltText("Orden de Trabajo");
+    await screen.findByAltText("Imagen de orden de trabajo");
     await user.click(document.querySelector(".ps-preview-del-btn"));
 
     await waitFor(() => expect(adminApiFetch).toHaveBeenCalledWith("/api/seller-orders", expect.objectContaining({
@@ -284,7 +394,7 @@ describe("EditOrderModal seller hydration", () => {
       asset_operation: "manage_assets",
       asset_removal_only: true,
     })));
-    expect(screen.queryByAltText("Orden de Trabajo")).not.toBeInTheDocument();
+    expect(screen.queryByAltText("Imagen de orden de trabajo")).not.toBeInTheDocument();
   });
 
   it("passes the saved order to its parent before closing the assets modal", async () => {
@@ -316,7 +426,7 @@ describe("EditOrderModal seller hydration", () => {
       onAssetSaved,
     });
 
-    const input = screen.getByRole("group", { name: "Subir Orden de Trabajo" }).querySelector('input[type="file"]');
+    const input = screen.getByRole("group", { name: "Subir imagen de orden de trabajo" }).querySelector('input[type="file"]');
     await user.upload(input, new File(["orden"], "orden.webp", { type: "image/webp" }));
     await user.click(screen.getByRole("button", { name: "Guardar archivos ->" }));
 
@@ -339,7 +449,7 @@ describe("EditOrderModal seller hydration", () => {
       onAssetSaved,
     });
 
-    const input = screen.getByRole("group", { name: "Subir Orden de Trabajo" }).querySelector('input[type="file"]');
+    const input = screen.getByRole("group", { name: "Subir imagen de orden de trabajo" }).querySelector('input[type="file"]');
     await user.upload(input, new File(["orden"], "orden.webp", { type: "image/webp" }));
     await user.click(screen.getByRole("button", { name: "Guardar archivos ->" }));
 

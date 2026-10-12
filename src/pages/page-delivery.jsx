@@ -531,14 +531,14 @@ export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedActi
             <section className="pd-detail-section">
               <div className="pd-detail-section-title">
                 <Icons.Eye />
-                <h4>Orden de trabajo</h4>
+                <h4>Imagen de orden de trabajo</h4>
               </div>
               <SecureImageLink
                 url={order.preview_image}
                 fileName={getFileNameFromUrl(order.preview_image)}
                 className="pd-preview-link"
               >
-                Ver archivo de la orden
+                Ver imagen de orden de trabajo
                 <Icons.ExternalLink />
               </SecureImageLink>
             </section>

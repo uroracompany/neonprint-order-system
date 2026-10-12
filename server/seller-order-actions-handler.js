@@ -1,5 +1,6 @@
 import { jsonResponse, requireAuthenticated } from "./auth-middleware.js";
 import { createClient } from "@supabase/supabase-js";
+import { areOrderTimestampsEquivalent } from "../src/utils/orderTimestamp.js";
 
 const ORDER_STATUS = {
   PENDING: "pending",
@@ -62,10 +63,12 @@ const SELLER_LIST_COLUMNS = [
   "id",
   "seller_id",
   "created_by",
+  "designer_id",
   "client_id",
   "client_name",
   "invoice_number",
   "invoice_assignment_mode",
+  "operational_status",
   "production_authorized_at",
   "production_authorized_by",
   "status",
@@ -75,6 +78,7 @@ const SELLER_LIST_COLUMNS = [
   "created_at",
   "delivery_date",
   "is_archived",
+  "is_archived_admin",
   "return_reason",
   "updated_at",
 ].join(",");
@@ -258,6 +262,35 @@ const isSemiAdminProfile = (profile) => profile?.role === "semi_admin";
 const isOrderOperatorProfile = (profile) => isAdminProfile(profile) || isSemiAdminProfile(profile);
 const SEMI_ADMIN_PARTICIPANT_FIELDS = ["created_by", "seller_id", "designer_id", "quote_id", "delivery_id"];
 const SEMI_ADMIN_QUOTE_ACTION_FIELDS = ["created_by", "seller_id", "designer_id", "quote_id"];
+const SEMI_ADMIN_ROW_CATALOG_ACTION_TITLES = new Map([
+  ["send_to_designer", "Enviar a Diseño"],
+  ["send_to_quote", "Enviar a Caja"],
+  ["send_design_to_quote", "Enviar a Caja"],
+  ["route_production", "Enviar a Producción"],
+  ["return_design_to_sales", "Devolver a Ventas"],
+]);
+const SEMI_ADMIN_ROW_CATALOG_MAX_IDS = 100;
+const SEMI_ADMIN_ROW_CATALOG_CONCURRENCY = 4;
+const SEMI_ADMIN_ROW_CATALOG_DEPENDENCIES = [
+  "semi_admin_get_orders_command_catalog",
+  "semi_admin_get_order_command_catalog",
+  "semi_admin_get_order_command_catalog_before_cashier_routing",
+  "semi_admin_get_order_command_catalog_base",
+  "semi_admin_is_order_routing_responsible",
+];
+const SEMI_ADMIN_ROW_CATALOG_ORDER_COLUMNS = [
+  "id",
+  ...SEMI_ADMIN_PARTICIPANT_FIELDS,
+  "status",
+  "order_design_type",
+  "is_archived",
+  "is_archived_admin",
+  "operational_status",
+  "payment_status",
+  "production_authorized_at",
+  "production_authorized_by",
+  "updated_at",
+].join(",");
 
 const isOwnedByProfile = (order, profile) =>
   Boolean(order?.seller_id === profile?.id || order?.created_by === profile?.id);
@@ -266,6 +299,216 @@ const isSemiAdminParticipant = (order, profile) => (
   isSemiAdminProfile(profile)
   && SEMI_ADMIN_PARTICIPANT_FIELDS.some((field) => order?.[field] === profile?.id)
 );
+
+const isSemiAdminRowCatalogCandidate = (order, profile) => (
+  isSemiAdminParticipant(order, profile)
+  && ["INTERNAL_DESING", "EXTERNAL_DESING"].includes(normalizeText(order?.order_design_type))
+  && !order?.is_archived
+  && !order?.is_archived_admin
+  && order?.operational_status !== "blocked"
+  && (
+    (["Pending", "pending"].includes(normalizeText(order?.status))
+      && (normalizeText(order?.order_design_type) === "EXTERNAL_DESING"
+        ? order?.seller_id === profile?.id || order?.created_by === profile?.id
+        : order?.seller_id === profile?.id || order?.created_by === profile?.id || order?.designer_id === profile?.id))
+    || (normalizeText(order?.status) === ORDER_STATUS.IN_QUOTE
+      && isPaymentProductionEligible(order?.payment_status)
+      && Boolean(order?.production_authorized_at && order?.production_authorized_by)
+      && (normalizeText(order?.order_design_type) === "INTERNAL_DESING"
+        ? order?.designer_id === profile?.id
+        : order?.seller_id === profile?.id || order?.created_by === profile?.id))
+    || ([ORDER_STATUS.IN_DESIGN, "In_Design"].includes(normalizeText(order?.status))
+      && normalizeText(order?.order_design_type) === "INTERNAL_DESING"
+      && order?.designer_id === profile?.id)
+    || (normalizeText(order?.status) === ORDER_STATUS.IN_QUOTE
+      && normalizeKey(order?.payment_status) === "pending_payment"
+      && SEMI_ADMIN_QUOTE_ACTION_FIELDS.some((field) => order?.[field] === profile?.id))
+  )
+  && Boolean(order?.updated_at)
+);
+
+const getSemiAdminRowCatalogActionKey = (order) => {
+  const status = normalizeText(order?.status);
+  const designType = normalizeText(order?.order_design_type);
+  if (["Pending", "pending"].includes(status)) {
+    if (designType === "INTERNAL_DESING") return "send_to_designer";
+    if (designType === "EXTERNAL_DESING") return "send_to_quote";
+    return null;
+  }
+  if ([ORDER_STATUS.IN_DESIGN, "In_Design"].includes(status) && designType === "INTERNAL_DESING") {
+    return "send_design_to_quote";
+  }
+  return status === ORDER_STATUS.IN_QUOTE ? "route_production" : null;
+};
+
+const getSemiAdminRowCatalogActionKeys = (order) => {
+  const keys = [];
+  const forwardAction = getSemiAdminRowCatalogActionKey(order);
+  if (forwardAction) keys.push(forwardAction);
+
+  if ([ORDER_STATUS.IN_DESIGN, "In_Design"].includes(normalizeText(order?.status))
+    && normalizeText(order?.order_design_type) === "INTERNAL_DESING") {
+    keys.push("return_design_to_sales");
+  }
+  return keys;
+};
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const isRecoverableSemiAdminBatchCatalogError = (error) => {
+  const message = String(error?.message || "").trim().toLowerCase();
+  if (error?.code === "PGRST202") {
+    return /could not find the function (?:public\.)?semi_admin_get_orders_command_catalog\s*\([^)]*\) in the schema cache/i.test(message);
+  }
+  if (error?.code !== "42883") return false;
+
+  return SEMI_ADMIN_ROW_CATALOG_DEPENDENCIES.some((functionName) => {
+    const escapedName = escapeRegex(functionName);
+    return new RegExp(
+      `\\bfunction\\s+(?:public\\.)?${escapedName}\\s*\\([^)]*\\)\\s+(?:does not exist|is undefined|not found|undefined)\\b`,
+      "i"
+    ).test(message);
+  });
+};
+
+const isPlainObject = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
+
+const projectSemiAdminRowCatalog = (catalog, orderId, order, profile, previousStageReturn = null) => {
+  if (!isPlainObject(catalog)
+    || !areOrderTimestampsEquivalent(catalog.version, order.updated_at)
+    || catalog.locked !== false
+    || !isSemiAdminRowCatalogCandidate(order, profile)) return null;
+
+  const safeActions = [];
+  const sourceActions = Array.isArray(catalog.actions) ? catalog.actions : [];
+  for (const key of getSemiAdminRowCatalogActionKeys(order)) {
+    if (!sourceActions.some((action) => action?.key === key
+      && normalizeText(action?.title)
+      && normalizeText(action.title).length <= 100)) continue;
+    safeActions.push({ key, title: SEMI_ADMIN_ROW_CATALOG_ACTION_TITLES.get(key) });
+  }
+
+  if (previousStageReturn
+    && normalizeText(order?.status) === ORDER_STATUS.IN_QUOTE
+    && normalizeKey(order?.payment_status) === "pending_payment"
+    && isSemiAdminQuoteActionParticipant(order, profile)) {
+    safeActions.push({
+      key: "return_quote_to_previous_stage",
+      title: previousStageReturn.title,
+      target_stage: previousStageReturn.targetStage,
+      requires_reason: true,
+    });
+  }
+  if (!safeActions.length) return null;
+
+  return {
+    order_id: orderId,
+    order_updated_at: order.updated_at,
+    actions: safeActions,
+  };
+};
+
+const readSemiAdminRowCatalogOrders = async (supabaseAdmin, orderIds) => {
+  if (!orderIds.length) return { data: [], error: null };
+  return supabaseAdmin
+    .from("orders")
+    .select(SEMI_ADMIN_ROW_CATALOG_ORDER_COLUMNS)
+    .in("id", orderIds);
+};
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }));
+  return results;
+}
+
+async function loadSemiAdminRowCatalogFallback(orderIds, auth, userScopedClient, env) {
+  const participantRead = await readSemiAdminRowCatalogOrders(auth.supabaseAdmin, orderIds);
+  if (participantRead.error || !Array.isArray(participantRead.data)) {
+    debugSellerOrderAction("semi-admin-catalog-fallback-participant-read-error", {
+      error: participantRead.error?.message,
+    }, env);
+    return {};
+  }
+
+  const participantOrders = participantRead.data
+    .filter((order) => isSemiAdminRowCatalogCandidate(order, auth.profile));
+  const initialOrderById = new Map(participantOrders.map((order) => [order.id, order]));
+  if (!initialOrderById.size) return {};
+
+  const unitCatalogs = await mapWithConcurrency(
+    [...initialOrderById.values()],
+    SEMI_ADMIN_ROW_CATALOG_CONCURRENCY,
+    async (order) => {
+      const { data, error } = await userScopedClient.rpc(
+        "semi_admin_get_order_command_catalog",
+        { p_order_id: order.id }
+      );
+      if (error) {
+        debugSellerOrderAction("semi-admin-catalog-fallback-unit-error", { error: error.message }, env);
+        return [order.id, null];
+      }
+      return [order.id, data];
+    }
+  );
+
+  const freshRead = await readSemiAdminRowCatalogOrders(auth.supabaseAdmin, [...initialOrderById.keys()]);
+  if (freshRead.error || !Array.isArray(freshRead.data)) {
+    debugSellerOrderAction("semi-admin-catalog-fallback-fresh-read-error", {
+      error: freshRead.error?.message,
+    }, env);
+    return {};
+  }
+
+  const freshOrderById = new Map(freshRead.data.map((order) => [order.id, order]));
+  const projected = {};
+  const verifiedHistoryReturns = await mapWithConcurrency(
+    [...initialOrderById.keys()],
+    SEMI_ADMIN_ROW_CATALOG_CONCURRENCY,
+    async (orderId) => {
+      const order = freshOrderById.get(orderId);
+      if (normalizeText(order?.status) !== ORDER_STATUS.IN_QUOTE
+        || normalizeKey(order?.payment_status) !== "pending_payment"
+        || !isSemiAdminQuoteActionParticipant(order, auth.profile)) return [orderId, null];
+      try {
+        return [orderId, await resolveHistoryVerifiedQuoteReturn(auth.supabaseAdmin, order)];
+      } catch (error) {
+        debugSellerOrderAction("semi-admin-catalog-fallback-history-return-error", {
+          orderId,
+          error: error?.message,
+        }, env);
+        return [orderId, null];
+      }
+    }
+  );
+  const historyReturnByOrderId = new Map(verifiedHistoryReturns);
+  for (const [orderId, catalog] of unitCatalogs) {
+    const initialOrder = initialOrderById.get(orderId);
+    const freshOrder = freshOrderById.get(orderId);
+    if (!initialOrder || !freshOrder
+      || !isSemiAdminRowCatalogCandidate(freshOrder, auth.profile)
+      || !SEMI_ADMIN_PARTICIPANT_FIELDS.some((field) => initialOrder[field] === auth.profile.id)
+      || !areOrderTimestampsEquivalent(initialOrder.updated_at, freshOrder.updated_at)) continue;
+
+    const safeCatalog = projectSemiAdminRowCatalog(
+      catalog,
+      orderId,
+      freshOrder,
+      auth.profile,
+      historyReturnByOrderId.get(orderId)
+    );
+    if (safeCatalog) projected[orderId] = safeCatalog;
+  }
+  return projected;
+}
 
 // Delivery participation grants delivery actions, not financial or quote-stage authority.
 const isSemiAdminQuoteActionParticipant = (order, profile) => (
@@ -277,6 +520,7 @@ const isSemiAdminAssetParticipant = (order, profile) => (
   isSemiAdminParticipant(order, profile)
   && SEMI_ADMIN_ASSET_EDITABLE_STATUSES.has(normalizeText(order?.status))
   && !order?.is_archived
+  && !order?.is_archived_admin
   && order?.operational_status !== "blocked"
 );
 
@@ -380,7 +624,7 @@ async function loadOwnedOrder(supabaseAdmin, orderId, profile, env) {
   return { order };
 }
 
-async function assertAssigneeRole(supabaseAdmin, userId, allowedRoles, label, env) {
+async function assertAssigneeRole(supabaseAdmin, userId, allowedRoles, label, env, { requireNotDeleted = false } = {}) {
   const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
   const assigneeId = normalizeText(userId);
   if (!assigneeId) {
@@ -389,7 +633,7 @@ async function assertAssigneeRole(supabaseAdmin, userId, allowedRoles, label, en
 
   const { data: profile, error } = await supabaseAdmin
     .from("profiles")
-    .select("id,role,employment_status")
+    .select("id,role,employment_status,deleted_at")
     .eq("id", assigneeId)
     .single();
 
@@ -398,7 +642,7 @@ async function assertAssigneeRole(supabaseAdmin, userId, allowedRoles, label, en
     return { response: jsonResponse(404, { error: `No se encontro ${label}.` }) };
   }
 
-  if (!roles.includes(profile.role) || profile.employment_status === false) {
+  if (!roles.includes(profile.role) || profile.employment_status === false || (requireNotDeleted && profile.deleted_at != null)) {
     debugSellerOrderAction("assignee-invalid", { assigneeId, role: profile.role, allowedRoles: roles }, env);
     return { response: jsonResponse(400, { error: `${label} no esta disponible para esta asignacion.` }) };
   }
@@ -670,7 +914,8 @@ async function handleSendToDesigner(payload, auth, env) {
     payload.designer_id || payload.designerId,
     semiAdminActor ? ["designer", "semi_admin"] : "designer",
     semiAdminActor ? "un disenador o a ti mismo" : "un disenador",
-    env
+    env,
+    { requireNotDeleted: semiAdminActor }
   );
   if (assignee.response) return assignee.response;
   const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
@@ -721,7 +966,20 @@ async function handleSendToQuote(payload, auth, env) {
   if (loaded.response) return loaded.response;
 
   const semiAdminActor = isSemiAdminProfile(auth.profile);
-  const assignee = await assertAssigneeRole(auth.supabaseAdmin, payload.quote_user_id || payload.quoteUserId, semiAdminActor ? ["quote", "semi_admin"] : "quote", "un usuario de caja", env);
+  if (semiAdminActor
+    && loaded.order.seller_id !== auth.profile.id
+    && loaded.order.created_by !== auth.profile.id) {
+    return jsonResponse(403, { error: "Solo el responsable Semi-Admin de Ventas puede enviar esta orden externa a Caja." });
+  }
+
+  const assignee = await assertAssigneeRole(
+    auth.supabaseAdmin,
+    payload.quote_user_id || payload.quoteUserId,
+    "quote",
+    "un usuario de caja",
+    env,
+    { requireNotDeleted: true }
+  );
   if (assignee.response) return assignee.response;
 
   if (loaded.order.order_design_type !== "EXTERNAL_DESING") {
@@ -788,6 +1046,7 @@ const resolveHistoryVerifiedQuoteReturn = async (supabaseAdmin, order) => {
     .select("id,event_type,old_status,new_status,old_payment_status,new_payment_status,changes,created_at")
     .eq("order_id", order.id)
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(80);
   if (error) throw error;
 
@@ -824,6 +1083,25 @@ async function handleSemiAdminOperationalCatalog(payload, auth, env) {
     .rpc("semi_admin_get_order_command_catalog", { p_order_id: loaded.order.id });
   if (error) return jsonResponse(400, { error: error.message || "No se pudo consultar la configuración operativa." });
   const catalog = data || { actions: [], unavailable_actions: [] };
+  catalog.actions = (catalog.actions || []).filter((action) => !["register_payment", "grant_credit", "payment_operations"].includes(action?.key));
+  catalog.unavailable_actions = (catalog.unavailable_actions || []).filter((action) => !["register_payment", "grant_credit", "payment_operations"].includes(action?.key));
+  const productionPaymentEligible = ["pagado", "parcial", "credito"].includes(normalizeKey(loaded.order.payment_status));
+  const hasProductionAuthorization = Boolean(
+    loaded.order.production_authorized_at && loaded.order.production_authorized_by
+  );
+  if (normalizeText(loaded.order.status) === ORDER_STATUS.IN_QUOTE
+      && productionPaymentEligible
+      && !hasProductionAuthorization) {
+    catalog.actions = (catalog.actions || []).filter((action) => action?.key !== "route_production");
+    catalog.unavailable_actions = [
+      ...(catalog.unavailable_actions || []).filter((action) => action?.key !== "route_production"),
+      {
+        key: "route_production",
+        title: "Envío pendiente de autorización",
+        next_safe_step: "Caja o Administración debe autorizar la orden antes de prepararla para Producción.",
+      },
+    ];
+  }
   const invoicePending = loaded.order.invoice_assignment_mode === "cashier"
     && !String(loaded.order.invoice_number || "").trim();
   if (invoicePending) {
@@ -865,11 +1143,15 @@ async function handleSemiAdminOperationalCatalog(payload, auth, env) {
   return jsonResponse(200, { catalog });
 }
 
-async function handleSemiAdminOrderCommand(payload, auth, env, command, argsBuilder, resultKey = "order") {
+async function handleSemiAdminOrderCommand(payload, auth, env, command, argsBuilder, resultKey = "order", preflight = null) {
   const roleError = requireSemiAdminAction(auth);
   if (roleError) return roleError;
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
+  if (preflight) {
+    const preflightResponse = await preflight(loaded.order);
+    if (preflightResponse) return preflightResponse;
+  }
   const expectedUpdatedAt = payload.expected_updated_at || payload.expectedUpdatedAt || loaded.order.updated_at;
   const legacyArgs = argsBuilder(loaded.order, expectedUpdatedAt);
   const commandAction = {
@@ -1002,18 +1284,31 @@ const handleStageResponsibility = (payload, auth, env) => handleSemiAdminOrderCo
     p_assignee_id: payload.assignee_id || payload.assigneeId,
     p_expected_updated_at: expectedUpdatedAt,
     p_production_area_code: normalizeText(payload.production_area_code || payload.productionAreaCode) || null,
-  })
+  }),
+  "order",
+  async () => {
+    if (normalizeKey(payload.stage) !== "quote") return null;
+    const assignee = await assertAssigneeRole(
+      auth.supabaseAdmin,
+      payload.assignee_id || payload.assigneeId,
+      "quote",
+      "un usuario de caja",
+      env,
+      { requireNotDeleted: true }
+    );
+    return assignee.response || null;
+  }
 );
 
 async function handleSemiAdminCatalogCommand(payload, auth, env, action) {
   const roleError = requireSemiAdminAction(auth);
   if (roleError) return roleError;
+  if (["register_payment", "grant_credit", "payment_operations"].includes(action)) {
+    return jsonResponse(403, { error: "Solo el responsable asignado de Caja puede gestionar pagos, comprobantes o crédito.", code: "CASHIER_PAYMENT_OWNERSHIP_REQUIRED" });
+  }
   const loaded = await loadOwnedOrder(auth.supabaseAdmin, getOrderId(payload), auth.profile, env);
   if (loaded.response) return loaded.response;
   const isResponsible = isSemiAdminQuoteActionParticipant(loaded.order, auth.profile);
-  if (action === "register_payment" && (loaded.order.status !== ORDER_STATUS.IN_QUOTE || !isResponsible)) {
-    return jsonResponse(isResponsible ? 409 : 403, { error: "El pago de Semi-Administración solo se gestiona por el responsable en Caja.", code: "SEMI_ADMIN_PAYMENT_FORBIDDEN" });
-  }
   if (action === "return_quote_to_design" && (loaded.order.status !== ORDER_STATUS.IN_QUOTE || loaded.order.payment_status !== "Pending_Payment" || !loaded.order.designer_id || !isResponsible)) {
     return jsonResponse(isResponsible ? 409 : 403, { error: "El regreso a Diseño requiere Caja, pago pendiente y un diseñador asignado.", code: "SEMI_ADMIN_RETURN_FORBIDDEN" });
   }
@@ -1106,6 +1401,103 @@ async function handleList(payload, auth, env) {
   }
 
   const total = listResult.count || 0;
+  let operationalCatalogs;
+  if (isSemiAdminProfile(auth.profile)) {
+    const orders = Array.isArray(listResult.data) ? listResult.data : [];
+    const recentOrders = Array.isArray(recentResult.data) ? recentResult.data : [];
+    const rowOrdersById = new Map(recentOrders.map((order) => [order.id, order]));
+    for (const order of orders) {
+      if (!rowOrdersById.has(order.id)) rowOrdersById.set(order.id, order);
+    }
+    // Recent records are a separate surface from the filtered page; prioritize
+    // them so the bounded batch still covers every order shown in that surface.
+    const orderIds = [...new Set([...recentOrders, ...orders].map((order) => normalizeText(order?.id)).filter(Boolean))]
+      .slice(0, SEMI_ADMIN_ROW_CATALOG_MAX_IDS);
+    operationalCatalogs = {};
+    if (orderIds.length) {
+      const userScopedClient = buildAuthenticatedSupabase(auth, env);
+      if (userScopedClient) {
+        const { data, error } = await userScopedClient.rpc("semi_admin_get_orders_command_catalog", { p_order_ids: orderIds });
+        if (error) {
+          const recoverable = isRecoverableSemiAdminBatchCatalogError(error);
+          debugSellerOrderAction(recoverable
+            ? "semi-admin-batch-catalog-unavailable-fallback"
+            : "semi-admin-batch-catalog-error",
+          {
+            code: error.code,
+            error: error.message,
+          }, env);
+          if (recoverable) {
+            operationalCatalogs = await loadSemiAdminRowCatalogFallback(orderIds, auth, userScopedClient, env);
+          }
+        } else if (data && typeof data === "object" && !Array.isArray(data)) {
+          for (const orderId of orderIds) {
+            const catalog = data[orderId];
+            if (!catalog || catalog.order_id !== orderId || !catalog.order_updated_at) continue;
+            const rowOrder = rowOrdersById.get(orderId);
+            if (!rowOrder
+              || !areOrderTimestampsEquivalent(catalog.order_updated_at, rowOrder.updated_at)
+              || !isSemiAdminRowCatalogCandidate(rowOrder, auth.profile)) continue;
+            const actions = Array.isArray(catalog.actions) ? catalog.actions : [];
+            const allowedKeys = new Set(getSemiAdminRowCatalogActionKeys(rowOrder));
+            operationalCatalogs[orderId] = {
+              order_id: orderId,
+              order_updated_at: catalog.order_updated_at,
+              actions: actions.map((action) => ({
+                key: normalizeText(action?.key),
+                title: SEMI_ADMIN_ROW_CATALOG_ACTION_TITLES.get(normalizeText(action?.key)) || "",
+              })).filter((action) => action.title
+                && allowedKeys.has(action.key)),
+            };
+          }
+
+          // Reconcile row actions against the same authenticated single-order
+          // catalog used by the operational detail flow. The batch catalog may
+          // omit a valid forward/return action; the fallback rechecks the order,
+          // participant and updated_at before exposing any missing action.
+          const needsIndividualCatalogOrderIds = orderIds.filter((orderId) => {
+            const rowOrder = rowOrdersById.get(orderId);
+            const projectedActions = operationalCatalogs[orderId]?.actions || [];
+            const designReturnCandidate = [ORDER_STATUS.IN_DESIGN, "In_Design"].includes(normalizeText(rowOrder?.status))
+              && normalizeText(rowOrder?.order_design_type) === "INTERNAL_DESING"
+              && rowOrder?.designer_id === auth.profile.id
+              && !projectedActions.some((action) => action.key === "return_design_to_sales");
+            const historyReturnCandidate = normalizeText(rowOrder?.status) === ORDER_STATUS.IN_QUOTE
+              && normalizeKey(rowOrder?.payment_status) === "pending_payment"
+              && SEMI_ADMIN_QUOTE_ACTION_FIELDS.some((field) => rowOrder?.[field] === auth.profile.id);
+            return designReturnCandidate || historyReturnCandidate;
+          });
+
+          if (needsIndividualCatalogOrderIds.length) {
+            const individualCatalogs = await loadSemiAdminRowCatalogFallback(
+              needsIndividualCatalogOrderIds,
+              auth,
+              userScopedClient,
+              env
+            );
+
+            for (const orderId of needsIndividualCatalogOrderIds) {
+              const rowOrder = rowOrdersById.get(orderId);
+              const individualCatalog = individualCatalogs[orderId];
+              if (!rowOrder
+                || !individualCatalog?.actions?.length
+                || !areOrderTimestampsEquivalent(individualCatalog.order_updated_at, rowOrder.updated_at)
+                || !isSemiAdminRowCatalogCandidate(rowOrder, auth.profile)) continue;
+
+              const existing = operationalCatalogs[orderId];
+              const actionByKey = new Map((existing?.actions || []).map((action) => [action.key, action]));
+              for (const action of individualCatalog.actions) actionByKey.set(action.key, action);
+              operationalCatalogs[orderId] = {
+                order_id: orderId,
+                order_updated_at: individualCatalog.order_updated_at,
+                actions: [...actionByKey.values()],
+              };
+            }
+          }
+        }
+      }
+    }
+  }
   return jsonResponse(200, {
     orders: Array.isArray(listResult.data) ? listResult.data : [],
     page,
@@ -1114,6 +1506,7 @@ async function handleList(payload, auth, env) {
     totalPages: Math.max(Math.ceil(total / pageSize), 1),
     summary: buildSummary(Array.isArray(summaryResult.data) ? summaryResult.data : [], env.now),
     recent_orders: Array.isArray(recentResult.data) ? recentResult.data : [],
+    ...(operationalCatalogs ? { operational_catalogs: operationalCatalogs } : {}),
   });
 }
 

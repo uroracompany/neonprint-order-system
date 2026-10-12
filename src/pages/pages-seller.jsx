@@ -53,10 +53,8 @@ import ReturnToCashierModal from "../components/orders/ReturnToCashierModal";
 import GreetingBanner from "../components/ui/GreetingBanner";
 import MetricCard from "../components/ui/MetricCard";
 import { buildProductionCatalogs } from "../utils/production";
-import PaymentFormModal from "../components/ui/PaymentFormModal";
-import { buildPaymentReceiptPath, uploadOrderAsset } from "../utils/uploadOrderAsset";
-import { validateReceiptFile } from "../utils/receiptValidation";
 import MaterialFormModal from "../components/materials/MaterialFormModal";
+import { areOrderTimestampsEquivalent } from "../utils/orderTimestamp";
 
 export { default as OrderDetailModal } from "../components/orders/OrderDetailModal";
 
@@ -102,6 +100,16 @@ const canSellerRouteExternalOrderToProduction = (order, { actorId, isSemiAdmin =
   && Boolean(order.production_authorized_at && order.production_authorized_by)
   && !order.is_archived
   && order.operational_status !== "blocked"
+);
+
+const canSellerSendExternalOrderToQuote = (order, { actorId, isSemiAdmin = false } = {}) => (
+  !isSemiAdmin
+  && Boolean(actorId)
+  && order?.order_design_type === "EXTERNAL_DESING"
+  && isOrderStatus(order?.status, ORDER_STATUS.PENDING)
+  && (order?.seller_id === actorId || order?.created_by === actorId)
+  && !order?.is_archived
+  && order?.operational_status !== "blocked"
 );
 
 const canSellerSendInternalOrderToDesign = (order, { actorId, isSemiAdmin = false } = {}) => (
@@ -314,10 +322,10 @@ export default function PageSeller() {
   const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [semiAdminOperationLoading, setSemiAdminOperationLoading] = useState(false);
+  const [semiAdminOperationalCatalogs, setSemiAdminOperationalCatalogs] = useState({});
   const [semiAdminProductionOrder, setSemiAdminProductionOrder] = useState(null);
   const [sellerProductionOrder, setSellerProductionOrder] = useState(null);
   const [sellerProductionSaving, setSellerProductionSaving] = useState(false);
-  const [semiAdminPaymentOrder, setSemiAdminPaymentOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [editingAssetsOnly, setEditingAssetsOnly] = useState(false);
   const [productionCatalog, setProductionCatalog] = useState({ materials: {}, terminations: {} });
@@ -390,6 +398,7 @@ export default function PageSeller() {
     if (!authUser?.id) {
       setOrders([]);
       setRecentOrders([]);
+      setSemiAdminOperationalCatalogs({});
       setOrdersTotal(0);
       setTotalPages(1);
       setSellerSummary(EMPTY_SELLER_SUMMARY);
@@ -460,16 +469,15 @@ export default function PageSeller() {
       if (Object.prototype.hasOwnProperty.call(result || {}, "recent_orders")) {
         setRecentOrders(Array.isArray(result.recent_orders) ? result.recent_orders : []);
       }
+      setSemiAdminOperationalCatalogs(isSemiAdmin && result?.operational_catalogs && typeof result.operational_catalogs === "object"
+        ? result.operational_catalogs
+        : {});
       setOrdersTotal(filteredTotal);
       setTotalPages(resolvedTotalPages);
       if (Object.prototype.hasOwnProperty.call(result || {}, "summary")) {
         setSellerSummary({ ...EMPTY_SELLER_SUMMARY, ...(result.summary || {}) });
       }
       if (Number(result?.page) && Number(result.page) !== page) setPage(Number(result.page));
-      setSelectedOrder((current) => {
-        if (!current?.id) return current;
-        return nextOrders.find((order) => order.id === current.id) || current;
-      });
     } catch (error) {
       if (requestId !== ordersRequestIdRef.current) return;
       if (silent) {
@@ -486,6 +494,7 @@ export default function PageSeller() {
     }
   }, [
     authUser?.id,
+    isSemiAdmin,
     debouncedSearch,
     filterArchive,
     filterClient,
@@ -820,10 +829,11 @@ export default function PageSeller() {
     }
   }, [runSellerOrderAction, showToast]);
 
-  const handleSemiAdminOperation = useCallback(async (action, payload) => {
-    if (!isSemiAdmin || !selectedOrder?.id || semiAdminOperationLoading) return;
+  const handleSemiAdminOperation = useCallback(async (action, payload, orderOverride = null) => {
+    const operationOrder = orderOverride || selectedOrder;
+    if (!isSemiAdmin || !operationOrder?.id || semiAdminOperationLoading) return;
 
-    const operationOrderId = selectedOrder.id;
+    const operationOrderId = operationOrder.id;
     const mergeConfirmedOrder = (current, confirmedOrder) => {
       if (current?.id !== operationOrderId || !confirmedOrder) return current;
       // Command responses can omit relations included by the detail endpoint.
@@ -836,14 +846,13 @@ export default function PageSeller() {
       const result = await runSellerOrderAction(action, {
         ...payload,
         order_id: operationOrderId,
-        expected_updated_at: selectedOrder.updated_at,
+        expected_updated_at: operationOrder.updated_at,
       });
 
       // Apply the command-confirmed state before any follow-up request. The
       // advanced configuration and detail modal consume selectedOrder directly,
       // so a reassignment appears in the open modal without a close/reopen.
       setSelectedOrder((current) => mergeConfirmedOrder(current, result?.order));
-
       // Reconciliation must not delay the confirmed UI update or require a
       // page refresh. It supplies complete relations, list data and notices.
       void (async () => {
@@ -878,7 +887,7 @@ export default function PageSeller() {
 
   const handleConfirmSemiAdminQuoteAssignment = useCallback(async (quoteId) => {
     if (!semiAdminQuoteAssignment) return;
-    const result = await handleSemiAdminOperation("send_design_to_quote", { quote_id: quoteId });
+    const result = await handleSemiAdminOperation("send_design_to_quote", { quote_id: quoteId }, semiAdminQuoteAssignment);
     if (result) setSemiAdminQuoteAssignment(null);
   }, [handleSemiAdminOperation, semiAdminQuoteAssignment]);
 
@@ -905,44 +914,128 @@ export default function PageSeller() {
   }, [runSellerOrderAction, selectedOrder, semiAdminOperationLoading, showToast]);
 
   const handleConfirmSemiAdminProductionAssignment = useCallback(async (assignments) => {
-    const result = await handleSemiAdminOperation("route_production", { area_assignments: assignments });
-    if (result?.order) setSemiAdminProductionOrder((current) => current?.id === result.order.id ? { ...current, ...result.order } : current);
-  }, [handleSemiAdminOperation]);
+    const targetOrder = semiAdminProductionOrder;
+    const result = await handleSemiAdminOperation("route_production", { area_assignments: assignments }, targetOrder);
+    if (result?.order) setSemiAdminProductionOrder(null);
+  }, [handleSemiAdminOperation, semiAdminProductionOrder]);
 
   const handleConfirmSemiAdminQuoteReturn = useCallback(async (reason) => {
-    if (!semiAdminQuoteReturn || reason.length < 10) return;
-    const result = await handleSemiAdminOperation("return_quote_to_design", { reason });
+    const returnContext = semiAdminQuoteReturn;
+    const returnOrder = returnContext?.order || null;
+    const actionKey = returnContext?.actionKey || "return_quote_to_design";
+    if (!returnOrder?.id || reason.trim().length < 10) return;
+    const result = await handleSemiAdminOperation(actionKey, { reason }, returnOrder);
     if (result) {
       setSemiAdminQuoteReturn(null);
     }
   }, [handleSemiAdminOperation, semiAdminQuoteReturn]);
-
-  const handleConfirmSemiAdminPayment = useCallback(async ({ paymentStatus, receiptFile, invoiceNumber }) => {
-    if (!semiAdminPaymentOrder) return;
-    let invoicePayment = null;
-    if (receiptFile) {
-      const validation = await validateReceiptFile(receiptFile);
-      if (!validation.isValid) throw new Error(validation.error || "El comprobante no es válido.");
-      invoicePayment = await uploadOrderAsset({
-        bucket: "payment-invoice",
-        path: buildPaymentReceiptPath(semiAdminPaymentOrder.id, receiptFile.name),
-        file: receiptFile,
-      });
-      if (!invoicePayment) throw new Error("No se pudo subir el comprobante de pago.");
-    }
-    const result = await handleSemiAdminOperation("register_payment", {
-      payment_status: paymentStatus,
-      invoice_payment: invoicePayment,
-      invoice_number: invoiceNumber || undefined,
-    });
-    if (result) setSemiAdminPaymentOrder(null);
-  }, [handleSemiAdminOperation, semiAdminPaymentOrder]);
 
   const loadSemiAdminOperationalCatalog = useCallback(async (orderId) => {
     if (!isSemiAdmin || !orderId) return { actions: [], unavailable_actions: [] };
     const result = await runSellerOrderAction("operational_catalog", { order_id: orderId });
     return result?.catalog || { actions: [], unavailable_actions: [] };
   }, [isSemiAdmin, runSellerOrderAction]);
+
+  const getSemiAdminRowActions = (order) => {
+    if (!isSemiAdmin || !order?.id) return [];
+    const catalog = semiAdminOperationalCatalogs[order.id];
+    if (!catalog || !areOrderTimestampsEquivalent(catalog.order_updated_at, order.updated_at)) return [];
+    return Array.isArray(catalog.actions) ? catalog.actions : [];
+  };
+
+  const handleOpenSemiAdminRowAction = async (action, order) => {
+    if (!isSemiAdmin || !action?.key || !order?.id || semiAdminOperationLoading) return;
+    const allowedAction = getSemiAdminRowActions(order).find((item) => item.key === action.key);
+    if (!allowedAction) return;
+
+    if (action.key === "send_to_designer") {
+      setSendingToDesigner(order);
+      return;
+    }
+    if (action.key === "send_to_quote") {
+      setSendingToQuotation(order);
+      return;
+    }
+    if (action.key === "send_design_to_quote") {
+      setSemiAdminQuoteAssignment(order);
+      return;
+    }
+    if (action.key === "return_design_to_sales"
+      && order.status === ORDER_STATUS.IN_DESIGN
+      && order.order_design_type === "INTERNAL_DESING") {
+      setSemiAdminQuoteReturn({ order, actionKey: action.key, targetOverride: "sales" });
+      return;
+    }
+    if (action.key === "return_quote_to_previous_stage"
+      && order.status === ORDER_STATUS.IN_QUOTE
+      && order.payment_status === "Pending_Payment"
+      && ["sales", "design"].includes(action.target_stage)) {
+      setSemiAdminQuoteReturn({
+        order,
+        actionKey: action.key,
+        targetOverride: action.target_stage === "sales" ? "sales" : "designer",
+      });
+      return;
+    }
+    if (action.key === "route_production") {
+      if (order.status !== ORDER_STATUS.IN_QUOTE
+        || !isPaymentProductionEligible(order.payment_status)
+        || !order.production_authorized_at
+        || !order.production_authorized_by) return;
+      try {
+        const detail = await runSellerOrderAction("detail", { order_id: order.id });
+        if (detail?.order) setSemiAdminProductionOrder(detail.order);
+      } catch (error) {
+        showToast(error?.message || "No se pudo preparar la asignación de Producción.", "error");
+      }
+    }
+  };
+
+  const renderSemiAdminRowActions = (order, variant = "table") => {
+    if (!isSemiAdmin) return null;
+    const actionIcons = {
+      send_to_designer: Icons.Brush,
+      send_to_quote: Icons.Send,
+      send_design_to_quote: Icons.Send,
+      route_production: Icons.Package,
+      return_design_to_sales: Icons.ArrowLeft,
+      return_quote_to_previous_stage: Icons.ArrowLeft,
+    };
+    const actions = getSemiAdminRowActions(order)
+      .filter((action) => Object.prototype.hasOwnProperty.call(actionIcons, action.key));
+    if (!actions.length) return null;
+    return (
+      <div className={`semi-admin-direct-actions semi-admin-direct-actions--${variant}`} data-row-action>
+        {actions.map((action) => {
+          const Icon = actionIcons[action.key];
+          const paletteKey = action.key === "send_design_to_quote"
+            ? "send_to_quote"
+            : action.key === "return_design_to_sales"
+              ? "send_to_designer"
+              : action.key === "return_quote_to_previous_stage"
+                ? (action.target_stage === "sales" ? "send_to_quote" : "send_to_designer")
+                : action.key;
+          return (
+            <button
+              key={`${order.id}-${action.key}`}
+              type="button"
+              className={`${variant === "card" ? "card-action-btn" : "table-action-btn"} semi-admin-direct-action semi-admin-direct-action--${action.key} semi-admin-direct-action--${paletteKey}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleOpenSemiAdminRowAction(action, order);
+              }}
+              disabled={semiAdminOperationLoading}
+              title={action.title}
+              aria-label={action.title}
+              data-row-action
+            >
+              <Icon aria-hidden="true" />
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
 
   const canSellerRouteToProduction = canSellerRouteExternalOrderToProduction(selectedOrder, {
     actorId: authUser?.id,
@@ -987,6 +1080,24 @@ export default function PageSeller() {
     setSendingToQuotation(order);
   };
 
+  const renderSellerExternalQuoteAction = (order) => {
+    if (!canSellerSendExternalOrderToQuote(order, { actorId: authUser?.id, isSemiAdmin })) return null;
+    return (
+      <button
+        className="table-action-btn quote"
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          handleSendToQuotation(order);
+        }}
+        title="Enviar a Caja"
+        aria-label="Enviar a Caja"
+      >
+        <Icons.Send />
+      </button>
+    );
+  };
+
   const handleConfirmSendToQuotation = async (quoteUserId) => {
     if (!sendingToQuotation) return;
 
@@ -1000,7 +1111,7 @@ export default function PageSeller() {
       });
 
       setSendingToQuotation(null);
-      setSelectedOrder(null);
+      setSelectedOrder((current) => current?.id === sendingToQuotation.id ? null : current);
       await fetchOrders({ nextPage: page, includeDashboard: true, silent: true });
       await notif.refresh({ showNewToasts: true });
     } catch (error) {
@@ -1048,7 +1159,7 @@ export default function PageSeller() {
       await notif.refresh({ showNewToasts: true });
 
       if (result?.order) {
-        setSelectedOrder(result.order);
+        setSelectedOrder((current) => current?.id === result.order.id ? result.order : current);
       }
     } catch (err) {
       console.error("Error inesperado:", err);
@@ -1080,10 +1191,12 @@ export default function PageSeller() {
       const refreshedOrder = result?.order || updatedOrder;
       if (refreshedOrder) {
         setSelectedOrder((current) => current?.id === orderId ? refreshedOrder : current);
+        setEditingOrder((current) => current?.id === orderId ? refreshedOrder : current);
       }
     } catch (error) {
       if (updatedOrder) {
         setSelectedOrder((current) => current?.id === orderId ? updatedOrder : current);
+        setEditingOrder((current) => current?.id === orderId ? { ...current, ...updatedOrder } : current);
       }
       console.warn("No se pudo recargar el detalle actualizado de la orden:", error?.message || error);
     }
@@ -1257,7 +1370,7 @@ export default function PageSeller() {
               <div className="ps-metrics">
                 {metrics.map((m, i) => <MetricCard key={i} {...m} value={displayCount(m.value)} />)}
               </div>
-              <div className="ps-panel">
+              <div className="ps-panel ps-recent-orders-panel">
                 <div className="ps-panel-stripe" />
                 <div className="ps-panel-header">
                   <div>
@@ -1317,11 +1430,16 @@ export default function PageSeller() {
                             <td className="td-pad"><StatusBadge status={o.status} order={o} /></td>
                             <td className="td-pad td-actions" data-row-action>
                               <div className="table-actions" data-row-action>
+                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
+                                  <Icons.Eye />
+                                </button>
+                                {renderSemiAdminRowActions(o)}
                                 {canSellerSendInternalOrderToDesign(o, { actorId: authUser?.id, isSemiAdmin }) && (
                                   <button className="table-action-btn design" onClick={e => { e.stopPropagation(); setSendingToDesigner(o); }} title="Enviar a Diseño" aria-label="Enviar a Diseño">
                                     <Icons.Brush />
                                   </button>
                                 )}
+                                {renderSellerExternalQuoteAction(o)}
                                 {canSellerRouteExternalOrderToProduction(o, { actorId: authUser?.id, isSemiAdmin }) && (
                                   <button
                                     className="table-action-btn production"
@@ -1332,9 +1450,6 @@ export default function PageSeller() {
                                     <Icons.Send />
                                   </button>
                                 )}
-                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
-                                  <Icons.Eye />
-                                </button>
                                 {canSellerEditOrder(o, isSemiAdmin) && (
                                   <button className="table-action-btn edit" onClick={e => { e.stopPropagation(); handleEditOrder(o); }} title="Editar orden">
                                     <Icons.Edit />
@@ -1522,9 +1637,14 @@ export default function PageSeller() {
                               <td className="td-pad td-date">{new Date(o.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</td>
                               <td className="td-pad td-actions" data-row-action>
                                 <div className="table-actions" data-row-action>
+                                  <button className="table-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
+                                    <Icons.Eye />
+                                  </button>
+                                  {renderSemiAdminRowActions(o)}
                                   {canSellerSendInternalOrderToDesign(o, { actorId: authUser?.id, isSemiAdmin }) && (
                                     <button className="table-action-btn design" onClick={e => { e.stopPropagation(); setSendingToDesigner(o); }} title="Enviar a Diseño" aria-label="Enviar a Diseño"><Icons.Brush /></button>
                                   )}
+                                  {renderSellerExternalQuoteAction(o)}
                                   {canSellerRouteExternalOrderToProduction(o, { actorId: authUser?.id, isSemiAdmin }) && (
                                     <button
                                       className="table-action-btn production"
@@ -1535,9 +1655,6 @@ export default function PageSeller() {
                                       <Icons.Send />
                                     </button>
                                   )}
-                                  <button className="table-action-btn view" onClick={() => handleViewOrder(o)} title="Ver detalles">
-                                    <Icons.Eye />
-                                  </button>
                                   {canSellerEditOrder(o, isSemiAdmin) && (
                                     <button className="table-action-btn edit" onClick={() => handleEditOrder(o)} title="Editar orden">
                                       <Icons.Edit />
@@ -1644,6 +1761,10 @@ export default function PageSeller() {
                           </div>
 
                               <div className="ps-order-card-actions">
+                            <button className="card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
+                              <Icons.Eye />
+                            </button>
+                            {renderSemiAdminRowActions(o, "card")}
                             {canSellerSendInternalOrderToDesign(o, { actorId: authUser?.id, isSemiAdmin }) && (
                               <button className="card-action-btn design" onClick={(event) => { event.stopPropagation(); setSendingToDesigner(o); }} title="Enviar a Diseño" aria-label="Enviar a Diseño"><Icons.Brush /></button>
                             )}
@@ -1652,9 +1773,6 @@ export default function PageSeller() {
                                 <Icons.Send />
                               </button>
                             )}
-                            <button className="card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(o); }} title="Ver detalles">
-                              <Icons.Eye />
-                            </button>
                             {canSellerEditOrder(o, isSemiAdmin) && (
                               <button className="card-action-btn edit" onClick={(event) => { event.stopPropagation(); handleEditOrder(o); }} title="Editar">
                                 <Icons.Edit />
@@ -1752,6 +1870,8 @@ export default function PageSeller() {
         clientsLoading={clientsLoading}
         onClientSearch={handleClientSearch}
         editMode="seller"
+        isSemiAdmin={isSemiAdmin}
+        actorId={authUser?.id || ""}
         assetsOnly={editingAssetsOnly}
         semiAdminVariant={isSemiAdmin && editingAssetsOnly}
         keepOpenAfterAssetSave={isSemiAdmin && editingAssetsOnly}
@@ -1788,9 +1908,8 @@ export default function PageSeller() {
             onOpenDesignReassignment={() => setSemiAdminDesignReassignment(selectedOrder)}
             onOpenQuoteAssignment={() => setSemiAdminQuoteAssignment(selectedOrder)}
             onOpenQuoteResponsibilityReassignment={() => setSemiAdminQuoteResponsibilityReassignment(selectedOrder)}
-            onOpenQuoteReturn={() => setSemiAdminQuoteReturn(selectedOrder)}
+            onOpenQuoteReturn={() => setSemiAdminQuoteReturn({ order: selectedOrder, actionKey: "return_quote_to_design", targetOverride: "designer" })}
             onOpenProductionAssignment={handleOpenSemiAdminProductionAssignment}
-            onOpenPayment={() => setSemiAdminPaymentOrder(selectedOrder)}
             currentUserId={authUser?.id}
             busy={semiAdminOperationLoading}
           />
@@ -1847,27 +1966,17 @@ export default function PageSeller() {
         open={!!semiAdminQuoteReturn}
         onClose={() => { if (!semiAdminOperationLoading) setSemiAdminQuoteReturn(null); }}
         onConfirm={handleConfirmSemiAdminQuoteReturn}
-        order={semiAdminQuoteReturn}
+        order={semiAdminQuoteReturn?.order}
         loading={semiAdminOperationLoading}
-        targetOverride="designer"
+        targetOverride={semiAdminQuoteReturn?.targetOverride || "designer"}
         minReasonLength={10}
-      />
-      <PaymentFormModal
-        open={!!semiAdminPaymentOrder}
-        order={semiAdminPaymentOrder}
-        loading={semiAdminOperationLoading}
-        onClose={() => setSemiAdminPaymentOrder(null)}
-        onConfirm={handleConfirmSemiAdminPayment}
-        canAssignInvoiceCode
       />
       <AssignModal
         open={!!sendingToQuotation}
         onClose={() => setSendingToQuotation(null)}
         order={sendingToQuotation}
         role="quote"
-        allowSelfAssignment={isSemiAdmin}
-        currentUserId={isSemiAdmin ? authUser?.id : ""}
-        currentResponsibleId={sendingToQuotation?.quote_id || ""}
+        filterActive={isSemiAdmin}
         defaultUserId={isReturnedOrder(sendingToQuotation) ? (sendingToQuotation?.quote_id || "") : ""}
         onConfirm={handleConfirmSendToQuotation}
         loading={sendingLoading}
@@ -1877,8 +1986,7 @@ export default function PageSeller() {
         onClose={() => setSemiAdminQuoteAssignment(null)}
         order={semiAdminQuoteAssignment}
         role="quote"
-        allowSelfAssignment
-        currentUserId={authUser?.id || ""}
+        filterActive
         title="Enviar a Caja"
         description="Selecciona el responsable de Caja que recibirá la orden."
         onConfirm={handleConfirmSemiAdminQuoteAssignment}
@@ -1889,9 +1997,7 @@ export default function PageSeller() {
         onClose={() => setSemiAdminQuoteResponsibilityReassignment(null)}
         order={semiAdminQuoteResponsibilityReassignment}
         role="quote"
-        allowSelfAssignment
-        currentUserId={authUser?.id || ""}
-        currentResponsibleId={semiAdminQuoteResponsibilityReassignment?.quote_id || ""}
+        filterActive
         defaultUserId={semiAdminQuoteResponsibilityReassignment?.quote_id || ""}
         title="Cambiar responsable de Caja / Cotización"
         description="Selecciona el cotizador responsable de esta orden."

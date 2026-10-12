@@ -107,14 +107,14 @@ describe("advanced admin order interventions", () => {
     expect(settings).toContain('rpc("admin_get_order_command_catalog"');
     expect(dashboard).toContain("executeAdminOrderCommand");
     expect(settings).toContain("Acciones disponibles");
-    expect(settings).toContain('item.key === "register_payment"');
-    expect(settings).toContain("PaymentFormModal");
+    expect(settings).toContain('["register_payment", "grant_credit", "payment_operations"]');
+    expect(settings).not.toContain("PaymentFormModal");
     expect(actionModal).toContain("getAdminTargetSelector");
     expect(actionModal).toContain("selectorConfig.label");
     expect(actionModal).toContain("Sin asignar — Administración");
     expect(dashboard).toContain("fetchAdvancedOrderForProduction");
     expect(dashboard).toContain('.select("*, order_production_files(*)")');
-    expect(dashboard).toContain("openOrderSetters: [setSettingsOrder, setPaymentModalOrder]");
+    expect(dashboard).toContain("openOrderSetters: [setSettingsOrder]");
     expect(hook).toContain('["admin_edited_order", "admin_intervention", "admin_intervention_notice"]');
     expect(alert).not.toContain("Revisar luego");
     expect(app).toContain("<AdminInterventionAlert />");
@@ -124,11 +124,12 @@ describe("advanced admin order interventions", () => {
     const actionModalCss = readProjectFile("src/components/orders/AdminAdvancedActionModal.css");
     const productionModalCss = readProjectFile("src/components/orders/ProductionAssignmentModal.css");
     const paymentModal = readProjectFile("src/components/ui/PaymentFormModal.jsx");
+    const sharedModal = readProjectFile("src/components/orders/CreateOrderModal.jsx");
 
     expect(actionModalCss).toContain("grid-template-columns: minmax(0, 1fr)");
     expect(actionModalCss).not.toContain("grid-template-columns: 0.7fr 1.3fr");
     expect(productionModalCss).toContain("grid-template-columns: minmax(0, 1fr)");
-    expect(paymentModal).toContain('role="dialog"');
+    expect(sharedModal).toContain('role="dialog"');
     expect(paymentModal).toContain("pfm-order-summary");
   });
 

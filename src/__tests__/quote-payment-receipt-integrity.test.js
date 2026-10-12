@@ -68,7 +68,7 @@ describe("Caja payment receipt integrity", () => {
     expect(quotePage).toContain("buildPaymentReceiptPath(order.id, receiptFile.name)");
     expect(quotePage).toContain('rpc("quote_set_order_payment"');
     expect(quotePage).toContain("hasVerifiedPaymentReceipt(order)");
-    expect(quotePage).toContain("let invoicePaymentUrl = paymentStatus === PAYMENT_STATUS.PAID ? persistedReceiptReference : null");
+    expect(quotePage).toContain("let invoicePaymentUrl = isPaymentCorrection ? null : (paymentStatus === PAYMENT_STATUS.PAID ? persistedReceiptReference : null)");
 
     const paidSubmitGuardStart = quotePage.indexOf("if (paymentStatus === PAYMENT_STATUS.PAID && !receiptFile && !persistedReceiptReference)");
     const paidSubmitGuard = quotePage.slice(
@@ -77,6 +77,13 @@ describe("Caja payment receipt integrity", () => {
     );
     expect(paidSubmitGuard).toContain("!receiptFile && !persistedReceiptReference");
     expect(paidSubmitGuard).not.toContain("invoice_number");
+  });
+
+  it("keeps normal paid submissions on their verified receipt while corrections detach the old reference", () => {
+    expect(quotePage).toContain("let invoicePaymentUrl = isPaymentCorrection ? null : (paymentStatus === PAYMENT_STATUS.PAID ? persistedReceiptReference : null)");
+    expect(quotePage).toContain("if (isPaymentCorrection) {");
+    expect(quotePage).toContain("updatePayload[INVOICE_PAYMENT_FIELD] = null;");
+    expect(quotePage).toContain("p_invoice_payment: updatePayload[INVOICE_PAYMENT_FIELD] || null");
   });
 
   it("applies the strict billing-code and verified-image rule to the SemiAdmin writer", () => {

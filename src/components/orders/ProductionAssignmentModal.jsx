@@ -5,6 +5,7 @@ import { getParticipatingProductionAreaCodes, getProductionFiles, hasUnclassifie
 import { Icons } from "../../utils/icons";
 import "../../css-components/page-quote.css";
 import "./ProductionAssignmentModal.css";
+import AssignmentModalShell from "../ui/AssignmentModalShell";
 
 export default function ProductionAssignmentModal({ open, onClose, onConfirm, order, loading, title }) {
   const [areas, setAreas] = useState([]);
@@ -66,17 +67,13 @@ export default function ProductionAssignmentModal({ open, onClose, onConfirm, or
   const formatAreaLabel = (label) => label;
 
   return (
-    <div className="pq-overlay" onClick={(event) => event.target === event.currentTarget && !loading && onClose()}>
-      <div className="pq-dialog pq-dialog--production-assignment pq-dialog--return-designer" role="dialog" aria-modal="true" aria-labelledby="pam-title" aria-describedby="pam-description">
-        <header className="pq-dialog-header pq-dialog-header--delivery">
-          <div className="pq-dialog-header-content">
-            {order.id && <span className="pq-production-header-code">#{order.id.slice(0, 8).toUpperCase()}</span>}
-            <h3 className="pq-dialog-title" id="pam-title">{title || "Asignar Producción"}</h3>
-          </div>
-          <button type="button" className="pq-icon-btn" onClick={onClose} aria-label="Cerrar"><Icons.Close /></button>
-        </header>
+    <AssignmentModalShell
+      open={open} onRequestClose={onClose} loading={loading} order={order}
+      title={title || "Asignar Producción"} description="Selecciona un responsable por cada área participante."
+      dialogClassName="pq-dialog pq-dialog--production-assignment pq-dialog--return-designer" titleId="pam-title" descriptionId="pam-description"
+      footer={<div className="pq-dialog-actions"><button type="button" className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button><button type="button" className="pq-btn pq-btn-primary" disabled={!ready || loading || loadingOptions} onClick={() => onConfirm(assignments)}>{loading ? "Enviando…" : <><Icons.Send />Enviar a Producción</>}</button></div>}
+    >
         <div className="pq-production-dialog-body">
-          <p className="pq-dialog-text pq-dialog-text--blue" id="pam-description">Selecciona un responsable por cada área participante.</p>
           <div className="pq-production-assignment-list">
             {loadingOptions ? (
               <div className="pq-production-loading" role="status">Cargando responsables…</div>
@@ -116,15 +113,6 @@ export default function ProductionAssignmentModal({ open, onClose, onConfirm, or
           </div>
           {error && <div className="pq-production-error" role="alert"><Icons.AlertCircle />{error}</div>}
         </div>
-        <footer className="pq-production-dialog-footer">
-          <div className="pq-dialog-actions">
-            <button type="button" className="pq-btn pq-btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
-            <button type="button" className="pq-btn pq-btn-primary" disabled={!ready || loading || loadingOptions} onClick={() => onConfirm(assignments)}>
-              {loading ? "Enviando…" : <><Icons.Send />Enviar a Producción</>}
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+    </AssignmentModalShell>
   );
 }

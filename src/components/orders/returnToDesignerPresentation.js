@@ -1,5 +1,7 @@
 export const getReturnPresentation = (order, targetOverride) => (
-  targetOverride === "designer"
+  targetOverride === "sales"
+    ? { label: "Ventas", nextStatusLabel: "Pendiente" }
+    : targetOverride === "designer"
     ? { label: "Diseñador", nextStatusLabel: "En Diseño" }
     : order?.order_design_type === "EXTERNAL_DESING"
       ? { label: "Vendedor", nextStatusLabel: "Pendiente" }

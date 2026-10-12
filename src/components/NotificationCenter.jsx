@@ -26,8 +26,6 @@ const SUCCESS_EVENT_KINDS = new Set([
   "quote_routed_confirmation",
   "stage_assignment_confirmation",
   "stage_responsibility_assigned",
-  "production_assigned",
-  "production_reassigned",
   "production_file_sent_to_termination",
   "production_file_sent_to_termination_assigned",
   "production_file_transfer_confirmation",
@@ -35,13 +33,37 @@ const SUCCESS_EVENT_KINDS = new Set([
   "semi_admin_confirmation",
 ]);
 
+function isPaidPaymentNotification(notification) {
+  const metadata = notification?.metadata || {};
+  const isCanonicalConfirmation = notification?.type === "payment_confirmed"
+    || metadata.variant === "payment_confirmed"
+    || metadata.event_kind === "payment_confirmed";
+  const isLegacyPaidUpdate = notification?.type === "order_updated"
+    && metadata.event_kind === "payment_updated"
+    && metadata.payment_status === "pagado";
+
+  return isCanonicalConfirmation || isLegacyPaidUpdate;
+}
+
+function isProductionAuthorizedNotification(notification) {
+  return notification?.metadata?.event_kind === "production_authorized";
+}
+
+function getNotificationTitle(notification) {
+  if (isPaidPaymentNotification(notification)) return "Pago confirmado";
+  if (isProductionAuthorizedNotification(notification)) return "Orden Autorizada";
+  return notification?.title;
+}
+
 function getTypeClass(type, variant) {
-  if (type === "payment_confirmed" || variant === "payment_confirmed") return "payment";
+  if (isPaidPaymentNotification({ type, metadata: { variant } })) return "payment";
   const variantMap = {
     success: "completed",
     error: "cancelled",
     warning: "returned",
     info: "info",
+    production_assignment: "production-assignment",
+    production_reassignment: "production-assignment",
   };
   if (variantMap[variant]) return variantMap[variant];
 
@@ -61,8 +83,12 @@ function getToastPresentation(notification) {
     return { typeClass: "completed", icon: <Icons.Clipboard /> };
   }
 
-  if (notification.type === "payment_confirmed" || metadata.variant === "payment_confirmed" || eventKind === "payment_confirmed") {
+  if (isPaidPaymentNotification(notification)) {
     return { typeClass: "payment", icon: <Icons.Money /> };
+  }
+
+  if (isProductionAuthorizedNotification(notification)) {
+    return { typeClass: "completed", icon: <Icons.Check /> };
   }
 
   if (
@@ -70,6 +96,18 @@ function getToastPresentation(notification) {
     || eventKind === "production_file_sent_to_termination_assigned"
   ) {
     return { typeClass: "info", icon: <Icons.Check /> };
+  }
+
+  if (eventKind === "production_assigned" || eventKind === "production_reassigned") {
+    return { typeClass: "production-assignment", icon: <Icons.Check /> };
+  }
+
+  if (
+    eventKind === "production_routed"
+    || eventKind === "production_routed_confirmation"
+    || eventKind === "delivery_confirmed"
+  ) {
+    return { typeClass: "completed", icon: <Icons.Check /> };
   }
 
   if (metadata.variant === "success" || SUCCESS_EVENT_KINDS.has(eventKind)) {
@@ -105,7 +143,7 @@ function NotificationToast({ notification, onDismiss }) {
       <div className="nc-toast-main">
         <div className="nc-toast-icon">{icon}</div>
         <div className="nc-toast-content">
-          <span className="nc-toast-title">{formatUiTerms(notification.title)}</span>
+          <span className="nc-toast-title">{formatUiTerms(getNotificationTitle(notification))}</span>
           <span className="nc-toast-text">{formatUiTerms(notification.message)}</span>
         </div>
         <button className="nc-toast-close" onClick={() => onDismiss(notification.id)} aria-label="Cerrar">
@@ -214,7 +252,7 @@ export default function NotificationCenter({
                     <div className="nc-item-dot" />
                     <div className="nc-item-body">
                       <div className="nc-item-head">
-                        <strong>{formatUiTerms(n.title)}</strong>
+                        <strong>{formatUiTerms(getNotificationTitle(n))}</strong>
                         {n.order_id && <span className="nc-item-order">#{n.order_id.slice(0, 8).toUpperCase()}</span>}
                       </div>
                       <p className="nc-item-msg">{formatUiTerms(n.message)}</p>

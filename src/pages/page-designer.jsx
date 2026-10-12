@@ -44,6 +44,7 @@ import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import DesignerProfileModule from "../components/designer/DesignerProfileModule";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
 import ReturnToCashierModal from "../components/orders/ReturnToCashierModal";
+import ReturnToDesignerModal from "../components/orders/ReturnToDesignerModal";
 import { OrderReturnHandoffPanel } from "../components/orders/OrderReturnHandoff";
 import { isOrderOverdue } from "../utils/orderDeadline";
 import { isReturnedDesignerOrder, shouldMarkDesignerOrderEdited } from "../utils/designerOrderEdits";
@@ -120,6 +121,12 @@ const canDesignerSendInternalOrderToQuote = (order, actorId) => {
     && filesReady
   );
 };
+
+const canDesignerReturnInternalOrderToSales = (order, actorId) => Boolean(
+  actorId && order?.order_design_type === "INTERNAL_DESING" && order?.designer_id === actorId
+  && isOrderStatus(order?.status, ORDER_STATUS.IN_DESIGN) && !order?.is_archived_designer
+  && order?.operational_status !== "blocked"
+);
 
 function ReturnedBadge({ compact = false }) {
   return (
@@ -669,14 +676,14 @@ export function OrderDetailModal({
       if (error) throw error;
 
       await onRefresh?.();
-      setSaveSuccessMessage("Orden de trabajo eliminada correctamente.");
+      setSaveSuccessMessage("Imagen de orden de trabajo eliminada correctamente.");
       setSaveSuccess(true);
     } catch (error) {
       console.error("Error removing design preview:", error);
       setSaveError(
         error?.message === "ORDER_STALE"
           ? "La orden cambió mientras la revisabas. Actualízala antes de volver a intentarlo."
-          : error?.message || "No se pudo eliminar la orden de trabajo. Inténtalo nuevamente.",
+          : error?.message || "No se pudo eliminar la imagen de orden de trabajo. Inténtalo nuevamente.",
       );
     } finally {
       setRemovingPreview(false);
@@ -977,9 +984,9 @@ export function OrderDetailModal({
     : effectivePersistedFiles.length === 0
       ? "Guarda al menos un archivo de diseño antes de enviar a Caja."
       : !hasPersistedPreview
-        ? "Guarda la orden de trabajo antes de enviar a Caja."
+        ? "Guarda la imagen de orden de trabajo antes de enviar a Caja."
         : hasChanges
-          ? "Guarda los cambios pendientes de los archivos y de la orden de trabajo antes de enviar a Caja."
+          ? "Guarda los cambios pendientes de los archivos y de la imagen de orden de trabajo antes de enviar a Caja."
           : !persistedFilesAreConfigured
             ? "Completa y guarda los detalles de cada archivo antes de enviar a Caja."
             : removingFileId || removingPreview
@@ -995,8 +1002,8 @@ export function OrderDetailModal({
           ? { label: "En revisión", icon: <Icons.Search />, tone: "is-review" }
           : { label: "Completado", icon: <Icons.Check />, tone: "is-ready" };
   const footerNote = canSendToQuotation
-    ? "La orden tiene archivos y orden de trabajo guardados. Lista para enviar a Caja."
-    : sendToQuotationBlockReason || "Agrega archivos y orden de trabajo para completar el trabajo de diseño.";
+    ? "La orden tiene archivos e imagen de orden de trabajo guardados. Lista para enviar a Caja."
+    : sendToQuotationBlockReason || "Agrega archivos e imagen de orden de trabajo para completar el trabajo de diseño.";
   const footerNoteClass = "designer-order-modal__footer-note";
 
   return (
@@ -1028,7 +1035,7 @@ export function OrderDetailModal({
               </strong>
             </div>
             <div className="designer-order-modal__summary-item">
-              <span><Icons.Eye /> Preview</span>
+              <span><Icons.Eye /> Imagen de orden de trabajo</span>
               <strong className={`designer-order-modal__summary-badge designer-order-modal__summary-badge-preview ${hasPreview ? "is-ready" : "is-pending"}`}>
                 {hasPreview ? "Cargada" : "Pendiente"}
               </strong>
@@ -1260,7 +1267,7 @@ export function OrderDetailModal({
           <div className="designer-order-modal__card">
             <div className="designer-order-modal__card-title">
               <Icons.Image />
-              <h4>Orden de trabajo</h4>
+              <h4>Imagen de orden de trabajo</h4>
             </div>
             
             <div className="pd-preview-container">
@@ -1268,7 +1275,7 @@ export function OrderDetailModal({
                 <>
                   <img
                     src={displayPreview}
-                    alt="Preview"
+                    alt="Imagen de orden de trabajo"
                     className={`pd-preview-image${previewLoading ? " is-loading" : ""}`}
                     onLoad={() => {
                       setPreviewLoading(false);
@@ -1299,7 +1306,7 @@ export function OrderDetailModal({
                           replaceMode
                           className="file-upload-zone--hidden-picker"
                           inputRef={designerPreviewInputRef}
-                          buttonLabel="Cambiar preview"
+                          buttonLabel="Cambiar imagen de orden de trabajo"
                           onFilesAccepted={handlePreviewSelect}
                         />
                         <button className="pd-file-action" style={{ background: 'white', color: '#0f172a' }} onClick={() => designerPreviewInputRef.current?.click()}>
@@ -1309,7 +1316,7 @@ export function OrderDetailModal({
                           className="pd-file-action remove"
                           style={{ background: 'white' }}
                           disabled={removingPreview || Boolean(removingFileId)}
-                          title={pendingPreview ? "Quitar orden de trabajo pendiente" : "Eliminar orden de trabajo"}
+                          title={pendingPreview ? "Quitar imagen de orden de trabajo pendiente" : "Eliminar imagen de orden de trabajo"}
                           onClick={() => {
                             if (pendingPreview) {
                               setPendingPreview(null);
@@ -1341,7 +1348,7 @@ export function OrderDetailModal({
                     <FileUploadZone
                       mode="image"
                       replaceMode
-                      buttonLabel="Reemplazar orden de trabajo"
+                      buttonLabel="Reemplazar imagen de orden de trabajo"
                       hint="La imagen guardada se conservará hasta que guardes el reemplazo."
                       onFilesAccepted={handlePreviewSelect}
                     />
@@ -1352,14 +1359,14 @@ export function OrderDetailModal({
                   <FileUploadZone
                     mode="image"
                     replaceMode
-                    buttonLabel="Subir orden de trabajo"
+                    buttonLabel="Subir imagen de orden de trabajo"
                     hint={`Max. ${formatFileSize(getOrderAssetLimit(DESIGNER_PREVIEW_BUCKET))}`}
                     onFilesAccepted={handlePreviewSelect}
                   />
                 ) : (
                   <div className="pd-preview-empty pd-preview-empty-disabled">
                     <Icons.Image />
-                    <span>La preview permanece disponible solo para consulta.</span>
+                    <span>La imagen de orden de trabajo permanece disponible solo para consulta.</span>
                   </div>
                 )
               )}
@@ -1587,6 +1594,8 @@ export default function PageDesigner() {
   const [sendingToQuotation, setSendingToQuotation] = useState(null);
   const [returningToCashier, setReturningToCashier] = useState(null);
   const [returningToCashierLoading, setReturningToCashierLoading] = useState(false);
+  const [returningToSales, setReturningToSales] = useState(null);
+  const [returningToSalesLoading, setReturningToSalesLoading] = useState(false);
   const [originalQuoterId, setOriginalQuoterId] = useState(null);
   const [quotationSending, setQuotationSending] = useState(false);
   const [archivingOrder, setArchivingOrder] = useState(null);
@@ -2014,6 +2023,24 @@ export default function PageDesigner() {
     await Promise.all([refreshOrderFromDB(orderId), orderReturns.refresh(), fetchOrders()]);
   };
 
+  const handleReturnToSales = async (reason) => {
+    if (!returningToSales || returningToSalesLoading) return;
+    setReturningToSalesLoading(true);
+    const { data, error } = await supabase.rpc("designer_return_order_to_sales", {
+      p_order_id: returningToSales.id,
+      p_reason: reason,
+      p_expected_updated_at: returningToSales.updated_at,
+    });
+    setReturningToSalesLoading(false);
+    if (error || !data) {
+      notif.showActionNotification({ type: "order_cancelled", label: "Error al devolver", orderTitle: returningToSales.client_name || "Orden", message: error?.message || "No se pudo devolver la orden a Ventas." });
+      return;
+    }
+    setReturningToSales(null);
+    setSelectedOrder(null);
+    await Promise.all([fetchOrders(), notif.refresh({ showNewToasts: true })]);
+  };
+
   const pageTitle = activeTab === "dashboard"
     ? "Panel Principal"
     : activeTab === "profile"
@@ -2198,6 +2225,15 @@ export default function PageDesigner() {
                             </td>
                             <td className="td-pad td-actions" data-row-action>
                               <div className="table-actions acm-row-actions" data-row-action>
+                                {canDesignerSendInternalOrderToQuote(order, user?.id) && (
+                                  <button className="table-action-btn quote" title="Enviar a Caja" aria-label="Enviar a Caja" onClick={(event) => { event.stopPropagation(); setSendingToQuotation(order); }}><Icons.Send /></button>
+                                )}
+                                {canDesignerRouteInternalOrderToProduction(order, user?.id) && (
+                                  <button className="table-action-btn production" title="Enviar a producción" aria-label="Enviar a producción" onClick={(event) => { event.stopPropagation(); handleOpenProductionAssignment(order); }}><Icons.Package /></button>
+                                )}
+                                {canDesignerReturnInternalOrderToSales(order, user?.id) && (
+                                  <button className="table-action-btn cancel" title="Devolver a Ventas" aria-label="Devolver a Ventas" onClick={(event) => { event.stopPropagation(); setReturningToSales(order); }}><Icons.ArrowLeft /></button>
+                                )}
                                 <button className="table-action-btn view" title="Ver detalle" aria-label="Ver detalle" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>
                                   <Icons.Eye />
                                 </button>
@@ -2437,8 +2473,8 @@ export default function PageDesigner() {
                               <td className="td-pad td-actions" data-row-action>
                                 <div className="table-actions" data-row-action>
                                   {canDesignerSendInternalOrderToQuote(order, user?.id) && (
-                                    <button className="table-action-btn edit" title="Enviar a Caja" aria-label="Enviar a Caja" onClick={(event) => { event.stopPropagation(); setSendingToQuotation(order); }}>
-                                      <Icons.ArrowRight />
+                                    <button className="table-action-btn quote" title="Enviar a Caja" aria-label="Enviar a Caja" onClick={(event) => { event.stopPropagation(); setSendingToQuotation(order); }}>
+                                      <Icons.Send />
                                     </button>
                                   )}
                                   {canDesignerRouteInternalOrderToProduction(order, user?.id) && (
@@ -2449,6 +2485,11 @@ export default function PageDesigner() {
                                       onClick={(event) => { event.stopPropagation(); handleOpenProductionAssignment(order); }}
                                     >
                                       <Icons.Package />
+                                    </button>
+                                  )}
+                                  {canDesignerReturnInternalOrderToSales(order, user?.id) && (
+                                    <button className="table-action-btn cancel" title="Devolver a Ventas" aria-label="Devolver a Ventas" onClick={(event) => { event.stopPropagation(); setReturningToSales(order); }}>
+                                      <Icons.ArrowLeft />
                                     </button>
                                   )}
                                   <button className="table-action-btn view" title="Ver detalle" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }}>
@@ -2525,12 +2566,15 @@ export default function PageDesigner() {
 
                         <div className="ps-order-card-actions">
                           {canDesignerSendInternalOrderToQuote(order, user?.id) && (
-                            <button className="card-action-btn edit" onClick={(event) => { event.stopPropagation(); setSendingToQuotation(order); }} title="Enviar a Caja" aria-label="Enviar a Caja"><Icons.ArrowRight /></button>
+                            <button className="card-action-btn quote" onClick={(event) => { event.stopPropagation(); setSendingToQuotation(order); }} title="Enviar a Caja" aria-label="Enviar a Caja"><Icons.Send /></button>
                           )}
                           {canDesignerRouteInternalOrderToProduction(order, user?.id) && (
                             <button className="card-action-btn production" onClick={(event) => { event.stopPropagation(); handleOpenProductionAssignment(order); }} title="Enviar a producción" aria-label="Enviar a producción">
                               <Icons.Package />
                             </button>
+                          )}
+                          {canDesignerReturnInternalOrderToSales(order, user?.id) && (
+                            <button className="card-action-btn cancel" onClick={(event) => { event.stopPropagation(); setReturningToSales(order); }} title="Devolver a Ventas" aria-label="Devolver a Ventas"><Icons.ArrowLeft /></button>
                           )}
                           <button className="card-action-btn view" onClick={(event) => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                             <Icons.Eye />
@@ -2618,6 +2662,14 @@ export default function PageDesigner() {
         onClose={() => setReturningToCashier(null)}
         onConfirm={handleReturnToCashier}
         loading={returningToCashierLoading}
+      />
+      <ReturnToDesignerModal
+        open={!!returningToSales}
+        order={returningToSales}
+        targetOverride="sales"
+        onClose={() => setReturningToSales(null)}
+        onConfirm={handleReturnToSales}
+        loading={returningToSalesLoading}
       />
       <AssignModal
         open={!!sendingToQuotation}

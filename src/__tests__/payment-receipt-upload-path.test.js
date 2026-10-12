@@ -33,10 +33,12 @@ describe("payment receipt upload path", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps the gateway policy and every payment caller on the shared path helper", () => {
+  it("keeps payment uploads on Caja's shared path helper and removes Admin payment upload routes", () => {
     expect(gateway).toContain('=== `orders/${orderId}`');
     expect(quotePage).toContain("buildPaymentReceiptPath(order.id, receiptFile.name)");
-    expect(dashboard).toContain("buildPaymentReceiptPath(currentOrder.id, receiptFile.name)");
-    expect(advancedSettings).toContain("buildPaymentReceiptPath(order.id, receiptFile.name)");
+    expect(dashboard).not.toContain("buildPaymentReceiptPath(currentOrder.id, receiptFile.name)");
+    expect(dashboard).not.toContain('action: "register_payment"');
+    expect(advancedSettings).not.toContain("buildPaymentReceiptPath(order.id, receiptFile.name)");
+    expect(advancedSettings).not.toContain("onPayment");
   });
 });

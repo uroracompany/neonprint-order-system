@@ -370,9 +370,9 @@ export default function DesignerProfileModule({ authUser, fallbackProfile }) {
         />
         <ProfileMetricCard
           icon={<Icons.Image />}
-          label="Preview cargada"
+          label="Imagen de orden de trabajo cargada"
           value={`${metrics.preview_coverage_rate || 0}%`}
-          sub={`${metrics.preview_orders || 0} ordenes con vista previa`}
+          sub={`${metrics.preview_orders || 0} órdenes con imagen de orden de trabajo`}
           tone="violet"
         />
         <ProfileMetricCard

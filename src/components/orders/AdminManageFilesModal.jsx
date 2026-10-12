@@ -613,20 +613,20 @@ export default function AdminManageFilesModal({
           )}
 
           <div className="amfm-preview-section">
-            <h4>Imagen de la Orden de Trabajo</h4>
+            <h4>Imagen de orden de trabajo</h4>
             {currentPreviewUrl ? (
               <div className="amfm-preview-container">
                 {previewFile ? (
-                  <img src={currentPreviewUrl} alt="Preview" className="amfm-preview-image" />
+                  <img src={currentPreviewUrl} alt="Imagen de orden de trabajo" className="amfm-preview-image" />
                 ) : assetMetadata.preview_image ? (
                   <SecureImageLink
                     url={assetMetadata.preview_image}
                     fileName={getFileNameFromUrl(assetMetadata.preview_image)}
                   >
-                    {(resolvedUrl) => <img src={resolvedUrl} alt="Preview" className="amfm-preview-image" />}
+                    {(resolvedUrl) => <img src={resolvedUrl} alt="Imagen de orden de trabajo" className="amfm-preview-image" />}
                   </SecureImageLink>
                 ) : (
-                  <img src={currentPreviewUrl} alt="Preview" className="amfm-preview-image" />
+                  <img src={currentPreviewUrl} alt="Imagen de orden de trabajo" className="amfm-preview-image" />
                 )}
                 {previewFile && <span className="amfm-preview-badge">Nuevo</span>}
                 <div className="amfm-preview-overlay">
@@ -635,23 +635,23 @@ export default function AdminManageFilesModal({
                       url={assetMetadata.preview_image}
                       fileName={getFileNameFromUrl(assetMetadata.preview_image)}
                       className="amfm-preview-action"
-                      title="Ver imagen"
+                      title="Ver imagen de orden de trabajo"
                     >
                       <Icons.Eye />
                     </SecureImageLink>
                   ) : (
-                    <a href={currentPreviewUrl} target="_blank" rel="noopener noreferrer" className="amfm-preview-action" title="Ver imagen">
+                    <a href={currentPreviewUrl} target="_blank" rel="noopener noreferrer" className="amfm-preview-action" title="Ver imagen de orden de trabajo">
                       <Icons.Eye />
                     </a>
                   )}
                   {!isPaymentLocked && canManageOrderAssets && (
                     <>
-                      <FileUploadZone mode="image" replaceMode className="file-upload-zone--hidden-picker" buttonLabel="Cambiar" onFilesAccepted={handlePreviewSelect} />
-                      <button type="button" className="amfm-preview-action" onClick={() => { const input = document.querySelector('.file-upload-zone--hidden-picker input[type="file"]'); if (input) input.click(); }} title="Cambiar imagen">
+                      <FileUploadZone mode="image" replaceMode className="file-upload-zone--hidden-picker" buttonLabel="Cambiar imagen de orden de trabajo" onFilesAccepted={handlePreviewSelect} />
+                      <button type="button" className="amfm-preview-action" onClick={() => { const input = document.querySelector('.file-upload-zone--hidden-picker input[type="file"]'); if (input) input.click(); }} title="Cambiar imagen de orden de trabajo">
                         <Icons.Edit />
                       </button>
                       {!(assetMetadata.preview_image && isInQuoteOrLater) && (
-                        <button type="button" className="amfm-preview-action remove" onClick={handleRemovePreview} title="Quitar imagen">
+                        <button type="button" className="amfm-preview-action remove" onClick={handleRemovePreview} title="Quitar imagen de orden de trabajo">
                           <Icons.Trash />
                         </button>
                       )}
@@ -660,12 +660,12 @@ export default function AdminManageFilesModal({
                 </div>
                 {!isPaymentLocked && canManageOrderAssets && hasPreviewChanges && (
                   <button type="button" className="amfm-button primary amfm-preview-save-btn" disabled={savingPreview} onClick={handleSavePreview}>
-                    {savingPreview ? "Guardando..." : "Guardar imagen de trabajo"}
+                    {savingPreview ? "Guardando..." : "Guardar imagen de orden de trabajo"}
                   </button>
                 )}
               </div>
             ) : !isPaymentLocked && canManageOrderAssets ? (
-              <FileUploadZone mode="image" replaceMode buttonLabel="Subir orden de trabajo" hint={`Max. ${formatFileSize(getOrderAssetLimit("order-previews"))}`} onFilesAccepted={handlePreviewSelect} />
+              <FileUploadZone mode="image" replaceMode buttonLabel="Subir imagen de orden de trabajo" hint={`Max. ${formatFileSize(getOrderAssetLimit("order-previews"))}`} onFilesAccepted={handlePreviewSelect} />
             ) : (
               <div className="amfm-preview-empty">
                 <Icons.Image />

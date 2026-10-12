@@ -6,6 +6,7 @@ export const AUTH_NOTICE = {
   ACCOUNT_INACTIVE: "ACCOUNT_INACTIVE",
   MFA_REQUIRED: "MFA_REQUIRED",
   INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
+  RATE_LIMITED: "RATE_LIMITED",
   NETWORK: "NETWORK",
   TIMEOUT: "TIMEOUT",
   INTERNAL: "INTERNAL",
@@ -19,6 +20,7 @@ const MESSAGES = {
   [AUTH_NOTICE.ACCOUNT_INACTIVE]: "Tu cuenta está desactivada. Contacta al administrador.",
   [AUTH_NOTICE.MFA_REQUIRED]: "Verifica el segundo factor para continuar.",
   [AUTH_NOTICE.INVALID_CREDENTIALS]: "Correo o contraseña incorrectos.",
+  [AUTH_NOTICE.RATE_LIMITED]: "El servicio de acceso está temporalmente ocupado. Espera un momento e inténtalo nuevamente.",
   [AUTH_NOTICE.NETWORK]: "No pudimos conectarnos. Revisa tu conexión e inténtalo nuevamente.",
   [AUTH_NOTICE.TIMEOUT]: "La operación tardó más de lo esperado. Inténtalo nuevamente.",
   [AUTH_NOTICE.INTERNAL]: "Ocurrió un problema. Inténtalo nuevamente en unos minutos.",
@@ -43,6 +45,7 @@ export function getLoginErrorCode(error) {
   const status = Number(error?.status);
 
   if (Object.values(AUTH_NOTICE).includes(code)) return code;
+  if (status === 429 || /rate.?limit|too many requests/i.test(message)) return AUTH_NOTICE.RATE_LIMITED;
   if (/profile_not_available|perfil/i.test(message)) return AUTH_NOTICE.PROFILE_UNAVAILABLE;
   if (/mfa_cancelled|second factor|segundo factor/i.test(message)) return AUTH_NOTICE.MFA_REQUIRED;
   if (/refresh_token|session|sesion|token|jwt/i.test(message)) return AUTH_NOTICE.SESSION_EXPIRED;
@@ -57,6 +60,7 @@ export function getLoginErrorCode(error) {
 export function getApiErrorCode({ status, result, error } = {}) {
   const explicitCode = String(result?.code || error?.code || "").toUpperCase();
   if (Object.values(AUTH_NOTICE).includes(explicitCode)) return explicitCode;
+  if (status === 429 || Number(error?.status) === 429) return AUTH_NOTICE.RATE_LIMITED;
   if (status === 401) return AUTH_NOTICE.SESSION_EXPIRED;
   if (status === 403) return AUTH_NOTICE.FORBIDDEN;
   if (status === 0) return isTimeoutError(result || error) ? AUTH_NOTICE.TIMEOUT : AUTH_NOTICE.NETWORK;

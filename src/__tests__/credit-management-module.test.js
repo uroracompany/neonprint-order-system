@@ -18,7 +18,8 @@ describe("modulo de gestion de creditos", () => {
     expect(dashboard).toContain("pa-credit-summary-item");
     expect(dashboard).toContain("creditView");
     expect(dashboard).toContain("CreditClientDetailView");
-    expect(dashboard).toContain("SettleCreditModal");
+    expect(dashboard).not.toContain("SettleCreditModal");
+    expect(dashboard).toContain("readOnly");
     expect(adminCss).toContain(".pa-credit-metrics");
     expect(adminCss).toContain(".pa-credit-summary");
     expect(adminCss).toContain("@media (max-width: 640px)");
@@ -85,12 +86,13 @@ describe("modulo de gestion de creditos", () => {
 
   it("precarga los contadores del sidebar administrativo desde el montaje inicial", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
-    const initialLoadStart = dashboard.indexOf("if (!authUser?.id) return undefined;");
-    const initialLoadEnd = dashboard.indexOf("const relatedDataChannel", initialLoadStart);
-    const initialLoadBlock = dashboard.slice(initialLoadStart, initialLoadEnd);
+    const initialLoadBlockStart = dashboard.indexOf('if (activeTab === "overview" || activeTab === "clients" || activeTab === "orders" || activeTab === "credits")');
+    const initialLoadBlockEnd = dashboard.indexOf("const handleLogout", initialLoadBlockStart);
+    const initialLoadBlock = dashboard.slice(initialLoadBlockStart, initialLoadBlockEnd);
 
-    expect(initialLoadBlock).toContain("loadOrdersRef.current?.();");
-    expect(initialLoadBlock).toContain("loadProfiles();");
+    expect(dashboard).toContain('typeof window === "undefined" ? "overview" : getAdminTabFromSearch(window.location.search)');
+    expect(initialLoadBlockStart).toBeGreaterThanOrEqual(0);
+    expect(initialLoadBlockEnd).toBeGreaterThan(initialLoadBlockStart);
     expect(initialLoadBlock).toContain("fetchClients();");
     expect(initialLoadBlock).toContain("fetchAccountsReceivable();");
     expect(dashboard).toContain("const [clientsLoading, setClientsLoading] = useState(true);");
@@ -104,16 +106,16 @@ describe("modulo de gestion de creditos", () => {
     expect(dashboard).toContain("badge: getSidebarBadge(loadingUsers, profiles.length)");
   });
 
-  it("cierra facturas individuales, seleccionadas o todas con settle_credit_orders", () => {
+  it("keeps credit settlement in Caja and makes the administrative follow-up read-only", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
+    const quote = readProjectFile("src/pages/page-quote.jsx");
 
-    expect(dashboard).toContain('supabase.rpc("settle_credit_orders"');
-    expect(dashboard).toContain("openCreditSettlementModal");
+    expect(dashboard).not.toContain('supabase.rpc("settle_credit_orders"');
+    expect(dashboard).not.toContain("openCreditSettlementModal");
+    expect(dashboard).not.toContain("Marcar todas como saldadas");
+    expect(quote).toContain('supabase.rpc("settle_credit_orders"');
     expect(dashboard).toContain("toggleCreditOrderSelection");
     expect(dashboard).toContain("toggleAllCreditOrdersForClient");
-    expect(dashboard).toContain("Marcar saldadas");
-    expect(dashboard).toContain("Marcar todas como saldadas");
-    expect(dashboard).toContain("Factura marcada como saldada correctamente.");
   });
 
   it("no introduce montos internos en la mesa de creditos", () => {

@@ -59,6 +59,7 @@ import {
 } from "../utils/archive";
 import { isOrderOverdue } from "../utils/orderDeadline";
 import { PRODUCTION_ORDER_SELECT } from "../utils/orderListSelect";
+import { getProductionUserDisplayName } from "../utils/productionUserName";
 
 
 const METRIC_ACCENTS = [
@@ -726,7 +727,7 @@ export function OrderDetailModal({
                 <span><Icons.File /> Archivos Adjuntos</span>
                 {hasTransferableFiles && (
                   <button type="button" className="pp-transfer-button" onClick={() => setTransferOpen(true)} disabled={updating}>
-                    <Icons.ArrowRight /> Traspasar archivos
+                    <Icons.ArrowRight /> Traspasar archivo
                   </button>
                 )}
               </div>
@@ -734,7 +735,7 @@ export function OrderDetailModal({
                 {order.preview_image && (
                   <div>
                     <p style={{ fontSize: 12, fontWeight: 600, color: "#F43F5E", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                      <Icons.Eye /> Orden de Trabajo
+                      <Icons.Eye /> Imagen de orden de trabajo
                     </p>
                     <SecureImageLink
                       url={order.preview_image}
@@ -742,7 +743,7 @@ export function OrderDetailModal({
                     >
                       {(resolvedUrl) => <img
                         src={resolvedUrl}
-                        alt="preview"
+                        alt="Imagen de orden de trabajo"
                         style={{
                           width: "100%",
                           borderRadius: "var(--pp-radius-md)",
@@ -955,6 +956,7 @@ function DeliveryReworkBadge({ handoff }) {
 export default function PageProduction() {
   const navigate = useNavigate();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
+  const productionUserName = getProductionUserDisplayName(authUser, authProfile);
   const [user, setUser] = useState(null);
   const [profileRole, setProfileRole] = useState("");
   const [orders, setOrders] = useState([]);
@@ -1236,7 +1238,7 @@ export default function PageProduction() {
             <>
               <div className="pq-greeting">
                 <div className="pq-greeting-copy">
-                  <h2>Bienvenido, <span>{user?.displayName || "Operador"}</span></h2>
+                  <h2>Bienvenido, <span>{productionUserName}</span></h2>
                   <p>Aquí tienes el resumen de producción de hoy.</p>
                   <div className="pq-greeting-badges">
                     <div className="pq-greeting-count">

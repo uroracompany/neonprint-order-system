@@ -177,6 +177,15 @@ describe("handleAdminEmployeeDetail", () => {
     expect(result.status).toBe(404);
   });
 
+  it("rejects employee identifiers with query syntax", async () => {
+    currentClient = makeEmployeeDetailClient();
+
+    const result = await handleAdminEmployeeDetail({ userId: "employee-1,or.id.eq.other" }, env);
+
+    expect(result.status).toBe(400);
+    expect(result.body.code).toBe("EMPLOYEE_ID_INVALID");
+  });
+
   it("returns exact seller metrics and a paginated order list", async () => {
     currentClient = makeEmployeeDetailClient({
       orders: [
@@ -196,6 +205,7 @@ describe("handleAdminEmployeeDetail", () => {
       delivered_orders: 1,
       cancelled_orders: 1,
     });
+    expect(result.body.analytics).toBeUndefined();
     expect(result.body.total).toBe(3);
     expect(result.body.orders).toHaveLength(2);
   });

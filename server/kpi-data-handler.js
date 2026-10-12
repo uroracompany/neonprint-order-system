@@ -75,6 +75,117 @@ function getMonthKey(dateValue) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
+const CLIENT_WORKSPACE_ORDER_FIELDS = 'client_id, client_name, status, payment_status, order_type, order_design_type, created_at, delivery_date, status_changed_at'
+
+function createClientWorkspaceEntry(clientId, clientName) {
+  return {
+    client_id: String(clientId),
+    client_name: clientName || 'Cliente sin nombre',
+    total_orders: 0,
+    cancelled_orders: 0,
+    normal_orders: 0,
+    urgent_911_orders: 0,
+    internal_design_orders: 0,
+    external_design_orders: 0,
+    payment: { credit_active: 0, partial_active: 0, pending_active: 0 },
+    months: {},
+    on_time: 0,
+    late: 0,
+    total_delivered: 0,
+  }
+}
+
+function addOrderToClientWorkspaceEntry(entry, order) {
+  entry.client_name = entry.client_name || order.client_name || 'Cliente sin nombre'
+  entry.total_orders++
+  const status = String(order.status || '').toLowerCase()
+  if (status === 'cancelled') entry.cancelled_orders++
+  if (String(order.order_type || '').toLowerCase().includes('911')) entry.urgent_911_orders++
+  else entry.normal_orders++
+
+  const designType = String(order.order_design_type || '').toLowerCase()
+  if (['internal_desing', 'internal_design'].includes(designType)) entry.internal_design_orders++
+  if (['external_desing', 'external_design'].includes(designType)) entry.external_design_orders++
+
+  if (order.created_at) {
+    const month = new Date(order.created_at).toISOString().slice(0, 7)
+    entry.months[month] = (entry.months[month] || 0) + 1
+  }
+
+  const isOpen = !['cancelled', 'in_completed', 'in_delivered'].includes(status)
+  const paymentStatus = String(order.payment_status || '').trim().toLowerCase()
+  if (isOpen && paymentStatus === 'credito') entry.payment.credit_active++
+  if (isOpen && paymentStatus === 'parcial') entry.payment.partial_active++
+  if (isOpen && ['pending_payment', 'pendiente'].includes(paymentStatus)) entry.payment.pending_active++
+
+  if (order.delivery_date && order.status_changed_at) {
+    entry.total_delivered++
+    if (new Date(order.status_changed_at) <= new Date(order.delivery_date)) entry.on_time++
+    else entry.late++
+  }
+}
+
+function finalizeClientWorkspaceEntry(entry) {
+  const activeMonths = Object.keys(entry.months).length
+  const cancel_rate = entry.total_orders
+    ? Math.round((entry.cancelled_orders / entry.total_orders) * 1000) / 10
+    : 0
+  const avg_orders_per_month = activeMonths
+    ? Math.round((entry.total_orders / activeMonths) * 10) / 10
+    : 0
+  const activity = avg_orders_per_month >= 4 ? 'Alta' : avg_orders_per_month >= 1 ? 'Media' : 'Baja'
+  const deliveryScore = entry.total_delivered ? (entry.on_time / entry.total_delivered) * 100 : 50
+  const health_score = Math.round(
+    Math.min(100, avg_orders_per_month * 10) * 0.4
+      + (100 - cancel_rate) * 0.3
+      + deliveryScore * 0.3,
+  )
+
+  return {
+    ...entry,
+    avg_orders_per_month,
+    cancel_rate,
+    activity,
+    health_score,
+    health: health_score >= 80 ? 'Excelente' : health_score >= 60 ? 'Buena' : health_score >= 40 ? 'Media' : 'Riesgo',
+    monthly_activity: Object.entries(entry.months)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, orders]) => ({ month, orders })),
+  }
+}
+
+async function buildClientWorkspace(supabase, { clientId = null } = {}) {
+  let clientsQuery = supabase.from('clients').select('id, name')
+  let ordersQuery = supabase.from('orders').select(CLIENT_WORKSPACE_ORDER_FIELDS).range(0, 4999)
+  if (clientId) {
+    clientsQuery = clientsQuery.eq('id', clientId)
+    ordersQuery = ordersQuery.eq('client_id', clientId)
+  }
+
+  const [clientsResult, ordersResult] = await Promise.all([clientsQuery, ordersQuery])
+  if (ordersResult.error) throw ordersResult.error
+  if (clientsResult.error && clientId) throw clientsResult.error
+
+  const clients = new Map()
+  ;(clientsResult.data || []).forEach(client => {
+    if (!client.id) return
+    clients.set(String(client.id), createClientWorkspaceEntry(client.id, client.name))
+  })
+
+  ;(ordersResult.data || []).forEach(order => {
+    const key = String(order.client_id || `name:${order.client_name || 'sin-nombre'}`)
+    if (!clients.has(key)) {
+      clients.set(key, createClientWorkspaceEntry(
+        order.client_id ? String(order.client_id) : key,
+        order.client_name,
+      ))
+    }
+    addOrderToClientWorkspaceEntry(clients.get(key), order)
+  })
+
+  return [...clients.values()].map(finalizeClientWorkspaceEntry)
+}
+
 function buildPriorityBreakdown(files, orderMap) {
   const breakdown = { normal: 0, urgent_911: 0, total: 0, urgent_pct: 0 }
   files.forEach(file => {
@@ -1322,6 +1433,9 @@ export async function handleKpiData(body, env) {
       date_to = null,
       compare_from = null,
       compare_to = null,
+      termination_id = null,
+      production_area_code = null,
+      client_id = null,
     } = body
 
     let result
@@ -1367,6 +1481,20 @@ export async function handleKpiData(body, env) {
         break
       }
 
+      case 'client_workspace_detail': {
+        const clientId = String(client_id || '').trim()
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId)) {
+          return { status: 400, body: { error: 'Un cliente válido es requerido.', code: 'CLIENT_WORKSPACE_INVALID_CLIENT' } }
+        }
+
+        const [client] = await buildClientWorkspace(supabase, { clientId })
+        if (!client) {
+          return { status: 404, body: { error: 'El cliente solicitado no existe.', code: 'CLIENT_WORKSPACE_CLIENT_NOT_FOUND' } }
+        }
+        result = { client }
+        break
+      }
+
       case 'materials_analytics': {
         if (![date_from, date_to, compare_from, compare_to].every(Boolean)) {
           return { status: 400, body: { error: 'Los dos períodos de comparación son requeridos.' } }
@@ -1374,6 +1502,21 @@ export async function handleKpiData(body, env) {
         const { data, error } = await supabase.rpc('kpi_materials_analytics', {
           p_date_from: date_from, p_date_to: date_to,
           p_compare_from: compare_from, p_compare_to: compare_to,
+        })
+        if (error) throw error
+        result = data
+        break
+      }
+
+      case 'terminations_analytics': {
+        if (![date_from, date_to, compare_from, compare_to].every(Boolean)) {
+          return { status: 400, body: { error: 'Los dos períodos de comparación son requeridos.' } }
+        }
+        const { data, error } = await supabase.rpc('kpi_terminations_analytics', {
+          p_date_from: date_from, p_date_to: date_to,
+          p_compare_from: compare_from, p_compare_to: compare_to,
+          p_termination_id: termination_id,
+          p_production_area_code: production_area_code,
         })
         if (error) throw error
         result = data
@@ -3677,92 +3820,7 @@ export async function handleKpiData(body, env) {
           // A single complete client dataset feeds the condensed Clients KPI workspace.
           // It deliberately has no display limit: the UI owns search, filters and ranking.
           safeQuery(async () => {
-            const [clientsResult, ordersResult] = await Promise.all([
-              supabase.from('clients').select('id, name'),
-              supabase.from('orders').select('client_id, client_name, status, payment_status, order_type, order_design_type, created_at, delivery_date, status_changed_at').range(0, 4999),
-            ])
-            if (ordersResult.error) {
-              console.error('[KPI] client_workspace orders query failed:', ordersResult.error.message)
-              throw ordersResult.error
-            }
-
-            const clients = new Map()
-            if (clientsResult.error) console.error('client_workspace clients catalog:', clientsResult.error.message)
-            ;(clientsResult.data || []).forEach(c => {
-              if (!c.id) return
-              clients.set(String(c.id), {
-                client_id: String(c.id), client_name: c.name || 'Cliente sin nombre', total_orders: 0,
-                cancelled_orders: 0, normal_orders: 0, urgent_911_orders: 0,
-                internal_design_orders: 0, external_design_orders: 0, payment: {
-                  credit_active: 0, partial_active: 0, pending_active: 0,
-                }, months: {}, on_time: 0, late: 0, total_delivered: 0,
-              })
-            })
-
-            ;(ordersResult.data || []).forEach(order => {
-              const key = String(order.client_id || `name:${order.client_name || 'sin-nombre'}`)
-              if (!clients.has(key)) {
-                clients.set(key, {
-                  client_id: order.client_id ? String(order.client_id) : key,
-                  client_name: order.client_name || 'Cliente sin nombre', total_orders: 0,
-                  cancelled_orders: 0, normal_orders: 0, urgent_911_orders: 0,
-                  internal_design_orders: 0, external_design_orders: 0, payment: {
-                    credit_active: 0, partial_active: 0, pending_active: 0,
-                  }, months: {}, on_time: 0, late: 0, total_delivered: 0,
-                })
-              }
-              const entry = clients.get(key)
-              entry.client_name = entry.client_name || order.client_name || 'Cliente sin nombre'
-              entry.total_orders++
-              const status = String(order.status || '').toLowerCase()
-              if (status === 'cancelled') entry.cancelled_orders++
-              if (String(order.order_type || '').toLowerCase().includes('911')) entry.urgent_911_orders++
-              else entry.normal_orders++
-
-              const designType = String(order.order_design_type || '').toLowerCase()
-              if (['internal_desing', 'internal_design'].includes(designType)) entry.internal_design_orders++
-              if (['external_desing', 'external_design'].includes(designType)) entry.external_design_orders++
-
-              if (order.created_at) {
-                const month = new Date(order.created_at).toISOString().slice(0, 7)
-                entry.months[month] = (entry.months[month] || 0) + 1
-              }
-
-              const isOpen = !['cancelled', 'in_completed', 'in_delivered'].includes(status)
-              const paymentStatus = String(order.payment_status || '').trim().toLowerCase()
-              if (isOpen && paymentStatus === 'credito') entry.payment.credit_active++
-              if (isOpen && paymentStatus === 'parcial') entry.payment.partial_active++
-              if (isOpen && ['pending_payment', 'pendiente'].includes(paymentStatus)) entry.payment.pending_active++
-
-              if (order.delivery_date && order.status_changed_at) {
-                entry.total_delivered++
-                if (new Date(order.status_changed_at) <= new Date(order.delivery_date)) entry.on_time++
-                else entry.late++
-              }
-            })
-
-            return {
-              data: [...clients.values()].map(entry => {
-                const activeMonths = Object.keys(entry.months).length
-                const cancel_rate = entry.total_orders
-                  ? Math.round((entry.cancelled_orders / entry.total_orders) * 1000) / 10
-                  : 0
-                const avg_orders_per_month = activeMonths
-                  ? Math.round((entry.total_orders / activeMonths) * 10) / 10
-                  : 0
-                const activity = avg_orders_per_month >= 4 ? 'Alta' : avg_orders_per_month >= 1 ? 'Media' : 'Baja'
-                const deliveryScore = entry.total_delivered ? (entry.on_time / entry.total_delivered) * 100 : 50
-                const health_score = Math.round(Math.min(100, avg_orders_per_month * 10) * 0.4 + (100 - cancel_rate) * 0.3 + deliveryScore * 0.3)
-                return {
-                  ...entry, avg_orders_per_month, cancel_rate, activity,
-                  health_score, health: health_score >= 80 ? 'Excelente' : health_score >= 60 ? 'Buena' : health_score >= 40 ? 'Media' : 'Riesgo',
-                  monthly_activity: Object.entries(entry.months)
-                    .sort((a, b) => a[0].localeCompare(b[0]))
-                    .map(([month, orders]) => ({ month, orders })),
-                }
-              }),
-              error: null,
-            }
+            return { data: await buildClientWorkspace(supabase), error: null }
           }),
           // The general Client chart is aggregated by PostgreSQL. It is not
           // affected by the unbounded client-detail query or missing dates.

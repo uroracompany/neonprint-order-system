@@ -6,9 +6,10 @@ const authMock = vi.hoisted(() => ({
   getUser: vi.fn(),
   signOut: vi.fn(),
 }));
+const clearAuthSessionStorageMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../supabaseClient", () => ({
-  clearAuthSessionStorage: vi.fn(),
+  clearAuthSessionStorage: clearAuthSessionStorageMock,
   isAuthSessionPersistenceEnabled: vi.fn(() => false),
   setAuthSessionPersistence: vi.fn(),
   supabase: {
@@ -87,37 +88,29 @@ describe("authManager", () => {
     expect(authMock.getSession).toHaveBeenCalledTimes(2);
   });
 
-  it("usa el lock del navegador para evitar refresh concurrente entre pestañas", async () => {
-    const previousLocks = globalThis.navigator.locks;
-    const requestLock = vi.fn((name, options, callback) => callback());
-    Object.defineProperty(globalThis.navigator, "locks", {
-      configurable: true,
-      value: { request: requestLock },
-    });
-    authMock.getSession
-      .mockResolvedValueOnce({
-        data: { session: makeSession({ expires_at: Math.floor(Date.now() / 1000) + 10 }) },
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: { session: makeSession({ access_token: "latest-token", expires_at: Math.floor(Date.now() / 1000) + 3600 }) },
-        error: null,
-      });
+  it("deduplica refresh explícitos y reutiliza el token tras un 401 tardío", async () => {
+    let session = makeSession({ access_token: "old-token" });
+    const refreshRequest = deferred();
+    authMock.getSession.mockImplementation(async () => ({ data: { session }, error: null }));
+    authMock.refreshSession.mockReturnValue(refreshRequest.promise);
 
-    try {
-      const manager = await loadManager();
-      await expect(manager.getFreshAccessToken()).resolves.toBe("latest-token");
+    const manager = await loadManager();
+    const refreshes = Array.from({ length: 8 }, () => manager.getFreshAccessToken({
+      forceRefresh: true,
+      rejectedAccessToken: "old-token",
+    }));
+    await vi.waitFor(() => expect(authMock.refreshSession).toHaveBeenCalledTimes(1));
+    session = makeSession({ access_token: "latest-token" });
+    refreshRequest.resolve({ data: { session }, error: null });
+    await expect(Promise.all(refreshes)).resolves.toEqual(Array(8).fill("latest-token"));
 
-      expect(requestLock).toHaveBeenCalledWith(
-        "np-auth-refresh-session",
-        { mode: "exclusive" },
-        expect.any(Function),
-      );
-      expect(authMock.refreshSession).not.toHaveBeenCalled();
-    } finally {
-      if (previousLocks === undefined) delete globalThis.navigator.locks;
-      else Object.defineProperty(globalThis.navigator, "locks", { configurable: true, value: previousLocks });
-    }
+    // A 401 that arrives after the shared refresh completed reuses the newer
+    // session instead of consuming its refresh token again.
+    await expect(manager.getFreshAccessToken({
+      forceRefresh: true,
+      rejectedAccessToken: "old-token",
+    })).resolves.toBe("latest-token");
+    expect(authMock.refreshSession).toHaveBeenCalledTimes(1);
   });
 
   it("no cierra una sesión válida cuando Supabase responde 429 y aplica backoff", async () => {
@@ -154,52 +147,29 @@ describe("authManager", () => {
 
     await manager.signOutAuth();
 
-    await expect(manager.getFreshAccessToken()).rejects.toThrow("Tu sesion expiro");
+    await expect(manager.getFreshAccessToken()).rejects.toThrow("Tu sesión expiró");
     expect(authMock.signOut).toHaveBeenCalledTimes(1);
+    expect(clearAuthSessionStorageMock).toHaveBeenCalledTimes(1);
     expect(authMock.getSession).toHaveBeenCalledTimes(2);
   });
 
-  it("refreshes a scheduled session before the access token expires", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-08-11T15:00:00Z"));
-    authMock.getSession.mockResolvedValue({
-      data: { session: makeSession({ expires_at: Math.floor(Date.now() / 1000) + 61 }) },
-      error: null,
-    });
-    authMock.refreshSession.mockResolvedValue({
-      data: { session: makeSession({ access_token: "refreshed-token" }) },
-      error: null,
-    });
-
+  it("no borra otras pestañas al limpiar una sesión local", async () => {
+    authMock.signOut.mockResolvedValue({ error: null });
     const manager = await loadManager();
-    await manager.getAuthSession();
 
-    await vi.advanceTimersByTimeAsync(1_000);
+    await manager.signOutAuth({ scope: "local" });
 
-    expect(authMock.refreshSession).toHaveBeenCalledTimes(1);
+    expect(authMock.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(clearAuthSessionStorageMock).not.toHaveBeenCalled();
   });
 
-  it("introduce variación en la programación para evitar refreshes sincronizados", async () => {
+  it("no inicia timers propios y deja la renovación programada al cliente de Supabase", async () => {
     vi.useFakeTimers();
-    vi.spyOn(Math, "random").mockReturnValue(0.999999);
-    vi.setSystemTime(new Date("2026-08-11T15:00:00Z"));
-    authMock.getSession.mockResolvedValue({
-      data: { session: makeSession({ expires_at: Math.floor(Date.now() / 1000) + 180 }) },
-      error: null,
-    });
-    authMock.refreshSession.mockResolvedValue({
-      data: { session: makeSession({ access_token: "jittered-token" }) },
-      error: null,
-    });
-
+    authMock.getSession.mockResolvedValue({ data: { session: makeSession() }, error: null });
     const manager = await loadManager();
     await manager.getAuthSession();
-
-    // 60 s safety buffer + 90 s jitter => refresh at 30 s before expiry.
-    await vi.advanceTimersByTimeAsync(29_000);
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
     expect(authMock.refreshSession).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(authMock.refreshSession).toHaveBeenCalledTimes(1);
   });
 
   it("invalidates locally when the refresh token is invalid", async () => {
@@ -209,7 +179,7 @@ describe("authManager", () => {
     });
     authMock.refreshSession.mockResolvedValue({
       data: { session: null },
-      error: new Error("invalid refresh token"),
+      error: Object.assign(new Error("Invalid Refresh Token: Refresh Token Not Found"), { code: "refresh_token_not_found", status: 400 }),
     });
     authMock.signOut.mockResolvedValue({ error: null });
 
@@ -218,7 +188,7 @@ describe("authManager", () => {
     manager.subscribeToAuthInvalidation(listener);
 
     await expect(manager.maintainAuthSession({ forceRefresh: true, invalidateAtExpiry: true }))
-      .rejects.toThrow("invalid refresh token");
+      .rejects.toThrow("Invalid Refresh Token");
 
     expect(authMock.signOut).toHaveBeenCalledWith({ scope: "local" });
     expect(listener).toHaveBeenCalledWith({ notice: "SESSION_EXPIRED" });

@@ -7,7 +7,6 @@ const ADMIN_DESIGN_TYPES = ["EXTERNAL_DESING", "INTERNAL_DESING"];
 export default function AdminOrderActions({
   order,
   onAdvanced,
-  onPayment,
   onEdit,
   onCancel,
   onAuthorizeProduction,
@@ -70,13 +69,6 @@ export default function AdminOrderActions({
       icon: <Icons.Settings />,
       onClick: onAdvanced,
       visible: supportsAdvancedSettings && availability.advanced,
-    },
-    {
-      key: "cash",
-      label: "Pago",
-      icon: <Icons.Money />,
-      onClick: onPayment,
-      visible: availability.payment,
     },
     {
       key: "authorize-production",

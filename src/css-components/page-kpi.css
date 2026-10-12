@@ -10701,6 +10701,9 @@
 .kpi-client-modal-header h2 { color: #101828; font-size: 20px; font-weight: 600; margin: 0 0 5px; }
 .kpi-client-modal-close { align-items: center; background: transparent; border: 0; border-radius: 7px; color: #667085; cursor: pointer; display: flex; height: 34px; justify-content: center; margin-left: auto; width: 34px; }
 .kpi-client-modal-close:hover { background: #f2f4f7; color: #101828; }
+.kpi-client-modal-state { display: flex; min-height: 190px; align-items: center; justify-content: center; flex-direction: column; gap: 10px; padding: 30px 20px; color: #667085; font-size: 13px; text-align: center; }
+.kpi-client-modal-state--error { align-items: flex-start; justify-content: flex-start; min-height: 120px; padding: 20px; color: #b42318; text-align: left; }
+.kpi-client-modal-state--error span { color: #667085; }
 .kpi-client-detail-metrics { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 18px 20px 8px; }
 .kpi-client-detail-metrics .kpi-client-workspace-metric { border: 1px solid #e1e8f1; border-radius: 10px; min-height: 88px; padding: 12px; }
 .kpi-client-detail-metrics .kpi-client-workspace-metric strong { font-size: 17px; }

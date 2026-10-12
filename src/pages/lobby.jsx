@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient"
-import { setAuthSessionPersistence, signOutAuth } from "../utils/authManager";
+import { isAuthSessionPersistenceEnabled, setAuthSessionPersistence, signOutAuth } from "../utils/authManager";
+import { useAuth } from "../hooks/useAuth";
 import { normalizeEmailForAuth } from "../utils/fileValidation";
 import { AUTH_NOTICE, createAuthError, getAuthFeedbackMessage, getLoginErrorCode } from "../utils/authFeedback";
 import { getAuthProfile } from "../utils/authProfile";
@@ -154,6 +155,7 @@ export default function Lobby() {
   const [message, setMessage] = useState(null);
   const [fieldErr, setFieldErr] = useState(false);
   const [focused, setFocused] = useState(null);
+  const [pendingNavigation, setPendingNavigation] = useState(null);
   const captchaNodeRef = useRef(null);
   const captchaWidgetIdRef = useRef(null);
   const emailInputRef = useRef(null);
@@ -164,6 +166,15 @@ export default function Lobby() {
   const clearMsg = () => { setMessage(null); setFieldErr(false); };
   const navigate = useNavigate();
   const location = useLocation();
+  const { user: authUser, profile: authProfile } = useAuth();
+
+  useEffect(() => {
+    if (!pendingNavigation) return;
+    if (authUser?.id !== pendingNavigation.userId || authProfile?.role !== pendingNavigation.role) return;
+
+    setPendingNavigation(null);
+    navigate(ROLE_ROUTES[pendingNavigation.role] || "/", { replace: true });
+  }, [authProfile?.role, authUser?.id, navigate, pendingNavigation]);
 
   const clearLoginFields = useCallback(() => {
     setEmail("");
@@ -308,6 +319,8 @@ export default function Lobby() {
     setMessage(null);
     setFieldErr(false);
 
+    let loginSessionCreated = false;
+    const previousSessionPersistence = isAuthSessionPersistenceEnabled();
     try {
       setAuthSessionPersistence(false);
       setEmail(normalizedEmail);
@@ -320,10 +333,12 @@ export default function Lobby() {
       if (error) {
         throw error;
       }
+      loginSessionCreated = Boolean(data?.session?.access_token || data?.user?.id);
 
       const profiles = await loadUserProfile(data.user.id);
       if (profiles?.employment_status === false) {
-        await signOutAuth();
+        await signOutAuth({ scope: "local" });
+        loginSessionCreated = false;
         setMessage({
           type: "error",
           text: getAuthFeedbackMessage(AUTH_NOTICE.ACCOUNT_INACTIVE),
@@ -339,11 +354,29 @@ export default function Lobby() {
         text: "Acceso concedido. Redirigiendo...",
       });
 
-      setTimeout(() =>{
-        navigate(ROLE_ROUTES[profiles.role] || "/");
-      });
+      // AuthProvider is the session authority. Wait for it to publish the same
+      // user/profile before entering a protected route, otherwise a fast
+      // navigation can race ProtectedRoute and bounce back to the lobby.
+      setPendingNavigation({ userId: data.user.id, role: profiles.role });
     } catch (error) {
-      await signOutAuth();
+      // A rejected password attempt must not sign out an already-open session.
+      // Clean up only a session created by this successful login if a later
+      // profile or MFA validation fails.
+      if (loginSessionCreated) {
+        try {
+          await signOutAuth({ scope: "local" });
+          // Restore the tab's prior mode after rejecting the newly created
+          // session so a remembered session that predated this attempt remains
+          // available without affecting other tabs.
+          setAuthSessionPersistence(previousSessionPersistence);
+        } catch {
+          // Keep the original, generic login/profile error for the employee.
+        }
+      } else {
+        // A rejected login must leave the previous session and its persistence
+        // preference readable, even if the app was configured to remember it.
+        setAuthSessionPersistence(previousSessionPersistence);
+      }
       const errorCode = getLoginErrorCode(error);
       setMessage({
         type:"error",

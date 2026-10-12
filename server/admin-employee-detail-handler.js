@@ -285,6 +285,9 @@ export async function handleAdminEmployeeDetail(payload = {}, env = process.env)
   if (!userId) {
     return jsonResponse(400, { error: "El ID del empleado es obligatorio." });
   }
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId)) {
+    return jsonResponse(400, { error: "El ID del empleado no es válido.", code: "EMPLOYEE_ID_INVALID" });
+  }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
     auth: {

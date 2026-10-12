@@ -1,8 +1,17 @@
-import { expireAuthSession, getFreshAccessToken } from "./authManager";
+import { expireAuthSession, getFreshAccessToken, isInvalidRefreshTokenError } from "./authManager";
 import { isTimeoutError, FRIENDLY_TIMEOUT_MESSAGE } from "./errorUtils";
 import { getApiErrorCode, getApiErrorMessage } from "./authFeedback";
 
 const SESSION_FAILURE_CODES = new Set(["SESSION_EXPIRED", "AUTH_REQUIRED"]);
+
+const isRateLimitError = (error) => (
+  Number(error?.status) === 429
+  || String(error?.code || "").toLowerCase() === "auth_rate_limited"
+  || /too many requests|rate.?limit|\b429\b/i.test(String(error?.message || ""))
+);
+
+const isNetworkFailure = (error) => /fetch failed|network|connection|timeout/i
+  .test(String(error?.message || ""));
 
 const isTokenError = (result) =>
   /token|jwt|expir|invalid/i.test(String(result?.error || result?.message || ""));
@@ -54,9 +63,10 @@ export async function adminApiFetch(path, payload = {}) {
   try {
     accessToken = await getFreshAccessToken();
   } catch (error) {
-    const isExpiredSession = /sesion expiro|sesión expiró|token|jwt|invalid/i.test(String(error?.message || ""));
+    const isExpiredSession = isInvalidRefreshTokenError(error)
+      || /sesion expiro|sesión expiró|token|jwt|invalid/i.test(String(error?.message || ""));
     if (isExpiredSession) await clearInvalidSession();
-    const status = isExpiredSession ? 401 : 0;
+    const status = isRateLimitError(error) ? 429 : isExpiredSession ? 401 : 0;
     const result = {
       code: getApiErrorCode({ status, error }),
       error: getApiErrorMessage({ status, error }),
@@ -67,25 +77,53 @@ export async function adminApiFetch(path, payload = {}) {
 
   if (isSessionFailure(output.response, output.result)) {
     let sessionInvalidated = false;
+    let retryToken = null;
     try {
-      accessToken = await getFreshAccessToken({ forceRefresh: true });
-      output = await postJson(path, payload, accessToken);
-    } catch {
-      await clearInvalidSession();
-      sessionInvalidated = true;
+      retryToken = await getFreshAccessToken({
+        forceRefresh: true,
+        rejectedAccessToken: accessToken,
+      });
+      output = await postJson(path, payload, retryToken);
+    } catch (error) {
+      const invalidRefresh = isInvalidRefreshTokenError(error)
+        || /sesion expiro|sesión expiró|invalid refresh token|refresh token.*not found/i.test(String(error?.message || ""));
+      if (invalidRefresh) {
+        await clearInvalidSession();
+        sessionInvalidated = true;
+      }
+      const status = isRateLimitError(error) ? 429 : isNetworkFailure(error) ? 0 : 401;
       output = {
-        response: { ok: false, status: 401, statusText: "Authentication Error" },
-        result: { code: "SESSION_EXPIRED", error: "Tu sesion expiro. Inicia sesion nuevamente." },
+        response: { ok: false, status, statusText: status === 429 ? "Too Many Requests" : "Authentication Error" },
+        result: {
+          code: getApiErrorCode({ status, error }) || (status === 401 ? "SESSION_EXPIRED" : null),
+          error: getApiErrorMessage({ status, error }),
+        },
       };
     }
 
     if (!sessionInvalidated && isSessionFailure(output.response, output.result)) {
-      await clearInvalidSession();
-      output.result = {
-        ...output.result,
-        code: "SESSION_EXPIRED",
-        error: "Tu sesion expiro. Inicia sesion nuevamente.",
-      };
+      // A late 401 for the retry token must not expire a newer session that
+      // another request already refreshed. Never issue a second API retry.
+      try {
+        const latestToken = await getFreshAccessToken();
+        if (latestToken === retryToken) {
+          await clearInvalidSession();
+          output.result = {
+            ...output.result,
+            code: "SESSION_EXPIRED",
+            error: "Tu sesión expiró. Inicia sesión nuevamente.",
+          };
+        }
+      } catch (error) {
+        if (isInvalidRefreshTokenError(error)) {
+          await clearInvalidSession();
+          output.result = {
+            ...output.result,
+            code: "SESSION_EXPIRED",
+            error: "Tu sesión expiró. Inicia sesión nuevamente.",
+          };
+        }
+      }
     }
   }
 

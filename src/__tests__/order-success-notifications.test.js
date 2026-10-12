@@ -7,6 +7,8 @@ const readProjectFile = (path) => readFileSync(join(process.cwd(), path), "utf8"
 
 describe("order success notification contracts", () => {
   const migration = readProjectFile("supabase/migrations/20260907120000_order_success_notifications.sql");
+  const latestCanonical = readProjectFile("supabase/migrations/20260907143036_production_transfer_receipts_and_notifications.sql");
+  const operationalPresentation = readProjectFile("supabase/migrations/20260926212712_normalize_operational_notification_presentation.sql");
 
   it("normalizes creation, routing, assignments and paid payments as canonical success events", () => {
     expect(migration).toContain("normalize_order_success_notification()");
@@ -46,5 +48,18 @@ describe("order success notification contracts", () => {
     expect(migration).toContain("v_actor_id uuid := auth.uid();");
     expect(migration).toContain("v_recipient_can_access_order boolean := false;");
     expect(migration).toContain("Never trust it to identify an actor or to authorize");
+  });
+
+  it("preserves the canonical access-check normalizer and styles the actual delivered status event", () => {
+    expect(latestCanonical).toContain("v_recipient_can_access_order boolean := false");
+    expect(latestCanonical).toContain("if not v_recipient_can_access_order then");
+    expect(latestCanonical).toContain("'designer_assigned_confirmation', 'designer_assigned', 'design_routed_confirmation'");
+    expect(latestCanonical).toContain("'quote_assignment_confirmation', 'quote_assigned', 'quote_routed_confirmation'");
+
+    expect(operationalPresentation).not.toContain("create or replace function public.normalize_order_success_notification()");
+    expect(operationalPresentation).toContain("create or replace function public.normalize_operational_notification_presentation()");
+    expect(operationalPresentation).toContain("v_event_kind = 'status_changed' and coalesce(new.metadata ->> 'status', '') = 'in_Delivered'");
+    expect(operationalPresentation).toContain("'event_kind', 'delivery_confirmed', 'variant', 'success'");
+    expect(operationalPresentation).toContain("new.title := 'Entrega confirmada'");
   });
 });

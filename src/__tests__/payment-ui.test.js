@@ -21,6 +21,7 @@ describe("getPaymentConfirmButtonLabel", () => {
   it("usa Pago parcial como etiqueta operativa global", () => {
     expect(PAYMENT_LABELS[PAYMENT_STATUS.PARTIAL]).toBe("Pago parcial");
     expect(PAYMENT_COLORS[PAYMENT_STATUS.PARTIAL].label).toBe("Pago parcial");
+    expect(PAYMENT_COLORS[PAYMENT_STATUS.PENDING].label).toBe("Pago Pendiente");
   });
 
   it("muestra el texto de pago parcial cuando el selector esta en parcial", () => {

@@ -70,7 +70,9 @@ describe("secure administrative order command repair", () => {
   it("keeps terminal, blocked, and payment controls aligned with the shared availability contract", () => {
     expect(orderActions).toContain("getAdminOrderActionVisibility");
     expect(orderActions).toContain("commandCatalog = null");
-    expect(orderActions).toContain("visible: availability.payment");
+    // Payment remains a Caja-only operation; Administration must not expose
+    // a payment action merely because it can edit commercial order data.
+    expect(orderActions).not.toContain("visible: availability.payment");
     expect(orderActions).toContain("visible: availability.cancel");
   });
 

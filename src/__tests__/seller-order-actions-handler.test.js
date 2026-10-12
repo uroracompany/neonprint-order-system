@@ -28,6 +28,7 @@ const applyOrFilter = (row, expression) => expression.split(",").some((part) => 
 
 const applyFilters = (rows, filters) => rows.filter((row) => filters.every((filter) => {
   if (filter.type === "eq") return row[filter.field] === filter.value;
+  if (filter.type === "in") return filter.values.includes(row[filter.field]);
   if (filter.type === "is" && filter.value === null) return row[filter.field] === null || row[filter.field] === undefined;
   if (filter.type === "is") return row[filter.field] === filter.value;
   if (filter.type === "not" && filter.operator === "is" && filter.value === null) return row[filter.field] !== null && row[filter.field] !== undefined;
@@ -39,7 +40,7 @@ const applyFilters = (rows, filters) => rows.filter((row) => filters.every((filt
 }));
 
 function makeSelectBuilder(rows) {
-  const state = { filters: [], order: null, range: null };
+  const state = { filters: [], order: null, range: null, limit: null };
   const resolveRows = () => {
     let filtered = applyFilters(rows, state.filters);
     const count = filtered.length;
@@ -55,11 +56,16 @@ function makeSelectBuilder(rows) {
     if (state.range) {
       filtered = filtered.slice(state.range.from, state.range.to + 1);
     }
+    if (state.limit !== null) filtered = filtered.slice(0, state.limit);
     return { rows: filtered, count };
   };
   const builder = {
     eq(field, value) {
       state.filters.push({ type: "eq", field, value });
+      return builder;
+    },
+    in(field, values) {
+      state.filters.push({ type: "in", field, values });
       return builder;
     },
     is(field, value) {
@@ -92,6 +98,10 @@ function makeSelectBuilder(rows) {
     },
     range(from, to) {
       state.range = { from, to };
+      return builder;
+    },
+    limit(value) {
+      state.limit = value;
       return builder;
     },
     async single() {
@@ -137,6 +147,8 @@ const makeSellerOrderClient = ({
   },
   profiles = [],
   orders = [],
+  orderEvents = [],
+  batchCatalogResult = {},
 } = {}) => {
   const profileRows = [
     ...(currentProfile ? [currentProfile] : []),
@@ -149,11 +161,14 @@ const makeSellerOrderClient = ({
   }));
 
   const from = vi.fn((table) => ({
-    select: vi.fn(() => makeSelectBuilder(table === "profiles" ? profileRows : orders)),
+    select: vi.fn(() => makeSelectBuilder(table === "profiles" ? profileRows : table === "order_events" ? orderEvents : orders)),
     update: vi.fn((updates) => makeUpdateBuilder(table === "profiles" ? profileRows : orders, updates)),
   }));
 
   const rpc = vi.fn(async (name, args = {}) => {
+    if (name === "semi_admin_get_orders_command_catalog") {
+      return { data: batchCatalogResult, error: null };
+    }
     const order = orders.find((item) => item.id === args.p_order_id);
     if (!order) return { data: null, error: { message: "No rows found" } };
     if (args.p_expected_updated_at && order.updated_at && args.p_expected_updated_at !== order.updated_at) {
@@ -254,6 +269,501 @@ describe("handleSellerOrderAction", () => {
     expect(result.body.recent_orders[0]).toMatchObject({ seller_id: "semi-1", created_by: "seller-2" });
     expect(orderSelects.filter((columns) => String(columns).includes("seller_id")).length).toBeGreaterThanOrEqual(2);
     expect(orderSelects.filter((columns) => String(columns).includes("created_by")).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("fetches one deduplicated batch catalog only for Semi-Admin and projects the safe row payload", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [
+        { id: "order-1", seller_id: "semi-1", order_design_type: "INTERNAL_DESING", status: "Pending", payment_status: "Pending_Payment", created_at: "2026-09-27T10:00:00.000Z", updated_at: "2026-09-27T10:01:00.000Z", is_archived: false },
+        { id: "order-2", seller_id: "semi-1", designer_id: "semi-1", order_design_type: "INTERNAL_DESING", status: "in_Design", payment_status: "Pending_Payment", created_at: "2026-09-26T10:00:00.000Z", updated_at: "2026-09-26T10:01:00.000Z", is_archived: false },
+        { id: "wrong-designer", seller_id: "semi-1", designer_id: "designer-2", order_design_type: "INTERNAL_DESING", status: "in_Design", payment_status: "Pending_Payment", created_at: "2026-09-24T10:00:00.000Z", updated_at: "2026-09-24T10:01:00.000Z", is_archived: false },
+        { id: "foreign-internal", seller_id: "seller-2", created_by: "seller-2", quote_id: "semi-1", order_design_type: "INTERNAL_DESING", status: "Pending", created_at: "2026-09-25T10:00:00.000Z", updated_at: "2026-09-25T10:01:00.000Z", is_archived: false },
+      ],
+      batchCatalogResult: {
+        "order-1": {
+          order_id: "order-1",
+          order_updated_at: "2026-09-27T10:01:00.000Z",
+      actions: [
+        { key: "send_to_designer", title: "Enviar a Diseño", context: { secret: true } },
+        { key: "send_to_quote", title: "Enviar a Caja", requires_reason: true },
+        { key: "route_production", title: "Enviar a Producción" },
+          ],
+          events: [{ private: true }],
+        },
+        "order-2": {
+          order_id: "order-2",
+          order_updated_at: "2026-09-26T10:01:00.000Z",
+          actions: [{ key: "send_design_to_quote", title: "Enviar a Caja", candidates: ["private"] }],
+        },
+        "wrong-designer": {
+          order_id: "wrong-designer",
+          order_updated_at: "2026-09-24T10:01:00.000Z",
+          actions: [{ key: "send_design_to_quote", title: "Enviar a Caja" }],
+        },
+        "foreign-internal": {
+          order_id: "foreign-internal",
+          order_updated_at: "2026-09-25T10:01:00.000Z",
+          actions: [{ key: "send_to_designer", title: "Enviar a Diseño" }],
+        },
+      },
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", page: 1, pageSize: 1 }, env);
+    const batchCalls = currentClient.rpc.mock.calls.filter(([name]) => name === "semi_admin_get_orders_command_catalog");
+
+    expect(result.status).toBe(200);
+    expect(batchCalls).toHaveLength(1);
+    expect(new Set(batchCalls[0][1].p_order_ids)).toEqual(new Set(["order-1", "order-2", "wrong-designer", "foreign-internal"]));
+    expect(result.body.operational_catalogs["order-1"]).toEqual({
+      order_id: "order-1",
+      order_updated_at: "2026-09-27T10:01:00.000Z",
+      actions: [
+        { key: "send_to_designer", title: "Enviar a Diseño" },
+      ],
+    });
+    expect(result.body.operational_catalogs["order-2"]).toEqual({
+      order_id: "order-2",
+      order_updated_at: "2026-09-26T10:01:00.000Z",
+      actions: [{ key: "send_design_to_quote", title: "Enviar a Caja" }],
+    });
+    expect(result.body.operational_catalogs["foreign-internal"]).toBeUndefined();
+    expect(result.body.operational_catalogs["wrong-designer"]).toBeUndefined();
+  });
+
+  it("reconciles a missing Design-to-Caja action from the individual catalog after a successful batch response", async () => {
+    const updatedAt = "2026-09-27T10:01:00.000Z";
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [
+        { id: "internal-design", seller_id: "semi-1", designer_id: "semi-1", order_design_type: "INTERNAL_DESING", status: "in_Design", updated_at: updatedAt, is_archived: false, created_at: "2026-09-27T10:00:00.000Z" },
+        { id: "external", seller_id: "semi-1", order_design_type: "EXTERNAL_DESING", status: "in_Design", updated_at: updatedAt, is_archived: false, created_at: "2026-09-26T10:00:00.000Z" },
+      ],
+      batchCatalogResult: {
+        "internal-design": { order_id: "internal-design", order_updated_at: updatedAt, actions: [] },
+      },
+    });
+    currentClient.rpc.mockImplementation(async (name) => {
+      if (name === "semi_admin_get_orders_command_catalog") {
+        return { data: { "internal-design": { order_id: "internal-design", order_updated_at: updatedAt, actions: [] } }, error: null };
+      }
+      if (name === "semi_admin_get_order_command_catalog") {
+        return { data: { version: updatedAt, locked: false, actions: [{ key: "send_design_to_quote", title: "Enviar a Caja", context: { private: true } }] }, error: null };
+      }
+      return { data: null, error: null };
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+    const unitCalls = currentClient.rpc.mock.calls.filter(([name]) => name === "semi_admin_get_order_command_catalog");
+
+    expect(result.status).toBe(200);
+    expect(unitCalls).toEqual([["semi_admin_get_order_command_catalog", { p_order_id: "internal-design" }]]);
+    expect(result.body.operational_catalogs).toEqual({
+      "internal-design": {
+        order_id: "internal-design",
+        order_updated_at: updatedAt,
+        actions: [{ key: "send_design_to_quote", title: "Enviar a Caja" }],
+      },
+    });
+  });
+
+  it("projects Design-to-Sales only when the individual operational catalog authorizes it", async () => {
+    const updatedAt = "2026-09-27T10:01:00.000Z";
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [
+        { id: "authorized", seller_id: "semi-1", designer_id: "semi-1", order_design_type: "INTERNAL_DESING", status: "in_Design", updated_at: updatedAt, is_archived: false, created_at: updatedAt },
+        { id: "not-authorized", seller_id: "semi-1", designer_id: "semi-1", order_design_type: "INTERNAL_DESING", status: "in_Design", updated_at: updatedAt, is_archived: false, created_at: "2026-09-26T10:00:00.000Z" },
+      ],
+      batchCatalogResult: {
+        authorized: { order_id: "authorized", order_updated_at: updatedAt, actions: [{ key: "send_design_to_quote", title: "Enviar a Caja" }] },
+        "not-authorized": { order_id: "not-authorized", order_updated_at: updatedAt, actions: [{ key: "send_design_to_quote", title: "Enviar a Caja" }] },
+      },
+    });
+    currentClient.rpc.mockImplementation(async (name, args = {}) => {
+      if (name === "semi_admin_get_orders_command_catalog") {
+        return { data: currentClient.orders.reduce((result, order) => ({ ...result, [order.id]: { order_id: order.id, order_updated_at: updatedAt, actions: [{ key: "send_design_to_quote", title: "Enviar a Caja" }] } }), {}), error: null };
+      }
+      if (name === "semi_admin_get_order_command_catalog") {
+        const canReturn = args.p_order_id === "authorized";
+        return { data: { version: updatedAt, locked: false, actions: [
+          { key: "send_design_to_quote", title: "Enviar a Caja" },
+          ...(canReturn ? [{ key: "return_design_to_sales", title: "Regresar a Ventas" }] : []),
+        ] }, error: null };
+      }
+      return { data: null, error: null };
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.operational_catalogs.authorized.actions).toEqual([
+      { key: "send_design_to_quote", title: "Enviar a Caja" },
+      { key: "return_design_to_sales", title: "Devolver a Ventas" },
+    ]);
+    expect(result.body.operational_catalogs["not-authorized"].actions).toEqual([
+      { key: "send_design_to_quote", title: "Enviar a Caja" },
+    ]);
+  });
+
+  it("projects Caja-to-previous-stage only with a matching audited route and payment correction", async () => {
+    const updatedAt = "2026-09-27T10:01:00.000Z";
+    const orderEvents = [
+      { id: "route-valid", order_id: "history-valid", event_type: "semi_admin_send_to_quote", old_status: "Pending", new_status: "in_Quote", created_at: "2026-09-27T09:00:00.000Z" },
+      { id: "payment-valid", order_id: "history-valid", event_type: "semi_admin_payment_updated", old_payment_status: "pagado", new_payment_status: "Pending_Payment", changes: { correction: "paid_to_pending_in_quote" }, created_at: "2026-09-27T09:30:00.000Z" },
+    ];
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [
+        { id: "history-valid", seller_id: "semi-1", quote_id: "cashier-1", order_design_type: "EXTERNAL_DESING", status: "in_Quote", payment_status: "Pending_Payment", updated_at: updatedAt, is_archived: false, created_at: updatedAt },
+        { id: "history-missing", seller_id: "semi-1", quote_id: "cashier-1", order_design_type: "EXTERNAL_DESING", status: "in_Quote", payment_status: "Pending_Payment", updated_at: updatedAt, is_archived: false, created_at: "2026-09-26T10:00:00.000Z" },
+      ],
+      orderEvents,
+      batchCatalogResult: {},
+    });
+    currentClient.rpc.mockImplementation(async (name) => {
+      if (name === "semi_admin_get_orders_command_catalog") return { data: {}, error: null };
+      if (name === "semi_admin_get_order_command_catalog") {
+        return { data: { version: updatedAt, locked: false, actions: [] }, error: null };
+      }
+      return { data: null, error: null };
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.operational_catalogs["history-valid"].actions).toEqual([
+      { key: "return_quote_to_previous_stage", title: "Regresar a Ventas", target_stage: "sales", requires_reason: true },
+    ]);
+    expect(result.body.operational_catalogs["history-missing"]).toBeUndefined();
+  });
+
+  it.each([
+    { label: "individual catalog omits the action", catalog: { version: "2026-09-27T10:01:00.000Z", locked: false, actions: [] } },
+    { label: "individual catalog is locked", catalog: { version: "2026-09-27T10:01:00.000Z", locked: true, actions: [{ key: "send_design_to_quote", title: "Enviar a Caja" }] } },
+    { label: "individual catalog is stale", catalog: { version: "2026-09-27T10:01:01.000Z", locked: false, actions: [{ key: "send_design_to_quote", title: "Enviar a Caja" }] } },
+  ])("fails closed when the individual catalog does not authorize reconciliation: $label", async ({ catalog }) => {
+    const updatedAt = "2026-09-27T10:01:00.000Z";
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [{ id: "internal-design", seller_id: "semi-1", designer_id: "semi-1", order_design_type: "INTERNAL_DESING", status: "in_Design", updated_at: updatedAt, is_archived: false, created_at: "2026-09-27T10:00:00.000Z" }],
+      batchCatalogResult: {
+        "internal-design": { order_id: "internal-design", order_updated_at: updatedAt, actions: [] },
+      },
+    });
+    currentClient.rpc.mockImplementation(async (name) => {
+      if (name === "semi_admin_get_orders_command_catalog") {
+        return { data: { "internal-design": { order_id: "internal-design", order_updated_at: updatedAt, actions: [] } }, error: null };
+      }
+      if (name === "semi_admin_get_order_command_catalog") return { data: catalog, error: null };
+      return { data: null, error: null };
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.operational_catalogs["internal-design"]?.actions || []).toEqual([]);
+  });
+
+  it("keeps the reconciled action hidden when the order changes during the individual lookup", async () => {
+    const updatedAt = "2026-09-27T10:01:00.000Z";
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [{ id: "internal-design", seller_id: "semi-1", designer_id: "semi-1", order_design_type: "INTERNAL_DESING", status: "in_Design", updated_at: updatedAt, is_archived: false, created_at: "2026-09-27T10:00:00.000Z" }],
+      batchCatalogResult: {
+        "internal-design": { order_id: "internal-design", order_updated_at: updatedAt, actions: [] },
+      },
+    });
+    currentClient.rpc.mockImplementation(async (name) => {
+      if (name === "semi_admin_get_orders_command_catalog") {
+        return { data: { "internal-design": { order_id: "internal-design", order_updated_at: updatedAt, actions: [] } }, error: null };
+      }
+      if (name === "semi_admin_get_order_command_catalog") {
+        currentClient.orders[0].updated_at = "2026-09-27T10:02:00.000Z";
+        return { data: { version: updatedAt, locked: false, actions: [{ key: "send_design_to_quote", title: "Enviar a Caja" }] }, error: null };
+      }
+      return { data: null, error: null };
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.operational_catalogs["internal-design"]?.actions || []).toEqual([]);
+  });
+
+  it("uses the authenticated unit catalog when the batch RPC is unavailable", async () => {
+    const updatedAt = "2026-09-27T10:01:00.000Z";
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [
+        { id: "internal", created_by: "semi-1", status: "Pending", order_design_type: "INTERNAL_DESING", updated_at: updatedAt, is_archived: false, created_at: "2026-09-27T10:00:00.000Z" },
+        { id: "external", seller_id: "semi-1", status: "pending", order_design_type: "EXTERNAL_DESING", updated_at: updatedAt, is_archived: false, created_at: "2026-09-26T10:00:00.000Z" },
+        { id: "unrelated", seller_id: "seller-2", status: "Pending", order_design_type: "INTERNAL_DESING", updated_at: updatedAt, is_archived: false, created_at: "2026-09-25T10:00:00.000Z" },
+      ],
+    });
+    currentClient.rpc.mockImplementation(async (name, args = {}) => {
+      if (name === "semi_admin_get_orders_command_catalog") {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.semi_admin_get_orders_command_catalog(p_order_ids) in the schema cache" } };
+      }
+      if (name === "semi_admin_get_order_command_catalog") {
+        const action = args.p_order_id === "internal" ? "send_to_designer" : "send_to_quote";
+        return { data: {
+          version: updatedAt,
+          locked: false,
+          actions: [{ key: action, title: action === "send_to_designer" ? "Enviar a Diseño" : "Enviar a Caja", context: { mustNotEscape: true } }],
+          events: [{ private: true }],
+        }, error: null };
+      }
+      return { data: null, error: null };
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", page: 1, pageSize: 10 }, env);
+    const unitCalls = currentClient.rpc.mock.calls.filter(([name]) => name === "semi_admin_get_order_command_catalog");
+    const relationshipSelects = currentClient.from.mock.results
+      .map(({ value }) => value)
+      .filter((builder) => builder?.select)
+      .flatMap((builder) => builder.select.mock.calls.map(([columns]) => String(columns)))
+      .filter((columns) => columns.includes("designer_id") && columns.includes("quote_id") && columns.includes("delivery_id"));
+
+    expect(result.status).toBe(200);
+    expect(unitCalls.map(([, args]) => args.p_order_id).sort()).toEqual(["external", "internal"]);
+    expect(relationshipSelects.length).toBeGreaterThanOrEqual(2);
+    expect(result.body.operational_catalogs).toEqual({
+      internal: { order_id: "internal", order_updated_at: updatedAt, actions: [{ key: "send_to_designer", title: "Enviar a Diseño" }] },
+      external: { order_id: "external", order_updated_at: updatedAt, actions: [{ key: "send_to_quote", title: "Enviar a Caja" }] },
+    });
+  });
+
+  it("does not expose the internal assignment action to a non-owner who is only a different-stage participant", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [{ id: "foreign-internal", seller_id: "seller-2", created_by: "seller-2", quote_id: "semi-1", status: "Pending", order_design_type: "INTERNAL_DESING", updated_at: "2026-09-27T10:01:00.000Z", is_archived: false, created_at: "2026-09-27T10:00:00.000Z" }],
+    });
+    currentClient.rpc.mockImplementation(async (name) => name === "semi_admin_get_orders_command_catalog"
+      ? { data: null, error: { code: "PGRST202", message: "Could not find the function public.semi_admin_get_orders_command_catalog(uuid[]) in the schema cache" } }
+      : { data: { version: "2026-09-27T10:01:00.000Z", locked: false, actions: [{ key: "send_to_designer", title: "Enviar a Diseño" }] }, error: null });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.rpc).toHaveBeenCalledTimes(1);
+    expect(result.body.operational_catalogs).toEqual({});
+  });
+
+  it("does not call the unit catalog for a listed Semi-Admin order without participant relation", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [{ id: "unrelated", seller_id: "seller-2", status: "Pending", order_design_type: "INTERNAL_DESING", updated_at: "2026-09-27T10:01:00.000Z", is_archived: false, created_at: "2026-09-27T10:00:00.000Z" }],
+    });
+    currentClient.rpc.mockImplementation(async (name) => name === "semi_admin_get_orders_command_catalog"
+      ? { data: null, error: { code: "PGRST202", message: "Could not find the function public.semi_admin_get_orders_command_catalog(uuid[]) in the schema cache" } }
+      : { data: null, error: null });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.rpc).toHaveBeenCalledTimes(1);
+    expect(result.body.operational_catalogs).toEqual({});
+  });
+
+  it.each([
+    { code: "PGRST202", message: "Could not find the function semi_admin_get_orders_command_catalog(p_order_ids) in the schema cache" },
+    { code: "42883", message: "function public.semi_admin_get_orders_command_catalog(uuid[]) does not exist" },
+    { code: "42883", message: "function public.semi_admin_get_order_command_catalog(uuid) does not exist" },
+    { code: "42883", message: "function public.semi_admin_get_order_command_catalog_before_cashier_routing(uuid) does not exist" },
+    { code: "42883", message: "function public.semi_admin_get_order_command_catalog_base(uuid) does not exist" },
+    { code: "42883", message: "function public.semi_admin_is_order_routing_responsible(uuid, uuid) does not exist" },
+  ])("uses the authenticated bounded fallback for an allow-listed missing catalog function (%s)", async (batchError) => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [{ id: "owned", seller_id: "semi-1", designer_id: "semi-1", status: "Pending", order_design_type: "INTERNAL_DESING", updated_at: "2026-09-27T10:01:00.000Z", is_archived: false, created_at: "2026-09-27T10:00:00.000Z" }],
+    });
+    currentClient.rpc.mockImplementation(async (name) => name === "semi_admin_get_orders_command_catalog"
+      ? { data: null, error: batchError }
+      : { data: { version: "2026-09-27T10:01:00.000Z", locked: false, actions: [{ key: "send_to_designer", title: "Enviar a Diseño" }] }, error: null });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+    const unitCalls = currentClient.rpc.mock.calls.filter(([name]) => name === "semi_admin_get_order_command_catalog");
+
+    expect(result.status).toBe(200);
+    expect(unitCalls).toHaveLength(1);
+    expect(unitCalls[0][1]).toEqual({ p_order_id: "owned" });
+    expect(result.body.operational_catalogs).toEqual({
+      owned: {
+        order_id: "owned",
+        order_updated_at: "2026-09-27T10:01:00.000Z",
+        actions: [{ key: "send_to_designer", title: "Enviar a Diseño" }],
+      },
+    });
+  });
+
+  it.each([
+    { code: "42501", message: "permission denied for function semi_admin_get_orders_command_catalog" },
+    { code: "401", message: "JWT expired" },
+    { code: "429", message: "Too Many Requests" },
+    { code: "500", message: "server error" },
+    { code: "XX000", message: "database failure" },
+    { code: "FETCH_ERROR", message: "network timeout" },
+    { code: "42883", message: "function public.internal_catalog_dependency(uuid) does not exist while processing semi_admin_get_orders_command_catalog" },
+    { code: "PGRST202", message: "Could not find the function public.other_order_catalog(uuid[]) in the schema cache; semi_admin_get_orders_command_catalog was requested by the caller" },
+    { code: "22023", message: "function public.semi_admin_get_orders_command_catalog(uuid[]) does not exist" },
+  ])("does not retry non-recoverable or unrelated batch failures (%s)", async (batchError) => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [{ id: "owned", seller_id: "semi-1", designer_id: "semi-1", status: "Pending", order_design_type: "INTERNAL_DESING", updated_at: "2026-09-27T10:01:00.000Z", is_archived: false, created_at: "2026-09-27T10:00:00.000Z" }],
+    });
+    currentClient.rpc.mockImplementation(async (name) => name === "semi_admin_get_orders_command_catalog"
+      ? { data: null, error: batchError }
+      : { data: { version: "2026-09-27T10:01:00.000Z", locked: false, actions: [{ key: "send_to_designer", title: "Enviar a Diseño" }] }, error: null });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.rpc).toHaveBeenCalledTimes(1);
+    expect(result.body.operational_catalogs).toEqual({});
+  });
+
+  it("fails closed without retry when batch catalog permission is denied", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [{ id: "owned", seller_id: "semi-1", designer_id: "semi-1", status: "Pending", order_design_type: "INTERNAL_DESING", updated_at: "2026-09-27T10:01:00.000Z", is_archived: false, created_at: "2026-09-27T10:00:00.000Z" }],
+    });
+    currentClient.rpc.mockImplementation(async (name) => name === "semi_admin_get_orders_command_catalog"
+      ? { data: null, error: { code: "42501", message: "permission denied" } }
+      : { data: null, error: { code: "42501", message: "permission denied for unit catalog" } });
+
+    const result = await handleSellerOrderAction({ action: "list", includeDashboard: false }, env);
+    const unitCalls = currentClient.rpc.mock.calls.filter(([name]) => name === "semi_admin_get_order_command_catalog");
+
+    expect(result.status).toBe(200);
+    expect(unitCalls).toHaveLength(0);
+    expect(result.body.operational_catalogs).toEqual({});
+  });
+
+  it("fails closed for malformed or stale unit catalogs and a changed order after lookup", async () => {
+    const updatedAt = "2026-09-27T10:01:00.000Z";
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders: [
+        { id: "array", created_by: "semi-1", status: "Pending", order_design_type: "INTERNAL_DESING", updated_at: updatedAt, is_archived: false, created_at: "2026-09-27T10:00:00.000Z" },
+        { id: "stale", seller_id: "semi-1", status: "Pending", order_design_type: "INTERNAL_DESING", updated_at: updatedAt, is_archived: false, created_at: "2026-09-26T10:00:00.000Z" },
+        { id: "changed", quote_id: "semi-1", status: "Pending", order_design_type: "EXTERNAL_DESING", updated_at: updatedAt, is_archived: false, created_at: "2026-09-25T10:00:00.000Z" },
+      ],
+    });
+    currentClient.rpc.mockImplementation(async (name, args = {}) => {
+      if (name === "semi_admin_get_orders_command_catalog") {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.semi_admin_get_orders_command_catalog(uuid[]) in the schema cache" } };
+      }
+      if (args.p_order_id === "array") return { data: [], error: null };
+      if (args.p_order_id === "stale") return { data: { version: "2026-09-27T10:01:01.000Z", locked: false, actions: [{ key: "send_to_designer", title: "Enviar a Diseño" }] }, error: null };
+      const order = currentClient.orders.find(({ id }) => id === "changed");
+      order.updated_at = "2026-09-27T10:02:00.000Z";
+      return { data: { version: updatedAt, locked: false, actions: [{ key: "send_to_quote", title: "Enviar a Caja" }] }, error: null };
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", page: 1, pageSize: 10 }, env);
+
+    expect(result.status).toBe(200);
+    expect(result.body.operational_catalogs).toEqual({});
+  });
+
+  it("bounds unit fallback concurrency to four and deduplicates page/recent order IDs", async () => {
+    const updatedAt = "2026-09-27T10:01:00.000Z";
+    const orders = Array.from({ length: 10 }, (_, index) => ({
+      id: `o-${index}`,
+      created_by: "semi-1",
+      designer_id: "semi-1",
+      status: "Pending",
+      order_design_type: "INTERNAL_DESING",
+      updated_at: updatedAt,
+      is_archived: false,
+      created_at: new Date(Date.UTC(2026, 8, 27, 10, 0, index)).toISOString(),
+    }));
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders,
+    });
+    let active = 0;
+    let maxActive = 0;
+    currentClient.rpc.mockImplementation(async (name) => {
+      if (name === "semi_admin_get_orders_command_catalog") {
+        return { data: null, error: { code: "PGRST202", message: "Could not find the function public.semi_admin_get_orders_command_catalog(uuid[]) in the schema cache" } };
+      }
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active -= 1;
+      return { data: { version: updatedAt, locked: false, actions: [{ key: "send_to_designer", title: "Enviar a Diseño" }] }, error: null };
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", page: 1, pageSize: 10 }, env);
+    const unitCalls = currentClient.rpc.mock.calls.filter(([name]) => name === "semi_admin_get_order_command_catalog");
+
+    expect(result.status).toBe(200);
+    expect(unitCalls).toHaveLength(10);
+    expect(maxActive).toBeLessThanOrEqual(4);
+    expect(Object.keys(result.body.operational_catalogs)).toHaveLength(10);
+  });
+
+  it("caps 105 deduplicated page/recent order IDs at 100 while prioritizing the five recent orders", async () => {
+    const updatedAt = "2026-09-27T10:01:00.000Z";
+    const orders = Array.from({ length: 205 }, (_, index) => ({
+      id: `o-${index}`,
+      created_by: "semi-1",
+      designer_id: "semi-1",
+      status: "Pending",
+      order_design_type: "INTERNAL_DESING",
+      updated_at: updatedAt,
+      is_archived: false,
+      created_at: new Date(Date.UTC(2026, 8, 27, 10, 0, 205 - index)).toISOString(),
+    }));
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      orders,
+    });
+
+    const result = await handleSellerOrderAction({ action: "list", page: 2, pageSize: 100 }, env);
+    const batchCalls = currentClient.rpc.mock.calls.filter(([name]) => name === "semi_admin_get_orders_command_catalog");
+    const requestedIds = batchCalls[0]?.[1]?.p_order_ids || [];
+
+    expect(result.status).toBe(200);
+    expect(result.body.orders).toHaveLength(100);
+    expect(result.body.recent_orders).toHaveLength(5);
+    expect(batchCalls).toHaveLength(1);
+    expect(requestedIds).toHaveLength(100);
+    expect(requestedIds.slice(0, 5)).toEqual(["o-0", "o-1", "o-2", "o-3", "o-4"]);
+    expect(requestedIds).toContain("o-194");
+    expect(requestedIds).not.toContain("o-195");
+    expect(requestedIds).not.toContain("o-199");
+    expect(new Set(requestedIds).size).toBe(100);
+    expect(currentClient.rpc).not.toHaveBeenCalledWith("semi_admin_get_order_command_catalog", expect.anything());
+  });
+
+  it("does not request the Semi-Admin batch catalog for a Sales user", async () => {
+    currentClient = makeSellerOrderClient({
+      orders: [{ id: "sales-order", seller_id: "seller-1", status: "Pending", created_at: "2026-09-27T10:00:00.000Z", is_archived: false }],
+    });
+
+    const result = await handleSellerOrderAction({ action: "list" }, env);
+
+    expect(result.status).toBe(200);
+    expect(currentClient.rpc).not.toHaveBeenCalledWith("semi_admin_get_orders_command_catalog", expect.anything());
+    expect(result.body).not.toHaveProperty("operational_catalogs");
   });
 
   it("applies combined server-side filters for seller order lists", async () => {
@@ -515,6 +1025,37 @@ describe("handleSellerOrderAction", () => {
     expect(inactive.status).toBe(400);
   });
 
+  it("fails closed for missing, deleted, or inactive Semi-Admin designer targets before invoking the gateway", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      profiles: [
+        { id: "designer-1", role: "designer", employment_status: true, deleted_at: null },
+        { id: "deleted-designer", role: "designer", employment_status: true, deleted_at: "2026-09-01T00:00:00.000Z" },
+        { id: "inactive-designer", role: "designer", employment_status: false, deleted_at: null },
+      ],
+      orders: [{
+        id: "semi-order",
+        seller_id: "semi-1",
+        created_by: "semi-1",
+        status: "Pending",
+        order_design_type: "INTERNAL_DESING",
+        updated_at: "2026-09-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    for (const designerId of ["missing-designer", "deleted-designer", "inactive-designer"]) {
+      const rejected = await handleSellerOrderAction({
+        action: "send_to_designer",
+        order_id: "semi-order",
+        designer_id: designerId,
+      }, env);
+      expect([400, 404]).toContain(rejected.status);
+      expect(currentClient.rpc).not.toHaveBeenCalled();
+    }
+  });
+
   it("routes EXTERNAL_DESING order from Pending to in_Quote via send_to_quote", async () => {
     currentClient = makeSellerOrderClient({
       profiles: [
@@ -543,6 +1084,150 @@ describe("handleSellerOrderAction", () => {
     expect(result.body.order.quote_id).toBe("quote-1");
     expect(result.body.order.return_reason).toBeNull();
     expect(result.body.order.returned_to_designer_at).toBeNull();
+  });
+
+  it("allows Semi-Admin external routing only to an active non-deleted Caja profile", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      profiles: [
+        { id: "cashier-1", role: "quote", employment_status: null, deleted_at: null },
+        { id: "semi-2", role: "semi_admin", employment_status: true, deleted_at: null },
+        { id: "deleted-cashier", role: "quote", employment_status: true, deleted_at: "2026-09-01T00:00:00.000Z" },
+      ],
+      orders: [{
+        id: "semi-external",
+        seller_id: "semi-1",
+        created_by: "semi-1",
+        status: "Pending",
+        order_design_type: "EXTERNAL_DESING",
+        updated_at: "2026-09-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const valid = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "semi-external",
+      quote_user_id: "cashier-1",
+      expected_updated_at: "2026-09-28T10:00:00.000Z",
+    }, env);
+    expect(valid.status).toBe(200);
+    expect(currentClient.rpc).toHaveBeenCalledWith("semi_admin_execute_order_command", expect.objectContaining({
+      p_action: "send_to_quote",
+      p_payload: { target_user_id: "cashier-1" },
+    }));
+
+    for (const quoteUserId of ["semi-2", "deleted-cashier"]) {
+      currentClient.rpc.mockClear();
+      const rejected = await handleSellerOrderAction({
+        action: "send_to_quote",
+        order_id: "semi-external",
+        quote_user_id: quoteUserId,
+        expected_updated_at: "2026-09-28T10:00:00.000Z",
+      }, env);
+      expect(rejected.status).toBe(400);
+      expect(currentClient.rpc).not.toHaveBeenCalled();
+    }
+  });
+
+  it("allows only the related Semi-Admin seller/creator to send an external order to Caja", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-creator",
+      currentProfile: { id: "semi-creator", name: "Semi Creator", email: "creator@example.com", role: "semi_admin", employment_status: true },
+      profiles: [{ id: "cashier-1", role: "quote", employment_status: true, deleted_at: null }],
+      orders: [{
+        id: "created-external",
+        seller_id: "seller-1",
+        created_by: "semi-creator",
+        status: "Pending",
+        order_design_type: "EXTERNAL_DESING",
+        updated_at: "2026-09-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const related = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "created-external",
+      quote_user_id: "cashier-1",
+      expected_updated_at: "2026-09-28T10:00:00.000Z",
+    }, env);
+    expect(related.status).toBe(200);
+    expect(currentClient.rpc).toHaveBeenCalledWith("semi_admin_execute_order_command", expect.objectContaining({
+      p_order_id: "created-external",
+      p_action: "send_to_quote",
+    }));
+
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "unrelated-semi",
+      currentProfile: { id: "unrelated-semi", name: "Unrelated Semi", email: "other@example.com", role: "semi_admin", employment_status: true },
+      profiles: [{ id: "cashier-1", role: "quote", employment_status: true, deleted_at: null }],
+      orders: [{
+        id: "created-external",
+        seller_id: "seller-1",
+        created_by: "semi-creator",
+        status: "Pending",
+        order_design_type: "EXTERNAL_DESING",
+        updated_at: "2026-09-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const unrelated = await handleSellerOrderAction({
+      action: "send_to_quote",
+      order_id: "created-external",
+      quote_user_id: "cashier-1",
+      expected_updated_at: "2026-09-28T10:00:00.000Z",
+    }, env);
+    expect(unrelated.status).toBe(403);
+    expect(currentClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("preflights Caja role and availability before Semi-Admin quote-stage reassignment", async () => {
+    currentClient = makeSellerOrderClient({
+      tokenUserId: "semi-1",
+      currentProfile: { id: "semi-1", name: "Semi", email: "semi@example.com", role: "semi_admin", employment_status: true },
+      profiles: [
+        { id: "cashier-1", role: "quote", employment_status: true, deleted_at: null },
+        { id: "semi-2", role: "semi_admin", employment_status: true, deleted_at: null },
+        { id: "inactive-cashier", role: "quote", employment_status: false, deleted_at: null },
+      ],
+      orders: [{
+        id: "semi-in-quote",
+        seller_id: "semi-1",
+        created_by: "semi-1",
+        status: "in_Quote",
+        updated_at: "2026-09-28T10:00:00.000Z",
+        is_archived: false,
+      }],
+    });
+
+    const valid = await handleSellerOrderAction({
+      action: "stage_responsibility",
+      order_id: "semi-in-quote",
+      stage: "quote",
+      assignee_id: "cashier-1",
+      expected_updated_at: "2026-09-28T10:00:00.000Z",
+    }, env);
+    expect(valid.status).toBe(200);
+    expect(currentClient.rpc).toHaveBeenCalledWith("semi_admin_execute_order_command", expect.objectContaining({
+      p_action: "stage_responsibility",
+      p_payload: expect.objectContaining({ stage: "quote", assignee_id: "cashier-1" }),
+    }));
+
+    for (const assigneeId of ["semi-2", "inactive-cashier"]) {
+      currentClient.rpc.mockClear();
+      const rejected = await handleSellerOrderAction({
+        action: "stage_responsibility",
+        order_id: "semi-in-quote",
+        stage: "quote",
+        assignee_id: assigneeId,
+        expected_updated_at: "2026-09-28T10:00:00.000Z",
+      }, env);
+      expect(rejected.status).toBe(400);
+      expect(currentClient.rpc).not.toHaveBeenCalled();
+    }
   });
 
   it("rejects send_to_quote for INTERNAL_DESING orders", async () => {

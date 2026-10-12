@@ -7,11 +7,15 @@ export const AUTH_SESSION_STORAGE_KEY =
   import.meta.env.VITE_AUTH_SESSION_STORAGE_KEY || "np_auth_remember";
 
 const AUTH_STORAGE_KEY = "np-auth-session";
+const AUTH_SESSION_MODE_KEY = `${AUTH_SESSION_STORAGE_KEY}:session-mode`;
 
 const hasBrowserStorage = () => typeof window !== "undefined" && window.localStorage && window.sessionStorage;
 
 const readRememberPreference = () => {
   if (!hasBrowserStorage()) return false;
+  // A session-only choice belongs to this browser tab. It must not overwrite
+  // the shared remember preference used by other tabs.
+  if (window.sessionStorage.getItem(AUTH_SESSION_MODE_KEY) === "1") return false;
   return window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY) === "1";
 };
 
@@ -63,6 +67,33 @@ const getFallbackStorage = () => {
   return readRememberPreference() ? window.sessionStorage : window.localStorage;
 };
 
+/**
+ * Supabase's automatic refresh tick uses acquireTimeout=0, which maps to
+ * `ifAvailable: true` in its default Web Locks adapter. That is appropriate
+ * for a best-effort tick, but it rejects while another tab or a hot-reloaded
+ * client is reading the same session and can bubble up as an unhandled error.
+ * Keep the browser lock for cross-tab safety, but queue that best-effort work.
+ */
+const authBrowserLock = async (name, acquireTimeout, fn) => {
+  const lockManager = globalThis?.navigator?.locks;
+  if (!lockManager?.request) return fn();
+
+  const controller = acquireTimeout > 0 ? new globalThis.AbortController() : null;
+  const timeoutId = controller
+    ? globalThis.setTimeout(() => controller.abort(), acquireTimeout)
+    : null;
+
+  try {
+    const options = controller
+      ? { mode: "exclusive", signal: controller.signal }
+      : { mode: "exclusive" };
+
+    return await lockManager.request(name, options, async () => fn());
+  } finally {
+    if (timeoutId !== null) globalThis.clearTimeout(timeoutId);
+  }
+};
+
 export const authSessionStorage = {
   getItem(key) {
     const selectedValue = getAuthItem(getSelectedStorage(), key);
@@ -75,12 +106,14 @@ export const authSessionStorage = {
     return null;
   },
   setItem(key, value) {
+    // Do not delete the fallback store here. It may belong to another tab
+    // with a different persistence choice and must survive local cleanup.
     setAuthItem(getSelectedStorage(), key, value);
-    removeAuthItem(getFallbackStorage(), key);
   },
   removeItem(key) {
-    removeAuthItem(window?.localStorage, key);
-    removeAuthItem(window?.sessionStorage, key);
+    // Remove only the storage selected for this client session. A local signout
+    // must not erase a separate session held by another tab/storage mode.
+    removeAuthItem(getSelectedStorage(), key);
   },
 };
 
@@ -93,10 +126,11 @@ export function setAuthSessionPersistence(remember) {
 
   if (remember) {
     window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, "1");
+    removeAuthItem(window.sessionStorage, AUTH_SESSION_MODE_KEY);
     return;
   }
 
-  window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+  setAuthItem(window.sessionStorage, AUTH_SESSION_MODE_KEY, "1");
 }
 
 export function clearAuthSessionStorage() {
@@ -104,17 +138,18 @@ export function clearAuthSessionStorage() {
   clearAuthKeysFrom(window.localStorage);
   clearAuthKeysFrom(window.sessionStorage);
   window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+  removeAuthItem(window.sessionStorage, AUTH_SESSION_MODE_KEY);
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // authManager owns refresh timing and serializes refreshes across the app.
-    // Leaving the Supabase scheduler enabled creates a second contender for
-    // Navigator LockManager's session lock when the tab regains focus.
-    autoRefreshToken: false,
+    // Keep one refresh authority: Supabase's browser SDK manages refresh timing,
+    // foreground visibility and its cross-tab lock for this stable client.
+    autoRefreshToken: true,
     detectSessionInUrl: false,
     persistSession: true,
     storage: authSessionStorage,
     storageKey: AUTH_STORAGE_KEY,
+    lock: authBrowserLock,
   },
 });

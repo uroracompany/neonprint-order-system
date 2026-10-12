@@ -16,11 +16,12 @@ describe("pago a credito sin monto interno", () => {
     expect(fixMigration).not.toContain("La orden debe tener un monto valido para vender a credito.");
   });
 
-  it("cierra creditos manualmente sin registrar pagos con monto interno desde la UI", () => {
+  it("reserves credit operations to Caja without registering internal payment amounts", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
     const quote = readProjectFile("src/pages/page-quote.jsx");
 
-    expect(dashboard).toContain('supabase.rpc("settle_credit_orders"');
+    expect(dashboard).not.toContain('supabase.rpc("settle_credit_orders"');
+    expect(quote).toContain('supabase.rpc("settle_credit_orders"');
     expect(dashboard).not.toContain('supabase.rpc("record_client_payment"');
     expect(quote).toContain('rpc("mark_order_as_credit", {');
     expect(quote).toContain("p_expected_updated_at: order.updated_at,");

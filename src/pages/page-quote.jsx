@@ -77,6 +77,10 @@ const normalizeText = (value) => String(value || "").trim().toLowerCase();
 const INVOICE_PAYMENT_FIELD = "invoice_payment";
 const PAYMENT_RECEIPT_REQUIRED_MESSAGE = "Caja requiere una imagen del comprobante para marcar la orden como pagada; un número de recibo o factura no la reemplaza.";
 const CANONICAL_PAYMENT_KEY_PATTERN = /^orders\/[0-9a-f-]{36}\/payment-\d+-[a-z0-9._-]+$/;
+const CASHIER_PAYMENT_LABEL_OVERRIDES = {
+  [PAYMENT_STATUS.PENDING]: "Pendiente",
+  [PAYMENT_STATUS.PARTIAL]: "Parcial",
+};
 const getCanonicalPaymentReceiptCandidate = (order) => {
   const reference = String(order?.invoice_payment || "").trim();
   const scheme = reference.startsWith("supabase://")
@@ -126,12 +130,31 @@ const resolveSellerName = (order, sellerDirectory) => order?.seller_name || sell
 // Verifica si una orden puede ser editada en cotización (debe estar en estado IN_QUOTE, no pagada, no archivada)
 const isQuoteEditable = (order) => (
   !order?.is_archived_quote &&
+  !order?.production_authorized_at &&
+  !order?.production_authorized_by &&
   !isPaymentPaid(order?.payment_status) &&
   !isPaymentCredit(order?.payment_status) &&
   (isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) || isPaymentPartial(order?.payment_status))
 );
 // Verifica si una orden está asignada al usuario actual
 const isOrderAssignedToQuote = (order, quoteUserId) => Boolean(order?.id) && hasQuoteAssignment(order, quoteUserId);
+const canCorrectPaidPayment = (order, userId, actorProfile) => (
+  actorProfile?.role === "quote"
+  && actorProfile?.employment_status !== false
+  && !actorProfile?.deleted_at
+  && isOrderAssignedToQuote(order, userId)
+  && isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE)
+  && isPaymentPaid(order?.payment_status)
+  && !order?.production_authorized_at
+  && !order?.production_authorized_by
+  && !order?.is_archived
+  && !order?.is_archived_admin
+  && !order?.is_archived_designer
+  && !order?.is_archived_quote
+  && !order?.is_archived_production
+  && !order?.is_archived_delivery
+  && order?.operational_status !== "blocked"
+);
 // Verifica si una orden puede ser archivada (recibe userId explícitamente)
 const canArchiveQuoteOrder = (order, userId) => canArchiveOrder(order, ARCHIVE_MODULES.QUOTE, userId);
 // Verifica si una orden fue devuelta (tiene estado de diseño/pendiente Y razón de devolución)
@@ -279,6 +302,7 @@ function QuoteOrderDetailModal({
   onClose,
   order,
   onOpenPayment,
+  canCorrectPayment = false,
   onAuthorizeProduction,
   authorizingProduction,
   sellerDirectory,
@@ -333,7 +357,7 @@ function QuoteOrderDetailModal({
   ));
   const referenceImageUrls = getReferenceImages(order);
   const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
-  const canManagePayment = isQuoteEditable(order);
+  const canManagePayment = isQuoteEditable(order) || canCorrectPayment;
   const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && !isPaymentPaid(order?.payment_status) && !order?.is_archived_quote;
   const canAuthorizeProduction = Boolean(onAuthorizeProduction)
     && isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE)
@@ -465,7 +489,7 @@ function QuoteOrderDetailModal({
 
               <div className="pq-preview-block pq-preview-block--bare">
                 <span className="pq-description-label pq-description-label--soft" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
-                  <Icons.Eye /> Orden de Trabajo
+                  <Icons.Eye /> Imagen de orden de trabajo
                 </span>
                 {order.preview_image ? (
                   <SecureImageLink
@@ -474,11 +498,11 @@ function QuoteOrderDetailModal({
                     className="pq-work-preview"
                   >
                     <span className="pq-work-preview-btn">
-                      <Icons.Eye /> Ver orden de trabajo
+                      <Icons.Eye /> Ver imagen de orden de trabajo
                     </span>
                   </SecureImageLink>
                 ) : (
-                  <span className="pq-preview-empty">No hay preview cargado.</span>
+                  <span className="pq-preview-empty">No hay imagen de orden de trabajo cargada.</span>
                 )}
               </div>
 
@@ -564,7 +588,7 @@ function QuoteOrderDetailModal({
                 </div>
               )}
               {receiptUrl && (
-              <div className="pq-preview-block" style={{ marginTop: 16 }}>
+              <div className="pq-preview-block">
                 <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <Icons.Eye /> Comprobante de pago
                 </span>
@@ -599,15 +623,19 @@ function QuoteOrderDetailModal({
                   <span>{order.production_authorized_at ? "Producción autorizada. El responsable operativo puede continuar el envío." : "Pago validado. Caja debe autorizar la orden antes de que el responsable operativo continúe a Producción."}</span>
                 </div>
               )}
-              {canManagePayment && (
-                <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onOpenPayment?.(order)}>
-                  <Icons.Receipt /> Gestionar pago
-                </button>
-              )}
-              {canAuthorizeProduction && (
-                <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onAuthorizeProduction?.(order)} disabled={authorizingProduction}>
-                  <Icons.Check /> {authorizingProduction ? "Autorizando..." : "Autorizar para Producción"}
-                </button>
+              {(canManagePayment || canAuthorizeProduction) && (
+                <div className="pq-payment-actions">
+                  {canManagePayment && (
+                    <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onOpenPayment?.(order)}>
+                      <Icons.Receipt /> Gestionar pago
+                    </button>
+                  )}
+                  {canAuthorizeProduction && (
+                    <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onAuthorizeProduction?.(order)} disabled={authorizingProduction}>
+                      <Icons.Check /> {authorizingProduction ? "Autorizando..." : "Autorizar para Producción"}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -758,6 +786,7 @@ function CreditClientDetailView({
             className="pa-credit-detail-primary-btn"
             onClick={() => onCreateReminder(group.client, openInvoices)}
             disabled={openInvoices.length === 0}
+            aria-label={`Crear recordatorio para ${openInvoices.length} facturas pendientes`}
           >
             <Icons.Clock />
             Crear recordatorio
@@ -870,7 +899,7 @@ function CreditClientDetailView({
                       <td className="td-pad td-actions">
                         <div className="table-actions acm-row-actions">
                           {item.order && (
-                            <button className="table-action-btn view" onClick={(event) => { event.stopPropagation(); onViewOrder(item.order); }} title="Ver orden">
+                            <button className="table-action-btn view" onClick={(event) => { event.stopPropagation(); onViewOrder(item.order); }} title="Ver orden" aria-label={`Ver orden de la factura ${item.invoiceNumber}`}>
                               <Icons.Eye />
                             </button>
                           )}
@@ -879,6 +908,7 @@ function CreditClientDetailView({
                               className="table-action-btn edit"
                               onClick={(event) => { event.stopPropagation(); onCreateReminder(group.client, [item]); }}
                               title="Crear recordatorio"
+                              aria-label={`Crear recordatorio para la factura ${item.invoiceNumber}`}
                             >
                               <Icons.Clock />
                             </button>
@@ -893,6 +923,7 @@ function CreditClientDetailView({
                                 mode: "single",
                               }); }}
                               title="Marcar factura saldada"
+                              aria-label={`Marcar factura ${item.invoiceNumber} como saldada`}
                             >
                               <Icons.Check />
                             </button>
@@ -919,6 +950,7 @@ function CreditClientDetailView({
           className="pa-credit-detail-primary-btn"
               onClick={() => onToggleAll(clientId, group.invoices)}
               disabled={openInvoices.length === 0}
+              aria-label={allOpenSelected ? "Quitar selección de facturas pendientes" : "Seleccionar todas las facturas pendientes"}
             >
               {allOpenSelected ? "Limpiar selección" : "Seleccionar pendientes"}
             </button>
@@ -931,8 +963,9 @@ function CreditClientDetailView({
                 mode: "selected",
               })}
               disabled={selectedIds.length === 0}
+              aria-label={`Marcar ${selectedIds.length} facturas seleccionadas como saldadas`}
             >
-              Marcar saldadas
+              Marcar {selectedIds.length} factura{selectedIds.length === 1 ? "" : "s"} seleccionada{selectedIds.length === 1 ? "" : "s"} como saldada{selectedIds.length === 1 ? "" : "s"}
             </button>
           </div>
         </div>
@@ -1540,7 +1573,17 @@ export default function PageQuote() {
   // 3. Sube la imagen a Supabase Storage
   // 4. Actualiza la BD con el nuevo estado de pago y URL del recibo
   // 5. Notifica al usuario del resultado
-  const handleConfirmPayment = async ({ order, receiptFile, paymentStatus }) => {
+  const handleConfirmPayment = async ({ order, receiptFile, paymentStatus, isPaymentCorrection = false }) => {
+    const correctionIsEligible = canCorrectPaidPayment(order, user?.id, profile);
+    if (isPaymentCorrection && (!correctionIsEligible || ![PAYMENT_STATUS.PENDING, PAYMENT_STATUS.PARTIAL].includes(paymentStatus))) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Corrección no permitida",
+        orderTitle: order.client_name || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
+        message: "Solo puedes corregir un pago confirmado antes de autorizar Producción y mientras la orden siga asignada a Caja.",
+      });
+      return { ok: false };
+    }
     const persistedReceiptReference = hasVerifiedPaymentReceipt(order)
       ? getCanonicalPaymentReceiptCandidate(order)
       : "";
@@ -1602,7 +1645,7 @@ export default function PageQuote() {
 
     setPaymentSaving(true);
 
-    let invoicePaymentUrl = paymentStatus === PAYMENT_STATUS.PAID ? persistedReceiptReference : null;
+    let invoicePaymentUrl = isPaymentCorrection ? null : (paymentStatus === PAYMENT_STATUS.PAID ? persistedReceiptReference : null);
 
     // PASO 1: Si hay archivo, validar formato y subir a Storage
     if (receiptFile) {
@@ -1663,6 +1706,10 @@ export default function PageQuote() {
       payment_status: paymentStatus,
     };
 
+    if (isPaymentCorrection) {
+      updatePayload[INVOICE_PAYMENT_FIELD] = null;
+    }
+
     if (paymentStatus === PAYMENT_STATUS.PARTIAL) {
       updatePayload[INVOICE_PAYMENT_FIELD] = null;
     }
@@ -1680,25 +1727,27 @@ export default function PageQuote() {
           p_expected_updated_at: order.updated_at,
         });
 
-    setPaymentSaving(false);
-
     // Manejar errores de actualización
     if (updateError || !updatedOrder) {
+      setPaymentSaving(false);
       console.error("Error updating order:", updateError);
       notif.showActionNotification({
         type: "order_cancelled",
-        label: "Error al confirmar",
+        label: isPaymentCorrection ? "Error al guardar corrección" : "Error al confirmar",
         orderTitle: order.client_name || order.description || `Orden #${order.id?.slice(0, 8).toUpperCase()}`,
       message: updateError?.message || "No se pudo guardar los cambios de pago. Verifica la conexión a la base de datos.",
       });
       return { ok: false };
     }
 
-    // Actualiza estado local con los nuevos datos
-    setOrders(prev => prev.map(item => item.id === updatedOrder.id ? updatedOrder : item));
-    setSelectedOrder(previous => previous?.id === updatedOrder.id ? updatedOrder : previous);
-    setPaymentModalOrder(previous => previous?.id === updatedOrder.id ? updatedOrder : previous);
-    return { ok: true };
+    const hydratedOrder = await fetchOrderWithProductionFiles(updatedOrder.id);
+    const nextOrder = mergeOrderWithProductionFiles(order, hydratedOrder || updatedOrder);
+
+    setPaymentSaving(false);
+    setOrders(prev => prev.map(item => item.id === nextOrder.id ? mergeOrderWithProductionFiles(item, nextOrder) : item));
+    setSelectedOrder(previous => previous?.id === nextOrder.id ? mergeOrderWithProductionFiles(previous, nextOrder) : previous);
+    setPaymentModalOrder(previous => previous?.id === nextOrder.id ? mergeOrderWithProductionFiles(previous, nextOrder) : previous);
+    return { ok: true, order: nextOrder };
 
   };
 
@@ -1732,7 +1781,6 @@ export default function PageQuote() {
     setOrders((previous) => previous.map((item) => item.id === data.id ? { ...item, ...data } : item));
     setSelectedOrder((previous) => previous?.id === data.id ? { ...previous, ...data } : previous);
     setPaymentModalOrder((previous) => previous?.id === data.id ? { ...previous, ...data } : previous);
-    notif.showActionNotification({ type: "success", title: "Producción autorizada", message: "El responsable operativo ya puede asignar y enviar la orden a Producción.", metadata: { event_kind: "production_authorized", order_id: data.id, variant: "success" } });
   }, [notif, productionAuthorizationSaving]);
 
   // Archiva órdenes en el campo específico del rol Quote.
@@ -2509,7 +2557,7 @@ export default function PageQuote() {
                               </div>
                             </td>
                             <td className="td-pad">
-                              <PaymentBadge status={order.payment_status} className="pq-badge" />
+                              <PaymentBadge status={order.payment_status} labelOverride={CASHIER_PAYMENT_LABEL_OVERRIDES[order.payment_status]} className="pq-badge" />
                             </td>
                             <td className="td-pad td-actions" data-row-action>
                             <div className="table-actions" data-row-action>
@@ -2543,18 +2591,18 @@ export default function PageQuote() {
             <div className="pq-credit-metrics" aria-label="Resumen de créditos">
               <article className="pq-credit-summary-card pq-metric-card">
                 <span className="pq-credit-summary-icon pq-metric-icon client"><Icons.User /></span>
-                <div className="pq-metric-value">{creditClientGroups.length}</div>
-                <div className="pq-metric-label">Clientes filtrados</div>
+                <div className="pq-metric-value">{creditPendingClientCount}</div>
+                <div className="pq-metric-label">Clientes con saldo pendiente</div>
               </article>
               <article className="pq-credit-summary-card pq-metric-card">
                 <span className="pq-credit-summary-icon pq-metric-icon pending"><Icons.Receipt /></span>
                 <div className="pq-metric-value">{creditPendingInvoicesCount}</div>
-                <div className="pq-metric-label">Pendientes</div>
+                <div className="pq-metric-label">Facturas pendientes</div>
               </article>
               <article className="pq-credit-summary-card pq-metric-card">
                 <span className="pq-credit-summary-icon pq-metric-icon followup"><Icons.AlertCircle /></span>
-                <div className="pq-metric-value">{creditPendingClientCount}</div>
-                <div className="pq-metric-label">Clientes con pendientes</div>
+                <div className="pq-metric-value">{creditRows.filter(item => item.status === "resolved").length}</div>
+                <div className="pq-metric-label">Facturas saldadas</div>
               </article>
             </div>
 
@@ -2615,7 +2663,7 @@ export default function PageQuote() {
                   <thead>
                     <tr>
                       <th>Cliente</th>
-                      <th>Número</th>
+                      <th>Contacto</th>
                       <th>Facturas</th>
                       <th>Fechas</th>
                       <th>Estado</th>
@@ -2668,7 +2716,7 @@ export default function PageQuote() {
                             </td>
                             <td>
                               <span className="pq-badge" style={getCreditReceivableStatusStyle(openInvoices.length > 0 ? "open" : "resolved")}>
-                                {group.pendingCount} factura{group.pendingCount === 1 ? "" : "s"}
+                                {group.pendingCount} factura{group.pendingCount === 1 ? "" : "s"} pendiente{group.pendingCount === 1 ? "" : "s"}
                               </span>
                             </td>
                             <td>
@@ -2691,6 +2739,7 @@ export default function PageQuote() {
                                     openClientDetail();
                                   }}
                                   title="Ver facturas del cliente"
+                                  aria-label={`Ver facturas de ${group.client?.name || "cliente sin nombre"}`}
                                 >
                                   <Icons.Eye />
                                 </button>
@@ -2702,6 +2751,7 @@ export default function PageQuote() {
                                       openCreditReminderModal(group.client, openInvoices);
                                     }}
                                     title="Crear recordatorio"
+                                    aria-label={`Crear recordatorio para ${openInvoices.length} facturas pendientes de ${group.client?.name || "cliente sin nombre"}`}
                                   >
                                     <Icons.Clock />
                                   </button>
@@ -2719,6 +2769,7 @@ export default function PageQuote() {
                                       });
                                     }}
                                     title="Marcar todas como saldadas"
+                                    aria-label={`Marcar ${openInvoices.length} facturas pendientes de ${group.client?.name || "cliente sin nombre"} como saldadas`}
                                   >
                                     <Icons.Check />
                                   </button>
@@ -2981,7 +3032,7 @@ export default function PageQuote() {
                             )}
                           </td>
                           <td className="td-pad"><StatusBadge status={order.status} className="pq-badge" order={order} /></td>
-                          <td className="td-pad"><PaymentBadge status={order.payment_status} className="pq-badge" /></td>
+                          <td className="td-pad"><PaymentBadge status={order.payment_status} labelOverride={CASHIER_PAYMENT_LABEL_OVERRIDES[order.payment_status]} className="pq-badge" /></td>
                           <td className="td-pad td-date">{new Date(order.created_at).toLocaleDateString("es-DO", { day: "2-digit", month: "long", year: "numeric" })}</td>
                           <td className="td-pad td-actions" data-row-action>
                             <div className="table-actions" data-row-action>
@@ -3049,7 +3100,7 @@ export default function PageQuote() {
                       <div className="ps-order-card-fields">
                         <div className="ps-order-card-field">
                           <span className="ps-order-card-field-label">Pago</span>
-                          <PaymentBadge status={order.payment_status} className="acm-badge" bordered showDot={false} />
+                          <PaymentBadge status={order.payment_status} labelOverride={CASHIER_PAYMENT_LABEL_OVERRIDES[order.payment_status]} className="acm-badge" bordered showDot={false} />
                         </div>
                         <div className="ps-order-card-field">
                           <span className="ps-order-card-field-label">Fecha</span>
@@ -3117,6 +3168,7 @@ export default function PageQuote() {
         onClose={() => setSelectedOrder(null)}
         order={selectedOrder}
         onOpenPayment={handleOpenPayment}
+        canCorrectPayment={Boolean(selectedOrder && canCorrectPaidPayment(selectedOrder, user?.id, profile))}
         onAuthorizeProduction={handleAuthorizeProduction}
         authorizingProduction={productionAuthorizationSaving}
         sellerDirectory={sellerDirectory}
@@ -3140,7 +3192,8 @@ export default function PageQuote() {
         onAssignInvoiceCode={handleAssignInvoiceCode}
         onCreditClientRequired={openCreditClientRegistration}
         canAssignInvoiceCode={Boolean(paymentModalOrder && isQuoteEditable(paymentModalOrder) && paymentModalOrder.invoice_assignment_mode === "cashier")}
-        canManagePayment={Boolean(paymentModalOrder && isQuoteEditable(paymentModalOrder))}
+        canManagePayment={Boolean(paymentModalOrder && (isQuoteEditable(paymentModalOrder) || canCorrectPaidPayment(paymentModalOrder, user?.id, profile)))}
+        correctionMode={Boolean(paymentModalOrder && canCorrectPaidPayment(paymentModalOrder, user?.id, profile))}
         hasVerifiedPaymentReceipt={hasVerifiedPaymentReceipt(paymentModalOrder)}
         nested={Boolean(selectedOrder && paymentModalOrder?.id === selectedOrder.id)}
       />

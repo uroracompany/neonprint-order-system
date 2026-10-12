@@ -9,15 +9,20 @@ const createStorage = () => {
 
 describe('KPI workspace persistence', () => {
   it('keeps the selected KPI section in the route and clears it when leaving KPI', () => {
-    const kpiSearch = getKpiTabSearch('?tab=kpi', 'production')
-    expect(kpiSearch).toBe('?tab=kpi&kpiTab=production')
-    expect(getKpiTabFromSearch(kpiSearch)).toBe('production')
+    const kpiSearch = getKpiTabSearch('?tab=kpi', 'orders')
+    expect(kpiSearch).toBe('?tab=kpi&kpiTab=orders')
+    expect(getKpiTabFromSearch(kpiSearch)).toBe('orders')
     expect(getAdminTabSearch(kpiSearch, 'materials')).toBe('?tab=materials')
   })
 
   it('normalizes the removed materials KPI tab to the executive overview', () => {
     expect(getKpiTabFromSearch('?tab=kpi&kpiTab=materials')).toBe('overview')
     expect(getKpiTabSearch('?tab=kpi&kpiTab=materials', 'materials')).toBe('?tab=kpi')
+  })
+
+  it('normalizes the removed production KPI tab to the executive overview', () => {
+    expect(getKpiTabFromSearch('?tab=kpi&kpiTab=production')).toBe('overview')
+    expect(getKpiTabSearch('?tab=kpi&kpiTab=production', 'production')).toBe('?tab=kpi')
   })
 
   it('restores period, filters, detail and scroll for the same user session', () => {
@@ -33,10 +38,10 @@ describe('KPI workspace persistence', () => {
     }, storage)
 
     expect(readKpiWorkspace('user-1', storage)).toMatchObject({
-      activeTab: 'users',
+      activeTab: 'overview',
       period: 'custom',
       pipelineFilters: { designType: 'INTERNAL_DESING', orderType: 'orden 911' },
-      detail: { type: 'production-employee', employeeId: 'employee-1', areaCode: 'dtf' },
+      detail: null,
       scrollY: 640,
     })
   })

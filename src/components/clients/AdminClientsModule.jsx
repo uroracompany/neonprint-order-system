@@ -2,13 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Pagination } from "../ui/Pagination";
 import { SalesFilterToolbar } from "../ui/SalesFilterToolbar";
 import { Icons } from "../../utils/icons";
-import {
-  getOrderStatusLabel,
-  getPaymentStatusLabel,
-  STATUS_OPTIONS,
-  PAYMENT_OPTIONS,
-} from "../../utils/constants";
-import OrderDetailModal from "../orders/OrderDetailModal";
+import { adminApiFetch } from "../../utils/adminApi";
+import ClientAnalyticsModal from "./ClientAnalyticsModal";
 import "./AdminClientsModule.css";
 
 const PAGE_SIZE = 7;
@@ -42,23 +37,6 @@ const getInitials = (name) => {
   return "??";
 };
 
-const getOrderTone = (status) => {
-  const normalized = String(status || "").toLowerCase();
-  if (["in_completed", "in_delivered"].includes(normalized)) return "success";
-  if (normalized === "cancelled") return "danger";
-  if (normalized === "in_termination") return "termination";
-  if (normalized === "in_production") return "warning";
-  return "info";
-};
-
-const getPaymentTone = (status) => {
-  const normalized = String(status || "").toLowerCase();
-  if (normalized === "pagado") return "success";
-  if (normalized === "credito") return "violet";
-  if (normalized === "parcial") return "warning";
-  return "neutral";
-};
-
 function ClientStatusBadges({ client }) {
   return (
     <div className="acm-badge-stack">
@@ -83,7 +61,10 @@ function ClientList({
   onEditClient,
   onRequestDelete,
   onRestoreClient,
-  onOpenDetail,
+  onOpenAnalytics,
+  onCreateOrder,
+  onViewOrders,
+  onManageCredit,
 }) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -93,7 +74,26 @@ function ClientList({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [openMoreMenuId, setOpenMoreMenuId] = useState(null);
   const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    const closeMenuOnOutsidePointer = (event) => {
+      const target = event.target;
+      if (target && typeof target.closest === "function" && target.closest("[data-client-more-menu]")) return;
+      setOpenMoreMenuId(null);
+    };
+    const closeMenuOnEscape = (event) => {
+      if (event.key === "Escape") setOpenMoreMenuId(null);
+    };
+
+    document.addEventListener("pointerdown", closeMenuOnOutsidePointer);
+    document.addEventListener("keydown", closeMenuOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenuOnOutsidePointer);
+      document.removeEventListener("keydown", closeMenuOnEscape);
+    };
+  }, []);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setQuery(search.trim()), 250);
@@ -217,7 +217,7 @@ function ClientList({
             <h2>Clientes registrados</h2>
           </div>
           <div className="mat-panel-tools">
-            <div className="mat-tabs" role="tablist" ariaLabel="Filtro de actividad">
+            <div className="mat-tabs" role="tablist" aria-label="Filtro de actividad">
               <button
                 type="button"
                 className={filters.activity === "all" ? "active" : ""}
@@ -293,11 +293,11 @@ function ClientList({
                 <tr
                   key={client.id}
                   className="row-hover acm-client-row"
-                  onClick={() => onOpenDetail(client.id)}
+                  onClick={() => onOpenAnalytics(client)}
                   onKeyDown={(event) => {
                     if (["Enter", " "].includes(event.key)) {
                       event.preventDefault();
-                      onOpenDetail(client.id);
+                      onOpenAnalytics(client);
                     }
                   }}
                   tabIndex={0}
@@ -338,7 +338,7 @@ function ClientList({
                         </button>
                       ) : (
                         <>
-                          <button className="table-action-btn view" onClick={() => onOpenDetail(client.id)} title="Ver detalle" aria-label={`Ver detalle de ${client.name}`}><Icons.Eye /></button>
+                          <button className="table-action-btn view" onClick={() => onOpenAnalytics(client)} title="Ver estadísticas" aria-label={`Ver estadísticas de ${client.name}`}><Icons.Eye /></button>
                           <button className="table-action-btn edit" onClick={() => onEditClient(client)} title="Editar cliente" aria-label={`Editar ${client.name}`}><Icons.Edit /></button>
                           <button
                             className="table-action-btn cancel"
@@ -348,6 +348,29 @@ function ClientList({
                           >
                             <Icons.Trash />
                           </button>
+                          <details
+                            className="acm-more-menu acm-row-more-menu"
+                            data-client-more-menu
+                            open={openMoreMenuId === client.id}
+                          >
+                            <summary
+                              role="button"
+                              aria-expanded={openMoreMenuId === client.id}
+                              aria-label={`Más acciones de ${client.name}`}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setOpenMoreMenuId((current) => current === client.id ? null : client.id);
+                              }}
+                            >
+                              <Icons.ChevronDown aria-hidden="true" />
+                            </summary>
+                            <div>
+                              <button type="button" onClick={() => { setOpenMoreMenuId(null); onCreateOrder?.(client); }}><Icons.Plus /> Nueva orden</button>
+                              <button type="button" onClick={() => { setOpenMoreMenuId(null); onViewOrders?.(client.id); }}><Icons.Orders /> Ver todas las órdenes</button>
+                              <button type="button" onClick={() => { setOpenMoreMenuId(null); onManageCredit?.(client.id); }}><Icons.Receipt /> Gestionar crédito</button>
+                            </div>
+                          </details>
                         </>
                       )}
                     </div>
@@ -378,393 +401,62 @@ function StatLine({ icon, label, value, tone = "info" }) {
   );
 }
 
-function ClientDetail({
-  supabase,
-  clientId,
-  refreshKey,
-  onBack,
-  onEditClient,
-  onRequestDelete,
-  onCreateOrder,
-  onViewOrders,
-  onManageCredit,
-  onRestoreClient,
-}) {
-  const [detail, setDetail] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const menuRef = useRef(null);
+export default function AdminClientsModule(props) {
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState("");
+  const analyticsRequestIdRef = useRef(0);
 
-  useEffect(() => {
-    const handleClick = (e) => {
-      if (menuRef.current && menuRef.current.open && !menuRef.current.contains(e.target)) {
-        menuRef.current.removeAttribute("open");
+  const openAnalytics = useCallback(async (client) => {
+    if (!client?.id) return;
+    const requestId = analyticsRequestIdRef.current + 1;
+    analyticsRequestIdRef.current = requestId;
+    const placeholder = { client_id: String(client.id), client_name: client.name || "Cliente" };
+    setSelectedClient(placeholder);
+    setAnalyticsLoading(true);
+    setAnalyticsError("");
+
+    try {
+      const { response, result } = await adminApiFetch("/api/kpi-data", {
+        action: "client_workspace_detail",
+        client_id: client.id,
+      });
+      if (requestId !== analyticsRequestIdRef.current) return;
+      if (!response.ok) throw new Error(result?.error || "No se pudieron cargar las estadísticas del cliente.");
+      const analytics = result?.client;
+      if (!analytics || String(analytics.client_id) !== String(client.id)) {
+        throw new Error("La respuesta de estadísticas del cliente está incompleta.");
       }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+      setSelectedClient(analytics);
+    } catch (error) {
+      if (requestId === analyticsRequestIdRef.current) setAnalyticsError(error?.message || "No se pudieron cargar las estadísticas del cliente.");
+    } finally {
+      if (requestId === analyticsRequestIdRef.current) setAnalyticsLoading(false);
+    }
   }, []);
 
-  const ORDER_PAGE_SIZE = 7;
+  const closeAnalytics = useCallback(() => {
+    analyticsRequestIdRef.current += 1;
+    setSelectedClient(null);
+    setAnalyticsLoading(false);
+    setAnalyticsError("");
+  }, []);
 
-  const [orderSearch, setOrderSearch] = useState("");
-  const [orderQuery, setOrderQuery] = useState("");
-  const [orderPage, setOrderPage] = useState(1);
-  const [orderItems, setOrderItems] = useState([]);
-  const [orderTotal, setOrderTotal] = useState(0);
-  const [orderLoading, setOrderLoading] = useState(false);
-  const [orderError, setOrderError] = useState("");
-  const [orderStatusFilter, setOrderStatusFilter] = useState("all");
-  const [orderPaymentFilter, setOrderPaymentFilter] = useState("all");
-  const [orderDateFrom, setOrderDateFrom] = useState("");
-  const [orderDateTo, setOrderDateTo] = useState("");
-  const orderRequestIdRef = useRef(0);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setOrderQuery(orderSearch.trim()), 250);
-    return () => window.clearTimeout(timeout);
-  }, [orderSearch]);
-
-  useEffect(() => setOrderPage(1), [orderQuery, orderStatusFilter, orderPaymentFilter, orderDateFrom, orderDateTo]);
-
-  const loadOrders = useCallback(async () => {
-    const requestId = orderRequestIdRef.current + 1;
-    orderRequestIdRef.current = requestId;
-    setOrderLoading(true);
-    setOrderError("");
-
-    const { data, error: rpcError } = await supabase.rpc("admin_list_client_orders", {
-      p_client_id: clientId,
-      p_page: orderPage,
-      p_page_size: ORDER_PAGE_SIZE,
-      p_search: orderQuery || null,
-      p_status_filter: orderStatusFilter,
-      p_payment_filter: orderPaymentFilter,
-      p_date_from: orderDateFrom || null,
-      p_date_to: orderDateTo || null,
-    });
-
-    if (requestId !== orderRequestIdRef.current) return;
-    if (rpcError) {
-      setOrderItems([]);
-      setOrderTotal(0);
-      setOrderError(rpcError.message || "No se pudieron cargar las órdenes.");
-      setOrderLoading(false);
-      return;
-    }
-
-    const rows = Array.isArray(data) ? data : [];
-    const nextTotal = Number(rows[0]?.total_count || 0);
-    const maxPage = Math.max(1, Math.ceil(nextTotal / ORDER_PAGE_SIZE));
-
-    if (orderPage > maxPage) {
-      setOrderPage(maxPage);
-      return;
-    }
-
-    setOrderItems(rows);
-    setOrderTotal(nextTotal);
-    setOrderLoading(false);
-  }, [clientId, orderPage, orderQuery, orderStatusFilter, orderPaymentFilter, orderDateFrom, orderDateTo, supabase]);
-
-  useEffect(() => {
-    loadOrders();
-  }, [loadOrders]);
-
-  const hasOrderFilters = Boolean(orderSearch)
-    || orderStatusFilter !== "all"
-    || orderPaymentFilter !== "all"
-    || Boolean(orderDateFrom)
-    || Boolean(orderDateTo);
-  const orderActiveFilterCount = [orderSearch, orderStatusFilter !== "all", orderPaymentFilter !== "all", orderDateFrom, orderDateTo].filter(Boolean).length;
-  const resetOrderFilters = () => {
-    setOrderSearch("");
-    setOrderQuery("");
-    setOrderStatusFilter("all");
-    setOrderPaymentFilter("all");
-    setOrderDateFrom("");
-    setOrderDateTo("");
-    setOrderPage(1);
-  };
-
-  const handleOrderClick = useCallback(async (orderId) => {
-    const { data } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", orderId)
-      .single();
-    if (data) setSelectedOrder(data);
-  }, [supabase]);
-
-  const loadDetail = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    const { data, error: rpcError } = await supabase.rpc("admin_get_client_detail", { p_client_id: clientId });
-    if (rpcError) {
-      setDetail(null);
-      setError(rpcError.message || "No se pudo cargar el detalle del cliente.");
-    } else {
-      setDetail(data || null);
-    }
-    setLoading(false);
-  }, [clientId, supabase]);
-
-  useEffect(() => {
-    loadDetail();
-  }, [loadDetail, refreshKey]);
-
-  if (loading) {
-    return (
-      <section className="pa-section acm-detail-view" aria-busy="true">
-        <button className="acm-back" onClick={onBack}><Icons.ArrowLeft /> Volver a clientes</button>
-        <div className="acm-detail-loading"><span /><span /><span /></div>
-      </section>
-    );
-  }
-
-  if (error || !detail?.client) {
-    return (
-      <section className="pa-section acm-detail-view">
-        <button className="acm-back" onClick={onBack}><Icons.ArrowLeft /> Volver a clientes</button>
-        <div className="pa-panel acm-detail-error">
-          <Icons.AlertCircle />
-          <h2>No pudimos abrir este cliente</h2>
-          <p>{error || "El registro ya no está disponible."}</p>
-          <button className="pa-btn secondary" onClick={loadDetail}>Reintentar</button>
-      </div>
-    </section>
-  );
-}
-
-  const client = detail.client;
-  const stats = Object.fromEntries(Object.entries(detail.stats || {}).map(([key, value]) => (
-    [key, typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value]
-  )));
-  const confirmDelete = () => onRequestDelete(client);
+  const retryAnalytics = useCallback(() => {
+    if (!selectedClient?.client_id) return;
+    openAnalytics({ id: selectedClient.client_id, name: selectedClient.client_name });
+  }, [openAnalytics, selectedClient]);
 
   return (
-    <section className="pa-section acm-detail-view" aria-labelledby="client-detail-title">
-      <button className="acm-back" onClick={onBack}><Icons.ArrowLeft /> Volver a clientes</button>
-
-      <div className="acm-detail-hero">
-        <div className="acm-detail-identity">
-          <span className="acm-avatar acm-avatar-large">{getInitials(client.name)}</span>
-          <div className="acm-detail-copy">
-            <div className="acm-detail-name-line">
-              <h2 id="client-detail-title">{client.name}</h2>
-            </div>
-            <div className="acm-detail-contact">
-              <span><Icons.Phone /> {client.phone || "Sin teléfono"}</span>
-              <span><Icons.Mail /> {client.email || "Sin correo"}</span>
-            </div>
-            <div className="acm-detail-status-line">
-              {client.deleted_at ? (
-                <span className="acm-profile-status inactive">Dado de baja</span>
-              ) : stats.is_frequent ? (
-                <span className="acm-profile-status frequent"><Icons.TrendUp /> Cliente frecuente</span>
-              ) : stats.is_inactive ? (
-                <span className="acm-profile-status inactive">Cliente inactivo</span>
-              ) : (
-                <span className="acm-profile-status active"><span /> Cliente activo</span>
-              )}
-              <small>Registrado el {formatDate(client.created_at)}</small>
-            </div>
-          </div>
-        </div>
-        <div className="acm-detail-actions">
-          {client.deleted_at ? (
-            <button className="pa-btn primary acm-detail-action-primary" onClick={() => onRestoreClient?.(client)}>
-              <Icons.UserCheck /> Restaurar cliente
-            </button>
-          ) : (
-            <>
-              <button className="pa-btn primary acm-detail-action-primary" onClick={() => onCreateOrder(client)}>
-                <Icons.Plus /> Nueva orden
-              </button>
-              <details ref={menuRef} className="acm-more-menu">
-                <summary aria-label="Más acciones"><Icons.Menu /></summary>
-                <div>
-                  <button onClick={() => onEditClient(client)}><Icons.Edit /> Editar cliente</button>
-                  <button onClick={() => onViewOrders(client.id)}><Icons.Orders /> Ver todas las órdenes</button>
-                  <button onClick={() => onManageCredit(client.id)}><Icons.Receipt /> Gestionar crédito</button>
-                  <button className="danger" onClick={confirmDelete}>
-                    <Icons.Trash /> Dar de baja
-                  </button>
-                </div>
-              </details>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="acm-detail-grid">
-        <article className="pa-panel acm-detail-card acm-detail-card-personal">
-          <h3>Información personal</h3>
-          <dl className="acm-info-list">
-            <div><dt>Nombre completo</dt><dd>{client.name}</dd></div>
-            <div><dt>Teléfono</dt><dd>{client.phone || "—"}</dd></div>
-            <div><dt>Correo</dt><dd>{client.email || "—"}</dd></div>
-            <div className="acm-info-divider"><dt>Dirección</dt><dd>{client.address || "—"}</dd></div>
-            <div><dt>ID de cliente</dt><dd>#{client.id.slice(0, 8).toUpperCase()}</dd></div>
-            <div><dt>Fecha de registro</dt><dd>{formatDate(client.created_at)}</dd></div>
-            <div><dt>Última modificación</dt><dd>{formatDate(client.updated_at, true)}</dd></div>
-            <div className="acm-info-divider"><dt>Notas internas</dt><dd>{client.notes || "—"}</dd></div>
-          </dl>
-        </article>
-
-        <article className="pa-panel acm-detail-card acm-detail-card-commerce">
-          <h3>Resumen comercial</h3>
-          <div className="acm-stat-list">
-            <StatLine icon={<Icons.AlertCircle />} label="Ordenes 911" value={numberValue(stats.urgent_911_orders)} tone="danger" />
-            <StatLine icon={<Icons.FileText />} label="Ordenes normales" value={numberValue(stats.normal_orders)} tone="info" />
-            <StatLine icon={<Icons.Brush />} label="Órdenes diseño interno" value={numberValue(stats.internal_design_orders)} tone="violet" />
-            <StatLine icon={<Icons.ExternalLink />} label="Órdenes diseño externo" value={numberValue(stats.external_design_orders)} tone="warning" />
-            <StatLine icon={<Icons.Orders />} label="Total de órdenes" value={numberValue(stats.total_orders)} tone="info" />
-            <StatLine icon={<Icons.Clock />} label="Órdenes activas / pendientes" value={numberValue(stats.active_orders)} tone="warning" />
-            <StatLine icon={<Icons.Check />} label="Órdenes completadas" value={numberValue(stats.completed_orders)} tone="success" />
-            <StatLine icon={<Icons.X />} label="Órdenes canceladas" value={numberValue(stats.cancelled_orders)} tone="danger" />
-          </div>
-          <div className="acm-card-footer-stat">
-            <span className="acm-footer-icon info"><Icons.Calendar /></span>
-            <span>Última compra</span>
-            <strong>{formatDate(stats.last_order_at)}</strong>
-          </div>
-        </article>
-
-        <article className="pa-panel acm-detail-card acm-detail-card-credit">
-          <h3>Crédito</h3>
-          <div className="acm-stat-list">
-            <StatLine icon={<Icons.Receipt />} label="Facturas de crédito activas" value={numberValue(stats.active_credit_count)} tone="violet" />
-            <StatLine icon={<Icons.FileText />} label="Historial total de crédito" value={numberValue(stats.credit_history_count)} tone="info" />
-            <StatLine icon={<Icons.Check />} label="Créditos saldados" value={numberValue(stats.settled_credit_count)} tone="success" />
-          </div>
-          <div className="acm-card-footer-stat">
-            <span className="acm-footer-icon danger"><Icons.Calendar /></span>
-            <span>Crédito pendiente más antiguo</span>
-            <strong>{formatDate(stats.oldest_pending_credit_at)}</strong>
-          </div>
-        </article>
-      </div>
-
-      <SalesFilterToolbar
-        ariaLabel="Filtros de actividad"
-        search={{
-          label: "Buscar en actividad reciente",
-          value: orderSearch,
-          onChange: setOrderSearch,
-          placeholder: "Buscar por orden, factura, estado…",
-        }}
-        controls={[
-          { id: "order-status", label: "Estado operativo", icon: <Icons.FileText />, value: orderStatusFilter, onChange: setOrderStatusFilter, isActive: orderStatusFilter !== "all", options: [{ value: "all", label: "Todos" }, ...STATUS_OPTIONS.map((status) => ({ value: status, label: getOrderStatusLabel(status) }))] },
-          { id: "order-payment", label: "Estado de pago", icon: <Icons.Money />, value: orderPaymentFilter, onChange: setOrderPaymentFilter, isActive: orderPaymentFilter !== "all", options: [{ value: "all", label: "Todos" }, ...PAYMENT_OPTIONS.map((payment) => ({ value: payment, label: getPaymentStatusLabel(payment) }))] },
-          { id: "order-from", label: "Desde", type: "date", value: orderDateFrom, onChange: setOrderDateFrom, isActive: Boolean(orderDateFrom) },
-          { id: "order-to", label: "Hasta", type: "date", value: orderDateTo, onChange: setOrderDateTo, isActive: Boolean(orderDateTo) },
-        ]}
-        resultCount={orderTotal}
-        resultLabel={`resultado${orderTotal === 1 ? "" : "s"}`}
-        activeFilters={orderActiveFilterCount}
-        onReset={resetOrderFilters}
+    <>
+      <ClientList {...props} onOpenAnalytics={openAnalytics} />
+      <ClientAnalyticsModal
+        client={selectedClient}
+        loading={analyticsLoading}
+        error={analyticsError}
+        onRetry={retryAnalytics}
+        onClose={closeAnalytics}
       />
-
-      <div className="acm-activity-panel">
-        <div className="acm-activity-heading">
-          <div>
-            <h3>Actividad reciente</h3>
-            <p>Órdenes registradas para este cliente con búsqueda y filtros.</p>
-          </div>
-          <div>
-            <button onClick={() => onViewOrders(client.id)}>Ver todas las órdenes</button>
-            <button onClick={() => onManageCredit(client.id)}>Gestionar crédito</button>
-          </div>
-        </div>
-
-        <div className="ps-table-wrap">
-          <table className="ps-table acm-activity-table">
-            <thead><tr><th>Orden / factura</th><th>Fecha</th><th>Estado operativo</th><th>Estado de pago</th><th /></tr></thead>
-            <tbody>
-              {orderLoading ? (
-                Array.from({ length: ORDER_PAGE_SIZE }, (_, index) => (
-                  <tr key={index} className="acm-skeleton-row" aria-hidden="true">
-                    <td colSpan={5}><span /></td>
-                  </tr>
-                ))
-              ) : orderError ? (
-                <tr>
-                  <td colSpan={5} className="ps-table-empty">
-                    <div className="acm-error-state">
-                      <Icons.AlertCircle />
-                      <span>{orderError}</span>
-                      <button className="pa-btn secondary pa-btn-sm" onClick={loadOrders}>Reintentar</button>
-                    </div>
-                  </td>
-                </tr>
-              ) : orderItems.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="ps-table-empty">
-                    <div className="acm-empty-state">
-                      <Icons.Orders />
-                      <strong>No encontramos órdenes</strong>
-                      <span>{hasOrderFilters
-                        ? "Prueba con otros filtros o limpia la búsqueda."
-                        : "Este cliente todavía no tiene órdenes."}</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : orderItems.map((order) => (
-                <tr key={order.id} className="row-hover" onClick={() => handleOrderClick(order.id)}>
-                  <td className="td-pad">
-                    <div className="acm-order-id"><Icons.FileText /><span><strong>#{order.id.slice(0, 8).toUpperCase()}</strong><small>{order.invoice_number || "Sin factura"}</small></span></div>
-                  </td>
-                  <td className="td-pad">{formatDate(order.created_at)}</td>
-                  <td className="td-pad"><span className={`acm-badge ${getOrderTone(order.status)}`}>{getOrderStatusLabel(order.status)}</span></td>
-                  <td className="td-pad"><span className={`acm-badge ${getPaymentTone(order.payment_status)}`}>{getPaymentStatusLabel(order.payment_status)}</span></td>
-                  <td className="td-pad td-actions"><Icons.ChevronRight /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {!orderLoading && !orderError && orderTotal > 0 && (
-          <div className="acm-pagination-footer">
-            <Pagination currentPage={orderPage} totalPages={Math.max(1, Math.ceil(orderTotal / ORDER_PAGE_SIZE))} onPageChange={setOrderPage} />
-          </div>
-        )}
-      </div>
-
-      <OrderDetailModal
-        open={!!selectedOrder}
-        order={selectedOrder}
-        onClose={() => setSelectedOrder(null)}
-        showPrimaryAction={false}
-        adminActions={null}
-      />
-    </section>
-  );
-}
-
-export default function AdminClientsModule(props) {
-  const [view, setView] = useState("list");
-  const [selectedClientId, setSelectedClientId] = useState(null);
-
-  const openDetail = (clientId) => {
-    setSelectedClientId(clientId);
-    setView("detail");
-  };
-
-  const closeDetail = () => {
-    setSelectedClientId(null);
-    setView("list");
-  };
-
-  useEffect(() => {
-    if (!selectedClientId && view === "detail") setView("list");
-  }, [selectedClientId, view]);
-
-  return view === "detail" && selectedClientId ? (
-    <ClientDetail {...props} clientId={selectedClientId} onBack={closeDetail} />
-  ) : (
-    <ClientList {...props} onOpenDetail={openDetail} />
+    </>
   );
 }
