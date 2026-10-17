@@ -22,7 +22,12 @@ Run and wait for the following stages in order:
 7. Only if the user explicitly requested Playwright/browser verification or
    `analysis.md` contains `PLAYWRIGHT: REQUIRED`, delegate to `playwright-qa`.
    Stop if it fails or `playwright-results.md` is missing.
-8. Delegate to `reviewer` with all evidence. Report its final verdict.
+8. Always delegate to `food-taster` after Tester, applicable specialists, and
+   any required Playwright QA. It runs the isolated quality gate and writes
+   `${TASK_DIR}/food-taster-results.md`. Stop if any check fails or is
+   incomplete, or if the artifact is missing or does not contain `PASS`.
+9. Delegate to `reviewer` with all evidence. The reviewer must block without
+   passing Food Taster evidence. Report its final verdict.
 
 Every stage must read the `neonprint-domain-context` skill or
 `.opencode/context/neonprint-business-context.md`. `SHIP` is valid only when all

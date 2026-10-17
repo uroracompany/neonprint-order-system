@@ -30,7 +30,7 @@ describe("designer persisted-file removal contract", () => {
   });
 
   it("uses the RPC only for files with an owned production-file row", () => {
-    expect(designerPage).toContain('"order_production_files(id, order_id, url)"');
+    expect(designerPage).toContain('"order_production_files(id, order_id, url, filename, public_label, production_area_code, material_names, termination_name)"');
     expect(designerPage).toContain('rpc("designer_remove_order_file", {');
     expect(designerPage).toContain("file?.productionFile?.id");
   });

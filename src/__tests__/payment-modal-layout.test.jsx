@@ -15,6 +15,7 @@ const order = {
   client_phone: "+595 981 123456",
   payment_status: "Pending_Payment",
   status: "in_Quote",
+  updated_at: "2026-06-11T10:00:00.000Z",
 };
 
 describe("PaymentFormModal layout", () => {
@@ -84,28 +85,11 @@ describe("PaymentFormModal layout", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Para marcar la orden como pago parcial debes registrar el código de facturación.");
   });
 
-  it("keeps Pending disabled and requires a saved billing code for partial payment", async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(<PaymentFormModal open order={order} onClose={vi.fn()} onConfirm={vi.fn()} canAssignInvoiceCode />);
+  it("enables partial payment only when the order already has a saved billing code", () => {
+    const invoiceOrder = { ...order, payment_status: "parcial", invoice_number: "FAC-001" };
+    render(<PaymentFormModal open order={invoiceOrder} onClose={vi.fn()} onConfirm={vi.fn()} />);
 
-    expect(screen.getByRole("button", { name: "Confirmar pago" })).toBeDisabled();
-
-    await user.selectOptions(screen.getByRole("combobox"), "parcial");
-    expect(screen.getByRole("button", { name: "Confirmar pago parcial" })).toBeDisabled();
-
-    const invoiceNumber = screen.getByLabelText("Código de facturación");
-    await user.type(invoiceNumber, "FAC-NO-GUARDADA");
-    expect(screen.getByRole("button", { name: "Confirmar pago parcial" })).toBeDisabled();
-
-    rerender(
-      <PaymentFormModal
-        open
-        order={{ ...order, payment_status: "parcial", invoice_number: "FAC-001" }}
-        onClose={vi.fn()}
-        onConfirm={vi.fn()}
-      />,
-    );
-    await waitFor(() => expect(screen.getByRole("button", { name: "Confirmar pago parcial" })).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Confirmar pago parcial" })).toBeEnabled();
   });
 
   it("requires a saved billing code and linked client for credit", async () => {
@@ -148,7 +132,10 @@ describe("PaymentFormModal layout", () => {
     await user.type(invoiceNumber, "FAC-002");
     await user.click(screen.getByRole("button", { name: "Guardar código" }));
 
-    await waitFor(() => expect(onAssignInvoiceCode).toHaveBeenCalledWith(creditOrder, "FAC-002"));
+    await waitFor(() => expect(onAssignInvoiceCode).toHaveBeenCalled());
+    expect(onAssignInvoiceCode.mock.calls[0][0]).toBe(creditOrder);
+    expect(onAssignInvoiceCode.mock.calls[0][1]).toBe("FAC-002");
+    expect(onAssignInvoiceCode.mock.calls[0][2]).toEqual(expect.any(Function));
     await waitFor(() => expect(screen.getByText("Facturación:").parentElement).toHaveTextContent("FAC-002"));
   });
 
@@ -219,5 +206,145 @@ describe("PaymentFormModal layout", () => {
       invoiceNumber: "FAC-001",
       isPaymentCorrection: true,
     });
+  });
+
+  it("retains local payment, invoice, and receipt drafts and blocks writes after a remote version change", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const onAssignInvoiceCode = vi.fn();
+    const { rerender } = render(
+      <PaymentFormModal
+        open
+        order={{ ...order, invoice_number: "FAC-001" }}
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+        canAssignInvoiceCode
+        onAssignInvoiceCode={onAssignInvoiceCode}
+      />,
+    );
+
+    await user.selectOptions(screen.getByRole("combobox"), "pagado");
+    const invoiceInput = screen.getByLabelText("Código de facturación");
+    await user.clear(invoiceInput);
+    await user.type(invoiceInput, "FAC-BORRADOR");
+    const receipt = new File(["receipt"], "comprobante-local.png", { type: "image/png" });
+    fireEvent.change(document.body.querySelector("input[type='file']"), { target: { files: [receipt] } });
+    await waitFor(() => expect(document.querySelector(".pfm-receipt-card")).toHaveTextContent("comprobante-local.png"));
+
+    rerender(
+      <PaymentFormModal
+        open
+        order={{ ...order, payment_status: "parcial", invoice_number: "FAC-REMOTA", updated_at: "2026-06-11T10:05:00.000Z" }}
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+        canAssignInvoiceCode
+        onAssignInvoiceCode={onAssignInvoiceCode}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/la orden cambió en otro lugar/i);
+    expect(screen.getByRole("combobox")).toHaveValue("pagado");
+    expect(invoiceInput).toHaveValue("FAC-BORRADOR");
+    expect(document.querySelector(".pfm-receipt-card")).toHaveTextContent("comprobante-local.png");
+    expect(screen.getByRole("button", { name: "Confirmar pago" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Guardar código" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar código" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar pago" }));
+    expect(onAssignInvoiceCode).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("keeps the modal draft and blocks writes when a successful snapshot omits the order", async () => {
+    const onConfirm = vi.fn();
+    const onAssignInvoiceCode = vi.fn();
+    render(
+      <PaymentFormModal
+        open
+        order={{ ...order, payment_status: "parcial", invoice_number: "FAC-001" }}
+        remoteOrderMissing
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+        canAssignInvoiceCode
+        onAssignInvoiceCode={onAssignInvoiceCode}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/cierra y vuelve a abrir/i);
+    expect(screen.getByLabelText("Código de facturación")).toHaveValue("FAC-001");
+    expect(screen.getByRole("button", { name: "Confirmar pago parcial" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Guardar código" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar código" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar pago parcial" }));
+    expect(onAssignInvoiceCode).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("accepts its own invoice save without flagging conflict or dropping the receipt draft", async () => {
+    const user = userEvent.setup();
+    const paidOrder = { ...order, payment_status: "pagado", invoice_number: "FAC-001" };
+    const updatedOrder = { ...paidOrder, invoice_number: "FAC-002", updated_at: "2026-06-11T10:01:00.000Z" };
+    const onAssignInvoiceCode = vi.fn(async (_currentOrder, _invoiceNumber, acknowledge) => {
+      acknowledge(updatedOrder);
+      return updatedOrder;
+    });
+    const { rerender } = render(
+      <PaymentFormModal
+        open
+        order={paidOrder}
+        onClose={vi.fn()}
+        onConfirm={vi.fn()}
+        canAssignInvoiceCode
+        onAssignInvoiceCode={onAssignInvoiceCode}
+      />,
+    );
+
+    await waitFor(() => expect(document.body.querySelector("input[type='file']")).toBeTruthy());
+    const receipt = new File(["receipt"], "invoice-save-receipt.png", { type: "image/png" });
+    fireEvent.change(document.body.querySelector("input[type='file']"), { target: { files: [receipt] } });
+    await waitFor(() => expect(document.querySelector(".pfm-receipt-card")).toHaveTextContent("invoice-save-receipt.png"));
+    const invoiceInput = screen.getByLabelText("Código de facturación");
+    await user.clear(invoiceInput);
+    await user.type(invoiceInput, "FAC-002");
+    await user.click(screen.getByRole("button", { name: "Guardar código" }));
+
+    await waitFor(() => expect(onAssignInvoiceCode).toHaveBeenCalled());
+    rerender(
+      <PaymentFormModal
+        open
+        order={updatedOrder}
+        onClose={vi.fn()}
+        onConfirm={vi.fn()}
+        canAssignInvoiceCode
+        onAssignInvoiceCode={onAssignInvoiceCode}
+      />,
+    );
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveValue("pagado");
+    expect(screen.getByLabelText("Código de facturación")).toHaveValue("FAC-002");
+    expect(document.querySelector(".pfm-receipt-card")).toHaveTextContent("invoice-save-receipt.png");
+  });
+
+  it("retains the receipt draft and reports ORDER_STALE returned by the server", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue({ ok: false, code: "ORDER_STALE" });
+    render(
+      <PaymentFormModal
+        open
+        order={{ ...order, payment_status: "pagado", invoice_number: "FAC-001" }}
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    await waitFor(() => expect(document.body.querySelector("input[type='file']")).toBeTruthy());
+    const receipt = new File(["receipt"], "stale-receipt.png", { type: "image/png" });
+    fireEvent.change(document.body.querySelector("input[type='file']"), { target: { files: [receipt] } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Confirmar pago" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Confirmar pago" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/la orden cambió en otro lugar/i);
+    expect(document.querySelector(".pfm-receipt-card")).toHaveTextContent("stale-receipt.png");
+    expect(screen.getByRole("button", { name: "Confirmar pago" })).toBeDisabled();
   });
 });

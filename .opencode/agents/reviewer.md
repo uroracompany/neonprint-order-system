@@ -21,10 +21,11 @@ data contracts. Block a change that is visually correct but changes domain
 meaning, permissions, sensitive-data exposure or KPI semantics without explicit
 approval.
 
-1. Read the manifest, analysis, plan, changes summary and test results from
-   `${TASK_DIR}/`. Read visual and security results when the analysis requires
-   them. When `PLAYWRIGHT: REQUIRED`, read `playwright-results.md`; a missing
-   required result is `BLOCK`.
+1. Read the manifest, analysis, plan, changes summary, test results and
+   `${TASK_DIR}/food-taster-results.md`. Read visual and security results when
+   the analysis requires them. When `PLAYWRIGHT: REQUIRED`, read
+   `playwright-results.md`; a missing required result is `BLOCK`. Missing Food
+   Taster evidence or a result other than `PASS` is always `BLOCK`.
 2. Run `git diff` to see the actual changes.
 3. Assess: does the code match the spec? Are the tests meaningful or
    superficial? Any security, performance, or correctness issues?

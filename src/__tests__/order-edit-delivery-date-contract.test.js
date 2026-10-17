@@ -41,7 +41,7 @@ describe("order editing with textual delivery dates", () => {
     expect(editModal).toContain("const adminChanges = {");
     expect(editModal).toContain("if (canEditAssets) {");
     expect(editModal).toContain('["in_Quote", "cancelled", "in_Delivered"].includes(order?.status)');
-    expect(editModal).toContain("Para modificar archivos, devuelve esta orden a Diseño");
+    expect(editModal).toContain("El estado productivo está protegido.");
     expect(editModal).toContain('role="status"');
   });
 

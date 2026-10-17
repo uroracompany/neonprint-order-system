@@ -987,6 +987,10 @@ const mergeOrderWithProductionFiles = (baseOrder, nextOrder) => {
   return mergedOrder;
 };
 
+const isOrderStaleError = (error) => (
+  error?.code === "ORDER_STALE" || String(error?.message || "").includes("ORDER_STALE")
+);
+
 export default function PageQuote() {
   const navigate = useNavigate();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
@@ -1005,6 +1009,7 @@ export default function PageQuote() {
   const [loading, setLoading] = useState(true); // Indica si se están cargando órdenes
   const [selectedOrder, setSelectedOrder] = useState(null); // Orden actualmente abierta en el modal
   const [paymentModalOrder, setPaymentModalOrder] = useState(null); // Orden actualmente abierta en el modal de pago
+  const [paymentModalOrderRemoteMissing, setPaymentModalOrderRemoteMissing] = useState(false);
   
   // Estados para archivo
   const [archivingOrder, setArchivingOrder] = useState(null); // Orden que se va a archivar
@@ -1343,6 +1348,7 @@ export default function PageQuote() {
         });
     if (error || !updatedOrder) {
       setPaymentSaving(false);
+      if (isOrderStaleError(error)) return { ok: false, code: "ORDER_STALE" };
       notif.showActionNotification({
         type: "order_cancelled",
         label: "Crédito no aprobado",
@@ -1509,11 +1515,18 @@ export default function PageQuote() {
       return;
     }
 
+    const selectableOrders = [...fetchedOrders, ...creditOrders];
+    setPaymentModalOrderRemoteMissing(Boolean(
+      paymentModalOrder?.id && !selectableOrders.some((order) => order.id === paymentModalOrder.id),
+    ));
     applyOrdersSnapshot({
       orders: fetchedOrders,
       setOrders,
       setSelectedOrder,
       additionalOrders: creditOrders,
+      openOrderSetters: [setPaymentModalOrder],
+      preserveMissingOpenOrders: true,
+      preserveOpenOrderState: false,
     });
     await syncSellerDirectory(fetchedOrders);
     if (!silent) setLoading(false);
@@ -1548,6 +1561,7 @@ export default function PageQuote() {
 
     const nextOrder = data || order;
     await syncSellerDirectory([nextOrder]);
+    setPaymentModalOrderRemoteMissing(false);
     setPaymentModalOrder(nextOrder);
   };
 
@@ -1560,6 +1574,7 @@ export default function PageQuote() {
     });
 
     if (result?.ok) {
+      setPaymentModalOrderRemoteMissing(false);
       setPaymentModalOrder(null);
     }
 
@@ -1730,6 +1745,7 @@ export default function PageQuote() {
     // Manejar errores de actualización
     if (updateError || !updatedOrder) {
       setPaymentSaving(false);
+      if (isOrderStaleError(updateError)) return { ok: false, code: "ORDER_STALE" };
       console.error("Error updating order:", updateError);
       notif.showActionNotification({
         type: "order_cancelled",
@@ -1751,15 +1767,18 @@ export default function PageQuote() {
 
   };
 
-  const handleAssignInvoiceCode = useCallback(async (order, invoiceNumber) => {
+  const handleAssignInvoiceCode = useCallback(async (order, invoiceNumber, acknowledgeLocalUpdate) => {
     const { data, error } = await supabase.rpc("quote_assign_invoice_code", {
       p_order_id: order.id,
       p_invoice_number: invoiceNumber,
       p_expected_updated_at: order.updated_at,
     });
     if (error || !data) {
-      throw new Error(error?.message || "No se pudo guardar el código de facturación.");
+      const assignmentError = new Error(error?.message || "No se pudo guardar el código de facturación.");
+      if (isOrderStaleError(error)) assignmentError.code = "ORDER_STALE";
+      throw assignmentError;
     }
+    acknowledgeLocalUpdate?.(data);
     setOrders((previous) => previous.map((item) => item.id === data.id ? data : item));
     setSelectedOrder((previous) => previous?.id === data.id ? data : previous);
     setPaymentModalOrder((previous) => previous?.id === data.id ? data : previous);
@@ -3187,9 +3206,10 @@ export default function PageQuote() {
         open={!!paymentModalOrder}
         order={paymentModalOrder}
         loading={paymentSaving}
-        onClose={() => setPaymentModalOrder(null)}
+        onClose={() => { setPaymentModalOrderRemoteMissing(false); setPaymentModalOrder(null); }}
         onConfirm={handleConfirmPaymentFromModal}
         onAssignInvoiceCode={handleAssignInvoiceCode}
+        remoteOrderMissing={paymentModalOrderRemoteMissing}
         onCreditClientRequired={openCreditClientRegistration}
         canAssignInvoiceCode={Boolean(paymentModalOrder && isQuoteEditable(paymentModalOrder) && paymentModalOrder.invoice_assignment_mode === "cashier")}
         canManagePayment={Boolean(paymentModalOrder && (isQuoteEditable(paymentModalOrder) || canCorrectPaidPayment(paymentModalOrder, user?.id, profile)))}

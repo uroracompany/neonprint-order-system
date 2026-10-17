@@ -43,7 +43,7 @@ import {
 import { isOrderOverdue } from "../utils/orderDeadline";
 import { SecureImageLink } from "../components/ui/SecureImage";
 import { getFileNameFromUrl } from "../utils/constants";
-import { OPERATIONAL_ORDER_COLUMNS } from "../utils/orderListSelect";
+import { DELIVERY_ORDER_SELECT } from "../utils/orderListSelect";
 
 const PAYMENT_DELIVERY_BLOCKED_MESSAGE = "No se puede entregar la orden hasta que esté totalmente pagada o aprobada a crédito.";
 const PER_PAGE = 15;
@@ -77,6 +77,11 @@ const getSellerName = (order, sellerDirectory = {}) => (
   sellerDirectory[resolveSellerId(order)] || order?.seller_name || "Vendedor"
 );
 
+const getDeliveryConfirmation = (order) => {
+  const confirmation = order?.delivery_confirmations;
+  return Array.isArray(confirmation) ? confirmation[0] || null : confirmation || null;
+};
+
 const CARD_ACCENTS = [
   { color: "#0f1e40", bg: "#F1F5F9", glow: "#F1F5F9" },
   { color: "#10B981", bg: "#DCFCE7", glow: "#DCFCE7" },
@@ -98,15 +103,17 @@ function SummaryCard({ icon, label, value, sub, accentIdx = 0 }) {
   );
 }
 
-export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction, deliveryUserId }) {
+export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedAction }) {
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [sellerName, setSellerName] = useState("");
   const [designerName, setDesignerName] = useState("");
   const [quoteName, setQuoteName] = useState("");
   const [prodAssignments, setProdAssignments] = useState([]);
-  const [deliveryMessage, setDeliveryMessage] = useState("");
-  const [showMessage, setShowMessage] = useState(false);
+  const [executorType, setExecutorType] = useState("assigned_delivery");
+  const [otherExecutorName, setOtherExecutorName] = useState("");
+  const [deliveryComment, setDeliveryComment] = useState("");
+  const [deliveryFormError, setDeliveryFormError] = useState("");
   const [reworkOpen, setReworkOpen] = useState(false);
   const [reworkFiles, setReworkFiles] = useState([]);
   const [reworkSelections, setReworkSelections] = useState({});
@@ -118,6 +125,9 @@ export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedActi
   const reworkCloseRef = useRef(null);
   const reworkTriggerRef = useRef(null);
   const reworkLoadingRef = useRef(false);
+  const otherExecutorInputRef = useRef(null);
+  const orderId = order?.id;
+  const deliveryConfirmations = order?.delivery_confirmations;
 
   useEffect(() => {
     reworkLoadingRef.current = reworkLoading;
@@ -208,6 +218,16 @@ export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedActi
   }, [order?.id]);
 
   useEffect(() => {
+    const confirmation = Array.isArray(deliveryConfirmations)
+      ? deliveryConfirmations[0] || null
+      : deliveryConfirmations || null;
+    setExecutorType(confirmation?.executor_type || "assigned_delivery");
+    setOtherExecutorName(confirmation?.executor_type === "other_person" ? confirmation.executor_name || "" : "");
+    setDeliveryComment(confirmation?.delivery_comment || "");
+    setDeliveryFormError("");
+  }, [orderId, deliveryConfirmations]);
+
+  useEffect(() => {
     setReworkOpen(false);
     setReworkFiles([]);
     setReworkSelections({});
@@ -284,16 +304,30 @@ export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedActi
       return;
     }
 
+    const isDelivery = newStatus === ORDER_STATUS.IN_DELIVERED;
+    const isReversal = newStatus === ORDER_STATUS.IN_COMPLETED;
+    if (!isDelivery && !isReversal) {
+      setActionError("Transición de Delivery no permitida.");
+      return;
+    }
+
+    const normalizedOtherExecutorName = otherExecutorName.trim();
+    if (isDelivery && executorType === "other_person" && !normalizedOtherExecutorName) {
+      setDeliveryFormError("Indica el nombre de la otra persona que realizó la entrega.");
+      otherExecutorInputRef.current?.focus();
+      return;
+    }
+
+    setDeliveryFormError("");
     setUpdating(true);
     setActionError("");
     try {
-      const isDelivery = newStatus === ORDER_STATUS.IN_DELIVERED;
-      const isReversal = newStatus === ORDER_STATUS.IN_COMPLETED;
-      if (!isDelivery && !isReversal) throw new Error("Transición de Delivery no permitida.");
       const { data: updatedOrder, error } = isDelivery
         ? await supabase.rpc("delivery_mark_order_delivered", {
           p_order_id: order.id,
-          p_delivery_note: deliveryMessage.trim() || null,
+          p_executor_type: executorType,
+          p_other_executor_name: executorType === "other_person" ? normalizedOtherExecutorName : null,
+          p_delivery_comment: deliveryComment.trim() || null,
         })
         : await supabase.rpc("delivery_revert_order_to_completed", {
           p_order_id: order.id,
@@ -302,15 +336,6 @@ export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedActi
 
       if (error) throw error;
       if (!updatedOrder) throw new Error("La orden ya no esta asignada a tu perfil de Delivery.");
-
-      if (isDelivery && deliveryMessage.trim()) {
-        await supabase.from("order_events").insert({
-          order_id: order.id,
-          user_id: deliveryUserId,
-          event_type: "delivery_note",
-          message: deliveryMessage.trim(),
-        });
-      }
 
       setUpdateSuccess(true);
       if (isReversal) {
@@ -397,6 +422,8 @@ export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedActi
   const hasPartialPayment = isPaymentPartial(order.payment_status);
   const hasCreditPayment = isPaymentCredit(order.payment_status);
   const deliveryBlockedByPayment = !isPaymentDeliveryEligible(order.payment_status);
+  const deliveryConfirmation = getDeliveryConfirmation(order);
+  const legacyDeliveryNote = !deliveryConfirmation ? String(order.delivery_note || "").trim() : "";
 
   return (
     <>
@@ -543,32 +570,105 @@ export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedActi
               </SecureImageLink>
             </section>
           )}
+
+          {(deliveryConfirmation || legacyDeliveryNote) && (
+            <section className="pd-detail-section pd-delivery-confirmation-summary" aria-label="Registro de entrega">
+              <div className="pd-detail-section-title">
+                <Icons.CheckCircle />
+                <h4>Registro de entrega</h4>
+              </div>
+              {deliveryConfirmation ? (
+                <dl className="pd-detail-grid compact">
+                  <div>
+                    <dt>Entregó</dt>
+                    <dd>{deliveryConfirmation.executor_name}</dd>
+                  </div>
+                  <div>
+                    <dt>Confirmada</dt>
+                    <dd>{formatOrderDateTime(deliveryConfirmation.confirmed_at)}</dd>
+                  </div>
+                  {deliveryConfirmation.delivery_comment && (
+                    <div className="full">
+                      <dt>Comentario de entrega</dt>
+                      <dd>{deliveryConfirmation.delivery_comment}</dd>
+                    </div>
+                  )}
+                </dl>
+              ) : (
+                <div className="pd-delivery-legacy-note">
+                  <strong>Comentario de entrega (registro histórico)</strong>
+                  <p>{legacyDeliveryNote}</p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {isCompleted && (
+            <section className="pd-detail-section pd-delivery-confirmation-form" aria-labelledby="delivery-confirmation-title">
+              <div className="pd-detail-section-title">
+                <Icons.CheckCircle />
+                <h4 id="delivery-confirmation-title">Registro de entrega</h4>
+              </div>
+              <fieldset disabled={updating || order.is_archived_delivery || deliveryBlockedByPayment}>
+                <legend>¿Quién realizó la entrega?</legend>
+                <div className="pd-delivery-executor-options" role="radiogroup" aria-label="Quién realizó la entrega">
+                  <label>
+                    <input
+                      type="radio"
+                      name="delivery-executor"
+                      value="assigned_delivery"
+                      checked={executorType === "assigned_delivery"}
+                      onChange={() => { setExecutorType("assigned_delivery"); setDeliveryFormError(""); }}
+                    />
+                    Yo, responsable asignado
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="delivery-executor"
+                      value="other_person"
+                      checked={executorType === "other_person"}
+                      onChange={() => setExecutorType("other_person")}
+                    />
+                    Otra persona
+                  </label>
+                </div>
+                {executorType === "other_person" && (
+                  <div className="pd-delivery-field">
+                    <label htmlFor="delivery-other-executor">Nombre de la persona que entregó</label>
+                    <input
+                      id="delivery-other-executor"
+                      ref={otherExecutorInputRef}
+                      type="text"
+                      value={otherExecutorName}
+                      onChange={(event) => { setOtherExecutorName(event.target.value); setDeliveryFormError(""); }}
+                      maxLength={200}
+                      required
+                      aria-invalid={Boolean(deliveryFormError) || undefined}
+                      aria-describedby={deliveryFormError ? "delivery-other-executor-error" : undefined}
+                    />
+                    {deliveryFormError && <p id="delivery-other-executor-error" className="pd-delivery-form-error" role="alert">{deliveryFormError}</p>}
+                  </div>
+                )}
+                <div className="pd-delivery-field">
+                  <label htmlFor="delivery-comment">Comentario de entrega <span>(opcional)</span></label>
+                  <textarea
+                    id="delivery-comment"
+                    className="pd-delivery-textarea"
+                    placeholder="Escribe un comentario sobre la entrega..."
+                    value={deliveryComment}
+                    onChange={(event) => setDeliveryComment(event.target.value)}
+                    rows={3}
+                    maxLength={500}
+                  />
+                  <span className="pd-delivery-character-count">{deliveryComment.length}/500</span>
+                </div>
+              </fieldset>
+            </section>
+          )}
         </div>
 
         <footer className="pd-modal-footer">
-          {isCompleted && showMessage && (
-            <div className="pd-delivery-message">
-              <div className="pd-delivery-message-header">
-                <label htmlFor="delivery-message">Mensaje de entrega (opcional)</label>
-                <button
-                  className="pd-icon-btn"
-                  type="button"
-                  onClick={() => { setShowMessage(false); setDeliveryMessage(""); }}
-                >
-                  <Icons.X />
-                </button>
-              </div>
-              <textarea
-                id="delivery-message"
-                className="pd-delivery-textarea"
-                placeholder="Escribe un mensaje sobre la entrega..."
-                value={deliveryMessage}
-                onChange={(e) => setDeliveryMessage(e.target.value)}
-                rows={3}
-                maxLength={500}
-              />
-            </div>
-          )}
           {isCompleted && (
             <div className="pd-modal-footer-actions">
               <button
@@ -576,20 +676,11 @@ export function OrderDetailModal({ onClose, order, onUpdateStatus, onBlockedActi
                 type="button"
                 onClick={() => handleUpdateStatus(ORDER_STATUS.IN_DELIVERED)}
                 disabled={updating || order.is_archived_delivery || deliveryBlockedByPayment}
-                title={deliveryBlockedByPayment ? PAYMENT_DELIVERY_BLOCKED_MESSAGE : "Marcar entregado"}
+                title={deliveryBlockedByPayment ? PAYMENT_DELIVERY_BLOCKED_MESSAGE : "Registrar entrega"}
               >
                 {updating ? <span className="pd-btn-spinner" /> : <Icons.Check />}
-                {deliveryBlockedByPayment ? "Entrega bloqueada" : "Marcar entregado"}
+                {deliveryBlockedByPayment ? "Entrega bloqueada" : "Registrar entrega"}
               </button>
-              {!showMessage && (
-                <button
-                  className="pd-btn pd-link-btn"
-                  type="button"
-                  onClick={() => setShowMessage(true)}
-                >
-                  <Icons.Edit /> Agregar mensaje
-                </button>
-              )}
               <button className="pd-btn pd-btn-secondary" type="button" onClick={(event) => { reworkTriggerRef.current = event.currentTarget; setReworkOpen(true); }} disabled={updating || order.is_archived_delivery}>
                 <Icons.Refresh /> Devolver archivos a producción
               </button>
@@ -695,7 +786,6 @@ export default function PageDelivery() {
   const [filterOverdue, setFilterOverdue] = useState("all");
   const [clients, setClients] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [updatingOrderId, setUpdatingOrderId] = useState(null);
   const [archivingOrder, setArchivingOrder] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -711,7 +801,7 @@ export default function PageDelivery() {
     if (!silent) setLoading(true);
     const { data, error } = await supabase
       .from("orders")
-      .select(OPERATIONAL_ORDER_COLUMNS)
+      .select(DELIVERY_ORDER_SELECT)
       .in("status", DELIVERY_STATUS_OPTIONS)
       .eq("delivery_id", user.id)
       .order("created_at", { ascending: false });
@@ -862,49 +952,14 @@ export default function PageDelivery() {
     });
   };
 
-  const handleQuickMarkDelivered = async (event, orderId) => {
+  const handleOpenDeliveryForm = (event, orderId) => {
     event.stopPropagation();
     const order = orders.find((item) => item.id === orderId);
     if (!isPaymentDeliveryEligible(order?.payment_status)) {
       notifyPartialPaymentBlocked(order);
       return;
     }
-
-    setUpdatingOrderId(orderId);
-    try {
-      const { data: updatedOrder, error } = await supabase.rpc("delivery_mark_order_delivered", {
-        p_order_id: orderId,
-        p_delivery_note: null,
-      });
-
-      if (error) throw error;
-      if (!updatedOrder) throw new Error("La orden ya no esta asignada a tu perfil de Delivery.");
-
-      const { data, error: fetchError } = await supabase
-        .from("orders")
-        .select(OPERATIONAL_ORDER_COLUMNS)
-        .in("status", DELIVERY_STATUS_OPTIONS)
-        .eq("delivery_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (!fetchError && data) {
-        applyOrdersSnapshot({ orders: data, setOrders, setSelectedOrder });
-      }
-    } catch (err) {
-      console.error("Error marking order as delivered:", err);
-      notif.showActionNotification({
-        type: "order_cancelled",
-        label: "Entrega bloqueada",
-        orderTitle: order?.client_name || order?.description || getOrderCode(order),
-        orderId,
-        message: err?.message?.includes("totalmente pagada") || err?.message?.includes("credito")
-          ? PAYMENT_DELIVERY_BLOCKED_MESSAGE
-          : "No se pudo marcar la orden como entregada.",
-        metadata: { event_kind: "delivery_update_failed" },
-      });
-    } finally {
-      setUpdatingOrderId(null);
-    }
+    setSelectedOrder(order || null);
   };
 
   const handleArchiveOrder = (order) => {
@@ -1039,12 +1094,12 @@ export default function PageDelivery() {
             <button
               className="pd-card-main-btn"
               type="button"
-              onClick={(event) => handleQuickMarkDelivered(event, order.id)}
-              disabled={!canDeliver || updatingOrderId === order.id}
-              title={deliverBlocked ? PAYMENT_DELIVERY_BLOCKED_MESSAGE : "Marcar entregado"}
+              onClick={(event) => handleOpenDeliveryForm(event, order.id)}
+              disabled={!canDeliver}
+              title={deliverBlocked ? PAYMENT_DELIVERY_BLOCKED_MESSAGE : "Registrar entrega"}
             >
-              {updatingOrderId === order.id ? <span className="pd-btn-spinner" /> : <Icons.Check />}
-              {deliverBlocked ? "Entrega bloqueada" : "Marcar entregado"}
+              <Icons.Check />
+              {deliverBlocked ? "Entrega bloqueada" : "Registrar entrega"}
             </button>
           )}
 
@@ -1381,7 +1436,6 @@ export default function PageDelivery() {
         order={selectedOrder}
         onUpdateStatus={refreshOrders}
         onBlockedAction={notifyPartialPaymentBlocked}
-        deliveryUserId={user?.id}
       />
     </div>
   );

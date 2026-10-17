@@ -69,10 +69,12 @@ describe("admin order modal consistency", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
     const seller = readProjectFile("src/pages/pages-seller.jsx");
     const action = readProjectFile("src/components/orders/OrderAssignmentAction.jsx");
+    const actionCss = readProjectFile("src/components/orders/OrderDetailModal.css");
 
     expect(action).toContain("export default function OrderAssignmentAction");
-    expect(action).toContain("linear-gradient(135deg, #0369A1 0%, #0284C7 100%)");
-    expect(action).toContain("linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)");
+    expect(action).toContain('className="pa-order-action pa-order-action-production"');
+    expect(actionCss).toContain(".pa-order-action-production {");
+    expect(actionCss).toContain("background: var(--primary);");
     expect(dashboard).toContain('import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";');
     expect(seller).toContain('import OrderAssignmentAction from "../components/orders/OrderAssignmentAction";');
   });

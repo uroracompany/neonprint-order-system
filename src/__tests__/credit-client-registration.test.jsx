@@ -27,14 +27,14 @@ describe("registro de cliente desde credito en cotizacion", () => {
   it("muestra la accion inline sin abrir automaticamente el modal de cliente", () => {
     const source = readProjectFile("src/pages/page-quote.jsx");
 
-    expect(source).toContain("const [creditClientRequired, setCreditClientRequired] = useState(false)");
-    expect(source).toContain("setCreditClientRequired(true)");
-    expect(source).toContain("Para crear una orden a crédito, el cliente debe estar registrado.");
-    expect(source).toContain("Vincular cliente registrado");
-    expect(source).toContain("Esta es una orden heredada sin cliente registrado");
-    expect(source).not.toContain('Registrar Cliente {order.client_name || "sin nombre"}');
-    expect(source).toContain("onClick={() => onCreditClientRequired?.(order)}");
-    expect(source).not.toContain("onCreditClientRequired?.(order);\n      if (onValidationError)");
+    const paymentModal = readProjectFile("src/components/ui/PaymentFormModal.jsx");
+
+    expect(source).toContain("const openCreditClientRegistration = (order) => {");
+    expect(source).toContain("setClientLinkOrder(order)");
+    expect(source).toContain("onCreditClientRequired={openCreditClientRegistration}");
+    expect(source).toContain("open={!!clientLinkOrder}");
+    expect(paymentModal).toContain("onClick={() => onCreditClientRequired(order)}");
+    expect(paymentModal).toContain("Vincular cliente");
   });
 
   it("vincula un cliente registrado sin aprobar credito automaticamente", () => {

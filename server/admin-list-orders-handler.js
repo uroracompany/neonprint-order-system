@@ -112,6 +112,21 @@ const getDateStart = (dateFilter, nowValue) => {
   return null;
 };
 
+const getAsuncionDateKey = (nowValue) => {
+  const requestedNow = nowValue === undefined || nowValue === null || nowValue === ""
+    ? new Date()
+    : new Date(nowValue);
+  const now = Number.isNaN(requestedNow.getTime()) ? new Date() : requestedNow;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Asuncion",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
+};
+
 const normalizeOrder = (order) => ({
   ...order,
   is_archived_admin: Boolean(order?.is_archived_admin),
@@ -232,8 +247,10 @@ export async function handleAdminListOrders(payload = {}, env = process.env) {
   } else if (operational === "commercial_review") {
     query = query.eq("commercial_review_required", true);
   } else if (operational === "overdue") {
-    query = query.lt("delivery_date", new Date().toISOString().slice(0, 10))
-      .not("status", "in", "(in_Completed,in_Delivered,cancelled)");
+    query = query
+      .not("delivery_date", "is", null)
+      .lt("delivery_date", getAsuncionDateKey(env.now))
+      .not("status", "in", "(in_Delivered,cancelled)");
   }
 
   const { data, error, count } = await query

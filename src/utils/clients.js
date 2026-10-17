@@ -107,7 +107,7 @@ export const getSelectedClientOrderFields = (client, phoneField = "client_phone"
   };
 };
 
-export const loadClients = async (supabase) => {
+export const loadClients = async (supabase, { onError } = {}) => {
   const { data, error } = await supabase
     .from("clients")
     .select(CLIENT_SELECT_COLUMNS)
@@ -116,6 +116,7 @@ export const loadClients = async (supabase) => {
 
   if (error) {
     console.warn("No se pudieron cargar los clientes:", error.message);
+    onError?.(error);
     return [];
   }
 

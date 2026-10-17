@@ -5115,6 +5115,7 @@ const filteredMaterials = useMemo(() => {
           designerName={selectedOrder?.designer_id ? getUserDisplayName(usersById[selectedOrder.designer_id]) : ""}
           primaryActionLabel="Asignar Orden"
           showPrimaryAction={false}
+          showDeliveryConfirmation
           onSendToDesigner={(order) => {
             setSelectedOrder(null);
             openAssignModal(order, "designer");

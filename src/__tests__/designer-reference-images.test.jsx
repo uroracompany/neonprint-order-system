@@ -11,7 +11,12 @@ const { rpc, resolveOrderAssetUrl, uploadOrderAsset } = vi.hoisted(() => ({
 
 vi.mock("../../supabaseClient", () => ({
   supabase: {
-    from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn(() => Promise.resolve({ data: null })) })) })) })),
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        not: vi.fn(() => Promise.resolve({ data: [], error: null })),
+        eq: vi.fn(() => ({ single: vi.fn(() => Promise.resolve({ data: null })) })),
+      })),
+    })),
     rpc,
   },
 }));
@@ -89,7 +94,7 @@ describe("Designer reference images", () => {
 
     expect(screen.getAllByText("Cargando imagen...").length).toBeGreaterThan(0);
     const referenceImage = await screen.findByAltText("Ref 1");
-    const previewImage = await screen.findByAltText("Preview");
+    const previewImage = await screen.findByAltText("Imagen de orden de trabajo");
     expect(referenceImage).toHaveAttribute("src", "https://signed.example.test/seller.webp");
     expect(previewImage).toHaveAttribute("src", "https://signed.example.test/work.webp");
     expect(referenceImage).toHaveClass("is-loading");

@@ -25,11 +25,18 @@ describe("global overdue order filters contract", () => {
     });
   });
 
-  it("keeps Administration's overdue filter independent from its chronological source order", () => {
+  it("sends Administration's overdue filter to the server-side list", () => {
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
+    const handler = readProjectFile("server/admin-list-orders-handler.js");
 
-    expect(dashboard).toContain('operationalFilter === "overdue" && isOrderOverdue(order)');
+    expect(dashboard).toContain("operational: operationalFilter");
     expect(dashboard).toContain('{ value: "overdue", label: "Atrasadas" }');
+    expect(handler).toContain('operational === "overdue"');
+    expect(handler).toContain('timeZone: "America/Asuncion"');
+    expect(handler).toContain('.not("delivery_date", "is", null)');
+    expect(handler).toContain('.not("status", "in", "(in_Delivered,cancelled)")');
+    expect(handler.indexOf('.lt("delivery_date"')).toBeLessThan(handler.indexOf('.order("created_at"'));
+    expect(handler.indexOf('.order("created_at"')).toBeLessThan(handler.indexOf('.range(from, to)'));
   });
 
   it("adds a conjunctive overdue filter and page reset to every non-admin local list", () => {

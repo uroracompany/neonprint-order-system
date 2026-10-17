@@ -77,12 +77,13 @@ describe("DeliveryProfileModule", () => {
 
   it("reserva las métricas del panel para la pestaña Delivery", () => {
     const pageSource = readFileSync(resolve("src/pages/page-delivery.jsx"), "utf8");
+    const normalizedPageSource = pageSource.replace(/\s+/g, " ");
 
-    expect(pageSource).toContain('{activeTab === "dashboard" && (\n            <div className="pd-summary-grid">');
+    expect(normalizedPageSource).toContain('{activeTab === "dashboard" && ( <div className="pd-summary-grid">');
     expect(pageSource).toContain('profile: "Mi Perfil"');
-    expect(pageSource).toContain('.in("status", DELIVERY_STATUS_OPTIONS)\n      .eq("delivery_id", user.id)');
+    expect(pageSource.replace(/\s+/g, " ")).toContain('.in("status", DELIVERY_STATUS_OPTIONS) .eq("delivery_id", user.id)');
     expect(pageSource).toContain('rpc("delivery_mark_order_delivered"');
-    expect(pageSource).toContain('.eq("delivery_id", user.id)\n        .order("created_at", { ascending: false })');
+    expect(pageSource.replace(/\s+/g, " ")).toContain('.eq("delivery_id", user.id) .order("created_at", { ascending: false })');
   });
 
   it("shows an error instead of treating an incomplete successful response as zero metrics", async () => {

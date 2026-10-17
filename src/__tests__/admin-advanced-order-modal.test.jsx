@@ -344,7 +344,7 @@ describe("AdminManageFilesModal", () => {
 
     render(<AdminManageFilesModal open order={quoteOrder} profiles={[]} onClose={vi.fn()} />);
     await waitFor(() => {
-      expect(screen.queryByTitle("Quitar imagen")).not.toBeInTheDocument();
+      expect(screen.queryByTitle("Quitar imagen de orden de trabajo")).not.toBeInTheDocument();
     });
   });
 
@@ -354,7 +354,7 @@ describe("AdminManageFilesModal", () => {
 
     render(<AdminManageFilesModal open order={designOrder} profiles={[]} onClose={vi.fn()} />);
     await waitFor(() => {
-      expect(screen.getByTitle("Quitar imagen")).toBeInTheDocument();
+      expect(screen.getByTitle("Quitar imagen de orden de trabajo")).toBeInTheDocument();
     });
   });
 });
