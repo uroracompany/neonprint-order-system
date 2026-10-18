@@ -1,83 +1,135 @@
 # Food Taster CI gate
 
-Food Taster is a private pre-merge gate for pull requests targeting `main`. It
-checks the exact PR head with security checks, lint, Vitest, a production build,
-and a non-destructive Playwright smoke of that build served on runner loopback.
-The browser uses placeholder Supabase public configuration and blocks every
-request outside `http://127.0.0.1:4173`. The check never authenticates, writes to
-an external service, or opens a Vercel Preview.
+Food Taster is intended to block a pull request to `main` unless trusted quality
+checks and the isolated Vercel Preview smoke both pass. It uses two workflows
+with different trust boundaries:
 
-This gate validates the built PR artifact's basic login experience. It does
-**not** validate Vercel Preview configuration, staging Supabase connectivity,
-production deployment health, database migrations, or rollback. It does not
-deploy or promote Production and does not automatically roll back a release.
+- `.github/workflows/food-taster.yml` is triggered by `pull_request`. It checks
+  the exact PR head with security checks, lint, Vitest, build, and a loopback
+  browser smoke. This workflow executes PR-controlled code, so it has only
+  `contents: read` and must not resolve or visit a Vercel Preview.
+- `.github/workflows/food-taster-trusted.yml` is triggered by `workflow_run`
+  and uses the copy of the controller on the default branch. Its `quality` job
+  runs the PR head without secrets and performs the same local smoke. Its
+  separate `preview-smoke` job checks out only `${{ github.sha }}` from the
+  default branch, installs dependencies from that trusted revision, then runs
+  the Preview resolver and Playwright suite. It never checks out or executes
+  PR source code. The publisher finalizes `Food Taster gate` successfully only
+  when both trusted `quality` and `preview-smoke` succeed.
 
-## Trust boundaries
+## Ruleset rollout state
 
-- `.github/workflows/food-taster.yml` runs from `pull_request`. Its quality job
-  executes PR-controlled code on a runner with `contents: read` only. It has no
-  Environment, Vercel/GitHub App secrets, writable checks/statuses, artifacts,
-  shared cache, or OIDC permission.
-- `.github/workflows/food-taster-trusted.yml` runs on `workflow_run`. GitHub
-  starts it only when this definition exists on the default branch. The
-  controller ignores caller conclusions and artifacts. It looks up the
-  workflow run and current PR through GitHub's API, requiring the expected
-  workflow ID, `pull_request` event, one open PR to this repository's `main`,
-  and an unchanged full head SHA.
-- Trusted quality checks execute the exact validated PR SHA on a separate
-  runner with no secrets, publisher permission, shared filesystem, cache or
-  artifacts. The local Playwright browser can contact only the runner's
-  loopback server. No PR-controlled code receives a Vercel or GitHub App token.
-- The trusted workflow never resolves, opens, or sends credentials to a PR
-  Preview. There is no OIDC or deployment-protection bypass path.
-- A dedicated GitHub App publishes the `Food Taster gate` Check Run. The
-  controller revalidates the PR before creating it and before finalizing it.
-  It marks success only if the PR remains open at the same SHA and the complete
-  trusted quality job succeeds. A missing, incomplete, stale, failed, cancelled
-  or skipped result cannot satisfy the required check. The App identity is
-  checked on both API responses so a same-named check from another publisher
-  is not accepted.
+The current `main` ruleset still requires the direct `Quality checks` status
+from `.github/workflows/food-taster.yml`. A PR can edit its own direct workflow,
+so that check alone is not a tamper-resistant trust root. The trusted controller
+and its new Preview job do not become active until the controller change is
+published on the default branch. Keep the current ruleset unchanged during this
+rollout; after the trusted workflow is present on the default branch and its
+App-published `Food Taster gate` has been verified, update the ruleset to require
+that trusted check before removing the direct `Quality checks` requirement.
+Until then, do not treat this PR branch's direct check as the trusted gate.
 
-## Required external setup
+## Critical Preview safety prerequisite
 
-The following configuration is external to this repository and has not been
-verified by this change. Until it is completed and tested, treat the production
-gate as inactive.
+**Pause Vercel Preview deployments while any Production Supabase credential is
+available to Preview. Do not run the Preview smoke during that period.** The
+observed Vercel configuration shared Supabase variables with Production,
+including `SUPABASE_SERVICE_ROLE_KEY`. PR-controlled code runs in a Vercel
+Preview and could expose Production data if those credentials are present.
 
-1. Create the dedicated GitHub App and install it only in this repository. Give
-   it only `Checks: write` and `Metadata: read`.
-2. Create protected GitHub Environment `food-taster-publisher`, configure a
-   trusted reviewer, and keep these values in that Environment only:
-   - Variable `FOOD_TASTER_GITHUB_APP_ID` with the numeric App ID.
-   - Variable `FOOD_TASTER_GITHUB_APP_CLIENT_ID` with the App client ID.
-   - Secret `FOOD_TASTER_GITHUB_APP_PRIVATE_KEY` with its private key.
-   The workflow mints an installation token limited to this repository and
-   `Checks: write`; it never grants `statuses: write` to `GITHUB_TOKEN`. Both
-   creation and finalization use the protected publisher Environment.
-3. Configure `main` to require pull requests and the exact Check Run
-   `Food Taster gate`, with its source restricted to the dedicated GitHub App.
-   Require trusted owner review for changes to workflows, agent/ship
-   instructions, the GitHub controller, smoke test and this document. Do not
-   add a temporary bypass while bootstrapping the rule.
-4. Configure Vercel independently so Production deploys only from reviewed
-   updates to `main`. Configure a separate staging Supabase project for Vercel
-   Preview and never put production credentials/data in Preview. Those
-   deployments are not tested by this gate. Never put a service-role key in a
-   `VITE_*` variable.
+The resolver inspects the exact Preview's compiled HTML and JavaScript for the
+configured staging URL and anon key, and for the configured Production URL. It
+cannot inspect or prove Vercel's server-side variable scopes, including the
+scope/value of `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_URL`. A passing resolver
+is therefore not evidence of server-side isolation.
 
-## Fail-closed behavior and limits
+## Required GitHub repository variables
 
-- A `workflow_run` controller is inactive until its file is present on the
-  default branch. Local repository changes alone do not protect Production.
-- Missing GitHub metadata, ambiguous PR association, wrong workflow, changed
-  head SHA, closed PR, API error, missing Environment approval, missing App
-  credentials, or failed/ambiguous quality result prevents a successful gate.
-- If a PR head changes during a run, the finalizer refuses success for the old
-  SHA. The new SHA remains blocked until its own trusted run completes.
-- Forks may not be able to access private head repositories or approved
-  Environments. Such runs fail closed; do not use `pull_request_target` to work
-  around that restriction.
-- This gate reduces the chance of a broken application change reaching users.
-  It cannot guarantee a bug-free release and does not roll back Production or
-  protect data migrations by itself. Production rollback and database recovery
-  require separate, tested release procedures.
+The trusted Preview job consumes these five GitHub **repository variables**:
+
+| Variable | Purpose |
+| --- | --- |
+| `FOOD_TASTER_STAGING_SUPABASE_URL` | HTTPS URL of the isolated staging Supabase project. |
+| `FOOD_TASTER_STAGING_SUPABASE_ANON_KEY` | Public anon key for staging. Never use a service-role key. |
+| `FOOD_TASTER_PRODUCTION_SUPABASE_URL` | Production URL, used to reject equality with staging and detect it in client assets. |
+| `FOOD_TASTER_PREVIEW_ISOLATION_CONFIRMED` | Manual safety attestation. Must equal the literal `true` before the resolver makes any GitHub API or Preview request. |
+| `FOOD_TASTER_VERCEL_PROJECT_ID` | Expected Vercel project ID. The resolver accepts deployment metadata only when `deployment.payload.projectId` exactly matches. |
+
+The PR workflow does not receive these values. The trusted Preview job has only
+read permissions for repository contents, deployment metadata, and pull-request
+metadata. It receives no Vercel token, service-role key, or GitHub App token.
+
+## GitHub App publisher Environment
+
+The trusted controller publishes its check through the GitHub App installed on
+this repository. Configure the `food-taster-publisher` GitHub Environment with
+these values:
+
+| Kind | Name | Purpose |
+| --- | --- | --- |
+| Environment variable | `FOOD_TASTER_GITHUB_APP_ID` | Numeric ID of the Food Taster GitHub App. |
+| Environment variable | `FOOD_TASTER_GITHUB_APP_CLIENT_ID` | Client ID used to mint a short-lived installation token. |
+| Environment secret | `FOOD_TASTER_GITHUB_APP_PRIVATE_KEY` | PEM private key for that App. Never commit or print it. |
+
+The App installation must be limited to this repository and have `Checks: write`
+and `Metadata: read`. The workflow mints a short-lived, repository-scoped token
+for the Check Run; the Preview smoke job never receives it. An Environment rule
+that requires a human reviewer needs a separate eligible reviewer; without one,
+the publisher jobs remain pending and the Food Taster check cannot complete.
+No human reviewer is required by the CI/CD pattern itself.
+
+## External setup before Preview smoke
+
+1. Create or select a **separate Supabase staging project** with disposable
+   accounts and data. Do not copy Production data unless separately reviewed
+   and sanitized.
+2. Add the five GitHub repository variables above. Set `FOOD_TASTER_VERCEL_PROJECT_ID`
+   to the project ID shown for the NeonPrint project in Vercel. Confirm the
+   staging and Production URLs are different HTTPS `*.supabase.co` project
+   origins.
+3. In Vercel, scope Production Supabase values to **Production only**. Configure
+   Preview with staging values for `VITE_SUPABASE_URL`,
+   `VITE_SUPABASE_ANON_KEY`, `SUPABASE_URL`, and
+   `SUPABASE_SERVICE_ROLE_KEY`. Confirm no Production credential is available
+   to Preview. Keep the service-role key server-side; never expose it through a
+   `VITE_*` variable or browser bundle.
+4. Verify the Vercel environment scopes and values directly without exposing
+   secret values. If any Production credential remains available to Preview,
+   pause Preview deployments and keep the attestation unset or not equal to
+   `true`.
+5. Only after the direct verification confirms Preview uses staging values and
+   has no Production credentials, set
+   `FOOD_TASTER_PREVIEW_ISOLATION_CONFIRMED` to exactly `true`. This is an
+   operator attestation, not an automated verification of Vercel scopes. The
+   resolver fails before `fetch` when it is missing or differs from the exact
+   string `true`.
+6. Keep Vercel Preview protection enabled unless the trusted runner can access
+   the deployment without a bypass credential. Missing staging configuration,
+   an unavailable/ambiguous deployment, or a Preview that fails isolation
+   checks fails the trusted check.
+
+## What the trusted Preview smoke does
+
+The trusted controller validates the current open PR targets this repository's
+`main` and still has the exact checked head SHA. The Preview job uses read-only
+GitHub API access to find the successful Vercel deployment for that SHA. Before
+starting a browser, it fetches the Preview HTML and JavaScript as static text
+and verifies the expected staging URL and anon key are present and the
+configured Production URL is absent. It requires the deployment's direct
+`payload.projectId` value to equal `FOOD_TASTER_VERCEL_PROJECT_ID`; missing or
+mismatching metadata fails closed. It does not infer a project ID from other
+payload shapes. Resolver and Playwright configuration also reject nonstandard
+URL ports.
+
+The trusted Playwright test renders the login page and makes only a `GET` to the
+staging Supabase Auth settings endpoint. Browser requests are restricted to the
+Preview origin and that staging endpoint. It does not sign in, submit forms,
+call application APIs, write data, or run migrations. Preview content is
+PR-controlled, so this job must remain trusted controller code and may run only
+after staging isolation has been manually verified.
+
+The gate does not verify Vercel's server-side variable scopes, database
+migrations, Production health, or rollback. It reduces the chance of a broken
+change reaching users but cannot guarantee a bug-free release or restore
+Production data. Production rollback and database recovery require separate,
+tested release procedures.

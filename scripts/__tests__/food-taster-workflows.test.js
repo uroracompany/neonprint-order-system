@@ -31,18 +31,43 @@ describe("Food Taster workflow supply-chain and privilege boundaries", () => {
     expect(trusted).not.toContain("actions/download-artifact");
   });
 
-  it("keeps browser smoke unprivileged and restricted to the local build", async () => {
+  it("keeps Preview validation in a trusted default-branch job, isolated from PR code", async () => {
     const trusted = await readFile(workflowPaths[1], "utf8");
     const pullRequest = await readFile(workflowPaths[0], "utf8");
     expect(trusted).not.toMatch(/id-token:\s*write|VERCEL_TOKEN|VERCEL_AUTOMATION|_BYPASS_SECRET/);
     expect(pullRequest).toContain("run: npm run test:e2e:smoke");
+    expect(pullRequest).not.toContain("run: npm run test:e2e:preview");
+    expect(pullRequest).not.toContain("deployments: read");
+    expect(pullRequest).not.toContain("pull-requests: read");
+    expect(pullRequest).not.toContain("FOOD_TASTER_PREVIEW_ISOLATION_CONFIRMED");
+    expect(pullRequest).not.toMatch(/secrets\.|VERCEL_TOKEN|SUPABASE_SERVICE_ROLE_KEY/);
     expect(trusted).toContain("run: npm run test:e2e:smoke");
-    expect(trusted).not.toContain("preview-smoke:");
+    expect(trusted).toContain("preview-smoke:");
+    const previewJob = trusted.split("  preview-smoke:")[1]?.split("\n  publish-food-taster-gate:")[0] || "";
+    expect(previewJob).toContain("needs:");
+    expect(previewJob).toContain("- validate-pull-request");
+    expect(previewJob).toContain("- start-food-taster-gate");
+    expect(previewJob).toContain("contents: read");
+    expect(previewJob).toContain("deployments: read");
+    expect(previewJob).toContain("pull-requests: read");
+    expect(previewJob).toContain("ref: ${{ github.sha }}");
+    expect(previewJob).not.toContain("needs.validate-pull-request.outputs.head_repo");
+    expect(previewJob).not.toContain("needs.validate-pull-request.outputs.head_sha }}\n          persist-credentials");
+    expect(previewJob).toContain("run: npm ci");
+    expect(previewJob).toContain("run: node scripts/resolve-vercel-preview.mjs");
+    expect(previewJob).toContain("run: npm run test:e2e:preview");
+    expect(previewJob).toContain("FOOD_TASTER_VERCEL_PROJECT_ID: ${{ vars.FOOD_TASTER_VERCEL_PROJECT_ID }}");
+    expect(previewJob).toContain("FOOD_TASTER_PREVIEW_ISOLATION_CONFIRMED: ${{ vars.FOOD_TASTER_PREVIEW_ISOLATION_CONFIRMED }}");
+    const finalizer = trusted.split("  publish-food-taster-gate:")[1] || "";
+    expect(finalizer).toContain("- preview-smoke");
+    expect(finalizer).toContain("needs.quality.result == 'success' && needs.preview-smoke.result == 'success'");
     const prohibited = ["VERCEL_AUTOMATION", "_BYPASS_SECRET"].join("");
     const bypassHeader = ["x-vercel-protection", "-bypass"].join("");
     const scanned = await Promise.all([
       ...workflowPaths,
       resolve(projectRoot, "e2e/food-taster.spec.js"),
+      resolve(projectRoot, "e2e/food-taster-preview.spec.js"),
+      resolve(projectRoot, "scripts/resolve-vercel-preview.mjs"),
       resolve(projectRoot, "playwright.config.js"),
       resolve(projectRoot, "docs/food-taster.md"),
     ].map((path) => readFile(path, "utf8")));
@@ -54,5 +79,9 @@ describe("Food Taster workflow supply-chain and privilege boundaries", () => {
     expect(smoke).toContain("requestUrl.origin !== smokeOrigin");
     expect(config).toContain("reuseExistingServer: false");
     expect(config).toContain("--host 127.0.0.1");
+    const previewSmoke = await readFile(resolve(projectRoot, "e2e/food-taster-preview.spec.js"), "utf8");
+    expect(previewSmoke).toContain("stagingURL.origin");
+    expect(previewSmoke).toContain("unexpectedRequests.push");
+    expect(previewSmoke).not.toMatch(/signInWithPassword|click\(.*Acceder|\.post\(/);
   });
 });

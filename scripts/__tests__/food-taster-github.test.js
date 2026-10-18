@@ -155,7 +155,15 @@ describe("Food Taster GitHub App Check Run controller", () => {
     expect(qualityJob).toBeTruthy();
     expect(qualityJob).not.toMatch(/secrets\.|environment:|checks:\s*write|statuses:\s*write|cache: npm/);
     expect(qualityJob).toContain("run: npm run test:e2e:smoke");
-    expect(trustedWorkflow).not.toMatch(/preview-smoke:|id-token:\s*write|VERCEL_TOKEN|PREVIEW_RESULT/);
+    const previewJob = trustedWorkflow.match(/\n  preview-smoke:\n([\s\S]*?)\n  publish-food-taster-gate:/)?.[1];
+    expect(previewJob).toBeTruthy();
+    expect(previewJob).toContain("ref: ${{ github.sha }}");
+    expect(previewJob).toContain("run: node scripts/resolve-vercel-preview.mjs");
+    expect(previewJob).toContain("run: npm run test:e2e:preview");
+    expect(previewJob).not.toMatch(/secrets\.|environment:|checks:\s*write|statuses:\s*write|id-token:\s*write|VERCEL_TOKEN/);
+    expect(previewJob).not.toContain("actions/download-artifact");
+    expect(previewJob).not.toContain("needs.validate-pull-request.outputs.head_repo");
+    expect(trustedWorkflow).toContain("needs.preview-smoke.result == 'success'");
     expect(trustedWorkflow).not.toMatch(/statuses:\s*write/);
   });
 });
