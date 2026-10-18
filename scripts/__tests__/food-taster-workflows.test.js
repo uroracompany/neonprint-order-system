@@ -8,11 +8,24 @@ const workflowPaths = [
   resolve(projectRoot, ".github/workflows/food-taster.yml"),
   resolve(projectRoot, ".github/workflows/food-taster-trusted.yml"),
 ];
+const readText = async (path) => (await readFile(path, "utf8")).replace(/\r\n/g, "\n");
 
 describe("Food Taster workflow supply-chain and privilege boundaries", () => {
+  it("wires the trusted App gate to Food Taster completion and the protected-check contract", async () => {
+    const trusted = await readText(workflowPaths[1]);
+    const controller = await readText(resolve(projectRoot, "scripts/food-taster-github.mjs"));
+    const documentation = await readText(resolve(projectRoot, "docs/food-taster.md"));
+
+    expect(trusted).toMatch(/^on:\s*\r?\n\s+workflow_run:\s*\r?\n\s+workflows:\s*\r?\n\s+- Food Taster\s*$/m);
+    expect(trusted).toMatch(/^\s+types:\s*\r?\n\s+- completed\s*$/m);
+    expect(trusted).not.toContain("pull_request_target:");
+    expect(controller).toContain('const CHECK_NAME = "Food Taster gate";');
+    expect(documentation).toContain("require `Food Taster gate`.");
+  });
+
   it("pins every GitHub Action use to a full 40-character commit SHA", async () => {
     for (const path of workflowPaths) {
-      const workflow = await readFile(path, "utf8");
+      const workflow = await readText(path);
       const references = [...workflow.matchAll(/^\s*uses:\s*([^\s#]+)(?:\s+#.*)?$/gm)].map((match) => match[1]);
       expect(references.length, `${path} should contain pinned Actions`).toBeGreaterThan(0);
       for (const reference of references) {
@@ -22,7 +35,7 @@ describe("Food Taster workflow supply-chain and privilege boundaries", () => {
   });
 
   it("uses the dedicated App Check Run publisher and no commit status permission", async () => {
-    const trusted = await readFile(workflowPaths[1], "utf8");
+    const trusted = await readText(workflowPaths[1]);
     expect(trusted).toContain("actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510");
     expect(trusted).toContain("permission-checks: write");
     expect(trusted).toContain("food-taster-publisher");
@@ -32,8 +45,8 @@ describe("Food Taster workflow supply-chain and privilege boundaries", () => {
   });
 
   it("runs a trusted code-only gate on the exact PR head with least privilege", async () => {
-    const trusted = await readFile(workflowPaths[1], "utf8");
-    const pullRequest = await readFile(workflowPaths[0], "utf8");
+    const trusted = await readText(workflowPaths[1]);
+    const pullRequest = await readText(workflowPaths[0]);
     expect(trusted).not.toMatch(/id-token:\s*write|VERCEL_TOKEN|VERCEL_AUTOMATION|_BYPASS_SECRET/);
     expect(pullRequest).toContain("run: npm run test:e2e:smoke");
     expect(pullRequest).not.toContain("run: npm run test:e2e:preview");
@@ -67,11 +80,11 @@ describe("Food Taster workflow supply-chain and privilege boundaries", () => {
       resolve(projectRoot, "e2e/food-taster.spec.js"),
       resolve(projectRoot, "playwright.config.js"),
       resolve(projectRoot, "docs/food-taster.md"),
-    ].map((path) => readFile(path, "utf8")));
+    ].map((path) => readText(path)));
     expect(scanned.join("\n")).not.toContain(prohibited);
     expect(scanned.join("\n")).not.toContain(bypassHeader);
-    const smoke = await readFile(resolve(projectRoot, "e2e/food-taster.spec.js"), "utf8");
-    const config = await readFile(resolve(projectRoot, "playwright.config.js"), "utf8");
+    const smoke = await readText(resolve(projectRoot, "e2e/food-taster.spec.js"));
+    const config = await readText(resolve(projectRoot, "playwright.config.js"));
     expect(smoke).toContain('const smokeOrigin = "http://127.0.0.1:4173"');
     expect(smoke).toContain("requestUrl.origin !== smokeOrigin");
     expect(config).toContain("reuseExistingServer: false");

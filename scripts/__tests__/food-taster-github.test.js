@@ -13,6 +13,7 @@ const appId = 12345;
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const temporaryDirectories = [];
 const workflow = { id: 17, name: "Food Taster", state: "active" };
+const readText = async (path) => (await readFile(path, "utf8")).replace(/\r\n/g, "\n");
 const run = (overrides = {}) => ({
   id: 42, workflow_id: workflow.id, event: "pull_request", head_sha: sha,
   repository: { full_name: repository }, head_repository: { full_name: fork },
@@ -143,8 +144,8 @@ describe("Food Taster GitHub App Check Run controller", () => {
   });
 
   it("keeps PR-controlled execution unprivileged and the trusted gate code-only", async () => {
-    const pullWorkflow = await readFile(resolve(projectRoot, ".github", "workflows", "food-taster.yml"), "utf8");
-    const trustedWorkflow = await readFile(resolve(projectRoot, ".github", "workflows", "food-taster-trusted.yml"), "utf8");
+    const pullWorkflow = await readText(resolve(projectRoot, ".github", "workflows", "food-taster.yml"));
+    const trustedWorkflow = await readText(resolve(projectRoot, ".github", "workflows", "food-taster-trusted.yml"));
     expect(pullWorkflow).toContain("pull_request:");
     expect(pullWorkflow).not.toMatch(/secrets\.|food-taster-preview|checks:\s*write|statuses:\s*write|workflow_run/);
     expect(trustedWorkflow).toContain("workflow_run:");
