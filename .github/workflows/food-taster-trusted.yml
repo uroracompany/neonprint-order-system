@@ -12,7 +12,7 @@ permissions: {}
 jobs:
   validate-pull-request:
     name: Validate current pull request
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: read
@@ -41,7 +41,7 @@ jobs:
   start-food-taster-gate:
     name: Start trusted Food Taster Check Run
     needs: validate-pull-request
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: food-taster-publisher
     permissions:
@@ -96,7 +96,7 @@ jobs:
     needs:
       - validate-pull-request
       - start-food-taster-gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -142,7 +142,7 @@ jobs:
       - validate-pull-request
       - start-food-taster-gate
       - quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: food-taster-publisher
     permissions:
