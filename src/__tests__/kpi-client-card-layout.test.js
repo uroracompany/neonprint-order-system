@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import process from 'node:process'
 import { describe, expect, it } from 'vitest'
+import { readProjectFile } from '../test-utils/read-project-file.js'
 
-const readProjectFile = path => readFileSync(resolve(process.cwd(), path), 'utf8')
 const clientAnalytics = readProjectFile('src/components/kpi/KPIClientAnalytics.jsx')
 const styles = readProjectFile('src/css-components/page-kpi.css')
 

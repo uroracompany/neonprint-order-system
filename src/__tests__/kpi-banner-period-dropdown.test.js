@@ -1,9 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import process from 'node:process'
 import { describe, expect, it } from 'vitest'
-
-const readProjectFile = path => readFileSync(join(process.cwd(), path), 'utf8')
+import { readProjectFile } from '../test-utils/read-project-file.js'
 
 describe('selector de período del banner KPI', () => {
   it('permite que el menú se muestre fuera del banner y por encima del contenido posterior', () => {

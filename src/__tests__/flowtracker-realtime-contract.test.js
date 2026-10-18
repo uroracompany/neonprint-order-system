@@ -1,13 +1,8 @@
-/* global process */
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readProjectFile } from "../test-utils/read-project-file.js";
 
-const migration = readFileSync(
-  resolve(process.cwd(), "supabase/migrations/20260907170000_flowtracker_realtime_sync.sql"),
-  "utf8",
-);
-const trackingPage = readFileSync(resolve(process.cwd(), "src/pages/page-tracking.jsx"), "utf8");
+const migration = readProjectFile("supabase/migrations/20260907170000_flowtracker_realtime_sync.sql");
+const trackingPage = readProjectFile("src/pages/page-tracking.jsx");
 
 describe("FlowTracker realtime contract", () => {
   it("broadcasts token-scoped order and file changes with a minimal public payload", () => {

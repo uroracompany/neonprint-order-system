@@ -1,13 +1,11 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { readProjectFile } from "../test-utils/read-project-file.js";
 
-const migration = readFileSync(
+const migration = readProjectFile(
   "supabase/migrations/20260929172306_semi_admin_design_quote_row_action.sql",
-  "utf8",
 );
-const readinessMigration = readFileSync(
+const readinessMigration = readProjectFile(
   "supabase/migrations/20261003103938_semi_admin_quote_catalog_asset_readiness.sql",
-  "utf8",
 );
 
 describe("Semi-Admin batch row catalog RPC boundary", () => {
