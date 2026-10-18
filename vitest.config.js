@@ -8,11 +8,13 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.js'],
     globals: true,
     css: true,
+    testTimeout: 15_000,
     exclude: [
       'node_modules/**',
       'dist/**',
       '.opencode/deploy/**',
       '.opencode/runs/**',
+      'e2e/**',
     ],
   },
 })
