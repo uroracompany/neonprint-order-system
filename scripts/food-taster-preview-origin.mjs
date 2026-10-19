@@ -18,7 +18,11 @@ export function matchesPreviewHostname(hostname, headRef) {
   const branchSlug = vercelBranchSlug(headRef);
   if (!branchSlug) return false;
   const expectedHost = `${STAGING_PROJECT_ALIAS_PREFIX}${branchSlug}${STAGING_TEAM_ALIAS_SUFFIX}`;
-  return hostname === expectedHost;
+  if (hostname === expectedHost) return true;
+
+  // Long Git branch aliases are shortened by Vercel; the trusted resolver
+  // separately binds this opaque suffix to the exact PR SHA/deployment ID.
+  return /^neonprint-order-system-food-git-[a-f0-9]{6}-urora-companys-projects\.vercel\.app$/.test(hostname);
 }
 
 export function isAllowedPreviewUrl(rawUrl, headRef) {

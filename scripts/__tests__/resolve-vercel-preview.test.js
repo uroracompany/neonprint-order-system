@@ -27,6 +27,7 @@ const pr = () => ({ state: "open", base: { ref: "main", repo: { full_name: "uror
 const status = (overrides = {}) => ({
   id: 56693055594,
   context: stagingContext,
+  creator: { login: "vercel[bot]", id: 35613825, type: "Bot" },
   state: "success",
   target_url: inspector,
   created_at: "2026-10-19T13:44:21Z",
@@ -63,6 +64,17 @@ describe("trusted isolated Vercel Preview resolver", () => {
     }
   });
 
+  it("accepts Vercel's shortened staging alias only with the exact Vercel status and Ready deployment row", async () => {
+    const shortenedUrl = "https://neonprint-order-system-food-git-ca8a4d-urora-companys-projects.vercel.app";
+    const comments = [comment({ body: comment().body.replace(url, shortenedUrl) })];
+    await expect(resolveVercelPreview({ env: env(), fetchImpl: apiFetch({ comments }) })).resolves.toMatchObject({
+      url: shortenedUrl,
+      deploymentId,
+      statusId: 56693055594,
+      headRef: "codex/food-taster-preview-runner",
+    });
+  });
+
   it("selects only the exact isolated Vercel context, ignoring the production project", () => {
     const production = status({ id: 999, context: "Vercel – neonprint-order-system", target_url: "https://vercel.com/urora-companys-projects/neonprint-order-system/prod1234567890" });
     expect(selectLatestStagingStatus([production, status()])).toMatchObject({ state: "success", deploymentId });
@@ -78,6 +90,15 @@ describe("trusted isolated Vercel Preview resolver", () => {
     const older = status({ id: 10, updated_at: "2026-10-19T13:00:00Z" });
     const latest = status({ id: 11, state: "failure", updated_at: "2026-10-19T14:00:00Z" });
     expect(selectLatestStagingStatus([older, latest]).state).toBe("failure");
+  });
+
+  it.each([
+    ["missing actor", status({ creator: undefined })],
+    ["human actor", status({ creator: { login: "owner", id: 1, type: "User" } })],
+    ["wrong bot ID", status({ creator: { login: "vercel[bot]", id: 1, type: "Bot" } })],
+    ["wrong actor type", status({ creator: { login: "vercel[bot]", id: 35613825, type: "User" } })],
+  ])("rejects Vercel-context statuses with %s", (_label, candidate) => {
+    expect(() => selectLatestStagingStatus([candidate])).toThrow("not authored by the verified Vercel bot");
   });
 
   it("rejects ambiguous latest status records", () => {

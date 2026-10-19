@@ -136,6 +136,9 @@ export function selectLatestStagingStatus(statuses) {
   if (!Array.isArray(statuses)) throw new Error("GitHub commit status response was not an array.");
   const exact = statuses.filter((item) => item?.context === STAGING_CONTEXT);
   if (!exact.length) return null;
+  if (exact.some((item) => !trustedActor(item?.creator))) {
+    throw new Error("Vercel staging status was not authored by the verified Vercel bot.");
+  }
   const sorted = [...exact].sort((a, b) => parseTimestamp(b) - parseTimestamp(a) || Number(b.id) - Number(a.id));
   const newest = sorted[0];
   const sameTime = sorted.filter((item) => parseTimestamp(item) === parseTimestamp(newest));
