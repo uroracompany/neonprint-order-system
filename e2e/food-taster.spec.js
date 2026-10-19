@@ -1,19 +1,28 @@
 import { expect, test } from "@playwright/test";
-import { isAllowedPreviewRequest, isAllowedPreviewUrl } from "../scripts/food-taster-preview-origin.mjs";
+import {
+  isAllowedLocalSmokeRequest,
+  isAllowedLocalSmokeUrl,
+  isAllowedPreviewRequest,
+  isAllowedPreviewUrl,
+} from "../scripts/food-taster-preview-origin.mjs";
 
 const prefix = "neonprint-order-system-";
 const suffix = "-urora-companys-projects.vercel.app";
 
 test("the anonymous login smoke stays inside the public Preview shell", async ({ page, context, baseURL }) => {
-  if (!baseURL || !isAllowedPreviewUrl(baseURL, prefix, suffix)) {
-    throw new Error("PLAYWRIGHT_BASE_URL is outside the reviewed NeonPrint Preview allowlist.");
+  const isLocalSmoke = isAllowedLocalSmokeUrl(baseURL);
+  if (!baseURL || (!isLocalSmoke && !isAllowedPreviewUrl(baseURL, prefix, suffix))) {
+    throw new Error("PLAYWRIGHT_BASE_URL must be the fixed local smoke server or a reviewed NeonPrint Preview.");
   }
   const preview = new URL(baseURL);
   const blockedRequests = [];
 
   await context.route("**/*", async (route) => {
     const request = route.request();
-    if (!isAllowedPreviewRequest(request.url(), request.method(), baseURL, prefix, suffix)) {
+    const isAllowedRequest = isLocalSmoke
+      ? isAllowedLocalSmokeRequest(request.url(), request.method(), baseURL)
+      : isAllowedPreviewRequest(request.url(), request.method(), baseURL, prefix, suffix);
+    if (!isAllowedRequest) {
       blockedRequests.push({ url: request.url(), method: request.method() });
       await route.abort("blockedbyclient");
       return;

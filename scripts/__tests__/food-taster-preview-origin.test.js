@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedPreviewRequest, isAllowedPreviewUrl, matchesPreviewHostname } from "../food-taster-preview-origin.mjs";
+import {
+  isAllowedLocalSmokeRequest,
+  isAllowedLocalSmokeUrl,
+  isAllowedPreviewRequest,
+  isAllowedPreviewUrl,
+  matchesPreviewHostname,
+} from "../food-taster-preview-origin.mjs";
 
 const prefix = "neonprint-order-system-";
 const suffix = "-urora-companys-projects.vercel.app";
@@ -48,5 +54,29 @@ describe("Food Taster anonymous Preview request policy", () => {
   it("blocks redirects to any non-allowlisted origin and non-static path", () => {
     expect(isAllowedPreviewRequest("https://evil.example/collect", "GET", preview, prefix, suffix)).toBe(false);
     expect(isAllowedPreviewRequest(`${preview}/redirect`, "GET", preview, prefix, suffix)).toBe(false);
+  });
+});
+
+describe("Food Taster local build smoke request policy", () => {
+  const local = "http://127.0.0.1:4173/";
+
+  it("accepts only the fixed loopback root used by Playwright config", () => {
+    expect(isAllowedLocalSmokeUrl(local)).toBe(true);
+    for (const unsafe of [
+      "http://localhost:4173/", "http://127.0.0.1:4174/", "https://127.0.0.1:4173/",
+      "http://127.0.0.1:4173/api", "http://user:pass@127.0.0.1:4173/",
+      "http://127.0.0.1:4173/?next=x", "http://127.0.0.1:4173/#fragment",
+    ]) expect(isAllowedLocalSmokeUrl(unsafe)).toBe(false);
+  });
+
+  it("permits only root GET and same-origin static GET/HEAD requests", () => {
+    expect(isAllowedLocalSmokeRequest(local, "GET", local)).toBe(true);
+    expect(isAllowedLocalSmokeRequest("http://127.0.0.1:4173/assets/app-a1b2.js", "GET", local)).toBe(true);
+    expect(isAllowedLocalSmokeRequest("http://127.0.0.1:4173/favicon.ico", "HEAD", local)).toBe(true);
+    for (const [method, url] of [
+      ["POST", local], ["PUT", "http://127.0.0.1:4173/assets/app.js"],
+      ["GET", "http://127.0.0.1:4173/api/orders"], ["GET", "http://127.0.0.1:4174/assets/app.js"],
+      ["GET", "https://attacker.example/assets/app.js"], ["WS", "ws://127.0.0.1:4173/socket"],
+    ]) expect(isAllowedLocalSmokeRequest(url, method, local)).toBe(false);
   });
 });
