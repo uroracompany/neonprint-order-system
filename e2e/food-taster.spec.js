@@ -55,7 +55,9 @@ test("the anonymous login smoke stays inside the public Preview shell", async ({
   expect(blockedFetch, "API writes should be blocked in the browser before reaching the Preview").toBe(true);
   expect(blockedRequests.some((request) => request.method === "POST" && request.url.includes("/api/"))).toBe(true);
   await page.evaluate(() => new Promise((resolve) => {
-    const socket = new WebSocket(`${location.origin.replace("https:", "wss:")}/food-taster-probe`);
+    const socketURL = new URL("/food-taster-probe", location.origin);
+    socketURL.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(socketURL);
     const timer = setTimeout(() => { socket.close(); resolve(); }, 1000);
     socket.addEventListener("close", () => { clearTimeout(timer); resolve(); }, { once: true });
     socket.addEventListener("error", () => { clearTimeout(timer); resolve(); }, { once: true });
