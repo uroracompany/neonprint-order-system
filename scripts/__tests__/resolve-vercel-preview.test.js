@@ -1,182 +1,159 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  parseStagingRows,
   resolveAndWritePreview,
   resolveVercelPreview,
-  validateDeploymentSet,
-  validateDeploymentStatus,
-  validatePreviewUrl,
+  selectLatestStagingStatus,
+  selectStagingComment,
   writeGitHubOutput,
 } from "../resolve-vercel-preview.mjs";
 
-const sha = "a".repeat(40);
-const env = (overrides = {}) => ({
+const sha = "682acf66b5dbbe21530a4017280aead63e3d6d6b";
+const url = "https://neonprint-order-system-food-taster.vercel.app";
+const deploymentId = "25NCDmQu2UU8LCp5i7pFLZaKvcKm";
+const inspector = `https://vercel.com/urora-companys-projects/neonprint-order-system-food-taster/${deploymentId}`;
+const stagingContext = "Vercel – neonprint-order-system-food-taster";
+const env = (extra = {}) => ({
   GITHUB_TOKEN: "read-only-token",
   GITHUB_REPOSITORY: "uroracompany/neonprint-order-system",
+  PR_NUMBER: "9",
   PR_HEAD_SHA: sha,
-  VERCEL_PREVIEW_TIMEOUT_MS: "1000",
-  GITHUB_OUTPUT: "fake-output",
-  ...overrides,
+  PR_HEAD_REPO: "uroracompany/neonprint-order-system",
+  VERCEL_PREVIEW_TIMEOUT_MS: "30000",
+  ...extra,
 });
-const actor = { login: "vercel[bot]", id: 35613825, type: "Bot" };
-const url = "https://neonprint-order-system-pr-42-urora-companys-projects.vercel.app";
-const deployment = (overrides = {}) => ({
-  id: 42,
-  sha,
-  environment: "Preview",
-  production_environment: false,
-  creator: actor,
-  created_at: "2026-10-18T10:00:00Z",
-  ...overrides,
-});
+const response = (body, headers = {}) => ({ ok: true, status: 200, json: async () => body, headers: new Headers(headers) });
+const pr = () => ({ state: "open", base: { ref: "main", repo: { full_name: "uroracompany/neonprint-order-system" } }, head: { sha, ref: "codex/food-taster-preview-runner", repo: { full_name: "uroracompany/neonprint-order-system" } } });
 const status = (overrides = {}) => ({
-  id: 400,
-  environment: "Preview",
-  creator: actor,
-  created_at: "2026-10-18T10:01:00Z",
+  id: 56693055594,
+  context: stagingContext,
   state: "success",
-  environment_url: url,
+  target_url: inspector,
+  created_at: "2026-10-19T13:44:21Z",
+  updated_at: "2026-10-19T13:44:21Z",
   ...overrides,
 });
-const response = (body, headers = {}) => ({
-  ok: true,
-  status: 200,
-  headers: { get: (name) => headers[name.toLowerCase()] || null },
-  json: async () => body,
+const comment = (overrides = {}) => ({
+  id: 6268956221,
+  user: { login: "vercel[bot]", id: 35613825, type: "Bot" },
+  body: `| Project | Deployment | Actions | Updated |\n| :--- | :----- | :------ | :------ |\n| [neonprint-order-system-food-taster](https://vercel.com/urora-companys-projects/neonprint-order-system-food-taster) | ![Ready](https://vercel.com/static/status/ready.svg) [Ready](${inspector}) | [Preview](${url}) | updated |`,
+  ...overrides,
 });
 
-describe("GitHub-backed Vercel Preview resolver", () => {
-  it("resolves a Vercel-created Preview deployment for the exact full PR SHA", async () => {
-    const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(response([
-        deployment({ sha: "b".repeat(40) }),
-        deployment({ environment: "Production", production_environment: true }),
-        deployment(),
-      ]))
-      .mockResolvedValueOnce(response([status()]));
+function apiFetch({ pull = pr(), statuses = [status()], comments = [comment()], pagination } = {}) {
+  return vi.fn(async (rawUrl) => {
+    const request = new URL(rawUrl);
+    if (request.pathname.endsWith("/pulls/9")) return response(pull);
+    if (request.pathname.endsWith(`/commits/${sha}/statuses`)) return response(statuses, pagination?.statuses);
+    if (request.pathname.endsWith("/issues/9/comments")) return response(comments, pagination?.comments);
+    throw new Error(`Unexpected API request ${request.pathname}`);
+  });
+}
 
-    await expect(resolveVercelPreview({ env: env(), fetchImpl })).resolves.toBe(url);
-    const [deploymentsRequest, deploymentOptions] = fetchImpl.mock.calls[0];
-    const parsed = new URL(deploymentsRequest);
-    expect(parsed.origin).toBe("https://api.github.com");
-    expect(parsed.pathname).toBe("/repos/uroracompany/neonprint-order-system/deployments");
-    expect(parsed.searchParams.get("sha")).toBe(sha);
-    expect(parsed.searchParams.get("environment")).toBe("Preview");
-    expect(parsed.searchParams.get("per_page")).toBe("100");
-    expect(deploymentOptions.headers.Authorization).toBe("Bearer read-only-token");
-    expect(deploymentOptions.redirect).toBe("error");
-    expect(fetchImpl.mock.calls[1][0]).toContain("/deployments/42/statuses");
+describe("trusted isolated Vercel Preview resolver", () => {
+  it("correlates exact PR head, isolated status and Vercel Ready row, then revalidates", async () => {
+    const fetchImpl = apiFetch();
+    await expect(resolveVercelPreview({ env: env(), fetchImpl })).resolves.toEqual({ url, deploymentId, statusId: 56693055594, headRef: "codex/food-taster-preview-runner" });
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    for (const [request, options] of fetchImpl.mock.calls) {
+      expect(new URL(request).origin).toBe("https://api.github.com");
+      expect(options.method).toBe("GET");
+      expect(options.redirect).toBe("error");
+      expect(options.headers.Authorization).toBe("Bearer read-only-token");
+    }
   });
 
-  it("follows only api.github.com pagination for deployments and statuses", async () => {
-    const deploymentsNext = `https://api.github.com/repos/uroracompany/neonprint-order-system/deployments?sha=${sha}&environment=Preview&per_page=100&page=2`;
-    const statusesNext = "https://api.github.com/repos/uroracompany/neonprint-order-system/deployments/42/statuses?per_page=100&page=2";
-    const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(response([deployment({ id: 41, created_at: "2026-10-18T09:00:00Z" })], { link: `<${deploymentsNext}>; rel="next"` }))
-      .mockResolvedValueOnce(response([deployment()]))
-      .mockResolvedValueOnce(response([status({ id: 399, created_at: "2026-10-18T10:00:00Z" })], { link: `<${statusesNext}>; rel="next"` }))
-      .mockResolvedValueOnce(response([status()]));
-    await expect(resolveVercelPreview({ env: env(), fetchImpl })).resolves.toBe(url);
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  it("selects only the exact isolated Vercel context, ignoring the production project", () => {
+    const production = status({ id: 999, context: "Vercel – neonprint-order-system", target_url: "https://vercel.com/urora-companys-projects/neonprint-order-system/prod1234567890" });
+    expect(selectLatestStagingStatus([production, status()])).toMatchObject({ state: "success", deploymentId });
   });
 
-  it("selects the latest deployment and refuses to fall back to an older success", () => {
-    const old = deployment({ id: 1, created_at: "2026-10-18T09:00:00Z" });
-    const latest = deployment({ id: 2, created_at: "2026-10-18T10:00:00Z", creator: { login: "attacker", id: 1, type: "User" } });
-    expect(() => validateDeploymentSet([old, latest], sha, "neonprint-order-system-", "-urora-companys-projects.vercel.app"))
-      .toThrow("not from the verified Vercel bot");
+  it.each(["pending", "failure", "error", "cancelled", "unknown"])("does not accept latest state %s", (state) => {
+    if (state === "cancelled" || state === "unknown") {
+      expect(() => selectLatestStagingStatus([status({ state })])).toThrow();
+    } else expect(selectLatestStagingStatus([status({ state })])?.state).toBe(state);
+  });
+
+  it("does not fall back to an older success when the latest staging status failed", () => {
+    const older = status({ id: 10, updated_at: "2026-10-19T13:00:00Z" });
+    const latest = status({ id: 11, state: "failure", updated_at: "2026-10-19T14:00:00Z" });
+    expect(selectLatestStagingStatus([older, latest]).state).toBe("failure");
+  });
+
+  it("rejects ambiguous latest status records", () => {
+    expect(() => selectLatestStagingStatus([
+      status({ id: 10, state: "success" }),
+      status({ id: 11, state: "failure" }),
+    ])).toThrow("ambiguous");
+  });
+
+  it("parses only a well-formed staging deployment row and exact deployment ID", () => {
+    expect(parseStagingRows(comment().body)).toEqual([{ state: "Ready", inspectorUrl: inspector, previewUrl: url }]);
+    expect(selectStagingComment([comment()], deploymentId, "codex/food-taster-preview-runner")).toMatchObject({ previewUrl: url, commentId: 6268956221 });
+    expect(() => selectStagingComment([comment()], "anotherdeployment123", "codex/food-taster-preview-runner")).toThrow("does not match");
+    expect(() => selectStagingComment([comment()], deploymentId, "feature/payment-form-refresh")).toThrow("does not match");
   });
 
   it.each([
-    ["wrong SHA", deployment({ sha: "f".repeat(40) })],
-    ["production environment", deployment({ environment: "Production", production_environment: true })],
-    ["production marker mismatch", deployment({ production_environment: true })],
-  ])("does not accept a %s deployment", (label, candidate) => {
-    expect(label).toBeTruthy();
-    expect(validateDeploymentSet([candidate], sha, "neonprint-order-system-", "-urora-companys-projects.vercel.app")).toBeNull();
+    ["untrusted author", comment({ user: { login: "vercel[bot]", id: 1, type: "Bot" } })],
+    ["human author", comment({ user: { login: "owner", id: 1, type: "User" } })],
+    ["mismatched project", comment({ body: comment().body.replace("neonprint-order-system-food-taster", "neonprint-order-system") })],
+  ])("ignores %s as deployment evidence", (_label, candidate) => {
+    expect(selectStagingComment([candidate], deploymentId, "codex/food-taster-preview-runner")).toBeNull();
   });
 
-  it("fails closed when the latest exact Preview deployment has the wrong bot identity", () => {
-    const untrusted = deployment({ creator: { login: "vercel[bot]", id: 1, type: "Bot" } });
-    expect(() => validateDeploymentSet([untrusted], sha)).toThrow("not from the verified Vercel bot");
+  it.each([
+    ["missing Ready link", comment({ body: comment().body.replace(`[Ready](${inspector})`, "[Building](https://vercel.com/urora-companys-projects/neonprint-order-system-food-taster/anotherdeployment123") })],
+    ["production project URL", comment({ body: comment().body.replace(url, "https://neonprint-order-system.vercel.app") })],
+  ])("rejects %s as staging deployment evidence", (_label, candidate) => {
+    expect(() => selectStagingComment([candidate], deploymentId, "codex/food-taster-preview-runner")).toThrow();
   });
 
-  it("rejects ambiguous equally recent deployments", () => {
-    expect(() => validateDeploymentSet([deployment({ id: 1 }), deployment({ id: 2 })], sha, "neonprint-order-system-", "-urora-companys-projects.vercel.app"))
-      .toThrow("equally recent");
+  it("fails closed when PR changed, closed, targets other base, or comes from unexpected repo", async () => {
+    for (const pull of [
+      { ...pr(), state: "closed" },
+      { ...pr(), base: { ...pr().base, ref: "develop" } },
+      { ...pr(), head: { ...pr().head, sha: "f".repeat(40) } },
+      { ...pr(), head: { ...pr().head, repo: { full_name: "attacker/fork" } } },
+      { ...pr(), head: { ...pr().head, ref: "feature/unexpected-branch" } },
+    ]) await expect(resolveVercelPreview({ env: env({ EXPECTED_PR_HEAD_REF: "codex/food-taster-preview-runner" }), fetchImpl: apiFetch({ pull }) })).rejects.toThrow("Pull request");
   });
 
-  it.each(["error", "failure", "inactive", "unknown"]) ("fails closed for final status %s", (state) => {
-    expect(() => validateDeploymentStatus([status({ state })], "neonprint-order-system-", "-urora-companys-projects.vercel.app"))
-      .toThrow(`ended in ${state}`);
+  it("rejects an untrusted or wrong-project inspector URL", () => {
+    for (const candidate of [
+      "https://evil.example/urora-companys-projects/neonprint-order-system-food-taster/deployment123456",
+      "https://vercel.com/urora-companys-projects/neonprint-order-system/deployment123456",
+      "https://vercel.com/urora-companys-projects/neonprint-order-system-food-taster/deployment123456?next=x",
+    ]) expect(() => selectLatestStagingStatus([status({ target_url: candidate })])).toThrow();
   });
 
-  it("waits for pending status and polls again", async () => {
-    let time = 0;
-    const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(response([deployment()]))
-      .mockResolvedValueOnce(response([status({ state: "in_progress" })]))
-      .mockResolvedValueOnce(response([deployment()]))
-      .mockResolvedValueOnce(response([status()]));
-    await expect(resolveVercelPreview({
-      env: env({ VERCEL_PREVIEW_TIMEOUT_MS: "30000" }),
-      fetchImpl,
-      now: () => time,
-      sleep: async (ms) => { time += ms; },
-    })).resolves.toBe(url);
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  it("rejects external or path-changing pagination", async () => {
+    const fetchImpl = apiFetch({ pagination: { statuses: { link: '<https://evil.example/statuses?page=2>; rel="next"' } } });
+    await expect(resolveVercelPreview({ env: env(), fetchImpl })).rejects.toThrow("outside the expected API endpoint");
   });
 
-  it("rejects an untrusted latest status instead of using an older Vercel success", () => {
-    expect(() => validateDeploymentStatus([
-      status({ id: 1, created_at: "2026-10-18T10:00:00Z" }),
-      status({ id: 2, created_at: "2026-10-18T10:02:00Z", creator: { login: "attacker", id: 2, type: "User" } }),
-    ], "neonprint-order-system-", "-urora-companys-projects.vercel.app"))
-      .toThrow("not from the verified Vercel bot");
-  });
-
-  it("rejects failures, malformed responses, and external pagination", async () => {
-    await expect(resolveVercelPreview({ env: env(), fetchImpl: async () => ({ ok: false, status: 403 }) })).rejects.toThrow("HTTP 403");
-    await expect(resolveVercelPreview({ env: env(), fetchImpl: async () => response({ deployments: [] }) })).rejects.toThrow("was not an array");
-    await expect(resolveVercelPreview({
-      env: env(),
-      fetchImpl: async () => response([], { link: '<https://evil.example/deployments?page=2>; rel="next"' }),
-    })).rejects.toThrow("outside the expected API endpoint");
-  });
-
-  it("times out when no matching deployment appears", async () => {
-    let time = 0;
-    await expect(resolveVercelPreview({
-      env: env({ VERCEL_PREVIEW_TIMEOUT_MS: "10" }),
-      fetchImpl: async () => response([]),
-      now: () => time,
-      sleep: async (duration) => { time += duration; },
-    })).rejects.toThrow("Timed out");
-  });
-
-  it("requires a full SHA and GitHub token before networking", async () => {
+  it("requires validated environment and full SHA before network access", async () => {
     const fetchImpl = vi.fn();
     await expect(resolveVercelPreview({ env: env({ GITHUB_TOKEN: "" }), fetchImpl })).rejects.toThrow("GITHUB_TOKEN is missing");
     await expect(resolveVercelPreview({ env: env({ PR_HEAD_SHA: "short" }), fetchImpl })).rejects.toThrow("full 40-character");
+    await expect(resolveVercelPreview({ env: env({ PR_NUMBER: "0" }), fetchImpl })).rejects.toThrow("positive pull request number");
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("validates hostname and rejects URL credentials, paths, query, port and non-HTTPS", () => {
-    expect(validatePreviewUrl(url, "neonprint-order-system-", "-urora-companys-projects.vercel.app")).toBe(url);
-    for (const unsafe of [
-      url.replace("https:", "http:"),
-      "https://attacker.example",
-      `${url}.attacker.example`,
-      url.replace("https://", "https://user:pass@"),
-      `${url}:443`, `${url}/path`, `${url}/?x=1`, `${url}/#fragment`,
-    ]) expect(() => validatePreviewUrl(unsafe, "neonprint-order-system-", "-urora-companys-projects.vercel.app")).toThrow();
+  it("times out if the isolated Vercel status remains pending", async () => {
+    let time = 0;
+    const fetchImpl = apiFetch({ statuses: [status({ state: "pending" })], comments: [] });
+    await expect(resolveVercelPreview({ env: env({ VERCEL_PREVIEW_TIMEOUT_MS: "10" }), fetchImpl, now: () => time, sleep: async (ms) => { time += ms; } })).rejects.toThrow("Timed out");
   });
 
-  it("writes the validated URL only through the GitHub output interface", async () => {
+  it("writes only validated outputs and rejects newline injection", async () => {
     const appendFile = vi.fn();
-    await writeGitHubOutput(env(), "url", url, appendFile);
+    const outputEnv = env({ GITHUB_OUTPUT: "fake-output" });
+    await writeGitHubOutput(outputEnv, "url", url, appendFile);
     expect(appendFile).toHaveBeenCalledWith("fake-output", `url=${url}\n`, "utf8");
-    const notCalled = vi.fn();
-    await expect(resolveAndWritePreview({ env: env({ PR_HEAD_SHA: "bad" }), fetchImpl: vi.fn(), appendFileImpl: notCalled })).rejects.toThrow();
-    expect(notCalled).not.toHaveBeenCalled();
+    await expect(writeGitHubOutput(outputEnv, "url", "x\nattacker", appendFile)).rejects.toThrow("newlines");
+    const appendUnused = vi.fn();
+    await expect(resolveAndWritePreview({ env: env({ PR_HEAD_SHA: "bad" }), fetchImpl: vi.fn(), appendFileImpl: appendUnused })).rejects.toThrow();
+    expect(appendUnused).not.toHaveBeenCalled();
   });
 });
