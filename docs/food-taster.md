@@ -71,3 +71,5 @@ Bootstrap note: keep the existing `Quality checks` rule while the trusted
 controller is being added to `main`. After it lands, verify an App-owned
 `Food Taster gate` check on a new pull request before requiring that check in
 the `main` ruleset.
+
+Temporary verification trigger: this paragraph is for the open gate-check PR only and must not be merged.
