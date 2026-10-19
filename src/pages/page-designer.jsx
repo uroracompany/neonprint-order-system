@@ -22,6 +22,7 @@ import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { FilterSelect } from "../components/ui/FilterSelect";
+import CreateClientModal from "../components/ui/CreateClientModal";
 import "../components/ui/FilterSelect.css";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
@@ -33,12 +34,12 @@ import NotificationCenter from "../components/NotificationCenter";
 import FileCard from "../components/FileCard";
 import { buildStorageSafeFileName, formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../utils/uploadOrderAsset";
 import { resolveOrderAssetUrl } from "../utils/fileAccess";
-import { loadClients, orderMatchesClientFilter, formatPhone } from "../utils/clients";
+import { loadClients, searchClients, orderMatchesClientFilter, formatPhone } from "../utils/clients";
 import { getOrderFiles, getPreviewImage, getReferenceImages } from "../utils/orderAssets";
 import { canDecodeAsImage, compressImage, REF_IMAGE_CONFIG, validateReferenceImages } from "../utils/imageValidation";
 import { buildProductionFileRows } from "../utils/production";
 import { buildProductionCatalogs } from "../utils/production";
-import { ProductionFileDetailsModal } from "../components/orders/CreateOrderModal";
+import SharedCreateOrderModal, { ProductionFileDetailsModal } from "../components/orders/CreateOrderModal";
 import ProductionAssignmentModal from "../components/orders/ProductionAssignmentModal";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
 import DesignerProfileModule from "../components/designer/DesignerProfileModule";
@@ -91,9 +92,12 @@ const canDesignerRouteInternalOrderToProduction = (order, actorId) => {
     && Boolean(String(file?.termination_name || "").trim())
   ));
 
+  const canRouteDesign = order?.order_design_type === "INTERNAL_DESING"
+    || (order?.order_design_type === "EXTERNAL_DESING" && order?.created_by === actorId);
+
   return Boolean(
     actorId
-    && order?.order_design_type === "INTERNAL_DESING"
+    && canRouteDesign
     && order?.designer_id === actorId
     && isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE)
     && isPaymentProductionEligible(order?.payment_status)
@@ -111,9 +115,12 @@ const canDesignerSendInternalOrderToQuote = (order, actorId) => {
     && (Array.isArray(file?.material_names) ? file.material_names.length > 0 : Boolean(file?.material_names))
     && Boolean(String(file?.termination_name || "").trim())
   ));
+  const canSendDesign = order?.order_design_type === "INTERNAL_DESING"
+    || (order?.order_design_type === "EXTERNAL_DESING" && order?.created_by === actorId);
+
   return Boolean(
     actorId
-    && order?.order_design_type === "INTERNAL_DESING"
+    && canSendDesign
     && order?.designer_id === actorId
     && isOrderStatus(order?.status, ORDER_STATUS.IN_DESIGN)
     && !order?.is_archived_designer
@@ -123,7 +130,7 @@ const canDesignerSendInternalOrderToQuote = (order, actorId) => {
 };
 
 const canDesignerReturnInternalOrderToSales = (order, actorId) => Boolean(
-  actorId && order?.order_design_type === "INTERNAL_DESING" && order?.designer_id === actorId
+  actorId && order?.created_by !== actorId && order?.order_design_type === "INTERNAL_DESING" && order?.designer_id === actorId
   && isOrderStatus(order?.status, ORDER_STATUS.IN_DESIGN) && !order?.is_archived_designer
   && order?.operational_status !== "blocked"
 );
@@ -647,6 +654,7 @@ export function OrderDetailModal({
         p_expected_updated_at: orderUpdatedAt || order.updated_at,
         p_specifications: [{
           url: productionFile.url,
+          public_label: details.publicLabel,
           production_area_code: details.areaCode,
           material_names: details.materialNames,
           termination_name: details.terminationName,
@@ -984,7 +992,7 @@ export function OrderDetailModal({
     : effectivePersistedFiles.length === 0
       ? "Guarda al menos un archivo de diseño antes de enviar a Caja."
       : !hasPersistedPreview
-        ? "Guarda la imagen de orden de trabajo antes de enviar a Caja."
+        ? "Guarda la orden de trabajo antes de enviar a Caja."
         : hasChanges
           ? "Guarda los cambios pendientes de los archivos y de la imagen de orden de trabajo antes de enviar a Caja."
           : !persistedFilesAreConfigured
@@ -1572,6 +1580,12 @@ export default function PageDesigner() {
   const [filterOverdue, setFilterOverdue] = useState("all");
   const [filterArchive, setFilterArchive] = useState("all");
   const [clients, setClients] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const [productionCatalog, setProductionCatalog] = useState({ materials: {}, terminations: {} });
+  const [catalogError, setCatalogError] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
   const [viewMode, setViewMode] = useState("table");
   const [page, setPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -1606,6 +1620,7 @@ export default function PageDesigner() {
   const previousOrdersRef = useRef({});
   const ordersInitializedRef = useRef(false);
   const mainScrollRef = useRef(null);
+  const catalogsStartedRef = useRef(false);
 
   const fetchOrders = useCallback(async () => {
     if (!userRef.current) return;
@@ -1672,9 +1687,64 @@ export default function PageDesigner() {
     }
   }, []);
 
+  const loadDesignerCatalogs = useCallback(() => {
+    if (!authUser?.id || catalogsStartedRef.current) return;
+    catalogsStartedRef.current = true;
+    setClientsLoading(true);
+    setCatalogError("");
+    let clientsLoadError = null;
+    Promise.all([
+      supabase.from("materials").select("name,production_area_code").not("production_area_code", "is", null).order("name"),
+      supabase.from("production_terminations").select("name,production_area_code").order("name"),
+      loadClients(supabase, { onError: (error) => { clientsLoadError = error; } }),
+    ]).then(([materialsResult, terminationsResult, loadedClients]) => {
+      if (materialsResult.error || terminationsResult.error || clientsLoadError) {
+        throw materialsResult.error || terminationsResult.error || clientsLoadError;
+      }
+      setProductionCatalog(buildProductionCatalogs(materialsResult.data || [], terminationsResult.data || []));
+      setClients(loadedClients);
+    }).catch((error) => {
+      console.warn("No se pudieron cargar los catálogos de Diseño:", error?.message || error);
+      setCatalogError("No se pudieron cargar los catálogos. Verifica tu conexión e inténtalo nuevamente.");
+      catalogsStartedRef.current = false;
+    }).finally(() => setClientsLoading(false));
+  }, [authUser?.id]);
+
   useEffect(() => {
-    loadClients(supabase).then(setClients);
+    loadDesignerCatalogs();
+  }, [loadDesignerCatalogs, showCreate]);
+
+  const handleClientSearch = useCallback(async (query) => {
+    const results = await searchClients(supabase, query);
+    setClients((previous) => {
+      const byId = new Map(previous.map((client) => [client.id, client]));
+      results.forEach((client) => byId.set(client.id, client));
+      return [...byId.values()].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    });
+    return results;
   }, []);
+
+  const handleNewClientCreated = async (newClient, options = {}) => {
+    setClients((previous) => {
+      const exists = previous.some((client) => client.id === newClient.id);
+      return exists
+        ? previous
+        : [...previous, newClient].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    });
+    if (showCreate) setClientToSelectInOrderForm(newClient);
+    notif.showActionNotification({
+      type: "info",
+      title: options.reusedExisting ? "Cliente vinculado" : "Cliente registrado",
+      message: options.reusedExisting
+        ? `Cliente "${newClient.name}" encontrado y vinculado correctamente.`
+        : `Cliente "${newClient.name}" registrado correctamente.`,
+      metadata: {
+        variant: "success",
+        event_kind: options.reusedExisting ? "client_reused" : "client_created",
+        client_id: newClient.id,
+      },
+    });
+  };
 
   useEffect(() => {
     localStorage.setItem(EDITED_ORDERS_STORAGE_KEY, JSON.stringify(editedOrders));
@@ -2025,6 +2095,16 @@ export default function PageDesigner() {
 
   const handleReturnToSales = async (reason) => {
     if (!returningToSales || returningToSalesLoading) return;
+    if (returningToSales.created_by === user?.id) {
+      notif.showActionNotification({
+        type: "order_cancelled",
+        label: "Acción no disponible",
+        orderTitle: returningToSales.client_name || "Orden",
+        message: "Las órdenes creadas por Diseño no pueden devolverse a Ventas.",
+      });
+      setReturningToSales(null);
+      return;
+    }
     setReturningToSalesLoading(true);
     const { data, error } = await supabase.rpc("designer_return_order_to_sales", {
       p_order_id: returningToSales.id,
@@ -2063,6 +2143,8 @@ export default function PageDesigner() {
           { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
           { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount }
         ]}
+        onCreateNew={() => setShowCreate(true)}
+        showCreateButton
         onLogout={handleLogout}
       />
 
@@ -2082,6 +2164,15 @@ export default function PageDesigner() {
           </div>
 
           <div className="pd-topbar-right">
+            <button
+              className="ps-topbar-new-btn"
+              type="button"
+              onClick={() => setShowCreate(true)}
+              aria-label="Nueva orden"
+            >
+              <div className="ps-topbar-new-inner"><Icons.Plus /> Nueva Orden</div>
+              <div className="ps-topbar-new-stripe" />
+            </button>
             <button className="ps-icon-btn" onClick={fetchOrders} title="Recargar" aria-label="Recargar">
               <Icons.Refresh />
             </button>
@@ -2626,6 +2717,32 @@ export default function PageDesigner() {
       </div>
 
 
+      <SharedCreateOrderModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={async () => {
+          await fetchOrders();
+          await notif.refresh({ showNewToasts: true });
+        }}
+        userId={user?.id}
+        productionCatalog={productionCatalog}
+        clients={clients}
+        clientsLoading={clientsLoading}
+        onClientSearch={handleClientSearch}
+        onAddNewClient={() => setShowNewClientModal(true)}
+        clientToSelect={clientToSelectInOrderForm}
+        onClientToSelectConsumed={() => setClientToSelectInOrderForm(null)}
+        creationMode="designer"
+        catalogError={catalogError}
+        onRetryCatalogs={loadDesignerCatalogs}
+      />
+      <CreateClientModal
+        open={showNewClientModal}
+        onClose={() => setShowNewClientModal(false)}
+        onCreated={handleNewClientCreated}
+        supabase={supabase}
+        userId={user?.id}
+      />
       <OrderDetailModal 
         open={!!selectedOrder} 
         onClose={() => setSelectedOrder(null)} 

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { useKPI } from '../hooks/useKPI'
+import { getKpiBounds, useKPI } from '../hooks/useKPI'
 import { adminApiFetch } from '../utils/adminApi'
 
 vi.mock('../utils/adminApi', () => ({ adminApiFetch: vi.fn() }))
@@ -41,7 +41,8 @@ describe('useKPI cache', () => {
     const currentDuration = new Date(params.date_to) - new Date(params.date_from)
     const comparisonDuration = new Date(params.compare_to) - new Date(params.compare_from)
 
-    expect(params.action).toBe('executive_overview')
+    expect(params.action).toBe('all')
+    expect(params).toMatchObject(getKpiBounds('month'))
     expect(params.date_from).not.toBe('1970-01-01T00:00:00.000Z')
     expect(currentDuration).toBeGreaterThan(0)
     expect(comparisonDuration).toBe(currentDuration)

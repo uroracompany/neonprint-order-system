@@ -8,7 +8,7 @@ describe("Production delivery rework note contract", () => {
   it("loads notes only for the current recipient and selected order files", () => {
     expect(productionPage).toContain('.from("delivery_rework_event_items")');
     expect(productionPage).toContain('.eq("recipient_id", currentUserId)');
-    expect(productionPage).toContain('.in("production_file_id", fileIds)');
+    expect(productionPage).toContain('.in("production_file_id", productionFileIds)');
     expect(productionPage).toContain('.order("created_at", { ascending: false })');
   });
 

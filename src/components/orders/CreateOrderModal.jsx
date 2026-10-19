@@ -37,6 +37,11 @@ const EMPTY_FORM = {
   reference_images: [],
 };
 
+const getInitialForm = (creationMode = "seller") => ({
+  ...EMPTY_FORM,
+  invoice_assignment_mode: creationMode === "designer" ? "cashier" : "seller",
+});
+
 const ORDER_DRAFT_STORAGE_PREFIX = "neonprint:create-order-draft:v1";
 const modalStack = [];
 let modalScrollLockDepth = 0;
@@ -685,6 +690,7 @@ export function ProductionFileDetailsModal({
             onChange={(event) => update("publicLabel", event.target.value)}
             placeholder="Ej: Banner principal"
             aria-label="Nombre visible en seguimiento"
+            disabled={saving}
           />
         </Field>
         <ProductionFileSpecifications
@@ -735,12 +741,15 @@ export default function CreateOrderModal({
   onClientToSelectConsumed,
   clientFieldDisabled = false,
   isSemiAdmin = false,
+  creationMode = "seller",
+  catalogError = "",
+  onRetryCatalogs,
 }) {
   const fileInputRef = useRef(null);
   const previewInputRef = useRef(null);
   const refImagesInputRef = useRef(null);
 
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(() => getInitialForm(creationMode));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
@@ -754,14 +763,14 @@ export default function CreateOrderModal({
   const resetForm = useCallback(() => {
     clearOrderDraft(userId);
     createRequestIdRef.current = null;
-    setForm(EMPTY_FORM);
+    setForm(getInitialForm(creationMode));
     setError("");
     setFieldErrors({});
     setMissingLabelIndices([]);
     setMissingAreaIndices([]);
     setPendingDetailsIndices([]);
     setDetailsFileIndex(null);
-  }, [userId]);
+  }, [creationMode, userId]);
 
   useEffect(() => {
     if (!open) resetForm();
@@ -1007,16 +1016,18 @@ export default function CreateOrderModal({
           client_name: form.client_name.trim(),
           client_contact: form.client_phone.trim() || null,
           invoice_number: form.invoice_number.trim(),
-          invoice_assignment_mode: form.invoice_assignment_mode === "cashier" ? "cashier" : "seller",
+          invoice_assignment_mode: creationMode === "designer"
+            ? "cashier"
+            : (form.invoice_assignment_mode === "cashier" ? "cashier" : "seller"),
           description: form.description.trim(),
           material: "",
           termination_type: null,
           order_type: form.order_type,
           order_design_type: form.design_type,
           delivery_date: nextIndefinido ? null : (form.delivery_date || null),
-          status: ORDER_STATUS.PENDING,
+          status: creationMode === "designer" ? ORDER_STATUS.IN_DESIGN : ORDER_STATUS.PENDING,
           payment_status: "Pending_Payment",
-          seller_id: userId,
+          seller_id: creationMode === "designer" ? null : userId,
           created_by: userId,
         };
 
@@ -1039,7 +1050,9 @@ export default function CreateOrderModal({
         payload.order_file_url = fileUrls.length > 0 ? JSON.stringify(fileUrls.filter(Boolean)) : null;
         const createCommand = isSemiAdmin
           ? "semi_admin_create_order_with_client"
-          : "create_seller_order_with_file_specifications";
+          : creationMode === "designer"
+            ? "designer_create_order_with_file_specifications"
+            : "create_seller_order_with_file_specifications";
         const { data: createdOrder, error: createError } = await supabase.rpc(createCommand, {
           p_idempotency_key: orderId,
           p_order: payload,
@@ -1102,6 +1115,16 @@ export default function CreateOrderModal({
       )}
     >
       {error && <div className="ps-form-error">{error}</div>}
+      {catalogError && (
+        <div className="ps-form-error" role="alert">
+          <span>{catalogError}</span>
+          {onRetryCatalogs && (
+            <button type="button" className="ps-btn-cancel" onClick={onRetryCatalogs}>
+              Reintentar
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="ps-form-grid">
         <div className="col-full">
@@ -1137,27 +1160,31 @@ export default function CreateOrderModal({
           <Field
             label="Número de Facturación"
             required={form.invoice_assignment_mode !== "cashier"}
-            hint={form.invoice_assignment_mode === "cashier" ? "Caja asignará el código antes de completar el pago." : undefined}
+            hint={creationMode === "designer"
+              ? "Caja asignará el código antes de completar el pago."
+              : (form.invoice_assignment_mode === "cashier" ? "Caja asignará el código antes de completar el pago." : undefined)}
             error={fieldErrors.invoice_number}
           >
             <input className="ps-form-input" placeholder="Ej: FAC-001-2024"
               value={form.invoice_number}
               onChange={event => set("invoice_number", event.target.value)}
-              disabled={form.invoice_assignment_mode === "cashier"}
+              disabled={creationMode === "designer" || form.invoice_assignment_mode === "cashier"}
             />
           </Field>
-          <label className="ps-invoice-assignment-toggle">
-            <input
-              type="checkbox"
-              checked={form.invoice_assignment_mode === "cashier"}
-              onChange={(event) => {
-                const nextMode = event.target.checked ? "cashier" : "seller";
-                set("invoice_assignment_mode", nextMode);
-                if (nextMode === "cashier") set("invoice_number", "");
-              }}
-            />
-            <span>Asignar código de facturación en Caja</span>
-          </label>
+          {creationMode !== "designer" && (
+            <label className="ps-invoice-assignment-toggle">
+              <input
+                type="checkbox"
+                checked={form.invoice_assignment_mode === "cashier"}
+                onChange={(event) => {
+                  const nextMode = event.target.checked ? "cashier" : "seller";
+                  set("invoice_assignment_mode", nextMode);
+                  if (nextMode === "cashier") set("invoice_number", "");
+                }}
+              />
+              <span>Asignar código de facturación en Caja</span>
+            </label>
+          )}
         </div>
         <div className="col-full">
           <Field label="Descripcion del trabajo" required error={fieldErrors.description}>

@@ -1,9 +1,5 @@
-/* global process */
 import { describe, expect, it } from "vitest";
-import fs from "node:fs";
-import path from "node:path";
-
-const read = (file) => fs.readFileSync(path.resolve(process.cwd(), file), "utf8");
+import { readProjectFile as read } from "../test-utils/read-project-file.js";
 
 const migration = read("supabase/migrations/20260827121000_production_file_status_command_context.sql");
 const deliveryCommand = read("supabase/migrations/20260826123000_p0_core_workflow_storage_hardening.sql");

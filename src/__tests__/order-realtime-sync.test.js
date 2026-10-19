@@ -65,7 +65,7 @@ describe("order realtime synchronization", () => {
     });
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
     expect(dashboard).toContain("preserveMissingOpenOrders: silent");
-    expect(dashboard).toContain("openOrderSetters: [setSettingsOrder, setPaymentModalOrder]");
+    expect(dashboard).toContain("openOrderSetters: [setSettingsOrder]");
     expect(dashboard).not.toContain("const freshOrder = ordersById[selectedOrder.id]");
     expect(readProjectFile("src/pages/page-quote.jsx")).not.toContain("const freshOrder = [...orders, ...creditOrders].find");
     expect(readProjectFile("src/pages/page-tracking.jsx")).not.toContain("useOrdersRealtimeSync");

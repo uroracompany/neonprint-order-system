@@ -1,10 +1,9 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { validateOrderAssetAction } from "../../server/storage-gateway.js";
+import { readProjectFile } from "../test-utils/read-project-file.js";
 
-const migration = readFileSync(
+const migration = readProjectFile(
   "supabase/migrations/20260928011837_harden_semi_admin_operational_boundaries.sql",
-  "utf8",
 );
 
 describe("Semi-Admin authorization boundaries", () => {
@@ -34,7 +33,7 @@ describe("Semi-Admin authorization boundaries", () => {
   });
 
   it("keeps the Production action informational until Caja/Admin authorization is persisted", () => {
-    const handler = readFileSync("server/seller-order-actions-handler.js", "utf8");
+    const handler = readProjectFile("server/seller-order-actions-handler.js");
 
     expect(handler).toContain("loaded.order.production_authorized_at && loaded.order.production_authorized_by");
     expect(handler).toContain('action?.key !== "route_production"');

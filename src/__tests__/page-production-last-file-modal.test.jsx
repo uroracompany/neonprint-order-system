@@ -5,10 +5,30 @@ import { ORDER_STATUS, PRODUCTION_FILE_STATUS } from "../utils/constants";
 import { supabase } from "../../supabaseClient";
 
 vi.mock("../../supabaseClient", () => {
-  const mockEqProfiles = vi.fn(() => ({
-    then: (resolve) => resolve({ data: [{ id: "delivery-user-1", name: "Carlos Delivery", role: "delivery" }], error: null }),
-  }));
-  const mockSelect = vi.fn(() => ({ eq: mockEqProfiles }));
+  const mockSelect = vi.fn(() => {
+    let requestedRole = "";
+    const query = {
+      eq: vi.fn((column, value) => {
+        if (column === "role") requestedRole = value;
+        return query;
+      }),
+      or: vi.fn(() => query),
+      is: vi.fn(() => query),
+      single: vi.fn(async () => ({
+        data: requestedRole === "delivery"
+          ? { id: "delivery-user-1", name: "Carlos Delivery", role: "delivery" }
+          : null,
+        error: null,
+      })),
+      then: (resolve, reject) => Promise.resolve({
+        data: requestedRole === "delivery"
+          ? [{ id: "delivery-user-1", name: "Carlos Delivery", role: "delivery" }]
+          : [],
+        error: null,
+      }).then(resolve, reject),
+    };
+    return query;
+  });
   const mockUpdateEq = vi.fn(() => Promise.resolve({ error: null }));
   const mockUpdate = vi.fn(() => ({ eq: mockUpdateEq }));
 
@@ -45,12 +65,13 @@ const makeFile = (id, area, status = PRODUCTION_FILE_STATUS.IN_TERMINATION) => (
   status,
 });
 
-const renderProductionModal = (order) => render(
+const renderProductionModal = (order, props = {}) => render(
   <OrderDetailModal
     onClose={() => {}}
     order={order}
     producerRole="ploteo_producer"
     onUpdateStatus={() => {}}
+    reworkHandoffsReady={props.reworkHandoffsReady ?? false}
   />
 );
 
@@ -111,7 +132,7 @@ describe("Production last pending file confirmation", () => {
       order_production_files: [
         makeFile("file-1", "ploteo"),
       ],
-    });
+    }, { reworkHandoffsReady: true });
 
     fireEvent.click(screen.getByTitle("Marcar completado"));
 
@@ -138,6 +159,26 @@ describe("Production last pending file confirmation", () => {
     });
   });
 
+  it("keeps delivery assignment blocked when handoff readiness is not verified", async () => {
+    supabase.rpc.mockImplementation(async (fnName) => {
+      if (fnName === "will_complete_production_order") return { data: true, error: null };
+      return { data: null, error: null };
+    });
+
+    renderProductionModal({
+      ...baseOrder,
+      order_production_files: [makeFile("file-unverified", "ploteo")],
+    });
+
+    fireEvent.click(screen.getByTitle("Marcar completado"));
+    await waitFor(() => expect(screen.getByText(/Finalizar orden/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Confirmar y completar orden"));
+
+    expect(await screen.findByText("No se pudo verificar la devolución de esta orden. Actualiza e intenta nuevamente.")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(supabase.rpc).not.toHaveBeenCalledWith("update_production_file_status", expect.anything());
+  });
+
   it("only shows confirmation modal for the last pending file among several", async () => {
     const willCompleteResponses = [false, true];
     supabase.rpc.mockImplementation(async (fnName) => {
@@ -159,7 +200,7 @@ describe("Production last pending file confirmation", () => {
         makeFile("file-4", "ploteo"),
         makeFile("file-5", "ploteo"),
       ],
-    });
+    }, { reworkHandoffsReady: true });
 
     fireEvent.click(screen.getAllByTitle("Marcar completado")[0]);
 
@@ -187,6 +228,7 @@ describe("Production last pending file confirmation", () => {
         }}
         producerRole="ploteo_producer"
         onUpdateStatus={() => {}}
+        reworkHandoffsReady={true}
       />
     );
 

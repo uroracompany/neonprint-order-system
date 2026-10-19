@@ -384,6 +384,11 @@ const makeAdminOrdersClient = ({
     eq: vi.fn(() => orderBuilder),
     or: vi.fn(() => orderBuilder),
     gte: vi.fn(() => orderBuilder),
+    gt: vi.fn(() => orderBuilder),
+    lt: vi.fn(() => orderBuilder),
+    not: vi.fn(() => orderBuilder),
+    is: vi.fn(() => orderBuilder),
+    neq: vi.fn(() => orderBuilder),
     order: vi.fn(() => ({ range: orderRange })),
   };
 
@@ -1021,7 +1026,14 @@ describe("handleAdminListOrders", () => {
     ]);
     expect(result.body.total).toBe(1);
     expect(result.body.pageSize).toBe(50);
-    expect(currentClient.orderSelect).toHaveBeenCalledWith("*", { count: "exact" });
+    const [selectedFields, selectOptions] = currentClient.orderSelect.mock.calls[0];
+    expect(selectedFields).not.toBe("*");
+    expect(selectedFields).toContain("id");
+    expect(selectedFields).toContain("client_name");
+    expect(selectedFields).toContain("status");
+    expect(selectedFields).toContain("payment_status");
+    expect(selectedFields).toContain("is_archived_admin");
+    expect(selectOptions).toEqual({ count: "exact" });
     expect(currentClient.orderBuilder.order).toHaveBeenCalledWith("created_at", { ascending: false });
     expect(currentClient.orderRange).toHaveBeenCalledWith(0, 49);
   });

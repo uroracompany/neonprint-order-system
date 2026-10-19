@@ -175,6 +175,7 @@ export default function OrderDetailModal({
   adminIntervention = null,
   adminActions = null,
   productionAction = null,
+  showDeliveryConfirmation = false,
   closeOnBackdrop = true,
   closeOnEscape = true,
 }) {
@@ -186,6 +187,10 @@ export default function OrderDetailModal({
   const [designerName, setDesignerName] = useState("");
   const [resolvedAssetUrls, setResolvedAssetUrls] = useState({});
   const [assetResolutionErrors, setAssetResolutionErrors] = useState({});
+  const [deliveryConfirmation, setDeliveryConfirmation] = useState(null);
+  const [deliveryConfirmationLoading, setDeliveryConfirmationLoading] = useState(false);
+  const [deliveryConfirmationError, setDeliveryConfirmationError] = useState("");
+  const [deliveryConfirmationRefreshKey, setDeliveryConfirmationRefreshKey] = useState(0);
   const referenceImagesKey = referenceImageUrls.join("\u001f");
 
   useEffect(() => {
@@ -249,6 +254,43 @@ export default function OrderDetailModal({
     };
   }, [open, order?.id, order?.preview_image, referenceImageUrls, referenceImagesKey]);
 
+  useEffect(() => {
+    if (!showDeliveryConfirmation || !open || !order?.id) {
+      setDeliveryConfirmation(null);
+      setDeliveryConfirmationLoading(false);
+      setDeliveryConfirmationError("");
+      return undefined;
+    }
+
+    let active = true;
+    setDeliveryConfirmation(null);
+    setDeliveryConfirmationLoading(true);
+    setDeliveryConfirmationError("");
+    supabase
+      .from("delivery_confirmations")
+      .select("order_id,assigned_delivery_id,executor_type,executor_name,delivery_comment,confirmed_by,confirmed_at,updated_at")
+      .eq("order_id", order.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setDeliveryConfirmationError("No se pudo cargar la confirmación de entrega.");
+          return;
+        }
+        setDeliveryConfirmation(data || null);
+      })
+      .catch(() => {
+        if (active) setDeliveryConfirmationError("No se pudo cargar la confirmación de entrega.");
+      })
+      .finally(() => {
+        if (active) setDeliveryConfirmationLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [showDeliveryConfirmation, open, order?.id, deliveryConfirmationRefreshKey]);
+
   if (!hasOrder) return null;
 
   const isExternalDesign = order.order_design_type === "EXTERNAL_DESING";
@@ -258,6 +300,8 @@ export default function OrderDetailModal({
   const shouldShowPrimaryAction = showPrimaryAction
     && (isReturningToCashier || !isOrderStatusIn(order.status, ACTIVE_WORKFLOW_STATUSES_FOR_SELLER));
   const displayResponsibleName = responsibleName || user?.displayName || "---";
+  const legacyDeliveryNote = !deliveryConfirmation ? String(order.delivery_note || "").trim() : "";
+  const visibleDeliveryConfirmation = deliveryConfirmation || legacyDeliveryNote;
 
   return (
     <Modal
@@ -269,6 +313,7 @@ export default function OrderDetailModal({
       closeOnBackdrop={closeOnBackdrop}
       closeOnEscape={closeOnEscape}
       hideStripe
+      stickyHeader
       overlayClassName="order-detail-modal-overlay"
     >
       <div className="order-detail-shell">
@@ -463,6 +508,58 @@ export default function OrderDetailModal({
               </div>
             )}
           </div>
+
+          {showDeliveryConfirmation && (deliveryConfirmationLoading || deliveryConfirmationError || visibleDeliveryConfirmation) && (
+            <div className="order-detail-section" style={{
+              background: "var(--surface)",
+              padding: 16,
+              marginBottom: 18,
+            }}>
+              <p style={{
+                fontSize: 11, fontWeight: 700, color: "#1E40AF",
+                textTransform: "uppercase", letterSpacing: "0.07em",
+                margin: "0 0 12px 0", display: "flex", alignItems: "center", gap: 6,
+              }}><Icons.CheckCircle /> Confirmación de entrega</p>
+              {deliveryConfirmationLoading ? (
+                <p role="status" style={{ fontSize: 13, color: "var(--text-sub)", margin: 0 }}>Cargando confirmación de entrega…</p>
+              ) : deliveryConfirmationError ? (
+                <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <p style={{ fontSize: 13, color: "var(--text-sub)", margin: 0 }}>{deliveryConfirmationError}</p>
+                  <button
+                    type="button"
+                    className="ps-btn-secondary"
+                    onClick={() => setDeliveryConfirmationRefreshKey((current) => current + 1)}
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              ) : deliveryConfirmation ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div>
+                    <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>ENTREGÓ</p>
+                    <p style={{ fontSize: 13, color: "var(--text)", margin: 0, fontWeight: 600 }}>{deliveryConfirmation.executor_name}</p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>CONFIRMADA</p>
+                    <p style={{ fontSize: 13, color: "var(--text)", margin: 0, fontWeight: 600 }}>
+                      {new Date(deliveryConfirmation.confirmed_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" })}
+                    </p>
+                  </div>
+                  {deliveryConfirmation.delivery_comment && (
+                    <div>
+                      <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>COMENTARIO DE ENTREGA</p>
+                      <p style={{ fontSize: 13, color: "var(--text)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{deliveryConfirmation.delivery_comment}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>COMENTARIO DE ENTREGA (REGISTRO HISTÓRICO)</p>
+                  <p style={{ fontSize: 13, color: "var(--text)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{legacyDeliveryNote}</p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="order-detail-section" style={{
             background: "var(--surface)",

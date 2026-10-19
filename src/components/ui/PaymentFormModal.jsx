@@ -24,6 +24,7 @@ export default function PaymentFormModal({
   hasVerifiedPaymentReceipt = false,
   correctionMode = false,
   nested = false,
+  remoteOrderMissing = false,
 }) {
   const [paymentStatus, setPaymentStatus] = useState(correctionMode ? "" : "Pending_Payment");
   const [receiptFile, setReceiptFile] = useState(null);
@@ -38,11 +39,27 @@ export default function PaymentFormModal({
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [savedInvoiceNumber, setSavedInvoiceNumber] = useState(order?.invoice_number || "");
   const [invoiceCodeSaving, setInvoiceCodeSaving] = useState(false);
+  const [versionConflict, setVersionConflict] = useState(false);
+  const versionConflictRef = useRef(false);
+  const orderSessionRef = useRef({ open: false, orderId: null });
+  const acceptedVersionRef = useRef(order?.updated_at || null);
+  const observedVersionRef = useRef(order?.updated_at || null);
+  const priorAcknowledgedVersionRef = useRef(null);
   const orderId = order?.id;
   const orderPaymentStatus = order?.payment_status;
 
   useEffect(() => {
-    if (!open || !orderId) return;
+    if (!open || !orderId) {
+      orderSessionRef.current = { open: false, orderId: null };
+      return;
+    }
+    if (orderSessionRef.current.open && orderSessionRef.current.orderId === orderId) return;
+    orderSessionRef.current = { open: true, orderId };
+    acceptedVersionRef.current = order?.updated_at || null;
+    observedVersionRef.current = order?.updated_at || null;
+    priorAcknowledgedVersionRef.current = null;
+    versionConflictRef.current = false;
+    setVersionConflict(false);
     setPaymentStatus(correctionMode ? "" : (orderPaymentStatus || "Pending_Payment"));
     setReceiptFile(null);
     setReceiptPreviewAvailable(true);
@@ -53,7 +70,33 @@ export default function PaymentFormModal({
     setSavedInvoiceNumber(order?.invoice_number || "");
     setInvoiceCodeSaving(false);
     if (receiptInputRef.current) receiptInputRef.current.value = "";
-  }, [open, orderId, orderPaymentStatus, order?.invoice_number, correctionMode]);
+  }, [open, orderId, orderPaymentStatus, order?.invoice_number, order?.updated_at, correctionMode]);
+
+  useEffect(() => {
+    if (!open || !orderId || orderSessionRef.current.orderId !== orderId) return;
+    if (remoteOrderMissing) {
+      versionConflictRef.current = true;
+      setVersionConflict(true);
+      return;
+    }
+
+    const nextVersion = order?.updated_at || null;
+    const observedVersion = observedVersionRef.current;
+    if (!nextVersion || !observedVersion || nextVersion === observedVersion) return;
+
+    if (nextVersion === priorAcknowledgedVersionRef.current && nextVersion !== acceptedVersionRef.current) return;
+    if (nextVersion === acceptedVersionRef.current) {
+      observedVersionRef.current = nextVersion;
+      priorAcknowledgedVersionRef.current = null;
+      return;
+    }
+
+    observedVersionRef.current = nextVersion;
+    if (nextVersion !== acceptedVersionRef.current) {
+      versionConflictRef.current = true;
+      setVersionConflict(true);
+    }
+  }, [open, orderId, order?.updated_at, remoteOrderMissing]);
 
   useEffect(() => {
     let active = true;
@@ -197,6 +240,7 @@ export default function PaymentFormModal({
   };
 
   const handleSubmit = async () => {
+    if (versionConflictRef.current) return;
     setInternalError("");
     if (!paymentEligibility.eligible) {
       if (paymentEligibility.error) setInternalError(paymentEligibility.error);
@@ -210,26 +254,52 @@ export default function PaymentFormModal({
         invoiceNumber: invoiceNumber.trim(),
         isPaymentCorrection: correctionMode,
       });
+      if (result?.code === "ORDER_STALE") {
+        versionConflictRef.current = true;
+        setVersionConflict(true);
+        return;
+      }
       if (result?.ok === false) return;
     } catch (err) {
+      if (err?.code === "ORDER_STALE" || String(err?.message || "").includes("ORDER_STALE")) {
+        versionConflictRef.current = true;
+        setVersionConflict(true);
+        return;
+      }
       setInternalError(err?.message || "No se pudo procesar el pago.");
     }
   };
 
   const handleInvoiceCodeSave = async () => {
     const nextInvoiceNumber = invoiceNumber.trim();
-    if (!nextInvoiceNumber || !onAssignInvoiceCode || !canAssignInvoiceCode || invoiceCodeSaving) return;
+    if (versionConflictRef.current || !nextInvoiceNumber || !onAssignInvoiceCode || !canAssignInvoiceCode || invoiceCodeSaving) return;
 
     setInternalError("");
     setInvoiceCodeSaving(true);
     try {
-      const updated = await onAssignInvoiceCode(order, nextInvoiceNumber);
+      const updated = await onAssignInvoiceCode(order, nextInvoiceNumber, (acknowledgedOrder) => {
+        if (acknowledgedOrder?.updated_at) {
+          priorAcknowledgedVersionRef.current = observedVersionRef.current;
+          acceptedVersionRef.current = acknowledgedOrder.updated_at;
+          observedVersionRef.current = acknowledgedOrder.updated_at;
+        }
+        if (acknowledgedOrder?.invoice_number) {
+          const persistedInvoiceNumber = String(acknowledgedOrder.invoice_number).trim();
+          setInvoiceNumber(persistedInvoiceNumber);
+          setSavedInvoiceNumber(persistedInvoiceNumber);
+        }
+      });
       if (updated?.invoice_number) {
         const persistedInvoiceNumber = String(updated.invoice_number).trim();
         setInvoiceNumber(persistedInvoiceNumber);
         setSavedInvoiceNumber(persistedInvoiceNumber);
       }
     } catch (err) {
+      if (err?.code === "ORDER_STALE" || String(err?.message || "").includes("ORDER_STALE")) {
+        versionConflictRef.current = true;
+        setVersionConflict(true);
+        return;
+      }
       setInternalError(err?.message || "No se pudo guardar el código de facturación.");
     } finally {
       setInvoiceCodeSaving(false);
@@ -254,7 +324,7 @@ export default function PaymentFormModal({
         type="button"
         className="pq-btn pq-btn-primary"
         onClick={handleSubmit}
-        disabled={!paymentEligibility.eligible}
+        disabled={versionConflict || !paymentEligibility.eligible}
         aria-describedby={!correctionMode && !paymentEligibility.eligible && paymentEligibility.error ? "pfm-payment-block-reason" : undefined}
       >
         {confirmLabel}
@@ -299,6 +369,13 @@ export default function PaymentFormModal({
         {!canManagePayment && (
           <div className="pfm-readonly-note" role="status">
             Esta orden está en modo lectura para Caja. Puedes consultar su estado, pero no modificar el pago.
+          </div>
+        )}
+
+        {versionConflict && (
+          <div className="pfm-error" role="alert" aria-live="assertive" aria-atomic="true">
+            <Icons.AlertCircle aria-hidden="true" />
+            La orden cambió en otro lugar. El borrador de pago, factura y comprobante se conserva solo mientras este modal siga abierto; no se guardará. Cierra y vuelve a abrir la orden para revisar la versión actual. Si cierras este modal, perderás el borrador local.
           </div>
         )}
 
@@ -358,7 +435,7 @@ export default function PaymentFormModal({
                   type="button"
                   className="pq-btn pq-btn-primary pfm-save-invoice-btn"
                   onClick={handleInvoiceCodeSave}
-                  disabled={loading || invoiceCodeSaving || !invoiceNumber.trim() || invoiceNumber.trim() === String(order?.invoice_number || "").trim()}
+                  disabled={versionConflict || loading || invoiceCodeSaving || !invoiceNumber.trim() || invoiceNumber.trim() === String(order?.invoice_number || "").trim()}
                 >
                   {invoiceCodeSaving ? "Guardando..." : "Guardar código"}
                 </button>

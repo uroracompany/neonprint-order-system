@@ -61,6 +61,13 @@ export const PRODUCTION_ORDER_SELECT = [
   "order_production_user_archives(order_id,user_id,archived_at)",
 ].join(",");
 
+// Delivery alone asks for this private relation. Its RLS policy keeps the
+// confirmation unavailable to every other operational queue.
+export const DELIVERY_ORDER_SELECT = [
+  OPERATIONAL_ORDER_COLUMNS,
+  "delivery_confirmations(order_id,assigned_delivery_id,executor_type,executor_name,delivery_comment,confirmed_by,confirmed_at,updated_at)",
+].join(",");
+
 export const QUOTE_ORDER_SELECT = [
   OPERATIONAL_ORDER_COLUMNS,
   "order_production_files(id,order_id,url,filename,public_label,production_area_code,material_names,termination_name,status,updated_at)",

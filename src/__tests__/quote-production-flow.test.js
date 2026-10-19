@@ -158,9 +158,10 @@ describe("flujo de produccion en caja", () => {
 
   it("limpia solo asignaciones activas sin archivos y no notifica roles genericos de produccion", () => {
     const migration = readLatestMigration("_dynamic_production_participating_areas.sql");
+    const normalizedMigration = migration.replace(/\s+/g, " ").toLowerCase();
 
-    expect(migration).toContain("o.status in ('in_Production', 'in_Termination')");
-    expect(migration).toContain("not exists (\n    select 1\n    from public.order_production_files opf");
+    expect(normalizedMigration).toContain("o.status in ('in_production', 'in_termination')");
+    expect(normalizedMigration).toContain("not exists ( select 1 from public.order_production_files opf where opf.order_id = opa.order_id and opf.production_area_code = opa.production_area_code )");
     expect(migration).toContain("public.handle_order_change_notification()");
     expect(migration).toContain("Could not remove generic printer recipients");
   });

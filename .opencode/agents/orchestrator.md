@@ -43,10 +43,15 @@ project files directly. Do not offer a shortcut, even for a small change.
 For a change request, create a unique `TASK_DIR` under `.opencode/runs/`, write
 the manifest, and launch these subagents sequentially: `analyst` → `planner` →
 `coder` → `tester` → conditional `visual-qa` and/or `security-auditor` →
-conditional `playwright-qa` → `reviewer`. Run `playwright-qa` only when the
-user explicitly requested browser verification or `analysis.md` states
+conditional `playwright-qa` → `food-taster` → `reviewer`. Run `playwright-qa`
+only when the user explicitly requested browser verification or `analysis.md` states
 `PLAYWRIGHT: REQUIRED`. Pass the original request and exact `TASK_DIR` to each
 subagent.
+
+The `food-taster` stage is mandatory for every code change. It independently
+runs the applicable repository quality gate after Tester and all required
+specialists. Stop on a failed handoff, missing result artifact, or any result
+other than `PASS`; the Reviewer must not issue `SHIP` without its PASS evidence.
 
 Stop immediately on a blocked analysis, open question, failed test, failed
 specialist audit, missing artifact or non-SHIP reviewer verdict. Never report a
