@@ -12,7 +12,7 @@ permissions: {}
 jobs:
   validate-pull-request:
     name: Validate current pull request
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
@@ -41,7 +41,7 @@ jobs:
   start-food-taster-gate:
     name: Start trusted Food Taster Check Run
     needs: validate-pull-request
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     environment:
       name: food-taster-publisher
     permissions:
@@ -96,7 +96,7 @@ jobs:
     needs:
       - validate-pull-request
       - start-food-taster-gate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -122,17 +122,42 @@ jobs:
           VITE_SUPABASE_ANON_KEY: food-taster-placeholder
         run: npm run test -- --maxWorkers=2
       - name: Build
-        env:
-          VITE_SUPABASE_URL: https://food-taster.invalid
-          VITE_SUPABASE_ANON_KEY: food-taster-placeholder
         run: npm run build
-      - name: Install Chromium for local smoke
-        run: npx playwright install --with-deps chromium
-      - name: Smoke test exact PR build on loopback
+
+  preview-smoke:
+    name: Trusted Preview smoke test
+    needs:
+      - validate-pull-request
+      - start-food-taster-gate
+    if: needs.validate-pull-request.result == 'success' && needs.start-food-taster-gate.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - name: Check out trusted default-branch controller
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Install trusted controller dependencies
+        run: npm ci
+      - name: Resolve exact READY Vercel Preview
+        id: preview
         env:
-          CI: true
-          VITE_SUPABASE_URL: https://food-taster.invalid
-          VITE_SUPABASE_ANON_KEY: food-taster-placeholder
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ needs.validate-pull-request.outputs.head_sha }}
+        run: node scripts/resolve-vercel-preview.mjs
+      - name: Install Chromium for trusted driver
+        run: npx playwright install --with-deps chromium
+      - name: Run trusted read-only browser smoke
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.preview.outputs.url }}
         run: npm run test:e2e:smoke
 
   publish-food-taster-gate:
@@ -142,7 +167,8 @@ jobs:
       - validate-pull-request
       - start-food-taster-gate
       - quality
-    runs-on: ubuntu-24.04
+      - preview-smoke
+    runs-on: ubuntu-latest
     environment:
       name: food-taster-publisher
     permissions:
@@ -187,5 +213,6 @@ jobs:
           PR_HEAD_SHA: ${{ needs.validate-pull-request.outputs.head_sha }}
           PR_HEAD_REPO: ${{ needs.validate-pull-request.outputs.head_repo }}
           CHECK_RUN_ID: ${{ needs.start-food-taster-gate.outputs.check_run_id }}
-          QUALITY_RESULT: ${{ needs.quality.result == 'success' && 'success' || 'failure' }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          PREVIEW_RESULT: ${{ needs.preview-smoke.result }}
         run: node scripts/food-taster-github.mjs finalize

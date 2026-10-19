@@ -168,10 +168,11 @@ export async function finalizeFoodTaster({ env = process.env, fetchImpl = global
     fail("Existing Check Run does not belong to the dedicated App/current SHA or is not in progress.");
   }
   const quality = env.QUALITY_RESULT || "missing";
-  const succeeded = quality === "success";
+  const preview = env.PREVIEW_RESULT || "missing";
+  const succeeded = quality === "success" && preview === "success";
   const summary = succeeded
-    ? "All trusted quality checks, including the loopback browser smoke, passed for the current PR head."
-    : `Food Taster blocked: trusted quality checks=${quality}.`;
+    ? "Trusted quality checks and the Preview smoke passed for the current PR head."
+    : `Food Taster blocked: quality=${quality}; preview=${preview}.`;
   const updated = await writer.request(checkPath, {
     method: "PATCH",
     body: JSON.stringify({
