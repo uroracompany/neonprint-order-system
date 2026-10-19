@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e:smoke": "playwright test e2e/food-taster.spec.js",
+    "test:e2e:preview": "playwright test --config=playwright.preview.config.js",
     "test:watch": "vitest",
     "security:check": "node scripts/security-check.mjs"
   },

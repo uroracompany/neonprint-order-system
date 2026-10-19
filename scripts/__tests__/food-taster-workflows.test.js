@@ -63,4 +63,18 @@ describe("Food Taster workflow supply-chain and privilege boundaries", () => {
     expect(scanned.join("\n")).not.toContain(prohibited);
     expect(scanned.join("\n")).not.toContain(bypassHeader);
   });
+
+  it("runs the remote Preview smoke without starting a local web server", async () => {
+    const trusted = await readFile(workflowPaths[1], "utf8");
+    const previewJob = trusted.slice(trusted.indexOf("  preview-smoke:"), trusted.indexOf("  publish-food-taster-gate:"));
+    const previewConfig = await readFile(resolve(projectRoot, "playwright.preview.config.js"), "utf8");
+    const packageJson = JSON.parse(await readFile(resolve(projectRoot, "package.json"), "utf8"));
+
+    expect(previewJob).toContain("run: npm run test:e2e:preview");
+    expect(previewJob).toContain("PLAYWRIGHT_BASE_URL: ${{ steps.preview.outputs.url }}");
+    expect(packageJson.scripts["test:e2e:preview"]).toContain("playwright.preview.config.js");
+    expect(previewConfig).toContain("baseURL,");
+    expect(previewConfig).not.toContain("webServer:");
+    expect(previewConfig).not.toContain("GITHUB_TOKEN");
+  });
 });
