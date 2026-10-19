@@ -133,7 +133,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      deployments: read
+      pull-requests: read
+      statuses: read
     steps:
       - name: Check out trusted default-branch controller
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -151,15 +152,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.validate-pull-request.outputs.number }}
           PR_HEAD_SHA: ${{ needs.validate-pull-request.outputs.head_sha }}
+          PR_HEAD_REPO: ${{ needs.validate-pull-request.outputs.head_repo }}
         run: node scripts/resolve-vercel-preview.mjs
       - name: Install Chromium for trusted driver
         run: npx playwright install --with-deps chromium
       - name: Run trusted read-only browser smoke
         env:
           PLAYWRIGHT_BASE_URL: ${{ steps.preview.outputs.url }}
+          FOOD_TASTER_PR_HEAD_REF: ${{ steps.preview.outputs.head_ref }}
           FOOD_TASTER_STAGING_DEPLOYMENT_VERIFIED: "true"
         run: npm run test:e2e:preview
+      - name: Revalidate PR and exact staging deployment after smoke
+        id: revalidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.validate-pull-request.outputs.number }}
+          PR_HEAD_SHA: ${{ needs.validate-pull-request.outputs.head_sha }}
+          PR_HEAD_REPO: ${{ needs.validate-pull-request.outputs.head_repo }}
+          EXPECTED_PR_HEAD_REF: ${{ steps.preview.outputs.head_ref }}
+          EXPECTED_URL: ${{ steps.preview.outputs.url }}
+          EXPECTED_DEPLOYMENT_ID: ${{ steps.preview.outputs.deployment_id }}
+          EXPECTED_STATUS_ID: ${{ steps.preview.outputs.status_id }}
+        run: |
+          node scripts/resolve-vercel-preview.mjs
+          actual_url="$(sed -n 's/^url=//p' "$GITHUB_OUTPUT" | tail -n 1)"
+          actual_deployment_id="$(sed -n 's/^deployment_id=//p' "$GITHUB_OUTPUT" | tail -n 1)"
+          actual_status_id="$(sed -n 's/^status_id=//p' "$GITHUB_OUTPUT" | tail -n 1)"
+          actual_head_ref="$(sed -n 's/^head_ref=//p' "$GITHUB_OUTPUT" | tail -n 1)"
+          test "$actual_url" = "$EXPECTED_URL"
+          test "$actual_deployment_id" = "$EXPECTED_DEPLOYMENT_ID"
+          test "$actual_status_id" = "$EXPECTED_STATUS_ID"
+          test "$actual_head_ref" = "$EXPECTED_PR_HEAD_REF"
 
   publish-food-taster-gate:
     name: Finalize trusted Food Taster Check Run

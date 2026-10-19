@@ -9,6 +9,12 @@ const workflowPaths = [
   resolve(projectRoot, ".github/workflows/food-taster-trusted.yml"),
 ];
 const readWorkflow = async (path) => (await readFile(path, "utf8")).replace(/\r\n/g, "\n");
+const extractStep = (job, name) => {
+  const start = job.indexOf(`      - name: ${name}`);
+  if (start < 0) return "";
+  const nextStep = job.indexOf("\n      - name:", start + 1);
+  return job.slice(start, nextStep < 0 ? job.length : nextStep);
+};
 
 describe("Food Taster workflow supply-chain and privilege boundaries", () => {
   it("pins every GitHub Action use to a full 40-character commit SHA", async () => {
@@ -34,14 +40,13 @@ describe("Food Taster workflow supply-chain and privilege boundaries", () => {
 
   it("never sends credentials to PR-controlled Preview code", async () => {
     const trusted = await readWorkflow(workflowPaths[1]);
-    const resolverIndex = trusted.indexOf("Resolve exact READY Vercel Preview");
-    const browserIndex = trusted.indexOf("Run trusted read-only browser smoke");
     const previewJob = trusted.slice(trusted.indexOf("  preview-smoke:"), trusted.indexOf("  publish-food-taster-gate:"));
-    const resolverStep = trusted.slice(resolverIndex, browserIndex);
-    const browserStep = trusted.slice(browserIndex, trusted.indexOf("\n\n  publish-food-taster-gate:"));
-    expect(resolverIndex).toBeGreaterThan(-1);
-    expect(browserIndex).toBeGreaterThan(resolverIndex);
-    expect(previewJob).toMatch(/permissions:\s*\n\s+contents: read\s*\n\s+deployments: read/);
+    const resolverStep = extractStep(previewJob, "Resolve exact READY Vercel Preview");
+    const browserStep = extractStep(previewJob, "Run trusted read-only browser smoke");
+    expect(resolverStep).toBeTruthy();
+    expect(browserStep).toBeTruthy();
+    expect(previewJob.indexOf(resolverStep)).toBeLessThan(previewJob.indexOf(browserStep));
+    expect(previewJob).toMatch(/permissions:\s*\n\s+contents: read\s*\n\s+pull-requests: read\s*\n\s+statuses: read/);
     expect(previewJob).not.toContain("id-token:");
     expect(previewJob).not.toContain("environment:");
     expect(trusted).not.toContain("id-token: write");
@@ -53,7 +58,9 @@ describe("Food Taster workflow supply-chain and privilege boundaries", () => {
     expect(trusted).not.toContain("VERCEL_AUTOMATION_BYPASS_SECRET");
     expect(trusted).not.toContain("x-vercel-protection-bypass");
     expect(resolverStep).toContain("GITHUB_TOKEN: ${{ github.token }}");
-    expect(previewJob).toContain("deployments: read");
+    expect(previewJob).not.toContain("deployments: read");
+    expect(previewJob).toContain("pull-requests: read");
+    expect(previewJob).toContain("statuses: read");
     expect(browserStep).toContain("PLAYWRIGHT_BASE_URL:");
     expect(browserStep).toContain("run: npm run test:e2e:preview");
     expect(browserStep).not.toContain("GITHUB_TOKEN");

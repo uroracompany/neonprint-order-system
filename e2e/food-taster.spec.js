@@ -6,13 +6,11 @@ import {
   isAllowedPreviewUrl,
 } from "../scripts/food-taster-preview-origin.mjs";
 
-const prefix = "neonprint-order-system-";
-const suffix = "-urora-companys-projects.vercel.app";
-
 test("the anonymous login smoke stays inside the public Preview shell", async ({ page, context, baseURL }) => {
   const isLocalSmoke = isAllowedLocalSmokeUrl(baseURL);
-  if (!baseURL || (!isLocalSmoke && !isAllowedPreviewUrl(baseURL, prefix, suffix))) {
-    throw new Error("PLAYWRIGHT_BASE_URL must be the fixed local smoke server or a reviewed NeonPrint Preview.");
+  const expectedHeadRef = process.env.FOOD_TASTER_PR_HEAD_REF;
+  if (!baseURL || (!isLocalSmoke && !isAllowedPreviewUrl(baseURL, expectedHeadRef))) {
+    throw new Error("PLAYWRIGHT_BASE_URL must be the fixed local smoke server or the isolated Food Taster staging project.");
   }
   const preview = new URL(baseURL);
   if (!isLocalSmoke && process.env.FOOD_TASTER_STAGING_DEPLOYMENT_VERIFIED !== "true") {
@@ -24,7 +22,7 @@ test("the anonymous login smoke stays inside the public Preview shell", async ({
     const request = route.request();
     const isAllowedRequest = isLocalSmoke
       ? isAllowedLocalSmokeRequest(request.url(), request.method(), baseURL)
-      : isAllowedPreviewRequest(request.url(), request.method(), baseURL, prefix, suffix);
+      : isAllowedPreviewRequest(request.url(), request.method(), baseURL, expectedHeadRef);
     if (!isAllowedRequest) {
       blockedRequests.push({ url: request.url(), method: request.method() });
       await route.abort("blockedbyclient");
