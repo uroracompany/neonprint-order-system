@@ -1,8 +1,6 @@
-const DEFAULT_PREFIX = "neonprint-order-system-";
-const DEFAULT_SUFFIX = "-urora-companys-projects.vercel.app";
 const LOCAL_SMOKE_ORIGIN = "http://127.0.0.1:4173";
 
-export function matchesPreviewHostname(hostname, prefix = DEFAULT_PREFIX, suffix = DEFAULT_SUFFIX) {
+export function matchesPreviewHostname(hostname, prefix, suffix) {
   if (typeof hostname !== "string" || typeof prefix !== "string" || typeof suffix !== "string") return false;
   const normalizedHost = hostname.toLowerCase();
   const normalizedPrefix = prefix.toLowerCase();
@@ -12,7 +10,7 @@ export function matchesPreviewHostname(hostname, prefix = DEFAULT_PREFIX, suffix
   return generatedLabel.length > 0 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(generatedLabel);
 }
 
-export function isAllowedPreviewUrl(rawUrl, prefix = DEFAULT_PREFIX, suffix = DEFAULT_SUFFIX) {
+export function isAllowedPreviewUrl(rawUrl, prefix, suffix) {
   if (typeof rawUrl !== "string" || /[\\\s]/.test(rawUrl)) return false;
   try {
     const url = new URL(rawUrl);
@@ -42,7 +40,7 @@ const isSafeStaticPath = (pathname) => /^\/assets\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0
   || pathname === "/logo-neonprint.jpg";
 
 /** Pure request policy used by trusted Playwright interception. */
-export function isAllowedPreviewRequest(rawUrl, method, previewOrigin, prefix = DEFAULT_PREFIX, suffix = DEFAULT_SUFFIX) {
+export function isAllowedPreviewRequest(rawUrl, method, previewOrigin, prefix, suffix) {
   if (typeof rawUrl !== "string" || typeof method !== "string" || typeof previewOrigin !== "string") return false;
   try {
     const approved = new URL(previewOrigin);

@@ -193,7 +193,7 @@ describe("Food Taster GitHub App Check Run controller", () => {
     expect(trustedWorkflow).not.toContain("pull_request_target");
     expect(trustedWorkflow).not.toContain("actions/download-artifact");
     expect(trustedWorkflow.match(/ref: \$\{\{ github\.sha \}\}/g)?.length).toBeGreaterThan(0);
-    const qualityJob = trustedWorkflow.match(/\n  quality:\n([\s\S]*?)\n  publish-food-taster-gate:/)?.[1];
+    const qualityJob = trustedWorkflow.match(/\n  quality:\n([\s\S]*?)\n  preview-smoke:/)?.[1];
     expect(qualityJob).toBeTruthy();
     expect(qualityJob).not.toMatch(/secrets\.|environment:|checks:\s*write|statuses:\s*write|cache: npm/);
     expect(qualityJob).toContain("repository: ${{ needs.validate-pull-request.outputs.head_repo }}");
@@ -209,8 +209,8 @@ describe("Food Taster GitHub App Check Run controller", () => {
     const previewJob = trustedWorkflow.match(/\n  preview-smoke:\n([\s\S]*?)\n  publish-food-taster-gate:/)?.[1];
     expect(previewJob).toBeTruthy();
     expect(previewJob).toMatch(/permissions:\n      contents: read\n      deployments: read\n    steps:/);
-    expect(previewJob).not.toMatch(/^    environment:|^      id-token:/m);
-    expect(previewJob).not.toMatch(/VERCEL_(?:TOKEN|PROJECT_ID|TEAM_ID)|SUPABASE_|FOOD_TASTER_(?:STAGING|PRODUCTION|PREVIEW)/);
+    expect(previewJob).not.toMatch(/id-token:|environment:/);
+    expect(previewJob).not.toMatch(/VERCEL_(?:TOKEN|PROJECT_ID|TEAM_ID)|SUPABASE_|FOOD_TASTER_(?:PRODUCTION|PREVIEW)/);
 
     const resolverStep = previewJob.match(/- name: Resolve exact READY Vercel Preview\n([\s\S]*?)(?=\n      - name:)/)?.[1];
     const playwrightStep = previewJob.match(/- name: Run trusted read-only browser smoke\n([\s\S]*?)(?=\n  publish-food-taster-gate:|$)/)?.[1];
@@ -218,7 +218,10 @@ describe("Food Taster GitHub App Check Run controller", () => {
     expect(resolverStep).toContain("GITHUB_TOKEN: ${{ github.token }}");
     expect(playwrightStep).toBeTruthy();
     expect(playwrightStep).toContain("PLAYWRIGHT_BASE_URL: ${{ steps.preview.outputs.url }}");
-    expect(playwrightStep).not.toMatch(/GITHUB_TOKEN|VERCEL_TOKEN|SUPABASE|id-token|OIDC/);
+    expect(playwrightStep).toContain('FOOD_TASTER_STAGING_DEPLOYMENT_VERIFIED: "true"');
+    expect(playwrightStep).toContain("run: npm run test:e2e:preview");
+    expect(playwrightStep).not.toMatch(/ACTIONS_ID_TOKEN_REQUEST|OIDC|VERCEL_TRUSTED_SOURCE_OIDC_TOKEN|VERCEL_AUTOMATION_BYPASS_SECRET|x-vercel-(?:trusted-oidc-idp-token|protection-bypass)/);
+    expect(playwrightStep).not.toMatch(/GITHUB_TOKEN|VERCEL_TOKEN|SUPABASE/);
     expect((previewJob.match(/GITHUB_TOKEN:/g) || [])).toHaveLength(1);
     const finalizer = trustedWorkflow.match(/\n  publish-food-taster-gate:\n([\s\S]*)$/)?.[1];
     expect(finalizer).toBeTruthy();

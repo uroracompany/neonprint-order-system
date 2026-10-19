@@ -15,6 +15,9 @@ test("the anonymous login smoke stays inside the public Preview shell", async ({
     throw new Error("PLAYWRIGHT_BASE_URL must be the fixed local smoke server or a reviewed NeonPrint Preview.");
   }
   const preview = new URL(baseURL);
+  if (!isLocalSmoke && process.env.FOOD_TASTER_STAGING_DEPLOYMENT_VERIFIED !== "true") {
+    throw new Error("Remote Preview smoke requires trusted controller verification of the staging deployment metadata.");
+  }
   const blockedRequests = [];
 
   await context.route("**/*", async (route) => {
@@ -26,6 +29,14 @@ test("the anonymous login smoke stays inside the public Preview shell", async ({
       blockedRequests.push({ url: request.url(), method: request.method() });
       await route.abort("blockedbyclient");
       return;
+    }
+    if (!isLocalSmoke) {
+      const requestOrigin = new URL(request.url()).origin;
+      if (requestOrigin !== preview.origin) {
+        blockedRequests.push({ url: request.url(), method: request.method() });
+        await route.abort("blockedbyclient");
+        return;
+      }
     }
     await route.continue();
   });

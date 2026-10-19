@@ -9,6 +9,7 @@ import {
 } from "../resolve-vercel-preview.mjs";
 
 const sha = "a".repeat(40);
+const stagingEnvironment = "Preview – neonprint-order-system";
 const env = (overrides = {}) => ({
   GITHUB_TOKEN: "read-only-token",
   GITHUB_REPOSITORY: "uroracompany/neonprint-order-system",
@@ -22,7 +23,7 @@ const url = "https://neonprint-order-system-pr-42-urora-companys-projects.vercel
 const deployment = (overrides = {}) => ({
   id: 42,
   sha,
-  environment: "Preview",
+  environment: stagingEnvironment,
   production_environment: false,
   creator: actor,
   created_at: "2026-10-18T10:00:00Z",
@@ -30,7 +31,7 @@ const deployment = (overrides = {}) => ({
 });
 const status = (overrides = {}) => ({
   id: 400,
-  environment: "Preview",
+  environment: stagingEnvironment,
   creator: actor,
   created_at: "2026-10-18T10:01:00Z",
   state: "success",
@@ -60,7 +61,7 @@ describe("GitHub-backed Vercel Preview resolver", () => {
     expect(parsed.origin).toBe("https://api.github.com");
     expect(parsed.pathname).toBe("/repos/uroracompany/neonprint-order-system/deployments");
     expect(parsed.searchParams.get("sha")).toBe(sha);
-    expect(parsed.searchParams.get("environment")).toBe("Preview");
+    expect(parsed.searchParams.get("environment")).toBe(stagingEnvironment);
     expect(parsed.searchParams.get("per_page")).toBe("100");
     expect(deploymentOptions.headers.Authorization).toBe("Bearer read-only-token");
     expect(deploymentOptions.redirect).toBe("error");
@@ -68,7 +69,7 @@ describe("GitHub-backed Vercel Preview resolver", () => {
   });
 
   it("follows only api.github.com pagination for deployments and statuses", async () => {
-    const deploymentsNext = `https://api.github.com/repos/uroracompany/neonprint-order-system/deployments?sha=${sha}&environment=Preview&per_page=100&page=2`;
+    const deploymentsNext = `https://api.github.com/repos/uroracompany/neonprint-order-system/deployments?sha=${sha}&environment=${encodeURIComponent(stagingEnvironment)}&per_page=100&page=2`;
     const statusesNext = "https://api.github.com/repos/uroracompany/neonprint-order-system/deployments/42/statuses?per_page=100&page=2";
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response([deployment({ id: 41, created_at: "2026-10-18T09:00:00Z" })], { link: `<${deploymentsNext}>; rel="next"` }))
@@ -89,6 +90,7 @@ describe("GitHub-backed Vercel Preview resolver", () => {
   it.each([
     ["wrong SHA", deployment({ sha: "f".repeat(40) })],
     ["production environment", deployment({ environment: "Production", production_environment: true })],
+    ["other Vercel project's Preview environment", deployment({ environment: "Preview" })],
     ["production marker mismatch", deployment({ production_environment: true })],
   ])("does not accept a %s deployment", (label, candidate) => {
     expect(label).toBeTruthy();
@@ -98,6 +100,12 @@ describe("GitHub-backed Vercel Preview resolver", () => {
   it("fails closed when the latest exact Preview deployment has the wrong bot identity", () => {
     const untrusted = deployment({ creator: { login: "vercel[bot]", id: 1, type: "Bot" } });
     expect(() => validateDeploymentSet([untrusted], sha)).toThrow("not from the verified Vercel bot");
+  });
+
+  it("selects only the staging environment when another Vercel project has a Preview for the same SHA", () => {
+    const productionProjectPreview = deployment({ id: 41, environment: "Preview", created_at: "2026-10-18T11:00:00Z" });
+    expect(validateDeploymentSet([productionProjectPreview, deployment()], sha)).toEqual(deployment());
+    expect(validateDeploymentSet([deployment(), productionProjectPreview], sha)).toEqual(deployment());
   });
 
   it("rejects ambiguous equally recent deployments", () => {
@@ -132,6 +140,11 @@ describe("GitHub-backed Vercel Preview resolver", () => {
       status({ id: 2, created_at: "2026-10-18T10:02:00Z", creator: { login: "attacker", id: 2, type: "User" } }),
     ], "neonprint-order-system-", "-urora-companys-projects.vercel.app"))
       .toThrow("not from the verified Vercel bot");
+  });
+
+  it("rejects a deployment status from a different Vercel project environment", () => {
+    expect(() => validateDeploymentStatus([status({ environment: "Preview" })], "neonprint-order-system-", "-urora-companys-projects.vercel.app"))
+      .toThrow("verified staging Preview environment");
   });
 
   it("rejects failures, malformed responses, and external pagination", async () => {

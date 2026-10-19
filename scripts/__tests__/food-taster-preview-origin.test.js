@@ -12,8 +12,9 @@ const suffix = "-urora-companys-projects.vercel.app";
 const preview = "https://neonprint-order-system-pr-42-urora-companys-projects.vercel.app";
 
 describe("Food Taster anonymous Preview request policy", () => {
-  it("accepts only HTTPS root URL on the reviewed project-specific hostname", () => {
+  it("accepts only HTTPS root URL on the reviewed Vercel hostname pattern when explicitly configured", () => {
     expect(isAllowedPreviewUrl(preview, prefix, suffix)).toBe(true);
+    expect(isAllowedPreviewUrl(preview)).toBe(false);
     expect(matchesPreviewHostname("neonprint-order-system-pr-42-urora-companys-projects.vercel.app", prefix, suffix)).toBe(true);
     for (const unsafe of [
       "http://neonprint-order-system-pr-42-urora-companys-projects.vercel.app",

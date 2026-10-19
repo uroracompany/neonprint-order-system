@@ -4,6 +4,7 @@ import { matchesPreviewHostname } from "./food-taster-preview-origin.mjs";
 
 const API_BASE = "https://api.github.com";
 const VERCEL_BOT = Object.freeze({ login: "vercel[bot]", id: "35613825", type: "Bot" });
+const STAGING_ENVIRONMENT = "Preview – neonprint-order-system";
 const PREVIEW_HOST_PREFIX = "neonprint-order-system-";
 const PREVIEW_HOST_SUFFIX = "-urora-companys-projects.vercel.app";
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
@@ -107,7 +108,7 @@ const exactDeployments = (items, sha) => items.filter((deployment) => (
   deployment && typeof deployment === "object"
   && typeof deployment.sha === "string"
   && deployment.sha.toLowerCase() === sha.toLowerCase()
-  && deployment.environment === "Preview"
+  && deployment.environment === STAGING_ENVIRONMENT
   && deployment.production_environment === false
 ));
 
@@ -125,8 +126,8 @@ export function validateDeploymentSet(deployments, sha) {
   const exact = exactDeployments(deployments, sha);
   if (!exact.length) return null;
   const latest = selectLatest(exact, "Preview deployment");
-  if (!trustedActor(latest.creator)) throw new Error("Latest Preview deployment is not from the verified Vercel bot.");
-  if (!Number.isSafeInteger(Number(latest.id)) || Number(latest.id) <= 0) throw new Error("GitHub returned an invalid Preview deployment ID.");
+  if (!trustedActor(latest.creator)) throw new Error("Latest staging Preview deployment is not from the verified Vercel bot.");
+  if (!Number.isSafeInteger(Number(latest.id)) || Number(latest.id) <= 0) throw new Error("GitHub returned an invalid staging Preview deployment ID.");
   return latest;
 }
 
@@ -134,8 +135,8 @@ export function validateDeploymentStatus(statuses, hostPrefix, hostSuffix) {
   if (!Array.isArray(statuses)) throw new Error("GitHub Deployment statuses response was not an array.");
   const latest = selectLatest(statuses.filter((status) => status && typeof status === "object"), "Preview deployment status");
   if (!latest) return { state: "pending" };
-  if (latest.environment !== "Preview") throw new Error("Latest deployment status is not in the Preview environment.");
-  if (!trustedActor(latest.creator)) throw new Error("Latest Preview deployment status is not from the verified Vercel bot.");
+  if (latest.environment !== STAGING_ENVIRONMENT) throw new Error("Latest deployment status is not in the verified staging Preview environment.");
+  if (!trustedActor(latest.creator)) throw new Error("Latest staging Preview deployment status is not from the verified Vercel bot.");
   if (["queued", "pending", "in_progress"].includes(latest.state)) return { state: "pending" };
   if (latest.state !== "success") throw new Error(`Matching Vercel Preview deployment ended in ${String(latest.state || "unknown")}.`);
   return { state: "success", url: validatePreviewUrl(latest.environment_url, hostPrefix, hostSuffix) };
@@ -161,7 +162,7 @@ export async function resolveVercelPreview({
   const deploymentsPrefix = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments`;
   const deploymentsUrl = new URL(`${API_BASE}${deploymentsPrefix}`);
   deploymentsUrl.searchParams.set("sha", sha);
-  deploymentsUrl.searchParams.set("environment", "Preview");
+  deploymentsUrl.searchParams.set("environment", STAGING_ENVIRONMENT);
   deploymentsUrl.searchParams.set("per_page", "100");
 
   while (true) {
