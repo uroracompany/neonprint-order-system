@@ -66,3 +66,8 @@ local browser-smoke failures before merge. It does not verify deployment health,
 database migrations, Production configuration, or automatic rollback. Those
 require separate release and recovery procedures. Production secrets remain
 configured only for Production; this workflow neither reads nor changes them.
+
+Bootstrap note: keep the existing `Quality checks` rule while the trusted
+controller is being added to `main`. After it lands, verify an App-owned
+`Food Taster gate` check on a new pull request before requiring that check in
+the `main` ruleset.
