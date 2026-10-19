@@ -32,7 +32,7 @@ const baseEnv = (overrides = {}) => ({
   GITHUB_TOKEN: "read-token", APP_TOKEN: "app-token", GITHUB_REPOSITORY: repository,
   GITHUB_OUTPUT: "unused", FOOD_TASTER_GITHUB_APP_ID: String(appId),
   TRUSTED_WORKFLOW_RUN_ID: "81", CHECK_RUN_ID: "77", PR_NUMBER: "9",
-  PR_HEAD_SHA: sha, PR_HEAD_REPO: fork, QUALITY_RESULT: "success", ...overrides,
+  PR_HEAD_SHA: sha, PR_HEAD_REPO: fork, QUALITY_RESULT: "success", PREVIEW_RESULT: "success", ...overrides,
 });
 const event = { workflow_run: { id: 42 } };
 
@@ -140,12 +140,16 @@ describe("Food Taster GitHub App Check Run controller", () => {
     await expect(createFoodTasterCheck({ env: baseEnv(), fetchImpl: apiFetch({ ...fetchOverrides, appOverride }) })).rejects.toThrow();
   });
 
-  it("publishes success only for the dedicated App and current PR SHA after quality passes", async () => {
+  it("publishes success only for the dedicated App and current PR SHA after quality and Preview pass", async () => {
     const fetchImpl = apiFetch();
     await expect(finalizeFoodTaster({ env: baseEnv(), fetchImpl }))
       .resolves.toMatchObject({ conclusion: "success", checkRunId: 77, appId, sha });
     const patchCall = fetchImpl.mock.calls.find(([, options]) => options.method === "PATCH");
-    expect(JSON.parse(patchCall[1].body)).toMatchObject({ status: "completed", conclusion: "success" });
+    expect(JSON.parse(patchCall[1].body)).toMatchObject({
+      status: "completed",
+      conclusion: "success",
+      output: { summary: "Trusted quality checks and the Preview smoke passed for the current PR head." },
+    });
   });
 
   it.each([
@@ -161,15 +165,23 @@ describe("Food Taster GitHub App Check Run controller", () => {
   });
 
   it.each([
-    [{ QUALITY_RESULT: "failure" }, "failure"],
-    [{ QUALITY_RESULT: "cancelled" }, "failure"],
-    [{ QUALITY_RESULT: "skipped" }, "failure"],
-    [{ QUALITY_RESULT: "" }, "failure"],
-  ])("completes a failed or missing result with failure", async (overrides, expected) => {
+    [{ QUALITY_RESULT: "failure" }, "quality=failure; preview=success"],
+    [{ QUALITY_RESULT: "cancelled" }, "quality=cancelled; preview=success"],
+    [{ QUALITY_RESULT: "skipped" }, "quality=skipped; preview=success"],
+    [{ QUALITY_RESULT: undefined }, "quality=missing; preview=success"],
+    [{ PREVIEW_RESULT: "failure" }, "quality=success; preview=failure"],
+    [{ PREVIEW_RESULT: "cancelled" }, "quality=success; preview=cancelled"],
+    [{ PREVIEW_RESULT: "skipped" }, "quality=success; preview=skipped"],
+    [{ PREVIEW_RESULT: undefined }, "quality=success; preview=missing"],
+  ])("completes a failed or missing result with failure: %s", async (overrides, expectedSummary) => {
     const fetchImpl = apiFetch();
-    await expect(finalizeFoodTaster({ env: baseEnv(overrides), fetchImpl })).rejects.toThrow("Food Taster blocked");
+    await expect(finalizeFoodTaster({ env: baseEnv(overrides), fetchImpl })).rejects.toThrow(`Food Taster blocked: ${expectedSummary}.`);
     const patchCall = fetchImpl.mock.calls.find(([, options]) => options.method === "PATCH");
-    expect(JSON.parse(patchCall[1].body)).toMatchObject({ status: "completed", conclusion: expected });
+    expect(JSON.parse(patchCall[1].body)).toMatchObject({
+      status: "completed",
+      conclusion: "failure",
+      output: { summary: `Food Taster blocked: ${expectedSummary}.` },
+    });
   });
 
   it("keeps PR-controlled execution unprivileged and the trusted gate code-only", async () => {
@@ -192,15 +204,28 @@ describe("Food Taster GitHub App Check Run controller", () => {
     expect(qualityJob).toContain("run: npm run lint");
     expect(qualityJob).toContain("run: npm run test -- --maxWorkers=2");
     expect(qualityJob).toContain("run: npm run build");
-    expect(qualityJob).toContain("run: npm run test:e2e:smoke");
     expect(qualityJob).toContain("https://food-taster.invalid");
     expect(qualityJob).toContain("food-taster-placeholder");
-    expect(trustedWorkflow).not.toMatch(/preview-smoke|deployments:\s*read|FOOD_TASTER_STAGING|FOOD_TASTER_PRODUCTION|FOOD_TASTER_PREVIEW|SUPABASE_SERVICE_ROLE_KEY|VERCEL_/);
+    const previewJob = trustedWorkflow.match(/\n  preview-smoke:\n([\s\S]*?)\n  publish-food-taster-gate:/)?.[1];
+    expect(previewJob).toBeTruthy();
+    expect(previewJob).toMatch(/permissions:\n      contents: read\n      deployments: read\n    steps:/);
+    expect(previewJob).not.toMatch(/^    environment:|^      id-token:/m);
+    expect(previewJob).not.toMatch(/VERCEL_(?:TOKEN|PROJECT_ID|TEAM_ID)|SUPABASE_|FOOD_TASTER_(?:STAGING|PRODUCTION|PREVIEW)/);
+
+    const resolverStep = previewJob.match(/- name: Resolve exact READY Vercel Preview\n([\s\S]*?)(?=\n      - name:)/)?.[1];
+    const playwrightStep = previewJob.match(/- name: Run trusted read-only browser smoke\n([\s\S]*?)(?=\n  publish-food-taster-gate:|$)/)?.[1];
+    expect(resolverStep).toBeTruthy();
+    expect(resolverStep).toContain("GITHUB_TOKEN: ${{ github.token }}");
+    expect(playwrightStep).toBeTruthy();
+    expect(playwrightStep).toContain("PLAYWRIGHT_BASE_URL: ${{ steps.preview.outputs.url }}");
+    expect(playwrightStep).not.toMatch(/GITHUB_TOKEN|VERCEL_TOKEN|SUPABASE|id-token|OIDC/);
+    expect((previewJob.match(/GITHUB_TOKEN:/g) || [])).toHaveLength(1);
     const finalizer = trustedWorkflow.match(/\n  publish-food-taster-gate:\n([\s\S]*)$/)?.[1];
     expect(finalizer).toBeTruthy();
     expect(finalizer).toContain("- quality");
-    expect(finalizer).toContain("needs.quality.result == 'success' && 'success' || 'failure'");
-    expect(finalizer).not.toContain("preview");
+    expect(finalizer).toContain("- preview-smoke");
+    expect(finalizer).toContain("QUALITY_RESULT: ${{ needs.quality.result }}");
+    expect(finalizer).toContain("PREVIEW_RESULT: ${{ needs.preview-smoke.result }}");
     expect(trustedWorkflow).not.toMatch(/statuses:\s*write/);
   });
 });
