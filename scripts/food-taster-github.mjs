@@ -79,10 +79,14 @@ async function getWorkflowRun(client, event) {
   const association = run.pull_requests[0];
   const number = Number(association.number);
   if (!Number.isSafeInteger(number) || number < 1) fail("The pull request association has an invalid number.");
-  if (association.base?.ref !== "main" || normalizedRepo(association.base?.repo?.full_name) !== normalizedRepo(client.repository)) {
+  // Actions' workflow-run API embeds a reduced pull request association whose
+  // nested repository objects omit `full_name`. Check the available base ref
+  // here; validate canonical base/head repository names below via the Pull
+  // Request API response.
+  if (association.base?.ref !== "main") {
     fail("The associated pull request does not target this repository's main branch.");
   }
-  if (association.head?.sha !== run.head_sha || normalizedRepo(association.head?.repo?.full_name) !== normalizedRepo(run.head_repository.full_name)) {
+  if (association.head?.sha !== run.head_sha) {
     fail("The workflow run metadata does not match the associated pull request head.");
   }
   const pull = await getPullRequest(client, number);

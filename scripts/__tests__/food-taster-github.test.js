@@ -17,7 +17,9 @@ const readText = async (path) => (await readFile(path, "utf8")).replace(/\r\n/g,
 const run = (overrides = {}) => ({
   id: 42, workflow_id: workflow.id, event: "pull_request", head_sha: sha,
   repository: { full_name: repository }, head_repository: { full_name: fork },
-  pull_requests: [{ number: 9, base: { ref: "main", repo: { full_name: repository } }, head: { sha, repo: { full_name: fork } } }],
+  // The Actions workflow-run API returns reduced nested repo objects here;
+  // canonical full_name values are verified from GET /pulls/{number} instead.
+  pull_requests: [{ number: 9, base: { ref: "main", repo: { name: "neonprint-order-system" } }, head: { sha, repo: { name: "neonprint-order-system" } } }],
   ...overrides,
 });
 const pull = (headSha = sha, overrides = {}) => ({
@@ -88,6 +90,33 @@ describe("Food Taster GitHub App Check Run controller", () => {
     expect(text).toContain(`head_sha=${sha}`);
     expect(text).toContain("run_id=42");
     expect(fetchImpl.mock.calls.some(([url]) => new URL(url).pathname.includes("/statuses/"))).toBe(false);
+  });
+
+  it.each([
+    ["non-main base", { base: { ref: "release", repo: { name: "neonprint-order-system" } } }],
+    ["different associated SHA", { head: { sha: changedSha, repo: { name: "neonprint-order-system" } } }],
+  ])("rejects workflow_run metadata with %s", async (_label, associationOverride) => {
+    const directory = await mkdtemp(join(tmpdir(), "food-taster-"));
+    temporaryDirectories.push(directory);
+    const fetchImpl = apiFetch({ runResponse: run({
+      pull_requests: [{ number: 9, base: { ref: "main", repo: { name: "neonprint-order-system" } }, head: { sha, repo: { name: "neonprint-order-system" } }, ...associationOverride }],
+    }) });
+    await expect(prepareFoodTaster({ env: baseEnv({ GITHUB_OUTPUT: join(directory, "github-output") }), fetchImpl, event }))
+      .rejects.toThrow();
+    expect(fetchImpl.mock.calls.some(([url]) => new URL(url).pathname.endsWith("/pulls/9"))).toBe(false);
+  });
+
+  it.each([
+    ["different base repository", { base: { ref: "main", repo: { full_name: "another/repository" } } }],
+    ["different head repository", { head: { sha, repo: { full_name: "another/repository" } } }],
+  ])("rejects canonical PR data with %s", async (_label, pullOverride) => {
+    const directory = await mkdtemp(join(tmpdir(), "food-taster-"));
+    temporaryDirectories.push(directory);
+    await expect(prepareFoodTaster({
+      env: baseEnv({ GITHUB_OUTPUT: join(directory, "github-output") }),
+      fetchImpl: apiFetch({ pullResponses: [pull(pullOverride.head?.sha || sha, pullOverride)] }),
+      event,
+    })).rejects.toThrow();
   });
 
   it("creates the exact App-owned Check Run on the current SHA", async () => {
