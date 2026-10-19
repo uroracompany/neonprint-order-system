@@ -13,6 +13,7 @@ const appId = 12345;
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const temporaryDirectories = [];
 const workflow = { id: 17, name: "Food Taster", state: "active" };
+const readText = async (path) => (await readFile(path, "utf8")).replace(/\r\n/g, "\n");
 const run = (overrides = {}) => ({
   id: 42, workflow_id: workflow.id, event: "pull_request", head_sha: sha,
   repository: { full_name: repository }, head_repository: { full_name: fork },
@@ -142,9 +143,9 @@ describe("Food Taster GitHub App Check Run controller", () => {
     expect(JSON.parse(patchCall[1].body)).toMatchObject({ status: "completed", conclusion: expected });
   });
 
-  it("keeps PR-controlled execution away from privileged credentials and remote previews", async () => {
-    const pullWorkflow = await readFile(resolve(projectRoot, ".github", "workflows", "food-taster.yml"), "utf8");
-    const trustedWorkflow = await readFile(resolve(projectRoot, ".github", "workflows", "food-taster-trusted.yml"), "utf8");
+  it("keeps PR-controlled execution unprivileged and the trusted gate code-only", async () => {
+    const pullWorkflow = await readText(resolve(projectRoot, ".github", "workflows", "food-taster.yml"));
+    const trustedWorkflow = await readText(resolve(projectRoot, ".github", "workflows", "food-taster-trusted.yml"));
     expect(pullWorkflow).toContain("pull_request:");
     expect(pullWorkflow).not.toMatch(/secrets\.|food-taster-preview|checks:\s*write|statuses:\s*write|workflow_run/);
     expect(trustedWorkflow).toContain("workflow_run:");
@@ -154,16 +155,23 @@ describe("Food Taster GitHub App Check Run controller", () => {
     const qualityJob = trustedWorkflow.match(/\n  quality:\n([\s\S]*?)\n  publish-food-taster-gate:/)?.[1];
     expect(qualityJob).toBeTruthy();
     expect(qualityJob).not.toMatch(/secrets\.|environment:|checks:\s*write|statuses:\s*write|cache: npm/);
+    expect(qualityJob).toContain("repository: ${{ needs.validate-pull-request.outputs.head_repo }}");
+    expect(qualityJob).toContain("ref: ${{ needs.validate-pull-request.outputs.head_sha }}");
+    expect(qualityJob).toContain("persist-credentials: false");
+    expect(qualityJob).toContain("permissions:\n      contents: read\n    steps:");
+    expect(qualityJob).toContain("run: npm run security:check");
+    expect(qualityJob).toContain("run: npm run lint");
+    expect(qualityJob).toContain("run: npm run test -- --maxWorkers=2");
+    expect(qualityJob).toContain("run: npm run build");
     expect(qualityJob).toContain("run: npm run test:e2e:smoke");
-    const previewJob = trustedWorkflow.match(/\n  preview-smoke:\n([\s\S]*?)\n  publish-food-taster-gate:/)?.[1];
-    expect(previewJob).toBeTruthy();
-    expect(previewJob).toContain("ref: ${{ github.sha }}");
-    expect(previewJob).toContain("run: node scripts/resolve-vercel-preview.mjs");
-    expect(previewJob).toContain("run: npm run test:e2e:preview");
-    expect(previewJob).not.toMatch(/secrets\.|environment:|checks:\s*write|statuses:\s*write|id-token:\s*write|VERCEL_TOKEN/);
-    expect(previewJob).not.toContain("actions/download-artifact");
-    expect(previewJob).not.toContain("needs.validate-pull-request.outputs.head_repo");
-    expect(trustedWorkflow).toContain("needs.preview-smoke.result == 'success'");
+    expect(qualityJob).toContain("https://food-taster.invalid");
+    expect(qualityJob).toContain("food-taster-placeholder");
+    expect(trustedWorkflow).not.toMatch(/preview-smoke|deployments:\s*read|FOOD_TASTER_STAGING|FOOD_TASTER_PRODUCTION|FOOD_TASTER_PREVIEW|SUPABASE_SERVICE_ROLE_KEY|VERCEL_/);
+    const finalizer = trustedWorkflow.match(/\n  publish-food-taster-gate:\n([\s\S]*)$/)?.[1];
+    expect(finalizer).toBeTruthy();
+    expect(finalizer).toContain("- quality");
+    expect(finalizer).toContain("needs.quality.result == 'success' && 'success' || 'failure'");
+    expect(finalizer).not.toContain("preview");
     expect(trustedWorkflow).not.toMatch(/statuses:\s*write/);
   });
 });
