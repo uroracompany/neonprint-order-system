@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 export const REPOSITORY = "uroracompany/neonprint-order-system";
 export const PRODUCTION_ENVIRONMENT = "Production – neonprint-order-system";
 export const VERCEL_BOT = { login: "vercel[bot]", id: 35613825 };
+export const PRODUCTION_SMOKE_URL = "https://neonprint-order-system.vercel.app";
 
 const DEPLOYMENT_HOST = /^neonprint-order-system-[a-z0-9]{9}-urora-companys-projects\.vercel\.app$/;
 const SHA = /^[0-9a-f]{40}$/i;
@@ -31,6 +32,10 @@ export function validateDeploymentUrl(value) {
     && url.search === ""
     && url.hash === ""
     && DEPLOYMENT_HOST.test(url.hostname);
+}
+
+export function validateProductionSmokeUrl(value) {
+  return value === PRODUCTION_SMOKE_URL;
 }
 
 export function isOptionalFontRequest(value, method) {
@@ -128,6 +133,7 @@ export function classifyDeploymentEvent(event) {
     statusId: String(status.id),
     sha,
     url: status.environment_url,
+    smokeUrl: PRODUCTION_SMOKE_URL,
   };
 }
 
@@ -305,6 +311,7 @@ function main() {
     status_id: result.statusId,
     sha: result.sha,
     url: result.url,
+    smoke_url: result.smokeUrl,
   });
   console.log(`Validated Production deployment ${result.deploymentId} at ${result.url}`);
 }

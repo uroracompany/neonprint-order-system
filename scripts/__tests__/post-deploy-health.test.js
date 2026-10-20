@@ -9,6 +9,7 @@ import {
   resolveLatestProductionDeployment,
   VERCEL_BOT,
   validateDeploymentUrl,
+  validateProductionSmokeUrl,
 } from "../post-deploy-health.mjs";
 
 const deploymentId = 7188479253;
@@ -48,6 +49,7 @@ describe("post-deploy health event validation", () => {
       statusId: String(statusId),
       sha,
       url: immutableUrl,
+      smokeUrl: "https://neonprint-order-system.vercel.app",
     });
   });
 
@@ -165,6 +167,22 @@ describe("immutable Production deployment URL policy", () => {
   });
 });
 
+describe("public Production smoke URL policy", () => {
+  it("accepts only the canonical public Production alias", () => {
+    expect(validateProductionSmokeUrl("https://neonprint-order-system.vercel.app")).toBe(true);
+  });
+
+  it.each([
+    "https://neonprint-order-system-food-taster.vercel.app",
+    "https://neonprint-order-system-4gj2s25dt-urora-companys-projects.vercel.app",
+    "https://neonprint-order-system.vercel.app.attacker.example",
+    "http://neonprint-order-system.vercel.app",
+    "https://neonprint-order-system.vercel.app/",
+  ])("rejects non-canonical smoke URL %s", (url) => {
+    expect(validateProductionSmokeUrl(url)).toBe(false);
+  });
+});
+
 describe("optional font request policy", () => {
   it("blocks only the known read-only Google Fonts stylesheet and font files", () => {
     expect(isOptionalFontRequest("https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Poppins:wght@300;400;500;600;700;800;900&display=swap", "GET")).toBe(true);
@@ -177,7 +195,7 @@ describe("optional font request policy", () => {
 });
 
 describe("Production browser request allowlist", () => {
-  const origin = "https://neonprint-order-system-4gj2s25dt-urora-companys-projects.vercel.app";
+  const origin = "https://neonprint-order-system.vercel.app";
 
   it.each(["/", "/assets/index-a1b2.js", "/favicon-32.png", "/favicon-48.png", "/favicon-180.png", "/favicon.ico"])("allows same-origin read-only shell asset %s", (path) => {
     expect(isAllowedProductionReadRequest(`${origin}${path}`, "GET", origin)).toBe(true);
