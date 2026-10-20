@@ -8,7 +8,10 @@ permissions: {}
 jobs:
   validate-current-production-deployment:
     name: Validate latest Production deployment
-    if: github.repository == 'uroracompany/neonprint-order-system'
+    if: >-
+      github.repository == 'uroracompany/neonprint-order-system' &&
+      (github.event.deployment.environment == 'Production – neonprint-order-system' ||
+      github.event.deployment_status.environment == 'Production – neonprint-order-system')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
