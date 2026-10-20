@@ -1,9 +1,9 @@
 import { defineConfig } from "@playwright/test";
-import { validateDeploymentUrl } from "./scripts/post-deploy-health.mjs";
+import { validateProductionSmokeUrl } from "./scripts/post-deploy-health.mjs";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL;
-if (!validateDeploymentUrl(baseURL)) {
-  throw new Error("PLAYWRIGHT_BASE_URL must be a validated immutable NeonPrint Production deployment URL.");
+if (!validateProductionSmokeUrl(baseURL)) {
+  throw new Error("PLAYWRIGHT_BASE_URL must be the exact public NeonPrint Production alias.");
 }
 if (!/^[0-9a-f]{40}$/i.test(process.env.POST_DEPLOY_EXPECTED_SHA ?? "")
   || !/^\d+$/.test(process.env.POST_DEPLOY_EXPECTED_DEPLOYMENT_ID ?? "")
@@ -28,5 +28,13 @@ export default defineConfig({
     serviceWorkers: "block",
     navigationTimeout: 30_000,
   },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  projects: [{
+    name: "chromium",
+    use: {
+      browserName: "chromium",
+      launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+        : {},
+    },
+  }],
 });

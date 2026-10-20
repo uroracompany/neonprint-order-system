@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { isAllowedProductionReadRequest, isOptionalFontRequest, validateDeploymentUrl } from "../scripts/post-deploy-health.mjs";
+import { isAllowedProductionReadRequest, isOptionalFontRequest, validateProductionSmokeUrl } from "../scripts/post-deploy-health.mjs";
 
 test("anonymous Production login shell loads without accessing APIs or writing data", async ({ page, context, baseURL }) => {
-  if (!validateDeploymentUrl(baseURL)) {
-    throw new Error("PLAYWRIGHT_BASE_URL must be a validated immutable NeonPrint Production deployment URL.");
+  if (!validateProductionSmokeUrl(baseURL)) {
+    throw new Error("PLAYWRIGHT_BASE_URL must be the exact public NeonPrint Production alias.");
   }
 
   const origin = new URL(baseURL).origin;

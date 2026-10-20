@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 6
     outputs:
       outcome: ${{ steps.event.outputs.outcome }}
-      url: ${{ steps.event.outputs.url }}
+      smoke_url: ${{ steps.event.outputs.smoke_url }}
       sha: ${{ steps.event.outputs.sha }}
       deployment_id: ${{ steps.event.outputs.deployment_id }}
       status_id: ${{ steps.event.outputs.status_id }}
@@ -79,7 +79,7 @@ jobs:
       - name: Run anonymous read-only Production shell smoke
         env:
           CI: true
-          PLAYWRIGHT_BASE_URL: ${{ needs.validate-current-production-deployment.outputs.url }}
+          PLAYWRIGHT_BASE_URL: ${{ needs.validate-current-production-deployment.outputs.smoke_url }}
           POST_DEPLOY_EXPECTED_SHA: ${{ needs.validate-current-production-deployment.outputs.sha }}
           POST_DEPLOY_EXPECTED_DEPLOYMENT_ID: ${{ needs.validate-current-production-deployment.outputs.deployment_id }}
           POST_DEPLOY_EXPECTED_STATUS_ID: ${{ needs.validate-current-production-deployment.outputs.status_id }}
