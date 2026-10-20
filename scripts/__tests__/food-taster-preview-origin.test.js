@@ -14,6 +14,7 @@ const otherBranchRef = "fix/order-search";
 const branchPreview = "https://neonprint-order-system-food-taster-git-codex-food-taster-preview-runner-urora-companys-projects.vercel.app";
 const futureFeaturePreview = "https://neonprint-order-system-food-taster-git-feature-payment-form-refresh-urora-companys-projects.vercel.app";
 const otherBranchPreview = "https://neonprint-order-system-food-taster-git-fix-order-search-urora-companys-projects.vercel.app";
+const shortenedStagingPreview = "https://neonprint-order-system-food-git-ca8a4d-urora-companys-projects.vercel.app";
 
 describe("Food Taster anonymous staging Preview request policy", () => {
   it("accepts the isolated project's exact alias and generated aliases for future branches", () => {
@@ -21,6 +22,7 @@ describe("Food Taster anonymous staging Preview request policy", () => {
     expect(isAllowedPreviewUrl(branchPreview, stagingRef)).toBe(true);
     expect(isAllowedPreviewUrl(futureFeaturePreview, featureRef)).toBe(true);
     expect(isAllowedPreviewUrl(otherBranchPreview, otherBranchRef)).toBe(true);
+    expect(isAllowedPreviewUrl(shortenedStagingPreview, "codex/food-taster-activation-check")).toBe(true);
     expect(matchesPreviewHostname(new URL(preview).hostname, stagingRef)).toBe(true);
     expect(isAllowedPreviewUrl(preview, featureRef)).toBe(false);
     expect(isAllowedPreviewUrl(futureFeaturePreview, otherBranchRef)).toBe(false);
@@ -35,6 +37,9 @@ describe("Food Taster anonymous staging Preview request policy", () => {
       `${preview}:443`, `${preview}/path`, `${preview}/?next=x`, `${preview}/#fragment`,
       preview.replace("https://", "https://user:pass@"),
       "https://neonprint-order-system-food-taster-git-codex-food-taster-preview-runner-a1b2c-urora-companys-projects.vercel.app",
+      "https://neonprint-order-system-food-git-ca8a4-urora-companys-projects.vercel.app",
+      "https://neonprint-order-system-food-git-ca8a4d-neonprint.vercel.app",
+      "https://neonprint-order-system-food-git-ca8a4d-extra-urora-companys-projects.vercel.app",
     ]) expect(isAllowedPreviewUrl(unsafe, stagingRef)).toBe(false);
   });
 
