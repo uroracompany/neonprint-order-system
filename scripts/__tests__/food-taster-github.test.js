@@ -13,10 +13,19 @@ const appId = 12345;
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const temporaryDirectories = [];
 const workflow = { id: 17, name: "Food Taster", state: "active" };
+const readText = async (path) => (await readFile(path, "utf8")).replace(/\r\n/g, "\n");
+const extractStep = (job, name) => {
+  const start = job.indexOf(`      - name: ${name}`);
+  if (start < 0) return "";
+  const nextStep = job.indexOf("\n      - name:", start + 1);
+  return job.slice(start, nextStep < 0 ? job.length : nextStep);
+};
 const run = (overrides = {}) => ({
   id: 42, workflow_id: workflow.id, event: "pull_request", head_sha: sha,
   repository: { full_name: repository }, head_repository: { full_name: fork },
-  pull_requests: [{ number: 9, base: { ref: "main", repo: { full_name: repository } }, head: { sha, repo: { full_name: fork } } }],
+  // The Actions workflow-run API returns reduced nested repo objects here;
+  // canonical full_name values are verified from GET /pulls/{number} instead.
+  pull_requests: [{ number: 9, base: { ref: "main", repo: { name: "neonprint-order-system" } }, head: { sha, repo: { name: "neonprint-order-system" } } }],
   ...overrides,
 });
 const pull = (headSha = sha, overrides = {}) => ({
@@ -89,6 +98,33 @@ describe("Food Taster GitHub App Check Run controller", () => {
     expect(fetchImpl.mock.calls.some(([url]) => new URL(url).pathname.includes("/statuses/"))).toBe(false);
   });
 
+  it.each([
+    ["non-main base", { base: { ref: "release", repo: { name: "neonprint-order-system" } } }],
+    ["different associated SHA", { head: { sha: changedSha, repo: { name: "neonprint-order-system" } } }],
+  ])("rejects workflow_run metadata with %s", async (_label, associationOverride) => {
+    const directory = await mkdtemp(join(tmpdir(), "food-taster-"));
+    temporaryDirectories.push(directory);
+    const fetchImpl = apiFetch({ runResponse: run({
+      pull_requests: [{ number: 9, base: { ref: "main", repo: { name: "neonprint-order-system" } }, head: { sha, repo: { name: "neonprint-order-system" } }, ...associationOverride }],
+    }) });
+    await expect(prepareFoodTaster({ env: baseEnv({ GITHUB_OUTPUT: join(directory, "github-output") }), fetchImpl, event }))
+      .rejects.toThrow();
+    expect(fetchImpl.mock.calls.some(([url]) => new URL(url).pathname.endsWith("/pulls/9"))).toBe(false);
+  });
+
+  it.each([
+    ["different base repository", { base: { ref: "main", repo: { full_name: "another/repository" } } }],
+    ["different head repository", { head: { sha, repo: { full_name: "another/repository" } } }],
+  ])("rejects canonical PR data with %s", async (_label, pullOverride) => {
+    const directory = await mkdtemp(join(tmpdir(), "food-taster-"));
+    temporaryDirectories.push(directory);
+    await expect(prepareFoodTaster({
+      env: baseEnv({ GITHUB_OUTPUT: join(directory, "github-output") }),
+      fetchImpl: apiFetch({ pullResponses: [pull(pullOverride.head?.sha || sha, pullOverride)] }),
+      event,
+    })).rejects.toThrow();
+  });
+
   it("creates the exact App-owned Check Run on the current SHA", async () => {
     const directory = await mkdtemp(join(tmpdir(), "food-taster-"));
     temporaryDirectories.push(directory);
@@ -110,12 +146,16 @@ describe("Food Taster GitHub App Check Run controller", () => {
     await expect(createFoodTasterCheck({ env: baseEnv(), fetchImpl: apiFetch({ ...fetchOverrides, appOverride }) })).rejects.toThrow();
   });
 
-  it("publishes success only for the dedicated App and current PR SHA after both jobs pass", async () => {
+  it("publishes success only for the dedicated App and current PR SHA after quality and Preview pass", async () => {
     const fetchImpl = apiFetch();
     await expect(finalizeFoodTaster({ env: baseEnv(), fetchImpl }))
       .resolves.toMatchObject({ conclusion: "success", checkRunId: 77, appId, sha });
     const patchCall = fetchImpl.mock.calls.find(([, options]) => options.method === "PATCH");
-    expect(JSON.parse(patchCall[1].body)).toMatchObject({ status: "completed", conclusion: "success" });
+    expect(JSON.parse(patchCall[1].body)).toMatchObject({
+      status: "completed",
+      conclusion: "success",
+      output: { summary: "Trusted quality checks and the Preview smoke passed for the current PR head." },
+    });
   });
 
   it.each([
@@ -131,19 +171,28 @@ describe("Food Taster GitHub App Check Run controller", () => {
   });
 
   it.each([
-    [{ QUALITY_RESULT: "failure" }, "failure"],
-    [{ PREVIEW_RESULT: "skipped" }, "failure"],
-    [{ QUALITY_RESULT: "success", PREVIEW_RESULT: "cancelled" }, "failure"],
-  ])("completes a failed or missing result with failure", async (overrides, expected) => {
+    [{ QUALITY_RESULT: "failure" }, "quality=failure; preview=success"],
+    [{ QUALITY_RESULT: "cancelled" }, "quality=cancelled; preview=success"],
+    [{ QUALITY_RESULT: "skipped" }, "quality=skipped; preview=success"],
+    [{ QUALITY_RESULT: undefined }, "quality=missing; preview=success"],
+    [{ PREVIEW_RESULT: "failure" }, "quality=success; preview=failure"],
+    [{ PREVIEW_RESULT: "cancelled" }, "quality=success; preview=cancelled"],
+    [{ PREVIEW_RESULT: "skipped" }, "quality=success; preview=skipped"],
+    [{ PREVIEW_RESULT: undefined }, "quality=success; preview=missing"],
+  ])("completes a failed or missing result with failure: %s", async (overrides, expectedSummary) => {
     const fetchImpl = apiFetch();
-    await expect(finalizeFoodTaster({ env: baseEnv(overrides), fetchImpl })).rejects.toThrow("Food Taster blocked");
+    await expect(finalizeFoodTaster({ env: baseEnv(overrides), fetchImpl })).rejects.toThrow(`Food Taster blocked: ${expectedSummary}.`);
     const patchCall = fetchImpl.mock.calls.find(([, options]) => options.method === "PATCH");
-    expect(JSON.parse(patchCall[1].body)).toMatchObject({ status: "completed", conclusion: expected });
+    expect(JSON.parse(patchCall[1].body)).toMatchObject({
+      status: "completed",
+      conclusion: "failure",
+      output: { summary: `Food Taster blocked: ${expectedSummary}.` },
+    });
   });
 
-  it("keeps PR-controlled execution away from privileged publisher and preview credentials", async () => {
-    const pullWorkflow = await readFile(resolve(projectRoot, ".github", "workflows", "food-taster.yml"), "utf8");
-    const trustedWorkflow = await readFile(resolve(projectRoot, ".github", "workflows", "food-taster-trusted.yml"), "utf8");
+  it("keeps PR-controlled execution unprivileged and the trusted gate code-only", async () => {
+    const pullWorkflow = await readText(resolve(projectRoot, ".github", "workflows", "food-taster.yml"));
+    const trustedWorkflow = await readText(resolve(projectRoot, ".github", "workflows", "food-taster-trusted.yml"));
     expect(pullWorkflow).toContain("pull_request:");
     expect(pullWorkflow).not.toMatch(/secrets\.|food-taster-preview|checks:\s*write|statuses:\s*write|workflow_run/);
     expect(trustedWorkflow).toContain("workflow_run:");
@@ -151,13 +200,53 @@ describe("Food Taster GitHub App Check Run controller", () => {
     expect(trustedWorkflow).not.toContain("actions/download-artifact");
     expect(trustedWorkflow.match(/ref: \$\{\{ github\.sha \}\}/g)?.length).toBeGreaterThan(0);
     const qualityJob = trustedWorkflow.match(/\n  quality:\n([\s\S]*?)\n  preview-smoke:/)?.[1];
-    const previewJob = trustedWorkflow.match(/\n  preview-smoke:\n([\s\S]*?)\n  publish-food-taster-gate:/)?.[1];
     expect(qualityJob).toBeTruthy();
     expect(qualityJob).not.toMatch(/secrets\.|environment:|checks:\s*write|statuses:\s*write|cache: npm/);
+    expect(qualityJob).toContain("repository: ${{ needs.validate-pull-request.outputs.head_repo }}");
+    expect(qualityJob).toContain("ref: ${{ needs.validate-pull-request.outputs.head_sha }}");
+    expect(qualityJob).toContain("persist-credentials: false");
+    expect(qualityJob).toContain("permissions:\n      contents: read\n    steps:");
+    expect(qualityJob).toContain("run: npm run security:check");
+    expect(qualityJob).toContain("run: npm run lint");
+    expect(qualityJob).toContain("run: npm run test -- --maxWorkers=2");
+    expect(qualityJob).toContain("run: npm run build");
+    expect(qualityJob).toContain("https://food-taster.invalid");
+    expect(qualityJob).toContain("food-taster-placeholder");
+    const previewJob = trustedWorkflow.match(/\n  preview-smoke:\n([\s\S]*?)\n  publish-food-taster-gate:/)?.[1];
     expect(previewJob).toBeTruthy();
-    expect(previewJob).toContain("environment:");
-    expect(previewJob).toContain("vars.FOOD_TASTER_TRUSTED_SOURCE_OIDC_VERIFIED");
-    expect(previewJob).not.toContain("repository: ${{ needs.validate-pull-request.outputs.head_repo }}");
+    expect(previewJob).toMatch(/permissions:\n      contents: read\n      pull-requests: read\n      statuses: read\n    steps:/);
+    expect(previewJob).not.toContain("deployments: read");
+    expect(previewJob).not.toMatch(/id-token:|environment:/);
+    expect(previewJob).not.toMatch(/VERCEL_(?:TOKEN|PROJECT_ID|TEAM_ID)|SUPABASE_|FOOD_TASTER_(?:PRODUCTION|PREVIEW)/);
+
+    const resolverStep = extractStep(previewJob, "Resolve exact READY Vercel Preview");
+    const playwrightStep = extractStep(previewJob, "Run trusted read-only browser smoke");
+    const revalidateStep = extractStep(previewJob, "Revalidate PR and exact staging deployment after smoke");
+    expect(resolverStep).toBeTruthy();
+    expect(playwrightStep).toBeTruthy();
+    expect(revalidateStep).toBeTruthy();
+    for (const resolver of [resolverStep, revalidateStep]) {
+      expect(resolver).toContain("GITHUB_TOKEN: ${{ github.token }}");
+      expect(resolver).toContain("GITHUB_REPOSITORY: ${{ github.repository }}");
+      expect(resolver).toContain("PR_NUMBER: ${{ needs.validate-pull-request.outputs.number }}");
+      expect(resolver).toContain("PR_HEAD_SHA: ${{ needs.validate-pull-request.outputs.head_sha }}");
+      expect(resolver).toContain("PR_HEAD_REPO: ${{ needs.validate-pull-request.outputs.head_repo }}");
+    }
+    expect(playwrightStep).toContain("PLAYWRIGHT_BASE_URL: ${{ steps.preview.outputs.url }}");
+    expect(playwrightStep).toContain("FOOD_TASTER_PR_HEAD_REF: ${{ steps.preview.outputs.head_ref }}");
+    expect(revalidateStep).toContain("EXPECTED_PR_HEAD_REF: ${{ steps.preview.outputs.head_ref }}");
+    expect(revalidateStep).toContain('test "$actual_head_ref" = "$EXPECTED_PR_HEAD_REF"');
+    expect(playwrightStep).toContain('FOOD_TASTER_STAGING_DEPLOYMENT_VERIFIED: "true"');
+    expect(playwrightStep).toContain("run: npm run test:e2e:preview");
+    expect(playwrightStep).not.toMatch(/ACTIONS_ID_TOKEN_REQUEST|OIDC|VERCEL_TRUSTED_SOURCE_OIDC_TOKEN|VERCEL_AUTOMATION_BYPASS_SECRET|x-vercel-(?:trusted-oidc-idp-token|protection-bypass)/);
+    expect(playwrightStep).not.toMatch(/GITHUB_TOKEN|VERCEL_TOKEN|SUPABASE/);
+    expect((previewJob.match(/GITHUB_TOKEN:/g) || [])).toHaveLength(2);
+    const finalizer = trustedWorkflow.match(/\n  publish-food-taster-gate:\n([\s\S]*)$/)?.[1];
+    expect(finalizer).toBeTruthy();
+    expect(finalizer).toContain("- quality");
+    expect(finalizer).toContain("- preview-smoke");
+    expect(finalizer).toContain("QUALITY_RESULT: ${{ needs.quality.result }}");
+    expect(finalizer).toContain("PREVIEW_RESULT: ${{ needs.preview-smoke.result }}");
     expect(trustedWorkflow).not.toMatch(/statuses:\s*write/);
   });
 });
