@@ -1,9 +1,5 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import process from "node:process";
 import { describe, expect, it } from "vitest";
-
-const readProjectFile = (path) => readFileSync(resolve(process.cwd(), path), "utf8");
+import { readProjectFile } from "../test-utils/read-project-file.js";
 
 describe("Semi-Administrador notification and nested asset workflow", () => {
   it("deduplicates Realtime and post-mutation refreshes for creation and assignment", () => {

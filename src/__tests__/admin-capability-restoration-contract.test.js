@@ -1,9 +1,5 @@
-/* global process */
 import { describe, expect, it } from "vitest";
-import fs from "node:fs";
-import path from "node:path";
-
-const read = (file) => fs.readFileSync(path.resolve(process.cwd(), file), "utf8");
+import { readProjectFile as read } from "../test-utils/read-project-file.js";
 
 const migration = read("supabase/migrations/20260828091500_restore_admin_order_capabilities.sql");
 const retiredProfileHardening = read("supabase/migrations/20260828093000_harden_admin_advanced_command_retired_profiles.sql");

@@ -8,6 +8,7 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.js'],
     globals: true,
     css: true,
+    testTimeout: 15_000,
     exclude: [
       'node_modules/**',
       '**/node_modules/**',

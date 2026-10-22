@@ -1,9 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import process from "node:process";
 import { describe, expect, it } from "vitest";
+import { readProjectFile as read } from "../test-utils/read-project-file.js";
 
-const read = (file) => readFileSync(resolve(process.cwd(), file), "utf8");
 const migrationPath = "supabase/migrations/20260928170942_semi_admin_quote_assignee_requires_cashier.sql";
 const gatewayMigrationPath = "supabase/migrations/20260922170134_semi_admin_file_lifecycle_management.sql";
 const extractFunction = (source, name) => {

@@ -8,7 +8,7 @@ import { Pagination } from "../components/ui/Pagination";
 const dashboardSource = readFileSync(
   resolve("src/pages/dashboard.jsx"),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 
 describe("admin orders pagination", () => {
   it("requests 50-row server pages and renders the returned page without local slicing", () => {

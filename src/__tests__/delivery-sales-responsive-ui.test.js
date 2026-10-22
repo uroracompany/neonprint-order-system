@@ -1,9 +1,5 @@
-/* global process */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-
-const readProjectFile = (path) => readFileSync(join(process.cwd(), path), "utf8");
+import { readProjectFile } from "../test-utils/read-project-file.js";
 
 describe("Delivery and Sales responsive UI contracts", () => {
   const deliveryCss = readProjectFile("src/css-components/page-delivery.css");

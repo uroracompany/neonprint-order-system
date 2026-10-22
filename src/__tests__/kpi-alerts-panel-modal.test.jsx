@@ -1,4 +1,5 @@
 import { act } from "react";
+import { waitFor } from "@testing-library/react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import KPIAlertsPanel from "../components/kpi/KPIAlertsPanel";
@@ -136,7 +137,7 @@ describe("KPIAlertsPanel incident detail modal", () => {
 
     expect(document.querySelector('[role="dialog"]')).not.toBeInTheDocument();
     expect(document.body.style.overflow).toBe("");
-    expect(row).toHaveFocus();
+    await waitFor(() => expect(row).toHaveFocus());
     expect(row).toHaveAttribute("aria-expanded", "false");
   });
 

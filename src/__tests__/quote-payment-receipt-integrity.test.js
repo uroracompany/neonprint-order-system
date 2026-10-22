@@ -1,8 +1,5 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-
-const projectFile = (file) => readFileSync(resolve(file), "utf8");
+import { readProjectFile as projectFile } from "../test-utils/read-project-file.js";
 
 describe("Caja payment receipt integrity", () => {
   const migration = projectFile("supabase/migrations/20260907141901_cash_receipt_integrity.sql");

@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { readProjectFile } from "../test-utils/read-project-file.js";
 
-const page = readFileSync("src/pages/pages-seller.jsx", "utf8");
-const styles = readFileSync("src/css-components/page-seller.css", "utf8");
+const page = readProjectFile("src/pages/pages-seller.jsx");
+const styles = readProjectFile("src/css-components/page-seller.css");
 
 describe("recent orders action layout", () => {
   it("scopes the horizontal action row to the recent-orders panel", () => {

@@ -1,0 +1,24 @@
+# Post-deploy health check and manual recovery
+
+The `Post-deploy Production health` GitHub Actions workflow listens for Vercel deployment status events for this repository. For a verified successful Production deployment it first validates the immutable Vercel deployment URL and confirms the event still identifies the newest Production deployment, then opens the canonical public alias `https://neonprint-order-system.vercel.app` in an anonymous Chromium session and checks that the login shell renders. Vercel-reported Production `failure` or `error` statuses also fail the workflow. The immutable URL is retained as deployment identity and incident evidence; it is not used for the browser request because Vercel Deployment Protection redirects anonymous requests for it to `vercel.com`.
+
+The deployment identity validator accepts only the exact Production project's immutable generated URL (`neonprint-order-system-<9-character-unique-hash>-urora-companys-projects.vercel.app`); staging project names, branch URLs and stable aliases are rejected as deployment identities. The browser target validator separately accepts only the exact canonical public Production alias above. The smoke allows only same-origin `GET`/`HEAD` requests for the application shell, built assets, and the exact favicon files used by `index.html`. The page's existing Poppins/Syne Google Fonts stylesheet and matching static font-file requests are blocked and treated as optional so the browser uses fallback fonts. Other cross-origin requests, API/auth/data routes, writes, and WebSockets fail the smoke. It does not sign in or use Supabase credentials. A failed run includes the commit SHA, deployment ID, immutable deployment URL and a link to this runbook. Before making a browser request, the workflow uses a read-only GitHub Deployments API call to confirm the event still refers to the latest eligible Production deployment; delayed status events for a superseded release are skipped. This is post-deploy detection: the deployment may already be serving traffic, and a successful smoke of the canonical alias does not independently prove that Vercel's alias-to-deployment mapping matches the exact artifact SHA.
+
+## Coverage and response expectations
+
+This check runs after Vercel reports a deployment status, so the deployment may already be serving users while the smoke is running. It is an additional detection layer, not a pre-deploy gate or a guarantee that every feature works. It checks only the public login shell; it does not verify authentication, permissions, orders, payments, API behavior, database/RLS, Storage, cron jobs, or business workflows.
+
+GitHub Actions failure is the alert channel. GitHub notification delivery depends on each maintainer's watch and notification settings; this workflow does not send a guaranteed email, Slack message, or incident-page alert. Repository maintainers should enable failed workflow notifications and assign an operational owner who can respond promptly.
+
+## Investigate and roll back manually
+
+1. Open the failed run under the repository's **Actions** tab and read the step logs and run summary. Record the deployment ID, commit SHA, and immutable deployment URL.
+2. Open the deployment in the Vercel dashboard and inspect its build and runtime logs. Confirm that the failed deployment is the current Production release.
+3. In Vercel, open project **neonprint-order-system** → **Deployments**. Locate the previous known-good Production deployment. Verify its commit SHA, timestamp, and Production domain before acting.
+4. Use Vercel's **Instant Rollback** only after confirming the target. This action changes production domain routing and disables automatic Production domain assignment until it is restored. The workflow never performs this action.
+5. Check the canonical production URL and confirm the login shell is available. After the incident is fixed and a reviewed PR deploys, an authorized operator must use Vercel's undo-rollback/promote flow to restore normal automatic domain assignment.
+6. Record the incident and fix the cause through a normal PR and the existing Food Taster checks.
+
+**Vercel routing rollback does not reverse Supabase schema migrations, database writes, environment-variable changes, API or other external side effects, or cron effects.** Assess those separately with the responsible owner; use a compatible forward fix or a separately reviewed recovery. Do not assume that reverting the application deployment restores data.
+
+References: [Vercel production rollback](https://vercel.com/docs/deployments/rollback-production-deployment), [Vercel Instant Rollback](https://vercel.com/docs/instant-rollback), and [GitHub notification settings](https://docs.github.com/en/account-and-profile/managing-subscriptions-and-notifications-on-github/setting-up-notifications/configuring-notifications).
