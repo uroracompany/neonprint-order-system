@@ -2583,9 +2583,11 @@ export default function PageQuote() {
                               <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                                 <Icons.Eye />
                               </button>
-                              <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
-                                <Icons.Receipt />
-                              </button>
+                              {!order?.production_authorized_at && !order?.production_authorized_by && (
+                                <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
+                                  <Icons.Receipt />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -3058,9 +3060,11 @@ export default function PageQuote() {
                               <button className="table-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                                 <Icons.Eye />
                               </button>
-                              <button className="table-action-btn view" onClick={event => { event.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
-                                <Icons.Receipt />
-                              </button>
+                              {!order?.production_authorized_at && !order?.production_authorized_by && (
+                                <button className="table-action-btn view" onClick={event => { event.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
+                                  <Icons.Receipt />
+                                </button>
+                              )}
                               {canArchiveQuoteOrder(order, user?.id) && (
                                 <button className="table-action-btn archive" onClick={event => { event.stopPropagation(); setArchivingOrder(order); }} title="Archivar orden">
                                   <Icons.Archive />
@@ -3134,9 +3138,11 @@ export default function PageQuote() {
                         <button className="card-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                           <Icons.Eye />
                         </button>
-                        <button className="card-action-btn view" onClick={event => { event.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
-                          <Icons.Receipt />
-                        </button>
+                        {!order?.production_authorized_at && !order?.production_authorized_by && (
+                          <button className="card-action-btn view" onClick={event => { event.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
+                            <Icons.Receipt />
+                          </button>
+                        )}
                         {canArchiveQuoteOrder(order, user?.id) && (
                           <button className="card-action-btn archive" onClick={event => { event.stopPropagation(); setArchivingOrder(order); }} title="Archivar orden">
                             <Icons.Archived />
