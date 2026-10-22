@@ -13,11 +13,21 @@ vi.mock("../utils/fileAccess", () => ({
 
 vi.mock("../../supabaseClient", () => ({
   supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({ single: vi.fn(() => Promise.resolve({ data: null, error: null })) })),
-      })),
-    })),
+    from: vi.fn((table) => {
+      if (!["materials", "production_terminations"].includes(table)) {
+        throw new Error(`Unexpected Supabase table in designer preview test: ${table}`);
+      }
+      const result = { data: [], error: null };
+      const query = {
+        select: vi.fn(() => query),
+        eq: vi.fn(() => query),
+        not: vi.fn(() => query),
+        order: vi.fn(() => query),
+        single: vi.fn(() => Promise.resolve({ data: null, error: null })),
+        then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
+      };
+      return query;
+    }),
     rpc: vi.fn(),
   },
 }));
@@ -65,7 +75,7 @@ describe("Designer OrderDetailModal preview", () => {
       preview_image: "supabase://order-previews/orders/57aacf7a-0e05-4dd0-9f97-77911fd03bd9/preview/preview.webp",
     });
 
-    const preview = await screen.findByAltText("Preview");
+    const preview = await screen.findByAltText("Imagen de orden de trabajo");
     expect(preview).toHaveAttribute("src", "https://signed.example.com/orders/order-1/preview.webp");
     expect(resolveOrderAssetUrl).toHaveBeenCalledWith("supabase://order-previews/orders/57aacf7a-0e05-4dd0-9f97-77911fd03bd9/preview/preview.webp");
   });
@@ -101,9 +111,9 @@ describe("Designer OrderDetailModal preview", () => {
 
     await waitFor(() => expect(resolveOrderAssetUrl).toHaveBeenCalledTimes(2));
     resolveSecond("https://signed.example.com/orders/order-2/preview.webp");
-    expect(await screen.findByAltText("Preview")).toHaveAttribute("src", "https://signed.example.com/orders/order-2/preview.webp");
+    expect(await screen.findByAltText("Imagen de orden de trabajo")).toHaveAttribute("src", "https://signed.example.com/orders/order-2/preview.webp");
 
     resolveFirst("https://signed.example.com/orders/order-1/preview.webp");
-    await waitFor(() => expect(screen.getByAltText("Preview")).toHaveAttribute("src", "https://signed.example.com/orders/order-2/preview.webp"));
+    await waitFor(() => expect(screen.getByAltText("Imagen de orden de trabajo")).toHaveAttribute("src", "https://signed.example.com/orders/order-2/preview.webp"));
   });
 });

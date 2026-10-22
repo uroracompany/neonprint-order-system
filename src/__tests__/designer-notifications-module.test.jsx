@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DesignerNotificationsModule from "../components/designer/DesignerNotificationsModule";
 import { Icons } from "../utils/icons";
@@ -149,6 +149,41 @@ describe("DesignerNotificationsModule", () => {
     expect(screen.getByText("Sin notificaciones activas")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Archivadas/ }));
     expect(screen.getByText("Sin notificaciones archivadas")).toBeInTheDocument();
+  });
+
+  it("shows fifteen accessible skeleton rows on each tab's first load and preserves resolved rows during refresh", async () => {
+    const baseProps = {
+      notifications: [],
+      archivedNotifications: [],
+      unreadCount: 0,
+      onMarkAsRead: vi.fn(),
+      onMarkAllAsRead: vi.fn(),
+      onArchive: vi.fn(),
+    };
+    const { rerender } = render(<DesignerNotificationsModule {...baseProps} loading archivedLoading />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Cargando notificaciones");
+    expect(document.querySelector(".dnm-list")).toHaveAttribute("aria-busy", "true");
+    expect(document.querySelectorAll(".dnm-skeleton-row")).toHaveLength(15);
+    expect(document.querySelector(".dnm-skeleton-list")).toHaveAttribute("aria-hidden", "true");
+
+    const activeNotification = makeNotification({ title: "Activa cargada" });
+    rerender(<DesignerNotificationsModule {...baseProps} notifications={[activeNotification]} archivedLoading />);
+    expect(await screen.findByText("Activa cargada")).toBeInTheDocument();
+    rerender(<DesignerNotificationsModule {...baseProps} notifications={[activeNotification]} loading archivedLoading />);
+    expect(screen.getByText("Activa cargada")).toBeInTheDocument();
+    expect(document.querySelector(".dnm-skeleton-list")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Archivadas/ }));
+    expect(document.querySelectorAll(".dnm-skeleton-row")).toHaveLength(15);
+    expect(screen.queryByText("Activa cargada")).not.toBeInTheDocument();
+
+    const archivedNotification = makeNotification({ id: "archived-1", title: "Archivada cargada", is_archived: true, is_read: true });
+    rerender(<DesignerNotificationsModule {...baseProps} archivedNotifications={[archivedNotification]} />);
+    expect(await screen.findByText("Archivada cargada")).toBeInTheDocument();
+    rerender(<DesignerNotificationsModule {...baseProps} archivedNotifications={[archivedNotification]} archivedLoading />);
+    await waitFor(() => expect(document.querySelector(".dnm-skeleton-list")).not.toBeInTheDocument());
+    expect(screen.getByText("Archivada cargada")).toBeInTheDocument();
   });
 
   it("filters notifications by search text and type", () => {

@@ -60,8 +60,30 @@ describe("Semi-Admin Caja/audit synchronization contract", () => {
     expect(quotePage).not.toContain("function ReturnToDesignerModal");
     expect(sellerPage).toContain('from "../components/orders/ReturnToDesignerModal"');
     expect(sellerPage).not.toContain('Modal as SharedModal');
-    expect(sellerPage).toContain('targetOverride="designer"');
+    expect(sellerPage).toContain('targetOverride={semiAdminQuoteReturn?.targetOverride || "designer"}');
+    expect(sellerPage).toContain('onOpenQuoteReturn={() => setSemiAdminQuoteReturn({ order: selectedOrder, actionKey: "return_quote_to_design", targetOverride: "designer" })}');
     expect(sellerPage).toContain("minReasonLength={10}");
-    expect(sellerPage).toContain('handleSemiAdminOperation("return_quote_to_design", { reason })');
+
+    const returnCallback = sellerPage.match(/const handleConfirmSemiAdminQuoteReturn = useCallback\(async \(reason\) => \{([\s\S]*?)\n {2}\}, \[handleSemiAdminOperation, semiAdminQuoteReturn\]\);/);
+    expect(returnCallback).not.toBeNull();
+    expect(returnCallback[1]).toContain('returnContext?.actionKey || "return_quote_to_design"');
+    expect(returnCallback[1]).toContain('reason.trim().length < 10');
+    expect(returnCallback[1]).toContain('handleSemiAdminOperation(actionKey, { reason }, returnOrder)');
+
+    const catalogHandler = handler.match(/async function handleSemiAdminCatalogCommand\([\s\S]*?(?=\nasync function )/);
+    expect(catalogHandler).not.toBeNull();
+    expect(catalogHandler[0]).toContain('"semi_admin_execute_order_command"');
+    expect(catalogHandler[0]).toContain('p_action: action');
+    expect(catalogHandler[0]).toContain('p_payload: commandPayload');
+    expect(handler).toContain('return_quote_to_design: (payload, auth, env) => handleSemiAdminCatalogCommand(payload, auth, env, "return_quote_to_design")');
+
+    const returnAction = migration.match(/if p_action = 'return_quote_to_design' then([\s\S]*?)\n {4}end if;/);
+    expect(returnAction).not.toBeNull();
+    expect(returnAction[1]).toContain("v_old.status <> 'in_Quote'");
+    expect(returnAction[1]).toContain("v_old.payment_status <> 'Pending_Payment'");
+    expect(returnAction[1]).toContain('v_old.designer_id is null');
+    expect(returnAction[1]).toContain('char_length(v_reason) < 10');
+    expect(returnAction[1]).toContain("'semi_admin_return_quote_to_design'");
+    expect(returnAction[1]).toContain("jsonb_build_object('reason', v_reason, 'old_designer_id', v_old.designer_id, 'new_designer_id', v_new.designer_id)");
   });
 });

@@ -53,6 +53,27 @@ describe("FileCard", () => {
     expect(screen.getByTestId("trash-icon")).toBeInTheDocument();
   });
 
+  it("supports contextual accessible action names without changing default consumers", () => {
+    render(
+      <>
+        <FileCard
+          name="banner.pdf"
+          actions={[{
+            label: "Editar",
+            title: "Editar detalles de banner.pdf",
+            ariaLabel: "Editar detalles de banner.pdf",
+            onClick: vi.fn(),
+          }]}
+        />
+        <FileCard name="legacy.pdf" actions={[{ label: "Detalles", onClick: vi.fn() }]} />
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "Editar detalles de banner.pdf" }))
+      .toHaveAttribute("title", "Editar detalles de banner.pdf");
+    expect(screen.getByRole("button", { name: "Detalles" })).not.toHaveAttribute("aria-label");
+  });
+
   it("renders editable metadata below the main file row when children are provided", () => {
     const { container } = render(
       <FileCard name="banner.pdf" secondaryText="1.1 MB">

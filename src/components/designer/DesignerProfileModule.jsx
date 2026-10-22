@@ -171,6 +171,37 @@ function ProgressList({ items, emptyLabel, unit = "ordenes" }) {
   );
 }
 
+function DesignerProfileSkeleton({ profileName, roleLabel, avatarUrl }) {
+  return (
+    <section className="ps-profile pd-profile-skeleton" aria-labelledby="designer-profile-title" aria-busy="true">
+      <span className="pd-sr-only" role="status" aria-live="polite">Cargando Mi Perfil...</span>
+      <div className="ps-profile-hero">
+        <div className="ps-profile-identity">
+          {avatarUrl ? <img className="acm-avatar acm-avatar-large ps-profile-photo" src={avatarUrl} alt="" /> : profileName ? <span className="acm-avatar acm-avatar-large">{getInitials(profileName)}</span> : <span className="acm-avatar acm-avatar-large pd-profile-skeleton-avatar" aria-hidden="true" />}
+          <div className="ps-profile-copy"><h2 id="designer-profile-title">{profileName || <span className="pd-skeleton-shape pd-profile-skeleton-name" aria-hidden="true" />}</h2>{roleLabel ? <span>{roleLabel}</span> : <span className="pd-skeleton-shape pd-profile-skeleton-role" aria-hidden="true" />}</div>
+        </div>
+        <div className="pd-profile-skeleton-summary"><span className="pd-skeleton-shape" aria-hidden="true" /><span className="pd-skeleton-shape" aria-hidden="true" /></div>
+      </div>
+      <div className="ps-profile-layout pd-profile-skeleton-layout" aria-hidden="true">
+        <article className="ps-panel ps-profile-ranking-panel"><div className="pd-profile-skeleton-copy"><span className="pd-skeleton-shape pd-profile-skeleton-kicker" /><span className="pd-skeleton-shape pd-profile-skeleton-heading" /><span className="pd-skeleton-shape pd-profile-skeleton-description" /></div><span className="pd-skeleton-shape pd-profile-skeleton-rank" /><span className="pd-skeleton-shape pd-profile-skeleton-score" /></article>
+        <article className="ps-panel ps-profile-goals-panel"><div className="ps-profile-goals-header"><div><span className="pd-skeleton-shape pd-profile-skeleton-kicker" /><span className="pd-skeleton-shape pd-profile-skeleton-heading" /></div><span className="pd-skeleton-shape pd-profile-skeleton-progress" /></div><span className="pd-skeleton-shape pd-profile-skeleton-goalbar" /><div className="pd-profile-skeleton-goals">{Array.from({ length: 4 }, (_, index) => <span className="pd-skeleton-shape" key={index} />)}</div></article>
+      </div>
+      <div className="ps-profile-metrics-grid pd-profile-skeleton-metrics" aria-hidden="true">{Array.from({ length: 6 }, (_, index) => <div className="ps-profile-metric-card" key={index}><span className="pd-skeleton-shape pd-profile-skeleton-icon" /><div><span className="pd-skeleton-shape pd-profile-skeleton-metric-label" /><span className="pd-skeleton-shape pd-profile-skeleton-value" /><span className="pd-skeleton-shape pd-profile-skeleton-metric-sub" /></div></div>)}</div>
+      <section className="ps-profile-analytics pd-profile-skeleton-analytics" aria-hidden="true">
+        <div className="ps-profile-analytics-heading pd-profile-skeleton-analytics-heading"><div><span className="pd-skeleton-shape pd-profile-skeleton-kicker" /><span className="pd-skeleton-shape pd-profile-skeleton-heading" /></div><span className="pd-skeleton-shape pd-profile-skeleton-description" /></div>
+        <div className="ps-profile-analytics-grid">
+          <article className="ps-profile-analytics-card"><div className="ps-profile-card-heading"><span className="pd-skeleton-shape pd-profile-skeleton-heading" /><span className="pd-skeleton-shape pd-profile-skeleton-count" /></div><span className="pd-skeleton-shape pd-profile-skeleton-chart pd-profile-skeleton-chart--compact" /></article>
+          <article className="ps-profile-analytics-card wide"><div className="ps-profile-card-heading"><span className="pd-skeleton-shape pd-profile-skeleton-heading" /><span className="pd-skeleton-shape pd-profile-skeleton-tabs" /></div><span className="pd-skeleton-shape pd-profile-skeleton-chart" /></article>
+          <article className="ps-profile-analytics-card"><div className="ps-profile-card-heading"><span className="pd-skeleton-shape pd-profile-skeleton-heading" /><span className="pd-skeleton-shape pd-profile-skeleton-icon" /></div><div className="pd-profile-skeleton-list">{[0, 1, 2].map((item) => <span className="pd-skeleton-shape" key={item} />)}</div></article>
+          <article className="ps-profile-analytics-card"><div className="ps-profile-card-heading"><span className="pd-skeleton-shape pd-profile-skeleton-heading" /><span className="pd-skeleton-shape pd-profile-skeleton-icon" /></div><div className="pd-profile-skeleton-list">{[0, 1, 2].map((item) => <span className="pd-skeleton-shape" key={item} />)}</div></article>
+          <article className="ps-profile-analytics-card"><div className="ps-profile-card-heading"><span className="pd-skeleton-shape pd-profile-skeleton-heading" /><span className="pd-skeleton-shape pd-profile-skeleton-icon" /></div><div className="pd-profile-skeleton-list">{[0, 1, 2].map((item) => <span className="pd-skeleton-shape" key={item} />)}</div></article>
+          <article className="ps-profile-analytics-card full"><div className="ps-profile-card-heading"><span className="pd-skeleton-shape pd-profile-skeleton-heading" /><span className="pd-skeleton-shape pd-profile-skeleton-icon" /></div><div className="pd-profile-skeleton-status">{[0, 1, 2, 3].map((item) => <span className="pd-skeleton-shape" key={item} />)}</div><span className="pd-skeleton-shape pd-profile-skeleton-chart pd-profile-skeleton-chart--mini" /></article>
+        </div>
+      </section>
+    </section>
+  );
+}
+
 export default function DesignerProfileModule({ authUser, fallbackProfile }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -259,19 +290,17 @@ export default function DesignerProfileModule({ authUser, fallbackProfile }) {
     metrics.total_orders,
   ]);
 
-  if (loading) {
-    return (
-      <section className="ps-profile" aria-labelledby="designer-profile-title">
-        <div className="ps-panel ps-profile-loading">
-          <div className="kpi-spinner" />
-          <span>Cargando Mi Perfil...</span>
-        </div>
-      </section>
-    );
+  if (loading && !data) {
+    return <DesignerProfileSkeleton
+      profileName={fallbackProfile?.name || authUser?.user_metadata?.display_name || authUser?.email?.split("@")[0]}
+      roleLabel={ROLE_LABELS[fallbackProfile?.role] || fallbackProfile?.role}
+      avatarUrl={authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture || ""}
+    />;
   }
 
   return (
-    <section className="ps-profile" aria-labelledby="designer-profile-title">
+    <section className="ps-profile" aria-labelledby="designer-profile-title" aria-busy={loading}>
+      {loading && <span className="pd-sr-only" role="status" aria-live="polite">Actualizando Mi Perfil...</span>}
       {error && (
         <div className="ps-profile-error" role="alert">
           <Icons.AlertCircle />

@@ -43,10 +43,12 @@ describe("Delivery rework database boundary", () => {
   it("keeps the existing status fan-out silent for rework and limits the order guard to exact paths", () => {
     expect(migration).toContain("Cannot safely patch handle_order_change_notification for delivery rework");
     expect(migration).toContain("regexp_replace(");
-    expect(migration).toContain("if\\\\s+new\\\\.status");
-    expect(migration).toContain("current_setting('app.neonprint_order_command', true) is distinct from 'delivery_rework'");
+    expect(migration).toContain("E'if\\\\s+new\\\\.status\\\\s+is\\\\s+distinct\\\\s+from\\\\s+old\\\\.status\\\\s+and\\\\s+new\\\\.status\\\\s+not\\\\s+in'");
+    expect(migration).toContain("E'if current_setting(''app.neonprint_order_command'', true) is distinct from ''delivery_rework'' and new.status is distinct from old.status and new.status not in'");
+    expect(migration).toContain("if v_patched_definition = v_definition then");
     expect(migration).toContain("old.status = 'in_Delivered' and new.status = 'in_Completed'");
     expect(migration).toContain("old.status = 'in_Completed' and new.status = 'in_Production'");
+    expect(migration).toContain("old.status = 'in_Production' and new.status = 'in_Production'");
     expect(migration).toContain("old.status = 'in_Termination' and v_command = 'on'");
   });
 });

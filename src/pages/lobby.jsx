@@ -166,15 +166,21 @@ export default function Lobby() {
   const clearMsg = () => { setMessage(null); setFieldErr(false); };
   const navigate = useNavigate();
   const location = useLocation();
-  const { user: authUser, profile: authProfile } = useAuth();
+  const { user: authUser, profile: authProfile, authError } = useAuth();
 
   useEffect(() => {
     if (!pendingNavigation) return;
+    if (authError?.code === AUTH_NOTICE.PROFILE_UNAVAILABLE) {
+      setPendingNavigation(null);
+      setMessage({ type: "error", text: getAuthFeedbackMessage(AUTH_NOTICE.PROFILE_UNAVAILABLE) });
+      void Promise.resolve(signOutAuth({ scope: "local", suppressRemoteError: true })).catch(() => undefined);
+      return;
+    }
     if (authUser?.id !== pendingNavigation.userId || authProfile?.role !== pendingNavigation.role) return;
 
     setPendingNavigation(null);
     navigate(ROLE_ROUTES[pendingNavigation.role] || "/", { replace: true });
-  }, [authProfile?.role, authUser?.id, navigate, pendingNavigation]);
+  }, [authError?.code, authProfile?.role, authUser?.id, navigate, pendingNavigation]);
 
   const clearLoginFields = useCallback(() => {
     setEmail("");
@@ -339,6 +345,7 @@ export default function Lobby() {
       if (profiles?.employment_status === false) {
         await signOutAuth({ scope: "local" });
         loginSessionCreated = false;
+        setAuthSessionPersistence(previousSessionPersistence);
         setMessage({
           type: "error",
           text: getAuthFeedbackMessage(AUTH_NOTICE.ACCOUNT_INACTIVE),
@@ -348,6 +355,7 @@ export default function Lobby() {
       }
 
       await requireAdminMfa(profiles, data.user.id);
+      setAuthSessionPersistence(true);
 
       setMessage({
         type: "success",
@@ -365,12 +373,11 @@ export default function Lobby() {
       if (loginSessionCreated) {
         try {
           await signOutAuth({ scope: "local" });
-          // Restore the tab's prior mode after rejecting the newly created
-          // session so a remembered session that predated this attempt remains
-          // available without affecting other tabs.
-          setAuthSessionPersistence(previousSessionPersistence);
         } catch {
           // Keep the original, generic login/profile error for the employee.
+        } finally {
+          // Restore the prior mode even when local cleanup itself fails.
+          setAuthSessionPersistence(previousSessionPersistence);
         }
       } else {
         // A rejected login must leave the previous session and its persistence
@@ -451,7 +458,7 @@ export default function Lobby() {
             </div>
 
             {message && (
-              <div className={`msg-box ${message.type}`}>
+              <div className={`msg-box ${message.type}`} role={message.type === "error" ? "alert" : "status"} aria-live="polite">
                 {message.type === "error" ? <IcoAlert /> : <IcoOk />}
                 <span>{message.text}</span>
               </div>

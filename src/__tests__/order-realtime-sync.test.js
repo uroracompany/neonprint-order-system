@@ -64,10 +64,15 @@ describe("order realtime synchronization", () => {
       expect(source).not.toContain("{ event: '*', schema: 'public', table: 'orders' }");
     });
     const dashboard = readProjectFile("src/pages/dashboard.jsx");
+    const quote = readProjectFile("src/pages/page-quote.jsx");
     expect(dashboard).toContain("preserveMissingOpenOrders: silent");
-    expect(dashboard).toContain("openOrderSetters: [setSettingsOrder, setPaymentModalOrder]");
+    expect(dashboard).not.toContain("openOrderSetters: [setSettingsOrder, setPaymentModalOrder]");
     expect(dashboard).not.toContain("const freshOrder = ordersById[selectedOrder.id]");
-    expect(readProjectFile("src/pages/page-quote.jsx")).not.toContain("const freshOrder = [...orders, ...creditOrders].find");
+    expect(quote).toContain("openOrderSetters: [setPaymentModalOrder]");
+    expect(quote).toContain("preserveMissingOpenOrders: true");
+    expect(quote).toContain("preserveOpenOrderState: false");
+    expect(quote).toContain("remoteOrderMissing={paymentModalOrderRemoteMissing}");
+    expect(quote).not.toContain("const freshOrder = [...orders, ...creditOrders].find");
     expect(readProjectFile("src/pages/page-tracking.jsx")).not.toContain("useOrdersRealtimeSync");
   });
 
@@ -145,5 +150,23 @@ describe("order realtime synchronization", () => {
     expect(nextProduction.order.payment_status).toBe("pagado");
     expect(nextProduction.order.order_production_files).toEqual(staleHydratedOrder.order_production_files);
     expect(setAdvancedOrder.mock.calls[0][0]({ id: "missing" })).toBeNull();
+  });
+
+  it("retains an omitted payment modal order for its caller to flag as stale", () => {
+    const setOrders = vi.fn();
+    const setSelectedOrder = vi.fn();
+    const setPaymentModalOrder = vi.fn();
+    const openOrder = { id: "order-1", updated_at: "v1" };
+
+    applyOrdersSnapshot({
+      orders: [],
+      setOrders,
+      setSelectedOrder,
+      openOrderSetters: [setPaymentModalOrder],
+      preserveMissingOpenOrders: true,
+      preserveOpenOrderState: false,
+    });
+
+    expect(setPaymentModalOrder.mock.calls[0][0](openOrder)).toEqual(openOrder);
   });
 });

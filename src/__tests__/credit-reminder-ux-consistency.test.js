@@ -29,11 +29,12 @@ describe("consistencia UX de recordatorios de credito", () => {
   it("mantiene las validaciones visuales de creacion en el modal compartido", () => {
     const modals = readProjectFile("src/components/ui/CreditReminderModals.jsx");
 
-    expect(modals).toContain("hasSelectedCreditOrder && hasReminderNote && hasReminderAt");
+    expect(modals).toContain("hasOpenCreditOrders && hasReminderNote && hasReminderAt && hasValidVisibilityScope");
     expect(modals).toContain("disabled={saving || !canSubmitReminder}");
     expect(modals).toContain("Visibilidad del recordatorio");
     expect(modals).toContain("visibilityOptions.map");
-    expect(modals).toContain("Los recordatorios personalizados solo pueden crearse para ordenes a credito.");
+    expect(modals).toContain("No hay órdenes disponibles para este recordatorio.");
+    expect(modals).toContain("El cliente ya no tiene órdenes a crédito pendientes.");
     expect(modals).toContain("Describe la razon del recordatorio antes de continuar.");
     expect(modals).toContain("min={minReminderAt || undefined}");
   });

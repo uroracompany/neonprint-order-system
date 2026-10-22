@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const read = (path) => readFileSync(resolve(path), "utf8");
 const migration = read("supabase/migrations/20260905171422_fix_semi_admin_caja_assets.sql");
 const workbench = read("src/pages/pages-seller.jsx");
+const panel = read("src/components/orders/SemiAdminOperationalPanel.jsx");
 
 describe("Semi-Admin Caja and asset authority contract", () => {
   it("deduplicates repeated production-file URLs during external creation", () => {
@@ -30,9 +31,19 @@ describe("Semi-Admin Caja and asset authority contract", () => {
   });
 
   it("routes Semi-Admin modal selections through the audited commands", () => {
-    expect(workbench).toContain('handleSemiAdminOperation("send_design_to_quote", { quote_id: quoteId })');
+    expect(workbench).toContain("<SemiAdminOperationalPanel");
+    expect(workbench).toContain("onAction={handleSemiAdminOperation}");
+    expect(workbench).toContain("onOpenQuoteAssignment={() => setSemiAdminQuoteAssignment(selectedOrder)}");
+    expect(workbench).toContain("onOpenDesignReassignment={() => setSemiAdminDesignReassignment(selectedOrder)}");
+    expect(workbench).toContain("onOpenQuoteResponsibilityReassignment={() => setSemiAdminQuoteResponsibilityReassignment(selectedOrder)}");
+    expect(panel).toContain('hasAction("send_design_to_quote") && canContinueToQuote');
+    expect(panel).toContain('hasAction("stage_responsibility")');
+    expect(workbench).toContain('handleSemiAdminOperation("send_design_to_quote", { quote_id: quoteId }, semiAdminQuoteAssignment)');
     expect(workbench).toContain('handleSemiAdminOperation("stage_responsibility", { stage: "design", assignee_id: designerId })');
     expect(workbench).toContain('handleSemiAdminOperation("stage_responsibility", { stage: "quote", assignee_id: quoteId })');
+    expect(workbench).toContain("onConfirm={handleConfirmSemiAdminQuoteAssignment}");
+    expect(workbench).toContain("onConfirm={handleConfirmSemiAdminDesignReassignment}");
+    expect(workbench).toContain("onConfirm={handleConfirmSemiAdminQuoteResponsibilityReassignment}");
     expect(workbench).toContain('defaultUserId={semiAdminDesignReassignment?.designer_id || ""}');
     expect(workbench).toContain('defaultUserId={semiAdminQuoteResponsibilityReassignment?.quote_id || ""}');
     expect(workbench).toContain('title="Enviar a Caja"');

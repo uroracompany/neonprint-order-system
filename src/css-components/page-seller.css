@@ -1127,6 +1127,76 @@
 .ps-form-input.textarea { min-height: 80px; resize: vertical; }
 .ps-form-input.select   { appearance: none; padding-right: 34px; cursor: pointer; }
 
+.ps-tracking-name-combobox {
+  position: relative;
+  width: 100%;
+}
+
+.ps-tracking-name-input-wrap {
+  position: relative;
+}
+
+.ps-tracking-name-input-wrap .ps-form-input {
+  padding-right: 38px;
+  cursor: text;
+}
+
+.ps-tracking-name-chevron {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  display: inline-flex;
+  color: #8aa0c2;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.ps-tracking-name-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+
+.ps-tracking-name-menu {
+  top: calc(100% + 6px);
+  padding: 0;
+}
+
+.ps-tracking-name-option {
+  min-height: 42px;
+}
+
+.ps-tracking-name-option.is-active {
+  background: var(--surface-alt);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ps-tracking-name-create {
+  gap: 8px;
+}
+
+.ps-tracking-name-create svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.ps-tracking-name-divider {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.ps-tracking-name-state {
+  padding: 10px;
+  color: #7183a3;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.ps-tracking-name-state.is-error {
+  color: #be294a;
+}
+
 @media (max-width: 680px) {
   .ps-form-grid {
     grid-template-columns: 1fr;
@@ -2606,6 +2676,7 @@ button.ps-multimat-option {
 
 /* ── Grid Container ─────────────────────────────────────────────── */
 .ps-cards-grid {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(320px, 100% / 3), 1fr));
   gap: 20px;
@@ -2614,6 +2685,113 @@ button.ps-multimat-option {
   border: none;
   width: 100%;
   box-sizing: border-box;
+}
+
+.ps-orders-loading-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ps-orders-skeleton-row td {
+  height: 63px;
+  padding: 15px 18px;
+}
+
+.ps-orders-skeleton-line,
+.ps-orders-skeleton-pill,
+.ps-orders-skeleton-avatar,
+.ps-orders-skeleton-action {
+  display: block;
+  background: linear-gradient(90deg, #eef2f7 25%, #f8fafc 50%, #eef2f7 75%);
+  background-size: 200% 100%;
+  animation: ps-orders-skeleton-shimmer 1.2s infinite linear;
+}
+
+.ps-orders-skeleton-line {
+  width: 72%;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.ps-orders-skeleton-row td:nth-child(2) .ps-orders-skeleton-line { width: 58%; }
+.ps-orders-skeleton-row td:nth-child(3) .ps-orders-skeleton-line { width: 48%; }
+.ps-orders-skeleton-row td:nth-child(4) .ps-orders-skeleton-line { width: 55%; }
+.ps-orders-skeleton-row td:nth-child(5) .ps-orders-skeleton-line { width: 45%; }
+.ps-orders-skeleton-row td:nth-child(6) .ps-orders-skeleton-line { width: 62%; }
+.ps-orders-skeleton-row td:nth-child(7) .ps-orders-skeleton-line { width: 34%; }
+
+.ps-order-card--skeleton {
+  cursor: default;
+  pointer-events: none;
+}
+
+.ps-order-card--skeleton .ps-order-card-client {
+  align-items: center;
+}
+
+.ps-orders-skeleton-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.ps-orders-skeleton-line--title { width: 54%; height: 14px; }
+.ps-order-card--skeleton .ps-order-card-client-badges { width: 100%; }
+
+.ps-orders-skeleton-pill {
+  height: 18px;
+  border-radius: 999px;
+}
+
+.ps-orders-skeleton-pill--id { width: 62px; }
+.ps-orders-skeleton-pill--badge { width: 74px; }
+.ps-orders-skeleton-pill--value { width: 66px; }
+.ps-orders-skeleton-pill--payment { width: 78px; }
+
+.ps-orders-skeleton-line--label { width: 44px; height: 9px; }
+.ps-orders-skeleton-line--date { width: 96px; height: 11px; }
+
+.ps-order-card--skeleton .ps-order-card-field {
+  align-items: flex-start;
+}
+
+.ps-order-card--skeleton .ps-order-card-footer {
+  align-items: center;
+}
+
+.ps-orders-skeleton-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px 14px;
+}
+
+.ps-orders-skeleton-action {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+@keyframes ps-orders-skeleton-shimmer {
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-orders-skeleton-line,
+  .ps-orders-skeleton-pill,
+  .ps-orders-skeleton-avatar,
+  .ps-orders-skeleton-action {
+    animation: none;
+    background-position: 50% 0;
+  }
 }
 
 .ps-cards-empty {

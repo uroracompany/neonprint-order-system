@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import DeliveryProfileModule from "../components/delivery/DeliveryProfileModule";
 import { adminApiFetch } from "../utils/adminApi";
 
+const deliveryProfileHandler = readFileSync(resolve("server/delivery-profile-handler.js"), "utf8");
+
 vi.mock("../utils/adminApi", () => ({
   adminApiFetch: vi.fn(),
 }));
@@ -82,7 +84,8 @@ describe("DeliveryProfileModule", () => {
     expect(pageSource).toContain('profile: "Mi Perfil"');
     expect(pageSource).toContain('.in("status", DELIVERY_STATUS_OPTIONS)\n      .eq("delivery_id", user.id)');
     expect(pageSource).toContain('rpc("delivery_mark_order_delivered"');
-    expect(pageSource).toContain('.eq("delivery_id", user.id)\n        .order("created_at", { ascending: false })');
+    expect(deliveryProfileHandler).toContain('allowedRoles: ["delivery", "digital_producer", "dtf_producer", "ploteo_producer", "admin"]');
+    expect(deliveryProfileHandler).toContain('.eq("delivery_id", userId)');
   });
 
   it("shows an error instead of treating an incomplete successful response as zero metrics", async () => {

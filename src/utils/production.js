@@ -7,6 +7,22 @@ import {
 } from "./constants";
 import { getOrderFiles } from "./orderAssets";
 
+export const isProductionFileDetailsComplete = ({
+  publicLabel,
+  areaCode,
+  materialNames,
+  terminationName,
+} = {}) => (
+  typeof publicLabel === "string"
+  && Boolean(publicLabel.trim())
+  && typeof areaCode === "string"
+  && Boolean(areaCode.trim())
+  && Array.isArray(materialNames)
+  && materialNames.some((name) => String(name ?? "").trim())
+  && typeof terminationName === "string"
+  && Boolean(terminationName.trim())
+);
+
 export const normalizeProductionFile = (file, index = 0) => {
   if (!file) return null;
 

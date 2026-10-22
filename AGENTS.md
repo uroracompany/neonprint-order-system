@@ -62,8 +62,17 @@ named, ask the user which plan to execute.
 5. **Conditional specialist** — run `visual-qa` for any rendered UI change;
    run `security-auditor` for auth, permissions, API, SQL, RLS, secrets, Storage,
    payment, tracking or destructive-operation changes. Run both when applicable.
-6. **Reviewer** — independently inspect the final diff and issue `SHIP`,
-   `NEEDS WORK` or `BLOCK`.
+6. **Conditional Playwright QA** — run only when the user explicitly requested
+   browser verification or `analysis.md` states `PLAYWRIGHT: REQUIRED`; it runs
+   after Tester and applicable specialists.
+7. **Food Taster** — always run after Tester, applicable specialists and any
+   required Playwright QA, and before Reviewer. It independently runs the
+   required quality checks and records `${TASK_DIR}/food-taster-results.md`.
+   Missing evidence, an omitted/interrupted check, or a result other than
+   `PASS` stops the workflow.
+8. **Reviewer** — independently inspect the original request, plan, evidence and
+   final diff. It may issue `SHIP` only with passing Food Taster evidence;
+   otherwise issue `NEEDS WORK` or `BLOCK`.
 
 ## Playwright on demand
 
@@ -74,8 +83,8 @@ equivalent.
 
 When requested, the Analyst must mark `PLAYWRIGHT: REQUIRED` in `analysis.md`.
 After Tester and any applicable Visual QA/Security Audit, run the `playwright-qa`
-subagent before the final Reviewer. It must validate only the requested route and
-flow, take snapshots before using element references, re-snapshot after UI state
+subagent before Food Taster. It must validate only the requested route and flow,
+take snapshots before using element references, re-snapshot after UI state
 changes, and write its outcome to `playwright-results.md`.
 
 Playwright evidence belongs in `output/playwright/` and the task directory. Do

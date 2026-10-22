@@ -1,14 +1,20 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../../supabaseClient";
 
 export function useOrderParticipation(orderId) {
   const [timeline, setTimeline] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(orderId));
   const [error, setError] = useState(null);
+  const [loadedOrderId, setLoadedOrderId] = useState(null);
+  const requestIdRef = useRef(0);
 
   const fetchTimeline = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     if (!orderId) {
       setTimeline([]);
+      setError(null);
+      setLoading(false);
+      setLoadedOrderId(null);
       return;
     }
 
@@ -16,18 +22,22 @@ export function useOrderParticipation(orderId) {
     setError(null);
 
     try {
-      const { data, err } = await supabase.rpc("get_order_participation_timeline", {
+      const { data, error } = await supabase.rpc("get_order_participation_timeline", {
         p_order_id: orderId,
       });
 
-      if (err) throw err;
+      if (error) throw error;
+      if (requestId !== requestIdRef.current) return;
       setTimeline(Array.isArray(data) ? data : []);
+      setLoadedOrderId(orderId);
     } catch (e) {
+      if (requestId !== requestIdRef.current) return;
       console.error("useOrderParticipation error:", e);
       setError(e.message || "Error al cargar historial");
       setTimeline([]);
+      setLoadedOrderId(orderId);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [orderId]);
 
@@ -85,5 +95,11 @@ export function useOrderParticipation(orderId) {
     };
   }, [orderId, fetchTimeline]);
 
-  return { timeline, loading, error, refetch: fetchTimeline };
+  const orderChanged = Boolean(orderId && loadedOrderId !== orderId);
+  return {
+    timeline: orderChanged ? [] : timeline,
+    loading: loading || orderChanged,
+    error: orderChanged ? null : error,
+    refetch: fetchTimeline,
+  };
 }

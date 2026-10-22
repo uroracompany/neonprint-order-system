@@ -123,7 +123,7 @@ describe("Seller OrderDetailModal reference_images", () => {
       />
     );
 
-    expect(screen.getByText("Orden de Trabajo")).toBeInTheDocument();
+    expect(screen.getByText("Imagen de orden de trabajo")).toBeInTheDocument();
     expect(screen.getByText("Diseño del cliente")).toBeInTheDocument();
     expect(screen.getByText("Imágenes de referencia")).toBeInTheDocument();
   });
@@ -200,7 +200,7 @@ describe("Seller OrderDetailModal reference_images", () => {
       />
     );
 
-    const image = await screen.findByAltText("preview");
+    const image = await screen.findByAltText("Imagen de orden de trabajo");
     expect(image).toHaveAttribute("src", signedPreview);
     expect(resolveOrderAssetUrl).toHaveBeenCalledWith(privatePreview);
   });

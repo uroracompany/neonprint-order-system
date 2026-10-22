@@ -18,11 +18,16 @@ describe('serie mensual de Clientes KPI', () => {
   })
 
   it('expone la serie dedicada en el mismo payload de KPI Clientes', () => {
+    const workspaceOrderFields = handler.match(/const CLIENT_WORKSPACE_ORDER_FIELDS = '([^']*)'/)
+
     expect(handler).toContain("supabase.rpc('kpi_client_monthly_activity', { p_months: 3 })")
     expect(handler).toContain("if (error.code !== 'PGRST202') throw error")
     expect(handler).toContain(".not('created_at', 'is', null)")
     expect(handler).toContain('client_activity_timeline: clientActivityTimelineResult?.data || []')
-    expect(handler).toContain("order_design_type, created_at, delivery_date, status_changed_at').range(0, 4999)")
-    expect(handler).not.toContain("order_design_type, created_at, delivery_date, completed_at').range(0, 4999)")
+    expect(handler).toContain("const CLIENT_WORKSPACE_ORDER_FIELDS = '")
+    expect(handler).toContain("order_design_type, created_at, delivery_date, status_changed_at'")
+    expect(workspaceOrderFields).not.toBeNull()
+    expect(workspaceOrderFields[1]).not.toContain('completed_at')
+    expect(handler).toContain(".select(CLIENT_WORKSPACE_ORDER_FIELDS).range(0, 4999)")
   })
 })

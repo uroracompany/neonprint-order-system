@@ -107,7 +107,7 @@
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-.pfm-select-wrap select:hover {
+.pfm-select-wrap select:hover:not(:disabled) {
   border-color: var(--border-hov);
 }
 
@@ -168,6 +168,11 @@
   border: 1px solid #dbe5f2;
   border-radius: 12px;
   background: var(--surface);
+}
+
+.pfm-invoice-code-hint {
+  display: block;
+  line-height: 1.5;
 }
 
 .pfm-receipt-number-field .pfm-label {
@@ -435,7 +440,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 22px 24px 24px;
+  padding: 28px 28px 30px;
 }
 
 .pfm-modal .ps-modal-footer {
@@ -463,7 +468,6 @@
 }
 
 .pfm-field,
-.pfm-receipt-section,
 .pfm-receipt-number-field {
   padding: 0;
   border: 0;
@@ -472,15 +476,24 @@
 }
 
 .pfm-field {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .pfm-receipt-section {
   margin-bottom: 24px;
+  padding: 17px;
+  border: 1px solid #dbe5f2;
+  border-radius: 14px;
+  background: #fbfdff;
 }
 
 .pfm-receipt-number-field {
-  margin-bottom: 18px;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .pfm-receipt-card {
@@ -496,6 +509,10 @@
   .pfm-modal .ps-modal-header,
   .pfm-modal .ps-modal-body {
     padding-inline: 20px;
+  }
+
+  .pfm-modal .ps-modal-body {
+    padding-block: 22px 24px;
   }
 
   .pfm-current-badge {
@@ -556,8 +573,12 @@
 }
 
 .pfm-invoice-code-hint {
-  color: #1e40af;
+  color: #f43f5e;
   font-weight: 600;
+}
+
+.pfm-invoice-code-hint.pfm-invoice-code-hint--saved {
+  color: #166534;
 }
 
 .ps-file-details-modal.pfm-modal .pfm-save-invoice-btn {
@@ -607,11 +628,47 @@
   box-shadow: 0 0 0 3px rgba(15, 30, 64, 0.1);
 }
 
-.ps-file-details-modal.pfm-modal .pfm-select-wrap select:hover,
+.ps-file-details-modal.pfm-modal .pfm-select-wrap select:hover:not(:disabled),
 .ps-file-details-modal.pfm-modal .pfm-receipt-number-input:hover {
   border-color: #b8c3da;
 }
 
+.ps-file-details-modal.pfm-modal .pfm-select-wrap select:disabled {
+  border-color: #cbd5e1;
+  background: #e8edf5;
+  color: #475569;
+  cursor: not-allowed;
+  opacity: 0.74;
+  box-shadow: none;
+}
+
 .ps-file-details-modal.pfm-modal .pfm-receipt-number-input::placeholder {
   color: #8899b5;
+}
+
+@keyframes pfm-receipt-upload-attention-pulse {
+  0% {
+    border-color: #dbe4f4;
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0);
+  }
+
+  38% {
+    border-color: #f43f5e;
+    box-shadow: 0 0 0 5px rgba(244, 63, 94, 0.16);
+  }
+
+  100% {
+    border-color: #dbe4f4;
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0);
+  }
+}
+
+.pfm-modal .file-upload-zone.pfm-receipt-upload-attention:not(.is-disabled):not(.is-error):not(.is-focused):not(.is-drag-over):not(:focus):not(:focus-visible) {
+  animation: pfm-receipt-upload-attention-pulse 1.1s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pfm-modal .file-upload-zone.pfm-receipt-upload-attention {
+    animation: none;
+  }
 }

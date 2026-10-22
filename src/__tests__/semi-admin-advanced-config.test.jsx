@@ -62,7 +62,8 @@ describe("Semi-Admin advanced configuration", () => {
   it("keeps Caja hidden until both Design assets and the work order exist", async () => {
     renderPanel({ ...order, preview_image: null, order_production_files: [] });
 
-    await screen.findByText("Para enviar la orden a Caja debes adjuntar al menos un archivo de diseño y una Orden de Trabajo.");
+    await screen.findByRole("button", { name: "Gestionar diseños y archivos" });
+    expect(screen.queryByText("Para enviar la orden a Caja debes adjuntar al menos un archivo de diseño y una Orden de Trabajo.")).not.toBeInTheDocument();
     expect(screen.queryByText("Continuar a Caja")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enviar a Caja" })).not.toBeInTheDocument();
   });
@@ -157,7 +158,7 @@ describe("Semi-Admin advanced configuration", () => {
 
     await screen.findByRole("button", { name: "Reasignar Diseño" });
     expect(screen.getByRole("button", { name: "Reasignar Diseño" })).toBeDisabled();
-    expect(screen.getByText(/elimina primero todos los archivos y la Orden de Trabajo/i)).toBeVisible();
+    expect(screen.getByText(/elimina primero todos los archivos y la imagen de orden de trabajo\./i)).toBeVisible();
 
     rerender(<SemiAdminOperationalPanel
       order={{ ...order, order_file_url: [], preview_image: null, order_production_files: [] }}
@@ -242,11 +243,11 @@ describe("Semi-Admin advanced configuration", () => {
     await waitFor(() => expect(screen.getByText("Responsable actual:").parentElement).toHaveTextContent("Yo"));
   });
 
-  it("marks Production as read-only without hiding the authorized Caja handoff", async () => {
+  it("marks Production as protected without exposing production preparation", async () => {
     renderPanel({ ...order, status: "in_Production" }, { onLoadCatalog: vi.fn().mockResolvedValue({ actions: [], unavailable_actions: [] }) });
 
-    await waitFor(() => expect(screen.getByText("Etapa de solo lectura")).toBeVisible());
-    expect(screen.getByText(/corresponden exclusivamente al operador de Producción asignado/i)).toBeVisible();
+    await waitFor(() => expect(screen.getByText("Estado productivo protegido")).toBeVisible());
+    expect(screen.getByText(/La ejecución, reasignación y avance de la etapa corresponden exclusivamente al operador de Producción\./i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /Preparar envío a Producción/i })).not.toBeInTheDocument();
   });
 });

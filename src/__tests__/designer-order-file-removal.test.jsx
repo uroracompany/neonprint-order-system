@@ -10,11 +10,31 @@ const { rpc, resolveOrderAssetUrl } = vi.hoisted(() => ({
 
 vi.mock("../../supabaseClient", () => ({
   supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({ single: vi.fn(() => Promise.resolve({ data: null, error: null })) })),
-      })),
-    })),
+    from: vi.fn((table) => {
+      if (!["materials", "production_terminations", "orders"].includes(table)) {
+        throw new Error(`Unexpected Supabase table in designer modal test: ${table}`);
+      }
+      const result = table === "orders"
+        ? { data: { tracking_token: null }, error: null }
+        : { data: [], error: null };
+      const query = {
+        select: vi.fn(() => query),
+        eq: vi.fn(() => query),
+        not: vi.fn(() => query),
+        order: vi.fn(() => query),
+        single: vi.fn(() => Promise.resolve({ data: null, error: null })),
+        maybeSingle: vi.fn(() => Promise.resolve(result)),
+        then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
+      };
+      return query;
+    }),
+    channel: vi.fn(() => {
+      const realtimeChannel = { on: vi.fn(), subscribe: vi.fn() };
+      realtimeChannel.on.mockReturnValue(realtimeChannel);
+      realtimeChannel.subscribe.mockReturnValue(realtimeChannel);
+      return realtimeChannel;
+    }),
+    removeChannel: vi.fn(),
     rpc,
   },
 }));

@@ -36,13 +36,9 @@ function formatTimestamp(ts) {
   }
 }
 
-export default function OrderParticipationTimeline({ orderId }) {
-  const { timeline, loading, error } = useOrderParticipation(orderId);
-
-  if (!orderId) return null;
-
+export function OrderParticipationTimelineContent({ timeline = [], loading = false, error = null, sectionClassName = "" }) {
   return (
-    <section className="order-detail-section" style={{ background: "var(--surface)", padding: 16, marginBottom: 18 }}>
+    <section className={`order-detail-section${sectionClassName ? ` ${sectionClassName}` : ""}`} style={{ background: "var(--surface)", padding: 16, marginBottom: 18 }}>
       <p style={{
         fontSize: 11, fontWeight: 700, color: "#1E40AF",
         textTransform: "uppercase", letterSpacing: "0.07em",
@@ -64,7 +60,7 @@ export default function OrderParticipationTimeline({ orderId }) {
       )}
 
       {error && (
-        <p style={{ fontSize: 12, color: "#991B1B", margin: 0 }}>{error}</p>
+        <p role="alert" style={{ fontSize: 12, color: "#991B1B", margin: 0 }}>{error}</p>
       )}
 
       {!loading && !error && timeline.length === 0 && (
@@ -116,4 +112,12 @@ export default function OrderParticipationTimeline({ orderId }) {
       )}
     </section>
   );
+}
+
+export default function OrderParticipationTimeline({ orderId }) {
+  const { timeline, loading, error } = useOrderParticipation(orderId);
+
+  if (!orderId) return null;
+
+  return <OrderParticipationTimelineContent timeline={timeline} loading={loading} error={error} />;
 }

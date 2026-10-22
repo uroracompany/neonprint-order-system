@@ -164,6 +164,56 @@ const isSellerVisibleNotification = (notification) => {
 
 const PHONE_PLACEHOLDER = "Seleccionar Cliente";
 
+function OrderLoadingStatus() {
+  return <span className="ps-orders-loading-status" role="status" aria-live="polite">Cargando órdenes...</span>;
+}
+
+function OrderTableSkeletonRows({ columns, rows }) {
+  return Array.from({ length: rows }, (_, rowIndex) => (
+    <tr key={`skeleton-${rowIndex}`} className="ps-orders-skeleton-row" aria-hidden="true">
+      {Array.from({ length: columns }, (_, columnIndex) => (
+        <td key={`skeleton-${rowIndex}-${columnIndex}`}>
+          <span className="ps-orders-skeleton-line" />
+        </td>
+      ))}
+    </tr>
+  ));
+}
+
+function OrderCardSkeleton() {
+  return (
+    <div className="ps-order-card ps-order-card--skeleton" aria-hidden="true">
+      <div className="ps-order-card-client">
+        <span className="ps-orders-skeleton-avatar" />
+        <span className="ps-order-card-client-main">
+          <span className="ps-orders-skeleton-line ps-orders-skeleton-line--title" />
+          <span className="ps-order-card-client-badges">
+            <span className="ps-orders-skeleton-pill ps-orders-skeleton-pill--id" />
+            <span className="ps-orders-skeleton-pill ps-orders-skeleton-pill--badge" />
+          </span>
+        </span>
+      </div>
+      <div className="ps-order-card-fields">
+        {[0, 1].map((item) => (
+          <div className="ps-order-card-field" key={item}>
+            <span className="ps-orders-skeleton-line ps-orders-skeleton-line--label" />
+            <span className="ps-orders-skeleton-pill ps-orders-skeleton-pill--value" />
+          </div>
+        ))}
+      </div>
+      <div className="ps-order-card-footer">
+        <span className="ps-orders-skeleton-line ps-orders-skeleton-line--date" />
+        <span className="ps-orders-skeleton-pill ps-orders-skeleton-pill--payment" />
+      </div>
+      <div className="ps-orders-skeleton-actions">
+        <span className="ps-orders-skeleton-action" />
+        <span className="ps-orders-skeleton-action" />
+        <span className="ps-orders-skeleton-action" />
+      </div>
+    </div>
+  );
+}
+
 
 
 function StatusBadge({ status, type = "status", order = null }) {
@@ -1381,14 +1431,13 @@ export default function PageSeller() {
                     Ver todas <Icons.ArrowRight />
                   </button>
                 </div>
-                <div className="ps-table-wrap">
+                <div className="ps-table-wrap" aria-busy={loading}>
+                  {loading && <OrderLoadingStatus />}
                   <table className="ps-table">
                     <thead><tr>{["Cliente", "Facturacion", "Estado", ""].map(h => <th key={h}>{h}</th>)}</tr></thead>
                     <tbody>
                       {loading ? (
-                        <tr>
-                          <td colSpan={4} className="ps-table-empty">Cargando Ordenes...</td>
-                        </tr>
+                        <OrderTableSkeletonRows columns={4} rows={5} />
                       ) : ordersError ? (
                         <tr>
                           <td colSpan={4} className="ps-table-empty">
@@ -1572,14 +1621,13 @@ export default function PageSeller() {
               <div className={`ps-panel${viewMode === "cards" ? " ps-panel--transparent" : ""}`}>
                 <div className="ps-panel-stripe" />
                 {viewMode === "table" ? (
-                  <div className="ps-table-wrap">
+                  <div className="ps-table-wrap" aria-busy={loading}>
+                    {loading && <OrderLoadingStatus />}
                     <table className="ps-table">
                       <thead><tr>{["Cliente", "Facturacion", "Estado", "Pago", "Tipo", "Fecha", "Acciones"].map(h => <th key={h}>{h}</th>)}</tr></thead>
                       <tbody>
                         {loading ? (
-                          <tr>
-                            <td colSpan={7} className="ps-table-empty">Cargando Ordenes...</td>
-                          </tr>
+                          <OrderTableSkeletonRows columns={7} rows={SELLER_ORDER_PAGE_SIZE} />
                         ) : ordersError ? (
                           <tr>
                             <td colSpan={7} className="ps-table-empty">
@@ -1695,9 +1743,10 @@ export default function PageSeller() {
                     </table>
                   </div>
                 ) : (
-                  <div className="ps-cards-grid">
+                  <div className="ps-cards-grid" aria-busy={loading}>
+                    {loading && <OrderLoadingStatus />}
                     {loading ? (
-                      <div className="ps-cards-empty">Cargando Ordenes...</div>
+                      Array.from({ length: SELLER_CARD_PAGE_SIZE }, (_, index) => <OrderCardSkeleton key={`skeleton-card-${index}`} />)
                     ) : ordersError ? (
                       <div className="ps-cards-empty">
                         <div className="acm-empty-state">

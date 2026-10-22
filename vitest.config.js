@@ -10,9 +10,11 @@ export default defineConfig({
     css: true,
     exclude: [
       'node_modules/**',
+      '**/node_modules/**',
       'dist/**',
       '.opencode/deploy/**',
       '.opencode/runs/**',
+      'e2e/**',
     ],
   },
 })

@@ -42,7 +42,7 @@ describe("Caja paid payment correction contract", () => {
     expect(paymentModal).toContain("Guardar corrección");
     expect(paymentModal).toContain("Comprobante actual (solo lectura)");
     expect(paymentModal).toContain("readOnly={correctionMode}");
-    expect(paymentModal).toContain("disabled={!correctionMode && (loading || !canAssignInvoiceCode || !canManagePayment)}");
+    expect(paymentModal).toContain("disabled={!correctionMode && (loading || !canEditInvoiceCode)}");
     expect(paymentModal).toContain("setExistingReceiptLoadState(\"loading\")");
     expect(paymentModal).toContain("setExistingReceiptLoadState(\"error\")");
     expect(paymentModal).toContain("el archivo almacenado no se eliminará.");

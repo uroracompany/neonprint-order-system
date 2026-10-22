@@ -16,6 +16,7 @@ import OrderAssignmentAction from "./OrderAssignmentAction";
 import OrderReviewCard from "./OrderReviewCard";
 import { OrderReturnHandoffPanel } from "./OrderReturnHandoff";
 import OrderParticipationTimeline from "./OrderParticipationTimeline";
+import OrderTrackingLink from "./OrderTrackingLink";
 import "./OrderDetailModal.css";
 
 const ACTIVE_WORKFLOW_STATUSES_FOR_SELLER = [
@@ -54,106 +55,6 @@ function ReturnedBadge({ compact = false }) {
   );
 }
 
-function TrackingLinkField({ orderId }) {
-  const [token, setToken] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!orderId) return;
-    setLoading(true);
-    supabase
-      .from("orders")
-      .select("tracking_token")
-      .eq("id", orderId)
-      .single()
-      .then(({ data }) => {
-        if (data?.tracking_token) setToken(data.tracking_token);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [orderId]);
-
-  const trackingUrl = token ? `${window.location.origin}/track/${token}` : null;
-
-  const handleCopy = async () => {
-    if (!trackingUrl) return;
-    try {
-      await navigator.clipboard.writeText(trackingUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      const textArea = document.createElement("textarea");
-      textArea.value = trackingUrl;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textArea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-        <div style={{ width: 14, height: 14, border: "2px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%" }} />
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Cargando...</span>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {trackingUrl ? (
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            type="text"
-            readOnly
-            value={trackingUrl}
-            onClick={(event) => event.target.select()}
-            style={{
-              flex: 1,
-              padding: "8px 12px",
-              fontSize: 12,
-              fontWeight: 600,
-              fontFamily: "'SF Mono', 'Fira Code', monospace",
-              border: "1.5px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--surface-alt)",
-              color: "var(--text)",
-              outline: "none",
-              cursor: "text",
-            }}
-          />
-          <button
-            onClick={handleCopy}
-            style={{
-              padding: "8px 14px",
-              background: copied ? "#10B981" : "var(--primary)",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              color: "#fff",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              transition: "background 0.2s",
-              fontFamily: "'Poppins', sans-serif",
-            }}
-          >
-            {copied ? "✓ Copiado" : "Copiar"}
-          </button>
-        </div>
-      ) : (
-        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, fontStyle: "italic" }}>
-          El link estará disponible cuando la orden tenga un token de seguimiento.
-        </p>
-      )}
-    </div>
-  );
-}
-
 export default function OrderDetailModal({
   open,
   onClose,
@@ -175,6 +76,7 @@ export default function OrderDetailModal({
   adminIntervention = null,
   adminActions = null,
   productionAction = null,
+  showDeliveryConfirmation = false,
   closeOnBackdrop = true,
   closeOnEscape = true,
 }) {
@@ -186,6 +88,10 @@ export default function OrderDetailModal({
   const [designerName, setDesignerName] = useState("");
   const [resolvedAssetUrls, setResolvedAssetUrls] = useState({});
   const [assetResolutionErrors, setAssetResolutionErrors] = useState({});
+  const [deliveryConfirmation, setDeliveryConfirmation] = useState(null);
+  const [deliveryConfirmationLoading, setDeliveryConfirmationLoading] = useState(false);
+  const [deliveryConfirmationError, setDeliveryConfirmationError] = useState("");
+  const [deliveryConfirmationRefreshKey, setDeliveryConfirmationRefreshKey] = useState(0);
   const referenceImagesKey = referenceImageUrls.join("\u001f");
 
   useEffect(() => {
@@ -249,6 +155,43 @@ export default function OrderDetailModal({
     };
   }, [open, order?.id, order?.preview_image, referenceImageUrls, referenceImagesKey]);
 
+  useEffect(() => {
+    if (!showDeliveryConfirmation || !open || !order?.id) {
+      setDeliveryConfirmation(null);
+      setDeliveryConfirmationLoading(false);
+      setDeliveryConfirmationError("");
+      return undefined;
+    }
+
+    let active = true;
+    setDeliveryConfirmation(null);
+    setDeliveryConfirmationLoading(true);
+    setDeliveryConfirmationError("");
+    supabase
+      .from("delivery_confirmations")
+      .select("order_id,assigned_delivery_id,executor_type,executor_name,delivery_comment,confirmed_by,confirmed_at,updated_at")
+      .eq("order_id", order.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setDeliveryConfirmationError("No se pudo cargar la confirmación de entrega.");
+          return;
+        }
+        setDeliveryConfirmation(data || null);
+      })
+      .catch(() => {
+        if (active) setDeliveryConfirmationError("No se pudo cargar la confirmación de entrega.");
+      })
+      .finally(() => {
+        if (active) setDeliveryConfirmationLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [showDeliveryConfirmation, open, order?.id, deliveryConfirmationRefreshKey]);
+
   if (!hasOrder) return null;
 
   const isExternalDesign = order.order_design_type === "EXTERNAL_DESING";
@@ -258,6 +201,8 @@ export default function OrderDetailModal({
   const shouldShowPrimaryAction = showPrimaryAction
     && (isReturningToCashier || !isOrderStatusIn(order.status, ACTIVE_WORKFLOW_STATUSES_FOR_SELLER));
   const displayResponsibleName = responsibleName || user?.displayName || "---";
+  const legacyDeliveryNote = !deliveryConfirmation ? String(order.delivery_note || "").trim() : "";
+  const visibleDeliveryConfirmation = deliveryConfirmation || legacyDeliveryNote;
 
   return (
     <Modal
@@ -269,6 +214,7 @@ export default function OrderDetailModal({
       closeOnBackdrop={closeOnBackdrop}
       closeOnEscape={closeOnEscape}
       hideStripe
+      stickyHeader
       overlayClassName="order-detail-modal-overlay"
     >
       <div className="order-detail-shell">
@@ -464,6 +410,58 @@ export default function OrderDetailModal({
             )}
           </div>
 
+          {showDeliveryConfirmation && (deliveryConfirmationLoading || deliveryConfirmationError || visibleDeliveryConfirmation) && (
+            <div className="order-detail-section" style={{
+              background: "var(--surface)",
+              padding: 16,
+              marginBottom: 18,
+            }}>
+              <p style={{
+                fontSize: 11, fontWeight: 700, color: "#1E40AF",
+                textTransform: "uppercase", letterSpacing: "0.07em",
+                margin: "0 0 12px 0", display: "flex", alignItems: "center", gap: 6,
+              }}><Icons.CheckCircle /> Confirmación de entrega</p>
+              {deliveryConfirmationLoading ? (
+                <p role="status" style={{ fontSize: 13, color: "var(--text-sub)", margin: 0 }}>Cargando confirmación de entrega…</p>
+              ) : deliveryConfirmationError ? (
+                <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <p style={{ fontSize: 13, color: "var(--text-sub)", margin: 0 }}>{deliveryConfirmationError}</p>
+                  <button
+                    type="button"
+                    className="ps-btn-secondary"
+                    onClick={() => setDeliveryConfirmationRefreshKey((current) => current + 1)}
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              ) : deliveryConfirmation ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div>
+                    <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>ENTREGÓ</p>
+                    <p style={{ fontSize: 13, color: "var(--text)", margin: 0, fontWeight: 600 }}>{deliveryConfirmation.executor_name}</p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>CONFIRMADA</p>
+                    <p style={{ fontSize: 13, color: "var(--text)", margin: 0, fontWeight: 600 }}>
+                      {new Date(deliveryConfirmation.confirmed_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" })}
+                    </p>
+                  </div>
+                  {deliveryConfirmation.delivery_comment && (
+                    <div>
+                      <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>COMENTARIO DE ENTREGA</p>
+                      <p style={{ fontSize: 13, color: "var(--text)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{deliveryConfirmation.delivery_comment}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p style={{ fontSize: 11, color: "var(--pink)", margin: "0 0 3px 0", fontWeight: 600 }}>COMENTARIO DE ENTREGA (REGISTRO HISTÓRICO)</p>
+                  <p style={{ fontSize: 13, color: "var(--text)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{legacyDeliveryNote}</p>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="order-detail-section" style={{
             background: "var(--surface)",
             padding: 16,  
@@ -518,7 +516,7 @@ export default function OrderDetailModal({
               <Icons.ExternalLink /> Link de Seguimiento
             </p>
 
-            <TrackingLinkField orderId={order.id} />
+            <OrderTrackingLink orderId={order.id} trackingToken={order.tracking_token} />
           </div>
         </div>
       </div>

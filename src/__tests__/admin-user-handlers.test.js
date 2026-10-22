@@ -384,6 +384,11 @@ const makeAdminOrdersClient = ({
     eq: vi.fn(() => orderBuilder),
     or: vi.fn(() => orderBuilder),
     gte: vi.fn(() => orderBuilder),
+    gt: vi.fn(() => orderBuilder),
+    lt: vi.fn(() => orderBuilder),
+    not: vi.fn(() => orderBuilder),
+    is: vi.fn(() => orderBuilder),
+    neq: vi.fn(() => orderBuilder),
     order: vi.fn(() => ({ range: orderRange })),
   };
 
@@ -1021,7 +1026,14 @@ describe("handleAdminListOrders", () => {
     ]);
     expect(result.body.total).toBe(1);
     expect(result.body.pageSize).toBe(50);
-    expect(currentClient.orderSelect).toHaveBeenCalledWith("*", { count: "exact" });
+    const [selectedFields, selectOptions] = currentClient.orderSelect.mock.calls[0];
+    expect(selectedFields).not.toBe("*");
+    expect(selectedFields).toContain("id");
+    expect(selectedFields).toContain("client_name");
+    expect(selectedFields).toContain("status");
+    expect(selectedFields).toContain("payment_status");
+    expect(selectedFields).toContain("is_archived_admin");
+    expect(selectOptions).toEqual({ count: "exact" });
     expect(currentClient.orderBuilder.order).toHaveBeenCalledWith("created_at", { ascending: false });
     expect(currentClient.orderRange).toHaveBeenCalledWith(0, 49);
   });
@@ -1094,6 +1106,29 @@ describe("handleAdminListOrders", () => {
     expect(currentClient.orderBuilder.or).toHaveBeenCalledWith(expect.stringContaining("seller_id.eq.owner-1"));
     expect(currentClient.orderBuilder.or).toHaveBeenCalledWith(expect.stringContaining("client_name.ilike.%JP MORGAN%"));
     expect(currentClient.orderRange).toHaveBeenCalledWith(10, 19);
+  });
+
+  it("filters overdue orders using Asuncion's calendar day before ordering and pagination", async () => {
+    currentClient = makeAdminOrdersClient();
+
+    const result = await handleAdminListOrders({ operational: "overdue" }, {
+      ...env,
+      now: "2026-06-11T02:30:00.000Z",
+    });
+
+    expect(result.status).toBe(200);
+    expect(currentClient.orderBuilder.not).toHaveBeenCalledWith("delivery_date", "is", null);
+    expect(currentClient.orderBuilder.lt).toHaveBeenCalledWith("delivery_date", "2026-06-10");
+    expect(currentClient.orderBuilder.not).toHaveBeenCalledWith("status", "in", "(in_Delivered,cancelled)");
+    expect(currentClient.orderBuilder.lt.mock.invocationCallOrder[0]).toBeLessThan(
+      currentClient.orderBuilder.order.mock.invocationCallOrder[0],
+    );
+    expect(currentClient.orderBuilder.not.mock.invocationCallOrder[1]).toBeLessThan(
+      currentClient.orderBuilder.order.mock.invocationCallOrder[0],
+    );
+    expect(currentClient.orderBuilder.order.mock.invocationCallOrder[0]).toBeLessThan(
+      currentClient.orderRange.mock.invocationCallOrder[0],
+    );
   });
 });
 

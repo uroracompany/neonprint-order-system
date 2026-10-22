@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const authMock = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
@@ -55,10 +55,15 @@ const renderLobby = () => render(
 
 let Lobby;
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 beforeEach(async () => {
   vi.clearAllMocks();
   authContextMock.user = null;
   authContextMock.profile = undefined;
+  isAuthSessionPersistenceEnabledMock.mockReturnValue(false);
   mockProfile();
   authMock.signInWithPassword.mockResolvedValue({
     data: { user: { id: "delivery-user" } },
@@ -191,6 +196,7 @@ describe("secure login", () => {
   });
 
   it("cleans only the new local session when profile validation fails after login", async () => {
+    isAuthSessionPersistenceEnabledMock.mockReturnValue(true);
     authMock.signInWithPassword.mockResolvedValue({
       data: { user: { id: "delivery-user" }, session: { access_token: "new-session-token" } },
       error: null,
@@ -211,6 +217,26 @@ describe("secure login", () => {
 
     expect(await screen.findByText(/no pudimos validar tu perfil/i)).toBeInTheDocument();
     expect(signOutAuthMock).toHaveBeenCalledWith({ scope: "local" });
+    expect(setAuthSessionPersistenceMock).toHaveBeenLastCalledWith(true);
+  });
+
+  it("restores prior persistence after rejecting an inactive account", async () => {
+    isAuthSessionPersistenceEnabledMock.mockReturnValue(true);
+    mockProfile({ role: "delivery", employment_status: false });
+    authMock.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "inactive-user" }, session: { access_token: "candidate-token" } },
+      error: null,
+    });
+
+    const user = userEvent.setup();
+    renderLobby();
+    await user.type(screen.getByLabelText("Correo electrónico"), "inactive@example.com");
+    await user.type(screen.getByLabelText("Contraseña"), "SecurePass123");
+    await user.click(screen.getByRole("button", { name: /acceder al sistema/i }));
+
+    expect(await screen.findByText(/cuenta está desactivada/i)).toBeInTheDocument();
+    expect(signOutAuthMock).toHaveBeenCalledWith({ scope: "local" });
+    expect(setAuthSessionPersistenceMock).toHaveBeenLastCalledWith(true);
   });
 
   it("requires MFA verification for admin profiles", async () => {
@@ -237,7 +263,55 @@ describe("secure login", () => {
         factorId: "factor-1",
         code: "123456",
       });
+      expect(screen.getByText(/acceso concedido/i)).toBeInTheDocument();
     });
+    const mfaCallIndex = authMock.mfa.challengeAndVerify.mock.invocationCallOrder[0];
+    const persistenceCallOrder = setAuthSessionPersistenceMock.mock.invocationCallOrder;
+    const persistenceCallIndex = persistenceCallOrder[persistenceCallOrder.length - 1];
+    expect(persistenceCallIndex).toBeGreaterThan(mfaCallIndex);
+    expect(setAuthSessionPersistenceMock).toHaveBeenLastCalledWith(true);
+  });
+
+  it("cleans up an admin candidate and restores persistence when MFA fails", async () => {
+    isAuthSessionPersistenceEnabledMock.mockReturnValue(true);
+    mockProfile({ role: "admin", employment_status: true });
+    authMock.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "admin-user" }, session: { access_token: "candidate-token" } },
+      error: null,
+    });
+    authMock.mfa.listFactors.mockResolvedValue({
+      data: { totp: [{ id: "factor-1", status: "verified" }] },
+      error: null,
+    });
+    authMock.mfa.challengeAndVerify.mockResolvedValue({ error: new Error("invalid code") });
+    vi.spyOn(window, "prompt").mockReturnValue("123456");
+
+    const user = userEvent.setup();
+    renderLobby();
+    await user.type(screen.getByLabelText("Correo electrónico"), "admin@example.com");
+    await user.type(screen.getByLabelText("Contraseña"), "SecurePass123");
+    await user.click(screen.getByRole("button", { name: /acceder al sistema/i }));
+
+    expect(await screen.findByText(/verifica el segundo factor para continuar/i)).toBeInTheDocument();
+    expect(signOutAuthMock).toHaveBeenCalledWith({ scope: "local" });
+    expect(setAuthSessionPersistenceMock).toHaveBeenLastCalledWith(true);
+  });
+
+  it("promotes a normal session only after profile validation succeeds", async () => {
+    authMock.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "delivery-user" }, session: { access_token: "candidate-token" } },
+      error: null,
+    });
+
+    const user = userEvent.setup();
+    renderLobby();
+    await user.type(screen.getByLabelText("Correo electrónico"), "delivery@example.com");
+    await user.type(screen.getByLabelText("Contraseña"), "SecurePass123");
+    await user.click(screen.getByRole("button", { name: /acceder al sistema/i }));
+
+    await waitFor(() => expect(screen.getByText(/acceso concedido/i)).toBeInTheDocument());
+    expect(setAuthSessionPersistenceMock).toHaveBeenNthCalledWith(1, false);
+    expect(setAuthSessionPersistenceMock).toHaveBeenLastCalledWith(true);
   });
 
   it("allows admin login when no verified MFA factor is enrolled", async () => {

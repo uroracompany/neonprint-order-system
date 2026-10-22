@@ -5,7 +5,7 @@ import { ClientSelect } from "../ui/ClientCombobox";
 import FileUploadZone from "../ui/FileUploadZone";
 import FileCard from "../FileCard";
 import { normalizeAssetUrls, serializeReferenceImages } from "../../utils/orderAssets";
-import { buildProductionFileRows } from "../../utils/production";
+import { buildProductionFileRows, isProductionFileDetailsComplete } from "../../utils/production";
 import {
   buildStorageSafeFileName,
   formatFileSize,
@@ -21,6 +21,7 @@ import { formatPhone, getSelectedClientOrderFields } from "../../utils/clients";
 import { getMinimumDeliveryDate, isPastDeliveryDateChange } from "../../utils/deliveryDate";
 import { adminApiFetch } from "../../utils/adminApi";
 import { resolveOrderAssetUrl } from "../../utils/fileAccess";
+import { getAcceptForMode, validateFilesForMode } from "../../utils/fileValidation";
 import { SecureImage } from "../ui/SecureImage";
 import {
   Field,
@@ -389,6 +390,8 @@ export default function EditOrderModal({
       setError("Este archivo ya está en proceso y no puede eliminarse en esta etapa.");
       return;
     }
+    setDetailsExistingFileIndex(null);
+    setDetailsFileIndex(null);
     void persistAssetRemoval({
       urls: [url],
       nextFiles: existingFiles.filter(file => file !== url),
@@ -413,7 +416,14 @@ export default function EditOrderModal({
       setError("Este archivo ya está en proceso y no puede reemplazarse en esta etapa.");
       return;
     }
+    const validation = validateFilesForMode([file], { mode: "attachment", multiple: false });
+    if (!validation.valid) {
+      setError(validation.error);
+      return;
+    }
     setExistingFileReplacements((previous) => ({ ...previous, [index]: file }));
+    setDetailsFileIndex(null);
+    setDetailsExistingFileIndex(index);
     setError("");
   };
 
@@ -444,6 +454,9 @@ export default function EditOrderModal({
       ...previous,
       ...files.map((_, offset) => firstNewFileIndex + offset),
     ]);
+    setPendingDetailsIndices(previous => previous.filter((index) => index !== firstNewFileIndex));
+    setDetailsExistingFileIndex(null);
+    setDetailsFileIndex(firstNewFileIndex);
     if (filesOrEvent?.target) filesOrEvent.target.value = "";
   };
 
@@ -853,7 +866,7 @@ export default function EditOrderModal({
             ref={existingFileReplaceInputRef}
             type="file"
             className="sr-only"
-            accept=".pdf,.ai,.png,.jpg,.jpeg,.webp,.svg"
+            accept={getAcceptForMode("attachment")}
             onChange={handleExistingFileReplaceInput}
             aria-label="Seleccionar archivo de reemplazo"
           />
@@ -861,15 +874,25 @@ export default function EditOrderModal({
       )}
       {newFiles.length > 0 && (
         <div className="ps-files-list" style={{ marginBottom: 12 }}>
-          {newFiles.map((file, index) => (
+          {newFiles.map((file, index) => {
+            const isComplete = isProductionFileDetailsComplete({
+              publicLabel: newFileLabels[index],
+              areaCode: newFileAreas[index],
+              materialNames: newFileMaterials[index],
+              terminationName: newFileTerminations[index],
+            });
+            const actionLabel = isComplete ? "Editar" : "Detalles";
+            const actionName = `${actionLabel} ${isComplete ? "detalles de" : "de"} ${file.name}`;
+            return (
             <div key={`${file.name}-${index}`} className={missingLabelIndices.includes(index) || missingAreaIndices.includes(index) ? "ps-file-missing" : ""}>
               <FileCard
                 name={file.name}
                 secondaryText={formatFileSize(file.size)}
                 detailText={newFileLabels[index] ? `Seguimiento: ${newFileLabels[index]}` : "Detalles pendientes"}
                 actions={[{
-                  title: `Ver detalles de ${file.name}`,
-                  label: "Detalles",
+                  title: actionName,
+                  ariaLabel: actionName,
+                  label: actionLabel,
                   icon: <Icons.Edit />,
                   attention: pendingDetailsIndices.includes(index),
                   onClick: () => {
@@ -880,7 +903,8 @@ export default function EditOrderModal({
                 onRemove={() => handleRemoveNewFile(index)}
               />
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </>
@@ -1129,8 +1153,8 @@ export default function EditOrderModal({
     </Modal>
     <ProductionFileDetailsModal
       open={Boolean(selectedDetailsFile || selectedExistingDetailsFile)}
-      fileName={selectedDetailsFile?.name || selectedExistingDetailsFile?.filename}
-      fileKey={selectedDetailsFile ? `edit-new-${detailsFileIndex}-${selectedDetailsFile.name}` : selectedExistingDetailsFile ? `edit-existing-${detailsExistingFileIndex}-${selectedExistingDetailsFile.id}` : ""}
+      fileName={selectedDetailsFile?.name || existingFileReplacements[detailsExistingFileIndex]?.name || selectedExistingDetailsFile?.filename}
+      fileKey={selectedDetailsFile ? `edit-new-${detailsFileIndex}-${selectedDetailsFile.name}` : selectedExistingDetailsFile ? `edit-existing-${detailsExistingFileIndex}-${selectedExistingDetailsFile.id}-${existingFileReplacements[detailsExistingFileIndex]?.name || ""}` : ""}
       value={selectedDetailsFile ? {
         publicLabel: newFileLabels[detailsFileIndex] || "",
         areaCode: newFileAreas[detailsFileIndex] || "",

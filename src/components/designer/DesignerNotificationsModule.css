@@ -737,6 +737,37 @@
   outline-offset: 2px;
 }
 
+.dnm-sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dnm-skeleton-list { background: #fff; }
+.dnm-skeleton-row { display: flex; align-items: flex-start; gap: 12px; padding: 15px 18px; border-bottom: 1px solid #dbe3ef; }
+.dnm-skeleton-icon,
+.dnm-skeleton-line,
+.dnm-skeleton-action { display: block; background: linear-gradient(90deg, #e9eef6 25%, #f8fafc 50%, #e9eef6 75%); background-size: 200% 100%; border-radius: 999px; animation: dnm-skeleton-shimmer 1.25s ease-in-out infinite; }
+.dnm-skeleton-icon { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 9px; }
+.dnm-skeleton-copy { display: grid; flex: 1; gap: 9px; padding-top: 2px; }
+.dnm-skeleton-line { height: 11px; }
+.dnm-skeleton-line--title { width: min(240px, 48%); height: 13px; }
+.dnm-skeleton-line--message { width: min(560px, 82%); }
+.dnm-skeleton-line--date { width: 120px; height: 9px; }
+.dnm-skeleton-action { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px; }
+@keyframes dnm-skeleton-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .dnm-skeleton-icon,
+  .dnm-skeleton-line,
+  .dnm-skeleton-action { animation: none; background-position: 50% 0; }
+}
+
 .dnm-icon-btn.mark-read {
   border-color: #bbf7d0;
   color: #166534;

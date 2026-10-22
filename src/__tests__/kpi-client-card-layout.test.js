@@ -9,8 +9,14 @@ const styles = readProjectFile('src/css-components/page-kpi.css')
 
 describe('tarjetas superiores de Clientes KPI', () => {
   it('ancla los filtros en el extremo superior derecho de cada tarjeta', () => {
-    expect(styles).toContain('.kpi-client-overview .kpi-hero-card {\n  position: relative;')
-    expect(styles).toContain('.kpi-client-overview .kpi-hero-filter {\n  position: absolute;\n  right: 18px;\n  top: 18px;')
+    expect(styles).toContain('.kpi-client-overview .kpi-hero-grid {')
+    const filterBlock = styles.match(/\.kpi-client-overview \.kpi-hero-filter\s*\{([^}]*)\}/)
+
+    expect(filterBlock).not.toBeNull()
+    expect(filterBlock[1]).toMatch(/(?:^|\s)position:\s*absolute\s*;/)
+    expect(filterBlock[1]).toMatch(/(?:^|\s)right:\s*18px\s*;/)
+    expect(filterBlock[1]).toMatch(/(?:^|\s)top:\s*18px\s*;/)
+    expect(styles).toContain('.kpi-client-overview .kpi-hero-filter-select {')
   })
 
   it('no muestra subtítulos debajo del resultado de las tarjetas', () => {

@@ -20,6 +20,7 @@ export function AuthProvider({ children }) {
   const activeRef = useRef(true);
   const providerLifecycleRef = useRef(0);
   const authEventSequenceRef = useRef(0);
+  const authEventProcessingRef = useRef(Promise.resolve());
   const userIdRef = useRef(null);
   const sessionGenerationRef = useRef(0);
   const mfaRequestGenerationRef = useRef(0);
@@ -237,13 +238,15 @@ export function AuthProvider({ children }) {
         // pending is authoritative. Applying this older snapshot could erase
         // a session that was just created and leave ProtectedRoute loading
         // until the browser is reloaded.
-        if (authEventSequenceRef.current !== authEventSequenceAtStart) return;
+        if (authEventSequenceRef.current !== authEventSequenceAtStart) {
+          await authEventProcessingRef.current;
+          return;
+        }
         await applySession(initialSession, "INITIAL_SESSION", lifecycle);
       } catch (error) {
-        if (
-          providerLifecycleRef.current === lifecycle
-          && authEventSequenceRef.current === authEventSequenceAtStart
-        ) {
+        if (authEventSequenceRef.current !== authEventSequenceAtStart) {
+          await authEventProcessingRef.current;
+        } else if (providerLifecycleRef.current === lifecycle) {
           clearAuthState({ notice: getLoginErrorCode(error), error });
         }
       } finally {
@@ -257,7 +260,13 @@ export function AuthProvider({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       authEventSequenceRef.current += 1;
-      void applySession(nextSession, event, lifecycle).catch(() => undefined);
+      // Supabase holds an internal auth lock while this callback runs. Defer
+      // profile/MFA reads until the callback has returned to avoid deadlocking
+      // the session event and leaving the lobby on "Redirigiendo..." forever.
+      authEventProcessingRef.current = authEventProcessingRef.current
+        .then(() => new Promise((resolve) => globalThis.setTimeout(resolve, 0)))
+        .then(() => applySession(nextSession, event, lifecycle))
+        .catch(() => undefined);
     });
 
     initialize();

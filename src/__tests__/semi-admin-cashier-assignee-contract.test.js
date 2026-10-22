@@ -131,10 +131,20 @@ describe("Semi-Admin Cotización solo acepta perfiles Caja", () => {
   });
 
   it("preflights role, employment and deleted status in the HTTP handler before quote writes", () => {
-    expect(handler).toContain(".select(\"id,role,employment_status,deleted_at\")");
+    const normalizedHandler = handler.replace(/\s+/g, " ");
+    const sendToQuoteStart = normalizedHandler.indexOf("async function handleSendToQuote(");
+    const nextHandlerStart = normalizedHandler.indexOf("async function ", sendToQuoteStart + 1);
+    const sendToQuote = normalizedHandler.slice(sendToQuoteStart, nextHandlerStart);
+    const assigneeCheck = sendToQuote.indexOf("assertAssigneeRole(");
+    const writeCommand = sendToQuote.indexOf("callSellerOrderCommand(");
+
+    expect(normalizedHandler).toContain('.select("id,role,employment_status,deleted_at")');
+    expect(normalizedHandler).toContain("profile.employment_status === false");
     expect(handler).toContain("profile.deleted_at != null");
     expect(handler).toContain('payload.quote_user_id || payload.quoteUserId');
-    expect(handler).toContain('"quote",\n    "un usuario de caja"');
+    expect(sendToQuote).toContain('"quote", "un usuario de caja", env, { requireNotDeleted: true }');
+    expect(assigneeCheck).toBeGreaterThanOrEqual(0);
+    expect(writeCommand).toBeGreaterThan(assigneeCheck);
     expect(handler).toContain('if (normalizeKey(payload.stage) !== "quote") return null;');
   });
 });

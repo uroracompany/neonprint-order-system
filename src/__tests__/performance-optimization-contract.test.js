@@ -47,7 +47,7 @@ describe("performance optimization contracts", () => {
     expect(sharedOrderSelect).toContain("export const PRODUCTION_ORDER_SELECT");
     expect(sharedOrderSelect).toContain("export const QUOTE_ORDER_SELECT");
     expect(production).toContain(".select(PRODUCTION_ORDER_SELECT)");
-    expect(delivery).toContain(".select(OPERATIONAL_ORDER_COLUMNS)");
+    expect(delivery).toContain(".select(DELIVERY_ORDER_SELECT)");
     expect(quote).toContain(".select(QUOTE_ORDER_SELECT)");
     expect(quote).not.toContain("fallbackData");
     expect(quote).not.toContain('.select("*, order_production_files(*)")');
