@@ -8,30 +8,70 @@ export const AUTH_SESSION_STORAGE_KEY =
 
 const AUTH_STORAGE_KEY = "np-auth-session";
 const AUTH_SESSION_MODE_KEY = `${AUTH_SESSION_STORAGE_KEY}:session-mode`;
+const temporaryAuthValues = new Map();
+const temporaryMemoryStorage = {
+  getItem(key) {
+    return temporaryAuthValues.get(String(key)) ?? null;
+  },
+  setItem(key, value) {
+    temporaryAuthValues.set(String(key), String(value));
+  },
+  removeItem(key) {
+    temporaryAuthValues.delete(String(key));
+  },
+};
+let sessionOnlyModeActive = false;
+let sessionOnlyStorage = null;
 
-const hasBrowserStorage = () => typeof window !== "undefined" && window.localStorage && window.sessionStorage;
+const getBrowserStorage = (name) => {
+  try {
+    if (typeof window === "undefined") return null;
+    return window[name] || null;
+  } catch {
+    return null;
+  }
+};
+
+const getLocalStorage = () => getBrowserStorage("localStorage");
+const getSessionStorage = () => getBrowserStorage("sessionStorage");
 
 const readRememberPreference = () => {
-  if (!hasBrowserStorage()) return false;
+  const localStorage = getLocalStorage();
+  const sessionStorage = getSessionStorage();
+  if (!localStorage) return false;
   // A session-only choice belongs to this browser tab. It must not overwrite
   // the shared remember preference used by other tabs.
-  if (window.sessionStorage.getItem(AUTH_SESSION_MODE_KEY) === "1") return false;
-  return window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY) === "1";
+  if (sessionStorage && getAuthItem(sessionStorage, AUTH_SESSION_MODE_KEY) === "1") return false;
+  return getAuthItem(localStorage, AUTH_SESSION_STORAGE_KEY) === "1";
 };
 
 const removeAuthItem = (storage, key) => {
   try {
     storage?.removeItem?.(key);
+    return true;
   } catch {
     // Storage can be blocked in private or hardened browser modes.
+    return false;
   }
 };
 
 const setAuthItem = (storage, key, value) => {
   try {
     storage?.setItem?.(key, value);
+    return Boolean(storage);
   } catch {
     // Supabase will keep the in-memory session if persistent storage fails.
+    return false;
+  }
+};
+
+const selectTemporarySessionStorage = () => {
+  const sessionStorage = getSessionStorage();
+  temporaryAuthValues.clear();
+  if (setAuthItem(sessionStorage, AUTH_SESSION_MODE_KEY, "1")) {
+    sessionOnlyStorage = sessionStorage;
+  } else {
+    sessionOnlyStorage = temporaryMemoryStorage;
   }
 };
 
@@ -58,13 +98,18 @@ const clearAuthKeysFrom = (storage) => {
 };
 
 const getSelectedStorage = () => {
-  if (!hasBrowserStorage()) return null;
-  return readRememberPreference() ? window.localStorage : window.sessionStorage;
+  if (sessionOnlyModeActive) return sessionOnlyStorage || temporaryMemoryStorage;
+  const localStorage = getLocalStorage();
+  const sessionStorage = getSessionStorage();
+  if (readRememberPreference()) return localStorage || sessionStorage;
+  return sessionStorage || localStorage;
 };
 
 const getFallbackStorage = () => {
-  if (!hasBrowserStorage()) return null;
-  return readRememberPreference() ? window.sessionStorage : window.localStorage;
+  const localStorage = getLocalStorage();
+  const sessionStorage = getSessionStorage();
+  if (readRememberPreference()) return sessionStorage || localStorage;
+  return localStorage || sessionStorage;
 };
 
 /**
@@ -83,12 +128,25 @@ const authBrowserLock = async (name, acquireTimeout, fn) => {
     ? globalThis.setTimeout(() => controller.abort(), acquireTimeout)
     : null;
 
+  let callbackStarted = false;
+  const run = async () => {
+    callbackStarted = true;
+    return fn();
+  };
+
   try {
     const options = controller
       ? { mode: "exclusive", signal: controller.signal }
       : { mode: "exclusive" };
 
-    return await lockManager.request(name, options, async () => fn());
+    try {
+      return await lockManager.request(name, options, run);
+    } catch (error) {
+      // Recover only a request that timed out while waiting for the lock.
+      // An AbortError from the callback itself must remain the caller's error.
+      if (!controller || callbackStarted || error?.name !== "AbortError") throw error;
+      return await lockManager.request(name, { mode: "exclusive", steal: true }, run);
+    }
   } finally {
     if (timeoutId !== null) globalThis.clearTimeout(timeoutId);
   }
@@ -96,6 +154,7 @@ const authBrowserLock = async (name, acquireTimeout, fn) => {
 
 export const authSessionStorage = {
   getItem(key) {
+    if (sessionOnlyModeActive) return getAuthItem(sessionOnlyStorage || temporaryMemoryStorage, key);
     const selectedValue = getAuthItem(getSelectedStorage(), key);
     if (selectedValue) return selectedValue;
 
@@ -106,11 +165,19 @@ export const authSessionStorage = {
     return null;
   },
   setItem(key, value) {
+    if (sessionOnlyModeActive) {
+      setAuthItem(sessionOnlyStorage || temporaryMemoryStorage, key, value);
+      return;
+    }
     // Do not delete the fallback store here. It may belong to another tab
     // with a different persistence choice and must survive local cleanup.
     setAuthItem(getSelectedStorage(), key, value);
   },
   removeItem(key) {
+    if (sessionOnlyModeActive) {
+      removeAuthItem(sessionOnlyStorage || temporaryMemoryStorage, key);
+      return;
+    }
     // Remove only the storage selected for this client session. A local signout
     // must not erase a separate session held by another tab/storage mode.
     removeAuthItem(getSelectedStorage(), key);
@@ -118,27 +185,135 @@ export const authSessionStorage = {
 };
 
 export function isAuthSessionPersistenceEnabled() {
-  return readRememberPreference();
+  return !sessionOnlyModeActive && readRememberPreference();
 }
 
 export function setAuthSessionPersistence(remember) {
-  if (!hasBrowserStorage()) return;
+  const localStorage = getLocalStorage();
+  const wasSessionOnly = sessionOnlyModeActive;
+  let activeTemporaryStorage = sessionOnlyStorage || temporaryMemoryStorage;
 
   if (remember) {
-    window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, "1");
-    removeAuthItem(window.sessionStorage, AUTH_SESSION_MODE_KEY);
+    // Supabase writes the active session to sessionStorage during login. Copy
+    // that exact serialized value from the active temporary store before
+    // making localStorage authoritative.
+    let activeSession;
+    if (wasSessionOnly) {
+      try {
+        activeSession = activeTemporaryStorage.getItem(AUTH_STORAGE_KEY);
+      } catch {
+        return;
+      }
+    } else {
+      const sessionStorage = getSessionStorage();
+      if (!localStorage || !sessionStorage) {
+        setAuthItem(sessionStorage, AUTH_SESSION_MODE_KEY, "1");
+        return;
+      }
+      try {
+        activeSession = sessionStorage.getItem(AUTH_STORAGE_KEY);
+      } catch {
+        setAuthItem(sessionStorage, AUTH_SESSION_MODE_KEY, "1");
+        return;
+      }
+    }
+    if (activeSession) {
+      if (!localStorage) return;
+      if (!wasSessionOnly) {
+        sessionOnlyModeActive = true;
+        selectTemporarySessionStorage();
+        setAuthItem(sessionOnlyStorage, AUTH_STORAGE_KEY, activeSession);
+        activeTemporaryStorage = sessionOnlyStorage;
+      } else if (activeTemporaryStorage !== temporaryMemoryStorage
+        && !setAuthItem(activeTemporaryStorage, AUTH_SESSION_MODE_KEY, "1")) {
+        temporaryAuthValues.clear();
+        temporaryAuthValues.set(AUTH_STORAGE_KEY, activeSession);
+        sessionOnlyStorage = temporaryMemoryStorage;
+        activeTemporaryStorage = temporaryMemoryStorage;
+      }
+      let previousLocalSession = null;
+      let hadPreviousLocalSession = false;
+      let localSessionRead = false;
+      let previousPreference = null;
+      let preferenceRead = false;
+      let candidateWritten = false;
+      try {
+        previousLocalSession = localStorage.getItem(AUTH_STORAGE_KEY);
+        localSessionRead = true;
+        hadPreviousLocalSession = previousLocalSession !== null;
+        previousPreference = localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+        preferenceRead = true;
+        localStorage.setItem(AUTH_STORAGE_KEY, activeSession);
+        candidateWritten = true;
+        localStorage.setItem(AUTH_SESSION_STORAGE_KEY, "1");
+      } catch {
+        // Roll back a partially copied candidate when possible. The in-memory
+        // mode remains active so this client continues reading temporary data.
+        if (localSessionRead && candidateWritten) {
+          try {
+            if (hadPreviousLocalSession) localStorage.setItem(AUTH_STORAGE_KEY, previousLocalSession);
+            else localStorage.removeItem(AUTH_STORAGE_KEY);
+          } catch {
+            // Storage may reject rollback too; never prevent the current login.
+          }
+        }
+        if (preferenceRead) {
+          try {
+            if (previousPreference === null) localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+            else localStorage.setItem(AUTH_SESSION_STORAGE_KEY, previousPreference);
+          } catch {
+            // Keep this tab scoped even if preference rollback is also blocked.
+          }
+        }
+        sessionOnlyModeActive = true;
+        return;
+      }
+      if (activeTemporaryStorage === temporaryMemoryStorage) {
+        temporaryAuthValues.clear();
+        sessionOnlyModeActive = false;
+        sessionOnlyStorage = null;
+      } else if (removeAuthItem(activeTemporaryStorage, AUTH_SESSION_MODE_KEY)) {
+        removeAuthItem(activeTemporaryStorage, AUTH_STORAGE_KEY);
+        temporaryAuthValues.clear();
+        sessionOnlyModeActive = false;
+        sessionOnlyStorage = null;
+      }
+      return;
+    }
+
+    if (!localStorage) return;
+    try {
+      localStorage.setItem(AUTH_SESSION_STORAGE_KEY, "1");
+      if (wasSessionOnly && activeTemporaryStorage !== temporaryMemoryStorage) {
+        if (!removeAuthItem(activeTemporaryStorage, AUTH_SESSION_MODE_KEY)) return;
+      } else if (!wasSessionOnly) {
+        removeAuthItem(getSessionStorage(), AUTH_SESSION_MODE_KEY);
+      }
+      if (wasSessionOnly) {
+        temporaryAuthValues.clear();
+        sessionOnlyStorage = null;
+      }
+      sessionOnlyModeActive = false;
+    } catch {
+      sessionOnlyModeActive = wasSessionOnly;
+    }
     return;
   }
 
-  setAuthItem(window.sessionStorage, AUTH_SESSION_MODE_KEY, "1");
+  sessionOnlyModeActive = true;
+  selectTemporarySessionStorage();
 }
 
 export function clearAuthSessionStorage() {
-  if (!hasBrowserStorage()) return;
-  clearAuthKeysFrom(window.localStorage);
-  clearAuthKeysFrom(window.sessionStorage);
-  window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
-  removeAuthItem(window.sessionStorage, AUTH_SESSION_MODE_KEY);
+  const localStorage = getLocalStorage();
+  const sessionStorage = getSessionStorage();
+  clearAuthKeysFrom(localStorage);
+  clearAuthKeysFrom(sessionStorage);
+  removeAuthItem(localStorage, AUTH_SESSION_STORAGE_KEY);
+  removeAuthItem(sessionStorage, AUTH_SESSION_MODE_KEY);
+  temporaryAuthValues.clear();
+  sessionOnlyModeActive = false;
+  sessionOnlyStorage = null;
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

@@ -5,7 +5,12 @@ import AdminAdvancedSettings from "../components/orders/AdminAdvancedSettings";
 import AdminManageFilesModal from "../components/orders/AdminManageFilesModal";
 
 const { rpc, from } = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
+const { uploadOrderAsset } = vi.hoisted(() => ({ uploadOrderAsset: vi.fn() }));
 vi.mock("../../supabaseClient", () => ({ supabase: { rpc, from } }));
+vi.mock("../utils/uploadOrderAsset", async (importOriginal) => ({
+  ...(await importOriginal()),
+  uploadOrderAsset,
+}));
 
 const sampleOrder = {
   id: "abc12345",
@@ -67,6 +72,7 @@ describe("AdminAdvancedSettings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDataSources();
+    uploadOrderAsset.mockResolvedValue("https://assets.example.test/new-file.pdf");
     rpc.mockResolvedValue({ data: { design_type: "EXTERNAL_DESING", actions: [] }, error: null });
   });
 
@@ -271,7 +277,7 @@ describe("AdminManageFilesModal", () => {
     expect(await screen.findByText("DTF")).toBeInTheDocument();
   }, 15000);
 
-  it("shows an add-file button and form inside manage_files", async () => {
+  it("shows an add-file form that collects production details through the shared modal", async () => {
     mockDataSources({
       files: [{ id: "file-1", public_label: "Frente", status: "pending", production_area_code: "digital", assigned_to: null, updated_at: "file-server-1" }],
       areas: [{ code: "digital", label: "Digital", producer_role: "production" }],
@@ -284,10 +290,58 @@ describe("AdminManageFilesModal", () => {
     await userEvent.setup().click(addBtn);
 
     expect(screen.getByLabelText("Archivo")).toBeInTheDocument();
-    expect(screen.getByLabelText("Etiqueta")).toBeInTheDocument();
-    expect(screen.getByLabelText("Área de producción")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Etiqueta")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Área de producción")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Anadir archivo$/i })).toBeInTheDocument();
   });
+
+  it("opens details for a valid file, preserves them on close, and uploads only on Add file", async () => {
+    mockDataSources({
+      files: [],
+      areas: [{ code: "digital", label: "Digital", producer_role: "production" }],
+      materials: [{ name: "Lona", production_area_code: "digital" }],
+      terminations: [{ name: "Mate", production_area_code: "digital" }],
+    });
+    const user = userEvent.setup({ applyAccept: false });
+    render(<AdminManageFilesModal open order={editableExternalDesignOrder} profiles={[]} onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("button", { name: /Anadir archivo/i }));
+    const fileInput = screen.getByLabelText("Archivo");
+    await user.upload(fileInput, new File(["bad"], "script.exe", { type: "application/octet-stream" }));
+    expect(await screen.findByText(/no es un adjunto permitido/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Detalles de Archivo" })).not.toBeInTheDocument();
+
+    const file = new File(["pdf"], "arte.pdf", { type: "application/pdf" });
+    await user.upload(fileInput, file);
+    expect(await screen.findByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
+    expect(uploadOrderAsset).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalledWith("admin_add_production_file_with_specifications", expect.anything());
+
+    await user.type(screen.getByLabelText("Nombre visible en seguimiento"), "Arte final");
+    await user.selectOptions(screen.getByLabelText("Área de producción"), "digital");
+    await user.click(screen.getByRole("combobox", { name: "Materiales" }));
+    await user.click(screen.getByRole("option", { name: "Lona" }));
+    await user.click(screen.getByRole("button", { name: "Terminación" }));
+    await user.click(screen.getByRole("option", { name: "Mate" }));
+    await user.click(screen.getByRole("button", { name: "Guardar Detalles" }));
+
+    expect(screen.getByText("Arte final · arte.pdf")).toBeInTheDocument();
+    expect(uploadOrderAsset).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Editar detalles" }));
+    expect(screen.getByLabelText("Nombre visible en seguimiento")).toHaveValue("Arte final");
+    await user.click(screen.getByRole("button", { name: "Cerrar modal" }));
+
+    rpc.mockImplementation((name) => name === "admin_add_production_file_with_specifications"
+      ? Promise.resolve({ data: { order_updated_at: "order-server-2" }, error: null })
+      : Promise.resolve({ data: null, error: null }));
+    await user.click(screen.getByRole("button", { name: /Anadir archivo$/i }));
+    await waitFor(() => expect(uploadOrderAsset).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenCalledWith("admin_add_production_file_with_specifications", expect.objectContaining({
+      p_public_label: "Arte final",
+      p_area_code: "digital",
+      p_material_names: ["Lona"],
+      p_termination_name: "Mate",
+    }));
+  }, 15000);
 
   it("shows a delete-file button on each file card", async () => {
     mockDataSources({

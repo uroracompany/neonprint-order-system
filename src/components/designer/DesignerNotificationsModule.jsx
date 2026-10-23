@@ -342,10 +342,17 @@ export default function DesignerNotificationsModule({
   const [actionsOpen, setActionsOpen] = useState(false);
   const [confirmation, setConfirmation] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [resolvedTabs, setResolvedTabs] = useState({ active: false, archived: false });
   const activeItems = useMemo(() => filterActiveNotifications(notifications), [notifications]);
   const archivedItems = useMemo(() => filterArchivedNotifications(archivedNotifications), [archivedNotifications]);
   const visibleItems = tab === "archived" ? archivedItems : activeItems;
   const isLoading = tab === "archived" ? archivedLoading : loading;
+  const hasResolvedTab = resolvedTabs[tab];
+  const showSkeleton = isLoading && !hasResolvedTab;
+  useEffect(() => {
+    if (isLoading) return;
+    setResolvedTabs((current) => current[tab] ? current : { ...current, [tab]: true });
+  }, [isLoading, tab]);
   const typeOptions = useMemo(() => {
     const options = new Map();
     [...activeItems, ...archivedItems].forEach((notification) => {
@@ -622,9 +629,14 @@ export default function DesignerNotificationsModule({
           </div>
         </div>
 
-        <div className="dnm-list">
-          {isLoading ? (
-            <div className="dnm-loading">Cargando notificaciones...</div>
+        <div className="dnm-list" aria-busy={showSkeleton}>
+          {showSkeleton ? (
+            <>
+              <span className="dnm-sr-only" role="status" aria-live="polite">Cargando notificaciones...</span>
+              <div className="dnm-skeleton-list" aria-hidden="true">
+                {Array.from({ length: 15 }, (_, index) => <div className="dnm-skeleton-row" key={index}><span className="dnm-skeleton-icon" /><div className="dnm-skeleton-copy"><span className="dnm-skeleton-line dnm-skeleton-line--title" /><span className="dnm-skeleton-line dnm-skeleton-line--message" /><span className="dnm-skeleton-line dnm-skeleton-line--date" /></div><span className="dnm-skeleton-action" /></div>)}
+              </div>
+            </>
           ) : filteredItems.length === 0 ? (
             <EmptyState archived={tab === "archived"} filtered={hasFilters} />
           ) : (

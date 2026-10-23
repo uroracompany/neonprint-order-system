@@ -59,7 +59,7 @@ const LoadingSession = () => (
 
       <TriSpinner size={48}/>
 
-      <div className="np-label">
+      <div className="np-label" role="status" aria-live="polite">
         Verificando sesión...
       </div>
     </div>

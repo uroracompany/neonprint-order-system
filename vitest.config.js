@@ -11,6 +11,7 @@ export default defineConfig({
     testTimeout: 15_000,
     exclude: [
       'node_modules/**',
+      '**/node_modules/**',
       'dist/**',
       '.opencode/deploy/**',
       '.opencode/runs/**',

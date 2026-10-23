@@ -210,7 +210,10 @@ describe("Seller visual contract with Admin clients", () => {
     expect(sellerPage).not.toContain("Cargando Ã³rdenes");
     expect(sellerPage).not.toContain("No hay Ã");
     expect(sellerPage).not.toContain("No hay Ã³rdenes");
-    expect(sellerPage).toContain("Cargando Ordenes...");
+    expect(sellerPage).toContain("Cargando órdenes...");
+    expect(sellerPage).toContain("<OrderTableSkeletonRows columns={4} rows={5} />");
+    expect(sellerPage).toContain("<OrderTableSkeletonRows columns={7} rows={SELLER_ORDER_PAGE_SIZE} />");
+    expect(sellerPage).not.toContain("Cargando Ordenes...");
     expect(sellerPage).toContain("No hay Ordenes disponibles");
     expect(sellerPage).toContain("const visibleOrdersLoadIdRef = useRef(0);");
     expect(sellerPage).toContain("const visibleOrdersLoadingRef = useRef(false);");

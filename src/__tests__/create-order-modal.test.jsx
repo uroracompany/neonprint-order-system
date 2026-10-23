@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CreateOrderModal from "../components/orders/CreateOrderModal";
@@ -57,7 +57,7 @@ describe("CreateOrderModal close behavior", () => {
     expect(screen.queryByText(/República Dominicana|809, 829 o 849/i)).not.toBeInTheDocument();
   });
 
-  it("destaca Detalles en archivos nuevos y retira la atención al abrirlo", async () => {
+  it("abre Detalles al seleccionar un archivo nuevo y refleja su estado incompleto", async () => {
     const user = userEvent.setup();
     renderModal();
 
@@ -66,12 +66,75 @@ describe("CreateOrderModal close behavior", () => {
     const file = new File(["pdf"], "arte.pdf", { type: "application/pdf" });
     fireEvent.change(designFilesInput, { target: { files: [file] } });
 
-    const detailsButton = await screen.findByRole("button", { name: "Detalles" });
-    expect(detailsButton).toHaveClass("fc-file-action-attention");
-
-    await user.click(detailsButton);
-
+    const detailsButton = await screen.findByRole("button", { name: "Detalles de arte.pdf" });
     expect(detailsButton).not.toHaveClass("fc-file-action-attention");
+    expect(detailsButton).toHaveAttribute("title", "Detalles de arte.pdf");
+    expect(screen.getByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
+    const detailsDialog = screen.getByRole("heading", { name: "Detalles de Archivo" }).closest('[role="dialog"]');
+    await user.click(within(detailsDialog).getByRole("button", { name: "Cancelar" }));
+    await user.click(await screen.findByRole("button", { name: "Detalles de arte.pdf" }));
+    expect(await screen.findByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
+  });
+
+  it("cambia a Editar cuando los detalles están completos y vuelve a abrir el mismo borrador", async () => {
+    const user = userEvent.setup();
+    renderModal({
+      productionCatalog: {
+        materials: { ploteo: ["Lona"] },
+        terminations: { ploteo: ["Mate"] },
+      },
+    });
+    await user.click(screen.getByText("Diseño Externo"));
+    const uploadInput = document.querySelector('input[type="file"][multiple]');
+    await user.upload(uploadInput, new File(["pdf"], "arte.pdf", { type: "application/pdf" }));
+
+    const detailsHeading = await screen.findByRole("heading", { name: "Detalles de Archivo" });
+    const detailsDialog = detailsHeading.closest('[role="dialog"]');
+    const details = within(detailsDialog);
+    await user.type(await details.findByLabelText("Nombre visible en seguimiento"), "Banner principal");
+    await user.selectOptions(await details.findByLabelText("Área de producción"), "ploteo");
+    await user.click(await details.findByRole("combobox", { name: "Materiales" }));
+    await user.click(await details.findByRole("option", { name: "Lona" }));
+    await user.click(await details.findByRole("button", { name: "Terminación" }));
+    await user.click(await details.findByRole("option", { name: "Mate" }));
+    await user.click(await details.findByRole("button", { name: "Guardar Detalles" }));
+
+    const editButton = await screen.findByRole("button", { name: "Editar detalles de arte.pdf" });
+    expect(editButton).toHaveTextContent("Editar");
+    expect(editButton).toHaveAttribute("title", "Editar detalles de arte.pdf");
+    await user.click(editButton);
+    const reopenedHeading = await screen.findByRole("heading", { name: "Detalles de Archivo" });
+    expect(within(reopenedHeading.closest('[role="dialog"]')).getByLabelText("Nombre visible en seguimiento"))
+      .toHaveValue("Banner principal");
+  }, 15000);
+
+  it("abre los detalles del primer archivo válido al seleccionar varios archivos", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByText("Diseño Externo"));
+    const designFilesInput = document.querySelector('input[type="file"][multiple]');
+    const first = new File(["pdf"], "primero.pdf", { type: "application/pdf" });
+    const second = new File(["pdf"], "segundo.pdf", { type: "application/pdf" });
+
+    await user.upload(designFilesInput, [first, second]);
+
+    expect(await screen.findByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Detalles de primero.pdf" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Detalles de segundo.pdf" })).toBeInTheDocument();
+  });
+
+  it("no abre detalles para una selección rechazada", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByText("Diseño Externo"));
+    const designFilesInput = document.querySelector('input[type="file"][multiple]');
+
+    fireEvent.change(designFilesInput, {
+      target: { files: [new File(["bad"], "script.exe", { type: "application/octet-stream" })] },
+    });
+
+    expect(await screen.findByText(/no es un adjunto permitido/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Detalles:/ })).not.toBeInTheDocument();
   });
 
   it("usa la variante visual compartida con el editor de detalles", () => {

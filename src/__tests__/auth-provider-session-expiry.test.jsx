@@ -106,6 +106,47 @@ beforeEach(async () => {
 });
 
 describe("AuthProvider session expiration", () => {
+  it("defers profile loading until the Supabase auth callback returns", async () => {
+    const profileQueryStarted = vi.fn();
+    profileQueryMock.mockImplementation(() => {
+      profileQueryStarted();
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            single: vi.fn(async () => ({
+              data: { id: "delivery-user", role: "delivery", employment_status: true },
+              error: null,
+            })),
+          })),
+        })),
+      };
+    });
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={["/delivery"]}>
+          <Routes>
+            <Route path="/delivery" element={<ProtectedRoute allowed={["delivery"]}><div>Delivery ready</div></ProtectedRoute>} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(authMock.authChangeHandler).toEqual(expect.any(Function)));
+    profileQueryStarted.mockClear();
+
+    act(() => {
+      authMock.authChangeHandler("SIGNED_IN", {
+        access_token: "signed-in-token",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: { id: "delivery-user" },
+      });
+    });
+
+    expect(profileQueryStarted).not.toHaveBeenCalled();
+    await waitFor(() => expect(profileQueryStarted).toHaveBeenCalled());
+  });
+
   it("does not let a delayed null INITIAL_SESSION overwrite a completed SIGNED_IN", async () => {
     const initialSession = deferred();
     authManagerMock.getAuthSession.mockReturnValue(initialSession.promise);

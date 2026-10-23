@@ -4,10 +4,11 @@ import { Icons } from "../../utils/icons";
 import { ORDER_STATUS, PAYMENT_STATUS, PRODUCTION_AREA_LABELS, PRODUCTION_FILE_STATUS, PRODUCTION_FILE_STATUS_LABELS, getFileNameFromUrl } from "../../utils/constants";
 import { buildStorageSafeFileName, formatFileSize, getOrderAssetLimit, uploadOrderAsset, validateOrderAssetSize } from "../../utils/uploadOrderAsset";
 import { compressImage, REF_IMAGE_CONFIG } from "../../utils/imageValidation";
+import { getAcceptForMode, validateFilesForMode } from "../../utils/fileValidation";
 import { getReferenceImages } from "../../utils/orderAssets";
 import FileUploadZone from "../ui/FileUploadZone";
 import { SecureImage, SecureImageLink } from "../ui/SecureImage";
-import { ProductionFileSpecifications } from "./CreateOrderModal";
+import { ProductionFileDetailsModal } from "./CreateOrderModal";
 import { buildProductionCatalogs } from "../../utils/production";
 import "./AdminManageFilesModal.css";
 
@@ -53,6 +54,7 @@ export default function AdminManageFilesModal({
   const [newFileAreaCode, setNewFileAreaCode] = useState("");
   const [newFileMaterials, setNewFileMaterials] = useState([]);
   const [newFileTermination, setNewFileTermination] = useState("");
+  const [newFileDetailsOpen, setNewFileDetailsOpen] = useState(false);
   const [productionCatalog, setProductionCatalog] = useState({ materials: {}, terminations: {} });
   const [addingFile, setAddingFile] = useState(false);
   const [showAddFileForm, setShowAddFileForm] = useState(false);
@@ -162,6 +164,24 @@ export default function AdminManageFilesModal({
 
   if (!open || !order) return null;
 
+  const handleNewFileSelection = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const validation = validateFilesForMode([file], { mode: "attachment", multiple: false });
+    if (!validation.valid) {
+      setError(validation.error);
+      return;
+    }
+    setNewFile(file);
+    setNewFileLabel("");
+    setNewFileAreaCode("");
+    setNewFileMaterials([]);
+    setNewFileTermination("");
+    setError("");
+    setNewFileDetailsOpen(true);
+  };
+
   const handleSaveFileStatus = async (fileId, newStatus) => {
     setSavingFileStatus(true);
     setError("");
@@ -264,6 +284,7 @@ export default function AdminManageFilesModal({
       setNewFileAreaCode("");
       setNewFileMaterials([]);
       setNewFileTermination("");
+      setNewFileDetailsOpen(false);
     } catch (err) {
       setError(err.message || "Error al anadir el archivo.");
     } finally {
@@ -405,6 +426,7 @@ export default function AdminManageFilesModal({
   };
 
   return (
+    <>
     <div className="amfm-overlay" role="presentation" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <section className="amfm-modal" role="dialog" aria-modal="true" aria-labelledby="amfm-title">
         <header className="amfm-header">
@@ -441,23 +463,19 @@ export default function AdminManageFilesModal({
             <div className="amfm-add-file-form">
               <label className="amfm-field">
                 <span>Archivo</span>
-                <input type="file" onChange={(e) => setNewFile(e.target.files[0])} />
+                <input type="file" accept={getAcceptForMode("attachment")} onChange={handleNewFileSelection} />
               </label>
-              <label className="amfm-field">
-                <span>Etiqueta</span>
-                <input type="text" value={newFileLabel} onChange={(e) => setNewFileLabel(e.target.value)} placeholder="Nombre visible del archivo" />
-              </label>
-              <ProductionFileSpecifications
-                areaCode={newFileAreaCode}
-                materialNames={newFileMaterials}
-                terminationName={newFileTermination}
-                catalog={productionCatalog}
-                onAreaChange={setNewFileAreaCode}
-                onMaterialsChange={setNewFileMaterials}
-                onTerminationChange={setNewFileTermination}
-              />
+              {newFile && (
+                <div className="amfm-field" aria-live="polite">
+                  <span>Detalles del archivo</span>
+                  <small>{newFileLabel || "Detalles pendientes"} · {newFile.name}</small>
+                  <button type="button" className="amfm-button" onClick={() => setNewFileDetailsOpen(true)}>
+                    Editar detalles
+                  </button>
+                </div>
+              )}
               <div className="amfm-add-file-actions">
-                <button type="button" className="amfm-button" onClick={() => { setShowAddFileForm(false); setNewFile(null); setNewFileLabel(""); setNewFileAreaCode(""); setNewFileMaterials([]); setNewFileTermination(""); }}>
+                <button type="button" className="amfm-button" onClick={() => { setShowAddFileForm(false); setNewFile(null); setNewFileLabel(""); setNewFileAreaCode(""); setNewFileMaterials([]); setNewFileTermination(""); setNewFileDetailsOpen(false); }}>
                   Cancelar
                 </button>
                 <button type="button" className="amfm-button primary" disabled={addingFile} onClick={handleAddFile}>
@@ -737,5 +755,26 @@ export default function AdminManageFilesModal({
         </footer>
       </section>
     </div>
+    <ProductionFileDetailsModal
+      open={Boolean(newFile && newFileDetailsOpen)}
+      fileName={newFile?.name}
+      fileKey={newFile ? `admin-new-${order?.id}-${newFile.name}-${newFile.size}` : ""}
+      value={{
+        publicLabel: newFileLabel,
+        areaCode: newFileAreaCode,
+        materialNames: newFileMaterials,
+        terminationName: newFileTermination,
+      }}
+      catalog={productionCatalog}
+      overlayClassName="amfm-production-file-details-overlay"
+      onClose={() => setNewFileDetailsOpen(false)}
+      onSave={async (details) => {
+        setNewFileLabel(details.publicLabel);
+        setNewFileAreaCode(details.areaCode);
+        setNewFileMaterials(details.materialNames);
+        setNewFileTermination(details.terminationName);
+      }}
+    />
+    </>
   );
 }

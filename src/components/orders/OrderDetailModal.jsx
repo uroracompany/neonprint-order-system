@@ -16,6 +16,7 @@ import OrderAssignmentAction from "./OrderAssignmentAction";
 import OrderReviewCard from "./OrderReviewCard";
 import { OrderReturnHandoffPanel } from "./OrderReturnHandoff";
 import OrderParticipationTimeline from "./OrderParticipationTimeline";
+import OrderTrackingLink from "./OrderTrackingLink";
 import "./OrderDetailModal.css";
 
 const ACTIVE_WORKFLOW_STATUSES_FOR_SELLER = [
@@ -51,106 +52,6 @@ function ReturnedBadge({ compact = false }) {
     <span className={`ps-returned-badge${compact ? " compact" : ""}`} title="Orden devuelta desde caja">
       Devuelta
     </span>
-  );
-}
-
-function TrackingLinkField({ orderId }) {
-  const [token, setToken] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!orderId) return;
-    setLoading(true);
-    supabase
-      .from("orders")
-      .select("tracking_token")
-      .eq("id", orderId)
-      .single()
-      .then(({ data }) => {
-        if (data?.tracking_token) setToken(data.tracking_token);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [orderId]);
-
-  const trackingUrl = token ? `${window.location.origin}/track/${token}` : null;
-
-  const handleCopy = async () => {
-    if (!trackingUrl) return;
-    try {
-      await navigator.clipboard.writeText(trackingUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      const textArea = document.createElement("textarea");
-      textArea.value = trackingUrl;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textArea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-        <div style={{ width: 14, height: 14, border: "2px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%" }} />
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Cargando...</span>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {trackingUrl ? (
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            type="text"
-            readOnly
-            value={trackingUrl}
-            onClick={(event) => event.target.select()}
-            style={{
-              flex: 1,
-              padding: "8px 12px",
-              fontSize: 12,
-              fontWeight: 600,
-              fontFamily: "'SF Mono', 'Fira Code', monospace",
-              border: "1.5px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--surface-alt)",
-              color: "var(--text)",
-              outline: "none",
-              cursor: "text",
-            }}
-          />
-          <button
-            onClick={handleCopy}
-            style={{
-              padding: "8px 14px",
-              background: copied ? "#10B981" : "var(--primary)",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              color: "#fff",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              transition: "background 0.2s",
-              fontFamily: "'Poppins', sans-serif",
-            }}
-          >
-            {copied ? "✓ Copiado" : "Copiar"}
-          </button>
-        </div>
-      ) : (
-        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, fontStyle: "italic" }}>
-          El link estará disponible cuando la orden tenga un token de seguimiento.
-        </p>
-      )}
-    </div>
   );
 }
 
@@ -615,7 +516,7 @@ export default function OrderDetailModal({
               <Icons.ExternalLink /> Link de Seguimiento
             </p>
 
-            <TrackingLinkField orderId={order.id} />
+            <OrderTrackingLink orderId={order.id} trackingToken={order.tracking_token} />
           </div>
         </div>
       </div>

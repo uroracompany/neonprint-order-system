@@ -86,6 +86,7 @@ export default function FileCard({
                 onClick={action.onClick}
                 disabled={action.disabled}
                 title={action.title}
+                aria-label={action.ariaLabel}
                 data-details-pending={action.attention ? "true" : undefined}
               >
                 {action.icon}

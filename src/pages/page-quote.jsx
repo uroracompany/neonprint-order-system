@@ -10,12 +10,12 @@ import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect, ClientSelect } from "../components/ui/ClientCombobox";
 import { FilterSelect } from "../components/ui/FilterSelect";
 import "../components/ui/FilterSelect.css";
-import CreateClientModal from "../components/ui/CreateClientModal";
 import SettleCreditModal from "../components/ui/SettleCreditModal";
 import {
   ORDER_STATUS,
   PAYMENT_STATUS,
   PAYMENT_COLORS,
+  normalizePaymentStatus,
   QUOTE_ASSIGNMENT_FIELDS,
   STATUS_OPTIONS,
   ARCHIVE_MODULES,
@@ -31,8 +31,8 @@ import {
   formatDate,
   getPaymentStatusLabel,
 } from "../utils/constants";
-import { SecureImageLink, SecureImageGallery } from "../components/ui/SecureImage";
-import { getReferenceImages } from "../utils/orderAssets";
+import { SecureImageLink } from "../components/ui/SecureImage";
+import { openOrderAssetUrl } from "../utils/fileAccess";
 import { isOrderOverdue } from "../utils/orderDeadline";
 import { QUOTE_ORDER_SELECT } from "../utils/orderListSelect";
 import { getProductionFiles } from "../utils/production";
@@ -55,7 +55,6 @@ import OrderReviewBadge from "../components/orders/OrderReviewBadge";
 import NewOrderBadge from "../components/orders/NewOrderBadge";
 import ReturnToDesignerModal from "../components/orders/ReturnToDesignerModal";
 import { getReturnTargetLabel } from "../components/orders/returnToDesignerPresentation";
-import FileCard from "../components/FileCard";
 import { OrderReturnHandoffPanel, ReturnedToCashierBadge } from "../components/orders/OrderReturnHandoff";
 import { loadClients, orderMatchesClientFilter, searchClients, formatPhone, NO_CLIENT_FILTER_VALUE } from "../utils/clients";
 import { applyOrdersSnapshot } from "../utils/orderRealtime";
@@ -256,20 +255,6 @@ const getCreditReceivableStatusStyle = (status) => {
   if (status === "void") return { background: "#F1F5F9", color: "#475569", border: "1px solid #CBD5E140" };
   return { background: "#FEF3C7", color: "#92400E", border: "1px solid #F59E0B40" };
 };
-// FUNCIÓN PARA PARSEAR ARCHIVOS DE ORDEN
-// Los archivos de una orden se guardan como JSON string (puede ser un array o un objeto único)
-// Esta función maneja ambos casos y devuelve siempre un array
-const getOrderFiles = (order) => {
-  if (!order?.order_file_url) return [];
-  try {
-    const parsed = JSON.parse(order.order_file_url);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    // Si no es válido como JSON, asumimos que es una URL directa
-    return [order.order_file_url];
-  }
-};
-
 // Badge que indica que una orden fue devuelta para correcciones
 
 // Badge que indica que una orden fue devuelta para correcciones
@@ -297,7 +282,7 @@ function ReturnedBadge({ compact = false }) {
 // 5. Archivar órdenes completadas
 
 
-function QuoteOrderDetailModal({
+export function QuoteOrderDetailModal({
   open,
   onClose,
   order,
@@ -316,24 +301,47 @@ function QuoteOrderDetailModal({
   onAcknowledgeReturn,
   returnAcknowledging,
 }) {
-  const [receiptUrl, setReceiptUrl] = useState("");
+  const [receiptState, setReceiptState] = useState({ status: "idle", key: "", url: "" });
+  const [receiptRetry, setReceiptRetry] = useState(0);
+  const receiptRequestRef = useRef(0);
+  const [loadedPreviewUrl, setLoadedPreviewUrl] = useState("");
+
+  useEffect(() => {
+    setLoadedPreviewUrl("");
+  }, [order?.id, order?.preview_image]);
 
   useEffect(() => {
     let active = true;
+    const requestId = ++receiptRequestRef.current;
+    const reference = String(order?.invoice_payment || "").trim();
+    const requestKey = `${order?.id || ""}:${reference}`;
 
     const loadReceiptUrl = async () => {
-      if (!open || !isPaymentPaid(order?.payment_status) || !order?.invoice_payment) {
-        if (active) setReceiptUrl("");
+      if (!open || !order || !isPaymentPaid(order?.payment_status)) {
+        if (active) setReceiptState({ status: "idle", key: requestKey, url: "" });
         return;
       }
 
-      const signedUrl = await createSignedOrderAssetUrlFromStoredUrl({
-        bucket: "payment-invoice",
-        url: order.invoice_payment,
-      });
+      if (!reference) {
+        if (active) setReceiptState({ status: "missing", key: requestKey, url: "" });
+        return;
+      }
 
-      if (active) {
-        setReceiptUrl(signedUrl || "");
+      setReceiptState({ status: "loading", key: requestKey, url: "" });
+
+      try {
+        const signedUrl = await createSignedOrderAssetUrlFromStoredUrl({
+          bucket: "payment-invoice",
+          url: reference,
+        });
+
+        if (active && requestId === receiptRequestRef.current) {
+          setReceiptState({ status: signedUrl ? "ready" : "missing", key: requestKey, url: signedUrl || "" });
+        }
+      } catch {
+        if (active && requestId === receiptRequestRef.current) {
+          setReceiptState({ status: "error", key: requestKey, url: "" });
+        }
       }
     };
 
@@ -341,12 +349,12 @@ function QuoteOrderDetailModal({
 
     return () => {
       active = false;
+      if (receiptRequestRef.current === requestId) receiptRequestRef.current += 1;
     };
-  }, [open, order?.invoice_payment, order?.payment_status]);
+  }, [open, order?.id, order?.invoice_payment, order?.payment_status, receiptRetry]);
 
   if (!open || !order) return null;
 
-  const orderFiles = getOrderFiles(order);
   const productionFiles = getProductionFiles(order);
   const unclassifiedProductionFiles = productionFiles.filter((file) => !file.production_area_code).length;
   const productionFilesReadyForAuthorization = productionFiles.length > 0 && productionFiles.every((file) => (
@@ -355,13 +363,11 @@ function QuoteOrderDetailModal({
     && file.material_names.length > 0
     && Boolean(String(file?.termination_name || "").trim())
   ));
-  const referenceImageUrls = getReferenceImages(order);
   const createdAt = new Date(order.created_at).toLocaleString("es-DO", { dateStyle: "medium", timeStyle: "short" });
   const canManagePayment = isQuoteEditable(order) || canCorrectPayment;
   const canReturnToDesigner = isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE) && !isPaymentPaid(order?.payment_status) && !order?.is_archived_quote;
-  const canAuthorizeProduction = Boolean(onAuthorizeProduction)
+  const isAuthorizationContextVisible = Boolean(onAuthorizeProduction)
     && isOrderStatus(order?.status, ORDER_STATUS.IN_QUOTE)
-    && isPaymentProductionEligible(order?.payment_status)
     && !order?.production_authorized_at
     && !order?.is_archived
     && !order?.is_archived_admin
@@ -369,9 +375,31 @@ function QuoteOrderDetailModal({
     && !order?.is_archived_quote
     && !order?.is_archived_production
     && !order?.is_archived_delivery
-    && order?.operational_status !== "blocked"
-    && productionFilesReadyForAuthorization;
+    && order?.operational_status !== "blocked";
+  const isPaymentEligibleForAuthorization = isPaymentProductionEligible(order?.payment_status);
+  const canAuthorizeProductionBase = isAuthorizationContextVisible && isPaymentEligibleForAuthorization;
+  const canAuthorizeProduction = canAuthorizeProductionBase && productionFilesReadyForAuthorization;
+  const showIncompleteProductionFilesBlocker = canAuthorizeProductionBase && !productionFilesReadyForAuthorization;
+  const showPaymentAuthorizationBlocker = isAuthorizationContextVisible
+    && productionFilesReadyForAuthorization
+    && !isPaymentEligibleForAuthorization;
+  const receiptRequestKey = `${order?.id || ""}:${String(order?.invoice_payment || "").trim()}`;
+  const visibleReceiptState = receiptState.key === receiptRequestKey
+    ? receiptState
+    : { status: open && isPaymentPaid(order?.payment_status) ? (String(order?.invoice_payment || "").trim() ? "loading" : "missing") : "idle", url: "" };
+  const receiptUrl = isPaymentPaid(order?.payment_status) && visibleReceiptState.status === "ready"
+    ? visibleReceiptState.url
+    : "";
   const returnedReason = String(order?.return_reason || "").trim();
+  const paymentStatus = normalizePaymentStatus(order.payment_status);
+  const hasKnownPaymentStatus = Object.prototype.hasOwnProperty.call(PAYMENT_COLORS, paymentStatus);
+  const invoiceNumber = String(order.invoice_number || "").trim();
+  const PaymentStatusIcon = {
+    [PAYMENT_STATUS.PENDING]: Icons.Clock,
+    [PAYMENT_STATUS.PAID]: Icons.CheckCircle,
+    [PAYMENT_STATUS.PARTIAL]: Icons.Money,
+    [PAYMENT_STATUS.CREDIT]: Icons.Receipt,
+  }[paymentStatus];
 
   return (
     <div className="pq-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
@@ -398,6 +426,31 @@ function QuoteOrderDetailModal({
             <PaymentBadge status={order.payment_status} className="pq-badge" />
             {isReturnedOrder(order) && <ReturnedBadge />}
             <span className="pq-flow-date"><Icons.Clock /> {createdAt}</span>
+            {(canManagePayment || canReturnToDesigner || receiptUrl) && (
+              <div className="pq-flow-actions" role="group" aria-label="Acciones de la orden">
+                {canManagePayment && (
+                  <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onOpenPayment?.(order)}>
+                    <Icons.Receipt /> Gestionar pago
+                  </button>
+                )}
+                {canReturnToDesigner && (
+                  <button type="button" className="pq-btn pq-btn-return" onClick={() => onOpenReturnModal?.(order)}>
+                    <Icons.ArrowLeft />
+                    {`Devolver al ${getReturnTargetLabel(order)}`}
+                  </button>
+                )}
+                {receiptUrl && (
+                  <a
+                    className="pq-btn pq-btn-secondary"
+                    href={receiptUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Icons.FileText /> Ver comprobante de facturación
+                  </a>
+                )}
+              </div>
+            )}
           </div>
 
           <OrderReviewCard
@@ -436,14 +489,6 @@ function QuoteOrderDetailModal({
                 </div>
 
                 <div className="pq-info-row">
-                  <span className="pq-info-icon"><Icons.FileText /></span>
-                  <div className="pq-info-content">
-                    <span className="pq-info-label">Núm. Facturación</span>
-                    <strong className="pq-info-value">{order.invoice_number || "No definido"}</strong>
-                  </div>
-                </div>
-
-                <div className="pq-info-row">
                   <span className="pq-info-icon"><Icons.Clipboard /></span>
                   <div className="pq-info-content">
                     <span className="pq-info-label">Tipo</span>
@@ -468,72 +513,91 @@ function QuoteOrderDetailModal({
                 <span className="pq-description-label"><Icons.Clipboard /> Descripción</span>
                 <p className="pq-description-text">{order.description || "Sin descripción"}</p>
               </div>
+              <div className="pq-payment-summary">
+                <div className="pq-payment-summary-group pq-payment-summary-status">
+                  <span className="pq-payment-summary-label">
+                    {PaymentStatusIcon && <PaymentStatusIcon className="pq-payment-summary-status-icon" data-payment-status-icon={paymentStatus} aria-hidden="true" />}
+                    Estado actual
+                  </span>
+                  {hasKnownPaymentStatus ? (
+                    <PaymentBadge
+                      status={paymentStatus}
+                      labelOverride={getPaymentStatusLabel(order.payment_status)}
+                      className="pq-badge"
+                    />
+                  ) : (
+                    <span className="pq-payment-summary-badge pq-payment-summary-badge--neutral">
+                      {getPaymentStatusLabel(order.payment_status)}
+                    </span>
+                  )}
+                </div>
+                <div className="pq-payment-summary-group pq-payment-summary-invoice">
+                  <span className="pq-payment-summary-label"><Icons.FileText /> Código de facturación</span>
+                  {invoiceNumber
+                    ? <strong className="pq-payment-summary-invoice-code">{invoiceNumber}</strong>
+                    : <strong className="pq-payment-summary-invoice-empty">Sin registrar</strong>}
+                </div>
+              </div>
             </div>
 
-            <div className="pq-panel">
-              <div className="pq-panel-title pq-panel-title--accent"><Icons.Paperclip /> Archivos Adjuntos</div>
-              {orderFiles.length > 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {orderFiles.map((fileUrl, index) => (
-                    <FileCard
-                      key={`${fileUrl}-${index}`}
-                      name={getFileNameFromUrl(fileUrl)}
-                      url={fileUrl}
-                      hideDownload
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="pq-empty-panel">No hay archivos principales disponibles.</div>
-              )}
-
-              <div className="pq-preview-block pq-preview-block--bare">
-                <span className="pq-description-label pq-description-label--soft" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
+            <div className="pq-detail-visual-column">
+              <section className="pq-detail-preview-card" aria-label="Imagen de orden de trabajo">
+                <span className="pq-description-label pq-description-label--soft pq-detail-card-title">
                   <Icons.Eye /> Imagen de orden de trabajo
                 </span>
                 {order.preview_image ? (
-                  <SecureImageLink
-                    url={order.preview_image}
-                    fileName={getFileNameFromUrl(order.preview_image)}
-                    className="pq-work-preview"
-                  >
-                    <span className="pq-work-preview-btn">
-                      <Icons.Eye /> Ver imagen de orden de trabajo
-                    </span>
-                  </SecureImageLink>
+                  <>
+                    <SecureImageLink
+                      url={order.preview_image}
+                      fileName={getFileNameFromUrl(order.preview_image)}
+                      className="pq-work-preview"
+                    >{(resolvedUrl) => (
+                      <img
+                        src={resolvedUrl}
+                        alt="Imagen de orden de trabajo"
+                        className="pq-work-preview-image"
+                        loading="lazy"
+                        onLoad={() => setLoadedPreviewUrl(order.preview_image)}
+                      />
+                    )}
+                    </SecureImageLink>
+                    {loadedPreviewUrl === order.preview_image && (
+                      <div className="pq-work-preview-actions">
+                        <button
+                          type="button"
+                          className="pq-work-preview-btn"
+                          onClick={() => openOrderAssetUrl({
+                            url: order.preview_image,
+                            fileName: getFileNameFromUrl(order.preview_image),
+                            download: false,
+                          })}
+                        >
+                          <Icons.Eye /> Ver completo
+                        </button>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <span className="pq-preview-empty">No hay imagen de orden de trabajo cargada.</span>
                 )}
-              </div>
+              </section>
 
-              {referenceImageUrls.length > 0 && (
-                <div className="pq-preview-block pq-preview-block--dashed" style={{ marginTop: 16 }}>
-                  <span className="pq-description-label pq-description-label--soft" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
-                    <Icons.Image /> Imágenes de referencia
-                  </span>
-                  <SecureImageGallery
-                    urls={referenceImageUrls}
-                    fileNames={referenceImageUrls.map(getFileNameFromUrl)}
-                    altPrefix="Referencia"
-                    itemClassName="pq-ref-item"
-                  />
-                </div>
-              )}
               {productionFiles.length > 0 && (() => {
                 const areaCounts = PRODUCTION_AREAS.reduce((acc, area) => {
                   acc[area.code] = productionFiles.filter(f => f.production_area_code === area.code).length;
                   return acc;
                 }, {});
-                const classified = productionFiles.length - unclassifiedProductionFiles;
-                
+                const productionAreaLabels = {
+                  digital: "Producción digital",
+                  dtf: "Producción DTF",
+                  ploteo: "Producción ploteo",
+                };
+
                 return (
-                  <div className="pq-preview-block" style={{ marginTop: 16 }}>
+                  <section className="pq-detail-production-card" aria-label="Clasificación de producción">
                     <div className="pq-production-status">
                       <span className="pq-production-status-header">
                         <Icons.Package /> Clasificación de producción
-                      </span>
-                      <span className="pq-production-status-text">
-                        {classified} de {productionFiles.length} archivos clasificados
                       </span>
                       <div className="pq-production-area-list">
                         {PRODUCTION_AREAS.map(area => {
@@ -541,10 +605,7 @@ function QuoteOrderDetailModal({
                           const percent = productionFiles.length > 0 ? Math.round((count / productionFiles.length) * 100) : 0;
                           return (
                             <div className="pq-production-area-row" key={area.code}>
-                              <span className="pq-production-area-label">{area.label}</span>
-                              <div className="pq-production-area-bar">
-                                <div className="pq-production-area-bar-fill" style={{ width: `${percent}%` }} />
-                              </div>
+                              <span className="pq-production-area-label">{productionAreaLabels[area.code] || area.label}</span>
                               <span className="pq-production-area-count">{count} {count === 1 ? 'archivo' : 'archivos'}</span>
                               <span className="pq-production-area-percent">{percent}%</span>
                             </div>
@@ -553,16 +614,13 @@ function QuoteOrderDetailModal({
                         {unclassifiedProductionFiles > 0 && (
                           <div className="pq-production-area-row">
                             <span className="pq-production-area-label">Pendientes</span>
-                            <div className="pq-production-area-bar">
-                              <div className="pq-production-area-bar-fill" style={{ width: `${productionFiles.length > 0 ? Math.round((unclassifiedProductionFiles / productionFiles.length) * 100) : 0}%` }} />
-                            </div>
                             <span className="pq-production-area-count">{unclassifiedProductionFiles} {unclassifiedProductionFiles === 1 ? 'archivo' : 'archivos'}</span>
                             <span className="pq-production-area-percent">{productionFiles.length > 0 ? Math.round((unclassifiedProductionFiles / productionFiles.length) * 100) : 0}%</span>
                           </div>
                         )}
                       </div>
                     </div>
-                  </div>
+                  </section>
                 );
               })()}
             </div>
@@ -576,22 +634,9 @@ function QuoteOrderDetailModal({
           )}
 
             <div className="pq-panel pq-payment-panel">
-              <div className="pq-panel-title pq-panel-title--accent">Estado del pago</div>
-              <div className={`pq-readonly-note ${isPaymentPaid(order.payment_status) ? "success" : ""}`}>
-                <Icons.Check />
-                <span>Estado actual: <strong>{getPaymentStatusLabel(order.payment_status)}</strong></span>
-              </div>
-              {order.invoice_number && (
-                <div className="pq-payment-readonly-row">
-                  <span><Icons.FileText /> Código de facturación</span>
-                  <strong>{order.invoice_number}</strong>
-                </div>
-              )}
+              <div className="pq-panel-title pq-panel-title--accent">Comprobante de pago</div>
               {receiptUrl && (
               <div className="pq-preview-block">
-                <span className="pq-description-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icons.Eye /> Comprobante de pago
-                </span>
                 <a href={receiptUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
                   <img
                     src={receiptUrl}
@@ -610,45 +655,75 @@ function QuoteOrderDetailModal({
                     onMouseLeave={e => { e.target.style.transform = "scale(1)"; }}
                   />
                 </a>
+                <div className="pq-payment-receipt-full-view-actions">
+                  <a
+                    href={receiptUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="pq-work-preview-btn pq-receipt-preview-full-view"
+                    aria-label="Ver completo"
+                  >
+                    <Icons.Eye /> Ver completo
+                  </a>
+                </div>
               </div>
               )}
               {!isPaymentPaid(order.payment_status) && (
                 <p className="pq-upload-hint">El comprobante confirmado se muestra aquí después de registrar el pago.</p>
               )}
+              {isPaymentPaid(order.payment_status) && visibleReceiptState.status === "loading" && (
+                <p className="pq-receipt-state" role="status">Cargando comprobante de pago…</p>
+              )}
+              {isPaymentPaid(order.payment_status) && visibleReceiptState.status === "missing" && (
+                <p className="pq-receipt-state" role="status">No hay un comprobante disponible para esta orden.</p>
+              )}
+              {isPaymentPaid(order.payment_status) && visibleReceiptState.status === "error" && (
+                <div className="pq-receipt-error" role="alert">
+                  <span>No se pudo cargar el comprobante de pago.</span>
+                  <button type="button" className="pq-btn pq-btn-secondary" onClick={() => setReceiptRetry((attempt) => attempt + 1)}>
+                    Reintentar
+                  </button>
+                </div>
+              )}
               {isOrderStatus(order.status, ORDER_STATUS.IN_QUOTE)
                 && isPaymentProductionEligible(order.payment_status)
+                && (order.production_authorized_at || canAuthorizeProduction)
                 && !order.is_archived_quote && (
                 <div className="pq-readonly-note success" role="status">
                   <Icons.Check />
                   <span>{order.production_authorized_at ? "Producción autorizada. El responsable operativo puede continuar el envío." : "Pago validado. Caja debe autorizar la orden antes de que el responsable operativo continúe a Producción."}</span>
                 </div>
               )}
-              {(canManagePayment || canAuthorizeProduction) && (
+              {canAuthorizeProduction && (
                 <div className="pq-payment-actions">
-                  {canManagePayment && (
-                    <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onOpenPayment?.(order)}>
-                      <Icons.Receipt /> Gestionar pago
-                    </button>
-                  )}
-                  {canAuthorizeProduction && (
-                    <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onAuthorizeProduction?.(order)} disabled={authorizingProduction}>
-                      <Icons.Check /> {authorizingProduction ? "Autorizando..." : "Autorizar para Producción"}
-                    </button>
-                  )}
+                  <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" onClick={() => onAuthorizeProduction?.(order)} disabled={authorizingProduction}>
+                    <Icons.Check /> {authorizingProduction ? "Autorizando..." : "Autorizar para Producción"}
+                  </button>
+                </div>
+              )}
+              {showIncompleteProductionFilesBlocker && (
+                <div className="pq-payment-authorization-blocker" role="status">
+                  <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" disabled>
+                    <Icons.Check /> Autorizar para Producción
+                  </button>
+                  <span>{productionFiles.length === 0
+                    ? "Agrega al menos un archivo de producción para continuar."
+                    : "Completa el área, los materiales y la terminación de cada archivo de producción para continuar."}</span>
+                </div>
+              )}
+              {showPaymentAuthorizationBlocker && (
+                <div className="pq-payment-authorization-blocker" role="status">
+                  <button type="button" className="pq-btn pq-btn-primary pq-manage-payment-btn" disabled>
+                    <Icons.Check /> Autorizar para Producción
+                  </button>
+                  <span>Para autorizar la producción, el pago debe estar Pagado, Parcial o Crédito.</span>
                 </div>
               )}
             </div>
 
-            {/* Acciones del modal para cotizar orden */}
-            <div className="pq-modal-actions">
-              {canReturnToDesigner && (
-                <button className="pq-btn pq-btn-return" onClick={() => onOpenReturnModal(order)}>
-                  <Icons.ArrowLeft />
-                  {`Devolver al ${getReturnTargetLabel(order)}`}
-                </button>
-              )}
-              <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
-            </div>
+          </div>
+          <div className="pq-modal-actions pq-modal-footer">
+            <button className="pq-btn pq-btn-secondary" onClick={onClose}>Cerrar</button>
           </div>
         </div>
       </div>
@@ -991,6 +1066,48 @@ const isOrderStaleError = (error) => (
   error?.code === "ORDER_STALE" || String(error?.message || "").includes("ORDER_STALE")
 );
 
+function QuoteSkeletonLine({ className = "" }) {
+  return <span className={`pq-skeleton-shape ${className}`} aria-hidden="true" />;
+}
+
+function QuoteOrderTableSkeleton({ rows, columns }) {
+  return (
+    <>
+      <tr className="pq-sr-only"><td colSpan={columns}><span role="status" aria-live="polite">Cargando órdenes...</span></td></tr>
+      {Array.from({ length: rows }, (_, rowIndex) => (
+        <tr className="pq-skeleton-row" aria-hidden="true" key={rowIndex}>
+          {Array.from({ length: columns }, (_, columnIndex) => (
+            <td key={columnIndex}>
+              {columnIndex === 0 ? (
+                <div className="pq-skeleton-client"><QuoteSkeletonLine className="pq-skeleton-avatar" /><QuoteSkeletonLine className="pq-skeleton-line pq-skeleton-line--client" /></div>
+              ) : columnIndex === columns - 1 ? (
+                <QuoteSkeletonLine className="pq-skeleton-action" />
+              ) : (
+                <QuoteSkeletonLine className={`pq-skeleton-line pq-skeleton-line--cell-${columnIndex}`} />
+              )}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function QuoteOrderCardsSkeleton() {
+  return (
+    <div className="ps-cards-grid pq-skeleton-region" aria-busy="true" aria-label="Cargando órdenes">
+      <span className="pq-sr-only" role="status" aria-live="polite">Cargando órdenes...</span>
+      {Array.from({ length: 10 }, (_, index) => (
+        <article className="ps-order-card pq-order-card-skeleton" aria-hidden="true" key={index}>
+          <div className="ps-order-card-client"><QuoteSkeletonLine className="pq-skeleton-avatar" /><div className="ps-order-card-client-main"><QuoteSkeletonLine className="pq-skeleton-line pq-skeleton-line--client" /><div className="ps-order-card-client-badges"><QuoteSkeletonLine className="pq-skeleton-pill" /></div></div></div>
+          <div className="ps-order-card-fields">{[0, 1, 2, 3].map((field) => <div className="ps-order-card-field" key={field}><QuoteSkeletonLine className="pq-skeleton-line pq-skeleton-line--label" /><QuoteSkeletonLine className="pq-skeleton-line pq-skeleton-line--value" /></div>)}</div>
+          <div className="ps-order-card-actions pq-order-card-skeleton-actions"><QuoteSkeletonLine className="pq-skeleton-action" /><QuoteSkeletonLine className="pq-skeleton-action" /><QuoteSkeletonLine className="pq-skeleton-action" /></div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export default function PageQuote() {
   const navigate = useNavigate();
   const { user: authUser, profile: authProfile, signOut } = useAuth();
@@ -1007,6 +1124,11 @@ export default function PageQuote() {
   // Estados de órdenes
   const [orders, setOrders] = useState([]); // Lista de todas las órdenes asignadas al usuario
   const [loading, setLoading] = useState(true); // Indica si se están cargando órdenes
+  const [ordersLoadError, setOrdersLoadError] = useState(false);
+  const orderFetchSequenceRef = useRef(0);
+  const orderFetchLoadingSequenceRef = useRef(null);
+  const ordersInitializedRef = useRef(false);
+  const quoteUserIdRef = useRef(null);
   const [selectedOrder, setSelectedOrder] = useState(null); // Orden actualmente abierta en el modal
   const [paymentModalOrder, setPaymentModalOrder] = useState(null); // Orden actualmente abierta en el modal de pago
   const [paymentModalOrderRemoteMissing, setPaymentModalOrderRemoteMissing] = useState(false);
@@ -1037,7 +1159,6 @@ export default function PageQuote() {
   const [viewMode, setViewMode] = useState("table"); // Vista predeterminada: tabla
   const [clients, setClients] = useState([]);
   const [clientsLoading, setClientsLoading] = useState(true);
-  const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [clientLinkOrder, setClientLinkOrder] = useState(null);
   const [clientLinkSelection, setClientLinkSelection] = useState(null);
   const [clientLinkLoading, setClientLinkLoading] = useState(false);
@@ -1086,7 +1207,15 @@ export default function PageQuote() {
   // 2. El usuario tenga el rol "quote"
   // Si no cumple, lo redirige al login
   useEffect(() => {
-    setUser(authUser || null);
+    const nextUser = authUser || null;
+    if (quoteUserIdRef.current !== nextUser?.id) {
+      quoteUserIdRef.current = nextUser?.id || null;
+      ordersInitializedRef.current = false;
+      setOrders([]);
+      setOrdersLoadError(false);
+      setLoading(Boolean(nextUser?.id));
+    }
+    setUser(nextUser);
     setProfile(authProfile || null);
   }, [authProfile, authUser]);
 
@@ -1375,22 +1504,6 @@ export default function PageQuote() {
     fetchClients();
   };
 
-  const handleNewClientCreated = async (newClient, options = {}) => {
-    setClients(prev => {
-      const exists = prev.some(c => c.id === newClient.id);
-      return exists ? prev : [...prev, newClient].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-    });
-    notif.showActionNotification({
-      type: "info",
-      title: options.reusedExisting ? "Cliente vinculado" : "Cliente registrado",
-      message: options.reusedExisting
-        ? `Cliente "${newClient.name}" encontrado y vinculado correctamente.`
-        : `Cliente "${newClient.name}" registrado correctamente.`,
-      metadata: { event_kind: options.reusedExisting ? "client_reused" : "client_created", client_id: newClient.id, variant: "success" },
-    });
-
-  };
-
   // ============= EFECTO 2: SUSCRIPCIÓN EN TIEMPO REAL Y REFRESCO =============
   // Se ejecuta cuando el user cambia
   // Este es el corazón del sistema de actualización en tiempo real:
@@ -1453,7 +1566,7 @@ export default function PageQuote() {
   // Carga los nombres de los vendedores desde la tabla "profiles"
   // Evita múltiples queries a BD usando un cache (sellerDirectory)
   // Se ejecuta automáticamente después de cargar órdenes
-  const syncSellerDirectory = async (ordersToSync) => {
+  const syncSellerDirectory = async (ordersToSync, isCurrentRequest = () => true) => {
     // Extrae IDs únicos de vendedores de las órdenes
     const sellerIds = [...new Set(
       (ordersToSync || [])
@@ -1473,7 +1586,7 @@ export default function PageQuote() {
       .select("id, name")
       .in("id", missingSellerIds);
 
-    if (!error && Array.isArray(data)) {
+    if (!error && Array.isArray(data) && isCurrentRequest()) {
       // Actualiza el cache con los nuevos vendedores
       setSellerDirectory(prev => ({
         ...prev,
@@ -1484,52 +1597,58 @@ export default function PageQuote() {
 
   // ============= FUNCIÓN: CARGAR ÓRDENES DEL USUARIO =============
   async function fetchOrdersImpl(quoteUserId, silent = false) {
-    if (!silent) setLoading(true);
-
-    let fetchedOrders = [];
-    let fetchError = null;
-
-    const { data, error } = await supabase
-      .from("orders")
-      .select(QUOTE_ORDER_SELECT)
-      .eq("quote_id", quoteUserId)
-      .order("created_at", { ascending: false });
-
-    if (!error) {
-      fetchedOrders = (data || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
-    } else {
-      fetchError = error;
+    const requestSequence = ++orderFetchSequenceRef.current;
+    if (!silent) {
+      orderFetchLoadingSequenceRef.current = requestSequence;
+      setLoading(true);
     }
 
-    if (fetchError) {
-      if (!silent) {
-        applyOrdersSnapshot({ orders: [], setOrders, setSelectedOrder, additionalOrders: creditOrders });
-      }
-      if (!silent) setLoading(false);
-      notif.showActionNotification({
-        type: "order_cancelled",
-        label: "Error al cargar",
-        orderTitle: "Órdenes de caja",
-        message: "No se pudieron cargar las órdenes asignadas a caja.",
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .select(QUOTE_ORDER_SELECT)
+        .eq("quote_id", quoteUserId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      if (requestSequence !== orderFetchSequenceRef.current) return;
+
+      const fetchedOrders = (data || []).filter(order => isOrderAssignedToQuote(order, quoteUserId));
+      const selectableOrders = [...fetchedOrders, ...creditOrders];
+      setOrdersLoadError(false);
+      setPaymentModalOrderRemoteMissing(Boolean(
+        paymentModalOrder?.id && !selectableOrders.some((order) => order.id === paymentModalOrder.id),
+      ));
+      applyOrdersSnapshot({
+        orders: fetchedOrders,
+        setOrders,
+        setSelectedOrder,
+        additionalOrders: creditOrders,
+        openOrderSetters: [setPaymentModalOrder],
+        preserveMissingOpenOrders: true,
+        preserveOpenOrderState: false,
       });
-      return;
+      ordersInitializedRef.current = true;
+      try {
+        await syncSellerDirectory(fetchedOrders, () => requestSequence === orderFetchSequenceRef.current);
+      } catch {
+        if (requestSequence === orderFetchSequenceRef.current) {
+          console.warn("No se pudo sincronizar el directorio de vendedores de caja.");
+        }
+      }
+    } catch {
+      if (requestSequence === orderFetchSequenceRef.current) {
+        console.warn("No se pudieron cargar las órdenes asignadas a caja.");
+        setOrdersLoadError(true);
+      }
+    } finally {
+      if (requestSequence === orderFetchSequenceRef.current
+        && orderFetchLoadingSequenceRef.current !== null
+        && orderFetchLoadingSequenceRef.current <= requestSequence) {
+        orderFetchLoadingSequenceRef.current = null;
+        setLoading(false);
+      }
     }
-
-    const selectableOrders = [...fetchedOrders, ...creditOrders];
-    setPaymentModalOrderRemoteMissing(Boolean(
-      paymentModalOrder?.id && !selectableOrders.some((order) => order.id === paymentModalOrder.id),
-    ));
-    applyOrdersSnapshot({
-      orders: fetchedOrders,
-      setOrders,
-      setSelectedOrder,
-      additionalOrders: creditOrders,
-      openOrderSetters: [setPaymentModalOrder],
-      preserveMissingOpenOrders: true,
-      preserveOpenOrderState: false,
-    });
-    await syncSellerDirectory(fetchedOrders);
-    if (!silent) setLoading(false);
   }
 
   // ============= FUNCIÓN: ABRIR DETALLE DE ORDEN =============
@@ -2377,6 +2496,8 @@ export default function PageQuote() {
     const now = new Date();
     return updated.toDateString() === now.toDateString();
   }).length;
+  const initialOrdersPending = loading && !ordersInitializedRef.current;
+  const initialOrdersFailed = Boolean(ordersLoadError && !ordersInitializedRef.current);
 
   const CARD_ACCENTS = [
     { color: "#0284C7", bg: "#E0F2FE" },
@@ -2387,11 +2508,11 @@ export default function PageQuote() {
   ];
 
   const metrics = [
-    { label: "Órdenes asignadas", value: orders.length, icon: <Icons.Orders />, accentIdx: 0, sub: "Activas en caja", subColor: "#1E40AF" },
-    { label: "Pendientes de pago", value: orders.filter(order => order.payment_status !== "pagado" && !order.is_archived_quote).length, icon: <Icons.Money />, accentIdx: 1, sub: "Requieren seguimiento" },
-    { label: "Pagadas", value: orders.filter(order => order.payment_status === "pagado").length, icon: <Icons.Check />, accentIdx: 2, sub: "Completadas" },
+    { label: "Órdenes asignadas", value: initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-metric" /> : initialOrdersFailed ? "—" : orders.length, icon: <Icons.Orders />, accentIdx: 0, sub: "Activas en caja", subColor: "#1E40AF" },
+    { label: "Pendientes de pago", value: initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-metric" /> : initialOrdersFailed ? "—" : orders.filter(order => order.payment_status !== "pagado" && !order.is_archived_quote).length, icon: <Icons.Money />, accentIdx: 1, sub: "Requieren seguimiento" },
+    { label: "Pagadas", value: initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-metric" /> : initialOrdersFailed ? "—" : orders.filter(order => order.payment_status === "pagado").length, icon: <Icons.Check />, accentIdx: 2, sub: "Completadas" },
     { label: "Crédito pendiente", value: accountsReceivableLoading ? "..." : creditPendingInvoicesCount, icon: <Icons.Receipt />, accentIdx: 3, sub: "Por cobrar" },
-    { label: "Archivadas", value: orders.filter(order => order.is_archived_quote).length, icon: <Icons.Archive />, accentIdx: 4, sub: "Solo consulta" },
+    { label: "Archivadas", value: initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-metric" /> : initialOrdersFailed ? "—" : orders.filter(order => order.is_archived_quote).length, icon: <Icons.Archive />, accentIdx: 4, sub: "Solo consulta" },
   ];
 
   function MetricCard({ icon, label, value, sub, subColor, accentIdx = 0 }) {
@@ -2410,7 +2531,7 @@ export default function PageQuote() {
 
   const menuItems = [
     { id: "dashboard", label: "Resumen", icon: <Icons.Dashboard /> },
-    { id: "orders", label: "Mis órdenes", icon: <Icons.Orders />, badge: getSidebarBadge(loading, orders.filter(order => !order.is_archived_quote).length) },
+    { id: "orders", label: "Mis órdenes", icon: <Icons.Orders />, badge: initialOrdersPending ? "…" : initialOrdersFailed ? "—" : activeOrdersCount },
     { id: "credits", label: "Créditos", icon: <Icons.Receipt />, badge: getSidebarBadge(accountsReceivableLoading, creditPendingInvoicesCount) },
     { id: "notifications", label: "Notificaciones", icon: <Icons.Bell />, badge: notif.unreadCount },
     { id: "profile", label: "Mi Perfil", icon: <Icons.User /> },
@@ -2453,9 +2574,6 @@ export default function PageQuote() {
             <button className="pq-icon-btn" onClick={() => fetchOrdersRef.current(user?.id)} title="Recargar" aria-label="Recargar">
               <Icons.Refresh />
             </button>
-            <button className="pq-header-client-btn" onClick={() => setShowNewClientModal(true)} title="Agregar nuevo cliente">
-              <Icons.Plus /> Nuevo Cliente
-            </button>
             <button className="pq-header-client-btn" onClick={() => setActiveTab("orders")} title="Gestionar órdenes">
               <Icons.Orders /> Gestionar Órdenes
             </button>
@@ -2473,24 +2591,39 @@ export default function PageQuote() {
           </div>
         </header>
 
+        {ordersLoadError && (
+          <div className="pq-inline-error" role="alert">
+            <span>No se pudieron cargar las órdenes de Caja. Vuelve a intentarlo.</span>
+            <button
+              type="button"
+              className="pq-btn pq-btn-secondary"
+              onClick={() => fetchOrdersRef.current(user?.id)}
+              disabled={loading || !user?.id}
+            >
+              {loading ? "Reintentando..." : "Reintentar"}
+            </button>
+          </div>
+        )}
+
         {activeTab === "dashboard" && (
           <section className="pq-section">
             <div className="pq-greeting">
               <div className="pq-greeting-copy">
                 <h2>Bienvenido, <span>{profile?.name || "Caja"}</span></h2>
                 <p>Aquí tienes el resumen de tu actividad de hoy.</p>
-                <div className="pq-greeting-badges">
+                <div className="pq-greeting-badges" aria-label="Resumen de órdenes" aria-busy={initialOrdersPending}>
+                  {initialOrdersPending && <span className="pq-sr-only" role="status" aria-live="polite">Cargando resumen de órdenes...</span>}
                   <div className="pq-greeting-count">
                     <Icons.Orders />
-                    <strong>{activeOrdersCount}</strong> Órdenes activas
+                    <strong>{initialOrdersFailed ? "—" : activeOrdersCount}</strong> Órdenes activas
                   </div>
                   <div className="pq-greeting-count pq-greeting-count--pending">
                     <Icons.Money />
-                    <strong>{pendingPaymentCount}</strong> Pendientes de pago
+                    <strong>{initialOrdersFailed ? "—" : pendingPaymentCount}</strong> Pendientes de pago
                   </div>
                   <div className="pq-greeting-count pq-greeting-count--partial">
                     <Icons.Clock />
-                    <strong>{partialPaymentCount}</strong> Pago parcial
+                    <strong>{initialOrdersFailed ? "—" : partialPaymentCount}</strong> Pago parcial
                   </div>
                   <div className="pq-greeting-count pq-greeting-count--credit">
                     <Icons.Receipt />
@@ -2498,19 +2631,14 @@ export default function PageQuote() {
                   </div>
                   <div className="pq-greeting-count pq-greeting-count--paid-today">
                     <Icons.Check />
-                    <strong>{paidTodayCount}</strong> Pagadas hoy
+                    <strong>{initialOrdersFailed ? "—" : paidTodayCount}</strong> Pagadas hoy
                   </div>
                 </div>
               </div>
-              <div className="pq-greeting-actions">
-                <button type="button" className="pq-header-client-btn" onClick={() => setShowNewClientModal(true)}>
-                  <Icons.Plus />
-                  Nuevo Cliente
-                </button>
-              </div>
             </div>
 
-            <div className="pq-metrics-grid">
+            <div className="pq-metrics-grid" aria-busy={initialOrdersPending}>
+              {initialOrdersPending && <span className="pq-sr-only" role="status" aria-live="polite">Cargando métricas de órdenes...</span>}
               {metrics.map((m, i) => (
                 <MetricCard key={i} {...m} />
               ))}
@@ -2528,7 +2656,7 @@ export default function PageQuote() {
                   <Icons.ArrowRight />
                 </button>
               </div>
-              <div className="ps-table-wrap pq-recent-table-wrap">
+              <div className="ps-table-wrap pq-recent-table-wrap" aria-busy={initialOrdersPending}>
                 <table className="ps-table pq-table pq-recent-table">
                   <thead>
                     <tr>
@@ -2540,10 +2668,12 @@ export default function PageQuote() {
                     </tr>
                   </thead>
                   <tbody>
-                    {loading ? (
-                      <tr><td colSpan={5} className="ps-table-empty pq-table-empty">Cargando órdenes...</td></tr>
+                    {initialOrdersPending ? (
+                      <QuoteOrderTableSkeleton rows={5} columns={5} />
+                    ) : initialOrdersFailed ? (
+                      <tr><td colSpan={5} className="ps-table-empty pq-table-empty">No se pudieron cargar las órdenes de Caja.</td></tr>
                     ) : dashboardRecentOrders.length === 0 ? (
-                      <tr><td colSpan={5} className="ps-table-empty pq-table-empty">No hay órdenes asignadas actualmente.</td></tr>
+                      ordersLoadError ? null : <tr><td colSpan={5} className="ps-table-empty pq-table-empty">No hay órdenes asignadas actualmente.</td></tr>
                     ) : (
                       dashboardRecentOrders.map(order => {
                         return (
@@ -2583,7 +2713,7 @@ export default function PageQuote() {
                               <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                                 <Icons.Eye />
                               </button>
-                              {!order?.production_authorized_at && !order?.production_authorized_by && (
+                              {!order.production_authorized_at && !order.production_authorized_by && (
                                 <button className="table-action-btn view" onClick={e => { e.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
                                   <Icons.Receipt />
                                 </button>
@@ -2915,7 +3045,7 @@ export default function PageQuote() {
                 ]}
               />
 
-              <span className="pp-filters-count">{filteredOrders.length} resultado{filteredOrders.length !== 1 ? "s" : ""}</span>
+              <span className="pp-filters-count">{initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-counter" /> : initialOrdersFailed ? "—" : `${filteredOrders.length} resultado${filteredOrders.length !== 1 ? "s" : ""}`}</span>
             </div>
 
             <div className="pq-workbench-panel">
@@ -2934,7 +3064,7 @@ export default function PageQuote() {
                     >
                       <Icons.Clipboard />
                       <span>Todas</span>
-                      <strong>{orders.length}</strong>
+                      <strong>{initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-counter" /> : initialOrdersFailed ? "—" : orders.length}</strong>
                     </button>
                     <button
                       type="button"
@@ -2944,7 +3074,7 @@ export default function PageQuote() {
                     >
                       <Icons.Package />
                       <span>Activas</span>
-                      <strong>{activeOrders.length}</strong>
+                      <strong>{initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-counter" /> : initialOrdersFailed ? "—" : activeOrders.length}</strong>
                     </button>
                     <button
                       type="button"
@@ -2954,7 +3084,7 @@ export default function PageQuote() {
                     >
                       <Icons.Archive />
                       <span>Archivadas</span>
-                      <strong>{archivedOrders.length}</strong>
+                      <strong>{initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-counter" /> : initialOrdersFailed ? "—" : archivedOrders.length}</strong>
                     </button>
                     <button
                       type="button"
@@ -2964,7 +3094,7 @@ export default function PageQuote() {
                     >
                       <Icons.Trash />
                       <span>Canceladas</span>
-                      <strong>{cancelledOrders.length}</strong>
+                      <strong>{initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-counter" /> : initialOrdersFailed ? "—" : cancelledOrders.length}</strong>
                     </button>
                     <button
                       type="button"
@@ -2974,7 +3104,7 @@ export default function PageQuote() {
                     >
                       <Icons.ArrowLeft />
                       <span>Devueltas</span>
-                      <strong>{returnedOrders.length}</strong>
+                      <strong>{initialOrdersPending ? <QuoteSkeletonLine className="pq-skeleton-counter" /> : initialOrdersFailed ? "—" : returnedOrders.length}</strong>
                     </button>
                   </div>
                   <div className="pq-workbench-view-toggle" aria-label="Modo de vista">
@@ -2999,12 +3129,8 @@ export default function PageQuote() {
               </div>
 
               <div className="pq-workbench-body">
-              {loading ? (
-                <div className="ps-cards-empty">Cargando órdenes...</div>
-              ) : filteredOrders.length === 0 ? (
-                <div className="ps-cards-empty">No hay órdenes que coincidan con los filtros.</div>
-              ) : viewMode === "table" ? (
-                <div className="pq-workbench-list ps-table-wrap">
+              {viewMode === "table" ? (
+                <div className="pq-workbench-list ps-table-wrap" aria-busy={initialOrdersPending}>
                   <table className="ps-table">
                     <thead>
                       <tr>
@@ -3017,7 +3143,13 @@ export default function PageQuote() {
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedOrders.map(order => (
+                      {initialOrdersPending ? (
+                        <QuoteOrderTableSkeleton rows={PER_PAGE} columns={6} />
+                      ) : initialOrdersFailed ? (
+                        <tr><td colSpan={6} className="ps-table-empty">No se pudieron cargar las órdenes de Caja.</td></tr>
+                      ) : filteredOrders.length === 0 ? (
+                        <tr><td colSpan={6} className="ps-table-empty">No hay órdenes que coincidan con los filtros.</td></tr>
+                      ) : paginatedOrders.map(order => (
                         <tr
                           key={order.id}
                           className="row-hover ps-order-row"
@@ -3060,7 +3192,7 @@ export default function PageQuote() {
                               <button className="table-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                                 <Icons.Eye />
                               </button>
-                              {!order?.production_authorized_at && !order?.production_authorized_by && (
+                              {!order.production_authorized_at && !order.production_authorized_by && (
                                 <button className="table-action-btn view" onClick={event => { event.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
                                   <Icons.Receipt />
                                 </button>
@@ -3077,9 +3209,11 @@ export default function PageQuote() {
                     </tbody>
                   </table>
                 </div>
+              ) : initialOrdersPending ? <QuoteOrderCardsSkeleton /> : initialOrdersFailed ? (
+                <div className="ps-cards-empty">No se pudieron cargar las órdenes de Caja.</div>
               ) : (
                 <div className="ps-cards-grid">
-                  {paginatedOrders.map(order => {
+                  {filteredOrders.length === 0 ? <p className="ps-table-empty">No hay órdenes que coincidan con los filtros.</p> : paginatedOrders.map(order => {
                     const isUrgent = String(order.order_type || "").toLowerCase().includes("911");
                     return (
                     <article
@@ -3104,7 +3238,7 @@ export default function PageQuote() {
                         </span>
                       </div>
 
-                      {/* Tipo + Estado */}
+                      {/* Tipo + Estado + Pago + Fecha */}
                       <div className="ps-order-card-fields">
                         <div className="ps-order-card-field">
                           <span className="ps-order-card-field-label">Tipo</span>
@@ -3117,10 +3251,6 @@ export default function PageQuote() {
                           <span className="ps-order-card-field-label">Estado</span>
                           <StatusBadge status={order.status} className="acm-badge" bordered showDot={false} order={order} />
                         </div>
-                      </div>
-
-                      {/* Pago + Fecha */}
-                      <div className="ps-order-card-fields">
                         <div className="ps-order-card-field">
                           <span className="ps-order-card-field-label">Pago</span>
                           <PaymentBadge status={order.payment_status} labelOverride={CASHIER_PAYMENT_LABEL_OVERRIDES[order.payment_status]} className="acm-badge" bordered showDot={false} />
@@ -3138,7 +3268,7 @@ export default function PageQuote() {
                         <button className="card-action-btn view" onClick={event => { event.stopPropagation(); handleViewOrder(order); }} title="Ver detalles">
                           <Icons.Eye />
                         </button>
-                        {!order?.production_authorized_at && !order?.production_authorized_by && (
+                        {!order.production_authorized_at && !order.production_authorized_by && (
                           <button className="card-action-btn view" onClick={event => { event.stopPropagation(); handleOpenPayment(order); }} title="Gestionar pago" aria-label="Gestionar pago">
                             <Icons.Receipt />
                           </button>
@@ -3155,7 +3285,7 @@ export default function PageQuote() {
                 </div>
               )}
 
-              <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+              {!initialOrdersPending && !initialOrdersFailed && <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />}
             </div>
               </div>
           </section>
@@ -3240,16 +3370,6 @@ export default function PageQuote() {
         loading={returnLoading}
       />
 
-
-      <CreateClientModal
-        open={showNewClientModal}
-        onClose={() => {
-          setShowNewClientModal(false);
-        }}
-        onCreated={handleNewClientCreated}
-        supabase={supabase}
-        userId={user?.id}
-      />
 
       <RegisteredClientLinkModal
         open={!!clientLinkOrder}

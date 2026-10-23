@@ -72,6 +72,7 @@ import { filterActiveNotifications, getActiveUnreadCount, showCreditActionFeedba
 import { buildProductionCatalogs } from "../utils/production";
 import { getAdminTabFromSearch, getAdminTabSearch } from "../utils/adminTabRoute";
 import { getMaterialGlobalBounds } from "../utils/kpiHelpers";
+import { buildOrderTrackingUrl } from "../utils/orderTrackingUrl";
 import { getAdminPasswordPolicyError, getEmployeeFormValidationMessage, validateEmployeeForm } from "../utils/employeeFormValidation";
 import {
   buildAdminWorkspaceRecovery,
@@ -5605,7 +5606,7 @@ function AdminTrackingLinkField({ orderId }) {
       .catch(() => setLoading(false));
   }, [orderId]);
 
-  const trackingUrl = token ? `${window.location.origin}/track/${token}` : null;
+  const trackingUrl = buildOrderTrackingUrl(token);
 
   const handleCopy = async () => {
     if (!trackingUrl) return;

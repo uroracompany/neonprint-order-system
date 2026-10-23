@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import EditOrderModal from "../components/orders/EditOrderModal";
@@ -10,6 +10,9 @@ const { resolveOrderAssetUrl, uploadOrderAsset, canDecodeAsImage, compressImage 
   canDecodeAsImage: vi.fn(),
   compressImage: vi.fn(),
 }));
+const { from, rpc } = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
+
+vi.mock("../../supabaseClient", () => ({ supabase: { from, rpc } }));
 
 vi.mock("../utils/adminApi", () => ({
   adminApiFetch: vi.fn(),
@@ -76,6 +79,18 @@ describe("EditOrderModal seller hydration", () => {
     uploadOrderAsset.mockReset();
     canDecodeAsImage.mockReset();
     compressImage.mockReset();
+    from.mockReturnValue({
+      select: () => ({
+        order: () => ({
+          limit: () => ({
+            ilike: () => Promise.resolve({ data: [], error: null }),
+            then: (resolve, reject) => Promise.resolve({ data: [], error: null }).then(resolve, reject),
+          }),
+          then: (resolve, reject) => Promise.resolve({ data: [], error: null }).then(resolve, reject),
+        }),
+      }),
+    });
+    rpc.mockResolvedValue({ data: { order: completeOrder }, error: null });
     adminApiFetch.mockResolvedValue({ response: { ok: true }, result: {} });
     resolveOrderAssetUrl.mockResolvedValue("https://signed.example.test/preview.webp");
     uploadOrderAsset.mockResolvedValue("supabase://order-previews/orders/order-1/preview/work-order.webp");
@@ -183,10 +198,11 @@ describe("EditOrderModal seller hydration", () => {
 
     await user.upload(uploadInput, file);
 
-    const detailsButton = screen.getByRole("button", { name: "Detalles" });
-    expect(detailsButton).toHaveClass("fc-file-action-attention");
-    await user.click(detailsButton);
-    expect(screen.getByRole("button", { name: "Detalles" })).not.toHaveClass("fc-file-action-attention");
+    const detailsButton = screen.getByRole("button", { name: "Detalles de banner.pdf" });
+    expect(detailsButton).not.toHaveClass("fc-file-action-attention");
+    expect(detailsButton).toHaveAttribute("title", "Detalles de banner.pdf");
+    expect(await screen.findByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
+    expect(detailsButton).not.toHaveClass("fc-file-action-attention");
     expect(screen.getByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
     expect(screen.getByLabelText("Nombre visible en seguimiento")).toBeInTheDocument();
     expect(screen.getByLabelText("Área de producción")).toBeInTheDocument();
@@ -202,6 +218,62 @@ describe("EditOrderModal seller hydration", () => {
 
     expect(screen.queryByRole("heading", { name: "Detalles de Archivo" })).not.toBeInTheDocument();
     expect(screen.getByText("Seguimiento: Banner principal")).toBeInTheDocument();
+    const editButton = screen.getByRole("button", { name: "Editar detalles de banner.pdf" });
+    expect(editButton).toHaveTextContent("Editar");
+    expect(editButton).toHaveAttribute("title", "Editar detalles de banner.pdf");
+    await user.click(editButton);
+    expect(screen.getByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Nombre visible en seguimiento")).toHaveValue("Banner principal");
+  }, 10000);
+
+  it("opens details only for the first of multiple new production files", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    const uploadInput = screen.getByRole("group", { name: "Agregar archivos" }).querySelector('input[type="file"]');
+
+    await user.upload(uploadInput, [
+      new File(["one"], "primero.pdf", { type: "application/pdf" }),
+      new File(["two"], "segundo.pdf", { type: "application/pdf" }),
+    ]);
+
+    expect(await screen.findByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Detalles de primero.pdf" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Detalles de segundo.pdf" })).toBeInTheDocument();
+  });
+
+  it("opens valid replacements with existing specifications and rejects unsupported files", async () => {
+    const user = userEvent.setup();
+    const orderWithProductionFile = {
+      ...completeOrder,
+      order_production_files: [{
+        id: "production-file-1",
+        url: "https://assets.example.test/actual.pdf",
+        filename: "actual.pdf",
+        public_label: "Etiqueta actual",
+        production_area_code: "ploteo",
+        material_names: ["Lona"],
+        termination_name: "Mate",
+        status: "pending",
+      }],
+    };
+    renderModal(orderWithProductionFile);
+    await user.click(screen.getByRole("button", { name: "Reemplazar" }));
+    const replacementInput = screen.getByLabelText("Seleccionar archivo de reemplazo");
+
+    fireEvent.change(replacementInput, { target: { files: [new File(["bad"], "script.exe", { type: "application/octet-stream" })] } });
+    expect(await screen.findByText(/no es un adjunto permitido/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Detalles de Archivo" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reemplazar" }));
+    fireEvent.change(replacementInput, { target: { files: [new File(["new"], "nuevo.pdf", { type: "application/pdf" })] } });
+    expect(await screen.findByRole("heading", { name: "Detalles de Archivo" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Nombre visible en seguimiento")).toHaveValue("Etiqueta actual");
+    expect(screen.getByLabelText("Área de producción")).toHaveValue("ploteo");
+    const detailsDialog = screen.getByRole("heading", { name: "Detalles de Archivo" }).closest('[role="dialog"]');
+    await user.click(within(detailsDialog).getByRole("button", { name: "Cerrar modal" }));
+    expect(screen.getByText("nuevo.pdf")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Editar detalles" }));
+    expect(screen.getByLabelText("Nombre visible en seguimiento")).toHaveValue("Etiqueta actual");
   });
 
   it("shows only asset controls and saves only asset changes in assets-only mode", async () => {

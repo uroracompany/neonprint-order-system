@@ -3,9 +3,13 @@ import { readProjectFile } from '../test-utils/read-project-file.js'
 
 describe('selector de período del banner KPI', () => {
   it('permite que el menú se muestre fuera del banner y por encima del contenido posterior', () => {
-    const styles = readProjectFile('src/css-components/page-kpi.css')
+    const styles = readProjectFile('src/css-components/page-kpi.css').replace(/\r\n/g, '\n')
+    const bannerRules = [...styles.matchAll(/\.kpi-banner\s*\{([^}]*)\}/g)]
+    const effectiveBannerRule = bannerRules.at(-1)?.[1] || ''
 
-    expect(styles).toContain('.kpi-banner {\n  position: relative;\n  z-index: 2;\n  overflow: visible;')
+    expect(effectiveBannerRule).toMatch(/position:\s*relative;/)
+    expect(effectiveBannerRule).toMatch(/z-index:\s*2;/)
+    expect(effectiveBannerRule).toMatch(/overflow:\s*visible;/)
     expect(styles).toContain('.kpi-banner-period-control { position: relative; z-index: 3;')
     expect(styles).toContain('.kpi-banner-period-control .pp-filter-dropdown { z-index: 4; }')
   })

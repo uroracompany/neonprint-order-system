@@ -33,7 +33,7 @@ describe("Semi-Admin actions in order assignment records", () => {
     expect(page).toContain('return_design_to_sales: Icons.ArrowLeft');
     expect(page).toContain('return_quote_to_previous_stage: Icons.ArrowLeft');
     expect(page).toContain('setSemiAdminQuoteReturn({ order, actionKey: action.key, targetOverride: "sales" })');
-    expect(page).toContain('actionKey: action.key,\n        targetOverride: action.target_stage === "sales" ? "sales" : "designer"');
+    expect(page.replace(/\s+/g, " ")).toContain('actionKey: action.key, targetOverride: action.target_stage === "sales" ? "sales" : "designer"');
     expect(page).toContain('const actionKey = returnContext?.actionKey || "return_quote_to_design";');
     expect(page).toContain('handleSemiAdminOperation(actionKey, { reason }, returnOrder)');
     expect(page).toContain('targetOverride={semiAdminQuoteReturn?.targetOverride || "designer"}');

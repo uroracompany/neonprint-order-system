@@ -27,6 +27,7 @@ export default function PaymentFormModal({
   remoteOrderMissing = false,
 }) {
   const [paymentStatus, setPaymentStatus] = useState(correctionMode ? "" : "Pending_Payment");
+  const [pendingStatusTouched, setPendingStatusTouched] = useState(false);
   const [receiptFile, setReceiptFile] = useState(null);
   const [existingReceiptUrl, setExistingReceiptUrl] = useState("");
   const [existingReceiptLoadState, setExistingReceiptLoadState] = useState("idle");
@@ -39,6 +40,9 @@ export default function PaymentFormModal({
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [savedInvoiceNumber, setSavedInvoiceNumber] = useState(order?.invoice_number || "");
   const [invoiceCodeSaving, setInvoiceCodeSaving] = useState(false);
+  const [invoiceCodeEditing, setInvoiceCodeEditing] = useState(false);
+  const invoiceNumberInputRef = useRef(null);
+  const paidReceiptScrollRequestedRef = useRef(false);
   const [versionConflict, setVersionConflict] = useState(false);
   const versionConflictRef = useRef(false);
   const orderSessionRef = useRef({ open: false, orderId: null });
@@ -47,6 +51,13 @@ export default function PaymentFormModal({
   const priorAcknowledgedVersionRef = useRef(null);
   const orderId = order?.id;
   const orderPaymentStatus = order?.payment_status;
+  const hasSavedInvoice = Boolean(String(savedInvoiceNumber || "").trim());
+  const canEditInvoiceCode = Boolean(canAssignInvoiceCode && canManagePayment && onAssignInvoiceCode);
+  const invoiceCodeEditable = canEditInvoiceCode
+    && orderPaymentStatus === PAYMENT_STATUS.PENDING
+    && !correctionMode;
+  const invoiceCodeHasUnsavedChanges = String(invoiceNumber || "").trim()
+    !== String(savedInvoiceNumber || "").trim();
 
   useEffect(() => {
     if (!open || !orderId) {
@@ -61,6 +72,8 @@ export default function PaymentFormModal({
     versionConflictRef.current = false;
     setVersionConflict(false);
     setPaymentStatus(correctionMode ? "" : (orderPaymentStatus || "Pending_Payment"));
+    setPendingStatusTouched(false);
+    paidReceiptScrollRequestedRef.current = false;
     setReceiptFile(null);
     setReceiptPreviewAvailable(true);
     setReceiptZoneError("");
@@ -69,8 +82,31 @@ export default function PaymentFormModal({
     setInvoiceNumber(order?.invoice_number || "");
     setSavedInvoiceNumber(order?.invoice_number || "");
     setInvoiceCodeSaving(false);
+    setInvoiceCodeEditing(false);
     if (receiptInputRef.current) receiptInputRef.current.value = "";
   }, [open, orderId, orderPaymentStatus, order?.invoice_number, order?.updated_at, correctionMode]);
+
+  useEffect(() => {
+    if (!open || !orderId || correctionMode || hasSavedInvoice || !invoiceCodeEditable || loading) return undefined;
+    const focusFrame = window.requestAnimationFrame(() => {
+      invoiceNumberInputRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [open, orderId, correctionMode, hasSavedInvoice, invoiceCodeEditable, loading]);
+
+  useEffect(() => {
+    if (!paidReceiptScrollRequestedRef.current || correctionMode || paymentStatus !== PAYMENT_STATUS.PAID) return;
+    const modalBody = document.querySelector(".pfm-modal .ps-modal-body");
+    const receiptSection = modalBody?.querySelector(".pfm-receipt-section");
+    if (!modalBody || !receiptSection || typeof modalBody.scrollTo !== "function") return;
+
+    const bodyTop = modalBody.getBoundingClientRect().top;
+    const receiptTop = receiptSection.getBoundingClientRect().top;
+    const top = modalBody.scrollTop + receiptTop - bodyTop;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    modalBody.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
+    paidReceiptScrollRequestedRef.current = false;
+  }, [paymentStatus, correctionMode]);
 
   useEffect(() => {
     if (!open || !orderId || orderSessionRef.current.orderId !== orderId) return;
@@ -176,7 +212,6 @@ export default function PaymentFormModal({
         : { eligible: false, error: "Selecciona Pendiente o Pago parcial para corregir el estado." };
     }
 
-    const hasSavedInvoice = Boolean(savedInvoiceNumber.trim());
     const hasPaymentEvidence = Boolean(receiptFile || hasVerifiedPaymentReceipt);
 
     if (paymentStatus === PAYMENT_STATUS.PENDING) {
@@ -210,12 +245,12 @@ export default function PaymentFormModal({
   }, [
     canManagePayment,
     correctionMode,
+    hasSavedInvoice,
     hasVerifiedPaymentReceipt,
     loading,
     order?.client_id,
     paymentStatus,
     receiptFile,
-    savedInvoiceNumber,
   ]);
 
   const handleReceiptAccepted = async ([file]) => {
@@ -240,7 +275,7 @@ export default function PaymentFormModal({
   };
 
   const handleSubmit = async () => {
-    if (versionConflictRef.current) return;
+    if (versionConflictRef.current || invoiceCodeSaving || invoiceCodeEditing || invoiceCodeHasUnsavedChanges) return;
     setInternalError("");
     if (!paymentEligibility.eligible) {
       if (paymentEligibility.error) setInternalError(paymentEligibility.error);
@@ -272,10 +307,11 @@ export default function PaymentFormModal({
 
   const handleInvoiceCodeSave = async () => {
     const nextInvoiceNumber = invoiceNumber.trim();
-    if (versionConflictRef.current || !nextInvoiceNumber || !onAssignInvoiceCode || !canAssignInvoiceCode || invoiceCodeSaving) return;
+    if (versionConflictRef.current || !nextInvoiceNumber || !invoiceCodeEditable || invoiceCodeSaving) return;
 
     setInternalError("");
     setInvoiceCodeSaving(true);
+    let acknowledgedInvoiceNumber = "";
     try {
       const updated = await onAssignInvoiceCode(order, nextInvoiceNumber, (acknowledgedOrder) => {
         if (acknowledgedOrder?.updated_at) {
@@ -284,15 +320,16 @@ export default function PaymentFormModal({
           observedVersionRef.current = acknowledgedOrder.updated_at;
         }
         if (acknowledgedOrder?.invoice_number) {
-          const persistedInvoiceNumber = String(acknowledgedOrder.invoice_number).trim();
-          setInvoiceNumber(persistedInvoiceNumber);
-          setSavedInvoiceNumber(persistedInvoiceNumber);
+          acknowledgedInvoiceNumber = String(acknowledgedOrder.invoice_number).trim();
         }
       });
-      if (updated?.invoice_number) {
-        const persistedInvoiceNumber = String(updated.invoice_number).trim();
+      const persistedInvoiceNumber = String(updated?.invoice_number ?? acknowledgedInvoiceNumber).trim();
+      if (persistedInvoiceNumber) {
         setInvoiceNumber(persistedInvoiceNumber);
         setSavedInvoiceNumber(persistedInvoiceNumber);
+        setInvoiceCodeEditing(false);
+      } else {
+        setInternalError("El servidor no confirmó el código de facturación. Verifica el código e intenta guardarlo nuevamente.");
       }
     } catch (err) {
       if (err?.code === "ORDER_STALE" || String(err?.message || "").includes("ORDER_STALE")) {
@@ -306,6 +343,13 @@ export default function PaymentFormModal({
     }
   };
 
+  const handleInvoiceCodeEdit = () => {
+    if (!invoiceCodeEditable || versionConflictRef.current || invoiceCodeSaving) return;
+    setInvoiceNumber(String(savedInvoiceNumber || ""));
+    setInvoiceCodeEditing(true);
+    window.requestAnimationFrame(() => invoiceNumberInputRef.current?.focus({ preventScroll: true }));
+  };
+
   if (!open || !order) return null;
 
   const orderReference = order.id
@@ -314,6 +358,10 @@ export default function PaymentFormModal({
   const clientName = order.client_name || "Cliente";
   const clientInitials = getAvatarInitials(clientName);
   const clientPhone = order.client_contact || order.client_phone || "Sin teléfono";
+  const invoiceNeedsAttention = !correctionMode && !hasSavedInvoice;
+  const showPaymentBlockReason = !correctionMode
+    && Boolean(paymentEligibility.error)
+    && (paymentStatus !== PAYMENT_STATUS.PENDING || pendingStatusTouched);
 
   const paymentFooter = (
     <div className="pq-dialog-actions pfm-actions">
@@ -324,8 +372,8 @@ export default function PaymentFormModal({
         type="button"
         className="pq-btn pq-btn-primary"
         onClick={handleSubmit}
-        disabled={versionConflict || !paymentEligibility.eligible}
-        aria-describedby={!correctionMode && !paymentEligibility.eligible && paymentEligibility.error ? "pfm-payment-block-reason" : undefined}
+        disabled={versionConflict || invoiceCodeSaving || invoiceCodeEditing || invoiceCodeHasUnsavedChanges || !paymentEligibility.eligible}
+        aria-describedby={showPaymentBlockReason ? "pfm-payment-block-reason" : undefined}
       >
         {confirmLabel}
       </button>
@@ -385,11 +433,55 @@ export default function PaymentFormModal({
           </div>
         )}
 
-        {!correctionMode && !paymentEligibility.eligible && paymentEligibility.error && (
+        {showPaymentBlockReason && (
           <div id="pfm-payment-block-reason" className="pfm-error" role="status" aria-live="polite" aria-atomic="true">
             <Icons.AlertCircle aria-hidden="true" />{paymentEligibility.error}
           </div>
         )}
+
+          <div className={`pfm-receipt-number-field${invoiceNeedsAttention ? " pfm-invoice-pending" : ""}${invoiceNeedsAttention && invoiceCodeEditable ? " pfm-invoice-pending--editable" : ""}`}>
+              <small id="pfm-invoice-number-hint" className={`pfm-receipt-number-hint pfm-invoice-code-hint${hasSavedInvoice && invoiceCodeEditable && orderPaymentStatus === PAYMENT_STATUS.PENDING && !invoiceCodeEditing && !correctionMode ? " pfm-invoice-code-hint--saved" : ""}`} aria-live="polite">
+                {correctionMode
+                  ? "El código de facturación se conserva sin cambios durante la corrección."
+                  : !invoiceCodeEditable && hasSavedInvoice
+                    ? "El código queda bloqueado porque el pago ya fue confirmado."
+                  : orderPaymentStatus !== PAYMENT_STATUS.PENDING
+                    ? "El código solo puede registrarse mientras la orden siga pendiente."
+                  : hasSavedInvoice
+                    ? invoiceCodeEditing
+                      ? "Guarda los cambios antes de confirmar el pago."
+                      : "Código guardado. Puedes elegir el estado del pago o editar el código mientras siga pendiente."
+                    : invoiceCodeEditable
+                      ? "Paso 1: registra y guarda el código antes de elegir el estado del pago."
+                      : canManagePayment
+                        ? "Caja no puede asignar este código. Solicita a Ventas que lo registre para continuar con el pago."
+                        : "Modo lectura: solicita al responsable de la orden que registre el código de facturación."}
+              </small>
+              <label className="pfm-label" htmlFor="pfm-invoice-number">Código de facturación</label>
+              <input
+                id="pfm-invoice-number"
+                ref={invoiceNumberInputRef}
+                className="pfm-receipt-number-input"
+                value={invoiceNumber}
+                onChange={(event) => setInvoiceNumber(event.target.value)}
+                readOnly={correctionMode || (hasSavedInvoice && !invoiceCodeEditing)}
+                disabled={!correctionMode && (loading || !invoiceCodeEditable)}
+                placeholder="Código de facturación"
+                aria-describedby="pfm-invoice-number-hint"
+              />
+              {invoiceCodeEditable && (
+                hasSavedInvoice && !invoiceCodeEditing
+                  ? <button type="button" className="pq-btn pq-btn-secondary pfm-save-invoice-btn" onClick={handleInvoiceCodeEdit} disabled={versionConflict || loading || invoiceCodeSaving}>Editar código</button>
+                  : <button
+                    type="button"
+                    className="pq-btn pq-btn-primary pfm-save-invoice-btn"
+                    onClick={handleInvoiceCodeSave}
+                    disabled={versionConflict || loading || invoiceCodeSaving || !invoiceNumber.trim() || !invoiceCodeHasUnsavedChanges}
+                  >
+                    {invoiceCodeSaving ? "Guardando..." : hasSavedInvoice ? "Guardar cambios" : "Guardar código"}
+                  </button>
+              )}
+          </div>
 
           <div className="pfm-field">
             <span id="pfm-payment-status-label" className="pfm-label">Estado de pago</span>
@@ -397,8 +489,16 @@ export default function PaymentFormModal({
               <select
                 aria-labelledby="pfm-payment-status-label"
                 value={paymentStatus}
-                onChange={(e) => setPaymentStatus(e.target.value)}
-                disabled={loading || !canManagePayment}
+                onChange={(event) => {
+                  const nextPaymentStatus = event.target.value;
+                  setPaymentStatus(nextPaymentStatus);
+                  setPendingStatusTouched(nextPaymentStatus === PAYMENT_STATUS.PENDING);
+                  setInternalError("");
+                  paidReceiptScrollRequestedRef.current = !correctionMode
+                    && paymentStatus !== PAYMENT_STATUS.PAID
+                    && nextPaymentStatus === PAYMENT_STATUS.PAID;
+                }}
+                disabled={loading || !canManagePayment || (!correctionMode && !hasSavedInvoice)}
               >
                 {paymentOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
@@ -417,33 +517,6 @@ export default function PaymentFormModal({
               )}
             </div>
           )}
-
-          <div className="pfm-receipt-number-field">
-              <label className="pfm-label" htmlFor="pfm-invoice-number">Código de facturación</label>
-              <input
-                id="pfm-invoice-number"
-                className="pfm-receipt-number-input"
-                value={invoiceNumber}
-                onChange={(event) => setInvoiceNumber(event.target.value)}
-                readOnly={correctionMode}
-                disabled={!correctionMode && (loading || !canAssignInvoiceCode || !canManagePayment)}
-                placeholder="Código de facturación"
-                aria-describedby="pfm-invoice-number-hint"
-              />
-              {canAssignInvoiceCode && canManagePayment && onAssignInvoiceCode && (
-                <button
-                  type="button"
-                  className="pq-btn pq-btn-primary pfm-save-invoice-btn"
-                  onClick={handleInvoiceCodeSave}
-                  disabled={versionConflict || loading || invoiceCodeSaving || !invoiceNumber.trim() || invoiceNumber.trim() === String(order?.invoice_number || "").trim()}
-                >
-                  {invoiceCodeSaving ? "Guardando..." : "Guardar código"}
-                </button>
-              )}
-              <small id="pfm-invoice-number-hint" className="pfm-receipt-number-hint pfm-invoice-code-hint">
-                {correctionMode ? "El código de facturación se conserva sin cambios durante la corrección." : (canAssignInvoiceCode ? "Guarda el código antes de completar el pago." : "El código registrado es requerido antes de completar el pago.")}
-              </small>
-          </div>
 
           {paymentStatus === PAYMENT_STATUS.PAID && !correctionMode && (
             <div className="pfm-receipt-section">
@@ -498,6 +571,7 @@ export default function PaymentFormModal({
                   buttonLabel="Seleccionar desde el ordenador"
                   hint={PAYMENT_RECEIPT_HINT}
                   disabled={loading || !canManagePayment}
+                  className={loading || !canManagePayment || receiptZoneError ? "" : "pfm-receipt-upload-attention"}
                   externalError={receiptZoneError}
                   externalErrorKey={receiptZoneErrorKey}
                   onFilesAccepted={handleReceiptAccepted}

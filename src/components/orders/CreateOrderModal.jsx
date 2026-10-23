@@ -3,11 +3,12 @@ import { createPortal } from "react-dom";
 import { supabase } from "../../../supabaseClient";
 import { Icons } from "../../utils/icons";
 import { ClientSelect } from "../ui/ClientCombobox";
+import TrackingNameCombobox from "../ui/TrackingNameCombobox";
 import FileUploadZone from "../ui/FileUploadZone";
 import FileCard from "../FileCard";
 import { ORDER_STATUS, PRODUCTION_AREAS } from "../../utils/constants";
 import { serializeReferenceImages } from "../../utils/orderAssets";
-import { buildProductionFileRows } from "../../utils/production";
+import { buildProductionFileRows, isProductionFileDetailsComplete } from "../../utils/production";
 import { buildStorageSafeFileName, formatFileSize, uploadOrderAsset } from "../../utils/uploadOrderAsset";
 import { canDecodeAsImage, compressImage, REF_IMAGE_CONFIG, validateReferenceImages } from "../../utils/imageValidation";
 import { formatPhone, getSelectedClientOrderFields } from "../../utils/clients";
@@ -619,6 +620,7 @@ export function ProductionFileDetailsModal({
   orderId = null,
   fileKey = "",
   lockArea = false,
+  overlayClassName = "ps-file-details-overlay",
 }) {
   const [draft, setDraft] = useState(value || {});
   const [errors, setErrors] = useState({});
@@ -673,7 +675,7 @@ export function ProductionFileDetailsModal({
       title={`Detalles: ${fileName || "archivo"}`}
       hideStripe
       className="ps-file-details-modal ps-modal-form-visual"
-      overlayClassName="ps-file-details-overlay"
+      overlayClassName={overlayClassName}
       headerContent={
         <>
           {orderId && <span className="ps-file-details-order-code">#{String(orderId).slice(0, 8).toUpperCase()}</span>}
@@ -684,12 +686,9 @@ export function ProductionFileDetailsModal({
       <div className="ps-file-details-content">
         {errors.form && <p className="ps-form-error-banner" role="alert">{errors.form}</p>}
         <Field label="Nombre visible en seguimiento" required error={errors.publicLabel}>
-          <input
-            className="ps-form-input"
+          <TrackingNameCombobox
             value={draft.publicLabel || ""}
-            onChange={(event) => update("publicLabel", event.target.value)}
-            placeholder="Ej: Banner principal"
-            aria-label="Nombre visible en seguimiento"
+            onChange={(value) => update("publicLabel", value)}
             disabled={saving}
           />
         </Field>
@@ -1254,20 +1253,32 @@ export default function CreateOrderModal({
                       ...previous,
                       ...files.map((_, offset) => firstNewFileIndex + offset),
                     ]);
+                    setPendingDetailsIndices((previous) => previous.filter((index) => index !== firstNewFileIndex));
+                    setDetailsFileIndex(firstNewFileIndex);
                     setFieldErrors(previous => ({ ...previous, design_files: "" }));
                   }}
                 />
                 {form.design_files.length > 0 && (
                   <div className="ps-files-list ps-files-list-designer">
-                    {form.design_files.map((file, index) => (
+                    {form.design_files.map((file, index) => {
+                      const isComplete = isProductionFileDetailsComplete({
+                        publicLabel: form.design_file_labels[index],
+                        areaCode: form.design_file_areas[index],
+                        materialNames: form.design_file_materials[index],
+                        terminationName: form.design_file_terminations[index],
+                      });
+                      const actionLabel = isComplete ? "Editar" : "Detalles";
+                      const actionName = `${actionLabel} ${isComplete ? "detalles de" : "de"} ${file.name}`;
+                      return (
                       <div key={`${file.name}-${index}`} className={missingLabelIndices.includes(index) || missingAreaIndices.includes(index) ? "ps-file-missing" : ""}>
                         <FileCard
                           name={file.name}
                           secondaryText={formatFileSize(file.size)}
                           detailText={form.design_file_labels[index] ? `Seguimiento: ${form.design_file_labels[index]}` : "Seguimiento pendiente"}
                           actions={[{
-                            title: `Ver detalles de ${file.name}`,
-                            label: "Detalles",
+                            title: actionName,
+                            ariaLabel: actionName,
+                            label: actionLabel,
                             icon: <Icons.Edit />,
                             attention: pendingDetailsIndices.includes(index),
                             onClick: () => {
@@ -1289,7 +1300,8 @@ export default function CreateOrderModal({
                           }}
                         />
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </Field>

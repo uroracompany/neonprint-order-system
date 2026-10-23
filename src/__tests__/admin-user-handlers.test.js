@@ -1107,6 +1107,29 @@ describe("handleAdminListOrders", () => {
     expect(currentClient.orderBuilder.or).toHaveBeenCalledWith(expect.stringContaining("client_name.ilike.%JP MORGAN%"));
     expect(currentClient.orderRange).toHaveBeenCalledWith(10, 19);
   });
+
+  it("filters overdue orders using Asuncion's calendar day before ordering and pagination", async () => {
+    currentClient = makeAdminOrdersClient();
+
+    const result = await handleAdminListOrders({ operational: "overdue" }, {
+      ...env,
+      now: "2026-06-11T02:30:00.000Z",
+    });
+
+    expect(result.status).toBe(200);
+    expect(currentClient.orderBuilder.not).toHaveBeenCalledWith("delivery_date", "is", null);
+    expect(currentClient.orderBuilder.lt).toHaveBeenCalledWith("delivery_date", "2026-06-10");
+    expect(currentClient.orderBuilder.not).toHaveBeenCalledWith("status", "in", "(in_Delivered,cancelled)");
+    expect(currentClient.orderBuilder.lt.mock.invocationCallOrder[0]).toBeLessThan(
+      currentClient.orderBuilder.order.mock.invocationCallOrder[0],
+    );
+    expect(currentClient.orderBuilder.not.mock.invocationCallOrder[1]).toBeLessThan(
+      currentClient.orderBuilder.order.mock.invocationCallOrder[0],
+    );
+    expect(currentClient.orderBuilder.order.mock.invocationCallOrder[0]).toBeLessThan(
+      currentClient.orderRange.mock.invocationCallOrder[0],
+    );
+  });
 });
 
 describe("handleAdminSetUserStatus", () => {

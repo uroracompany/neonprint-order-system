@@ -1,8 +1,30 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildProductionCatalogs, buildProductionFileRows } from "../utils/production";
+import { buildProductionCatalogs, buildProductionFileRows, isProductionFileDetailsComplete } from "../utils/production";
 
 describe("production file specifications", () => {
+  it("marks production details complete only when every field has usable content", () => {
+    const completeDetails = {
+      publicLabel: " Banner principal ",
+      areaCode: " ploteo ",
+      materialNames: ["", "  ", " Vinilo "],
+      terminationName: " Ojales ",
+    };
+
+    expect(isProductionFileDetailsComplete(completeDetails)).toBe(true);
+    for (const invalidDetails of [
+      { ...completeDetails, publicLabel: " " },
+      { ...completeDetails, areaCode: " " },
+      { ...completeDetails, materialNames: undefined },
+      { ...completeDetails, materialNames: [] },
+      { ...completeDetails, materialNames: ["", "  "] },
+      { ...completeDetails, terminationName: " " },
+      { ...completeDetails, publicLabel: 123 },
+    ]) {
+      expect(isProductionFileDetailsComplete(invalidDetails)).toBe(false);
+    }
+  });
+
   it("keeps multiple materials and one termination on each production row", () => {
     const [row] = buildProductionFileRows({
       orderId: "order-1",
@@ -58,6 +80,7 @@ describe("production file specifications", () => {
     expect(atomicSources.join("\n")).not.toContain('rpc("save_order_production_file_specifications"');
     expect(designerSource).toContain('rpc("designer_update_order_with_file_specifications"');
     expect(designerSource).toContain('rpc("save_order_production_file_specifications"');
+    expect(designerSource).toContain("public_label: details.publicLabel");
   });
 
   it("requires complete file specifications before Design can advance an order to Caja", () => {
