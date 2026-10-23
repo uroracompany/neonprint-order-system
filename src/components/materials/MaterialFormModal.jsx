@@ -1,5 +1,5 @@
 import { Icons } from "../../utils/icons";
-import { Field, Modal } from "../orders/CreateOrderModal";
+import { Modal } from "../orders/CreateOrderModal";
 
 /**
  * Shared material form used by Administration and Semi-Administration.
@@ -13,6 +13,8 @@ export default function MaterialFormModal({
   name = "",
   areaCode = "",
   areas = [],
+  areasLoading = false,
+  insertedAwaitingRefresh = false,
   error = "",
   onNameChange,
   onAreaChange,
@@ -35,30 +37,46 @@ export default function MaterialFormModal({
     >
       <div className="ps-file-details-content">
         {error && <p className="ps-form-error-banner" role="alert">{error}</p>}
-        <Field label="Nombre del material" required>
+        <div className="ps-field">
+          <label className="ps-label" htmlFor="material-form-name">Nombre del material<span className="ps-label-req">*</span></label>
           <input
+            id="material-form-name"
             className="ps-form-input"
             value={name}
-            onChange={(event) => onNameChange?.(event.target.value)}
+            onChange={(event) => {
+              if (!insertedAwaitingRefresh) onNameChange?.(event.target.value);
+            }}
+            disabled={saving || insertedAwaitingRefresh}
             placeholder="Ej. Vinilo, Banner, Lona..."
             autoFocus
             onKeyDown={(event) => {
-              if (event.key === "Enter" && isReady && !saving) onSave?.();
+              if (event.key === "Enter" && isReady && !saving && !insertedAwaitingRefresh) onSave?.();
             }}
           />
-        </Field>
-        <Field label="Área de producción" required>
+        </div>
+        <div className="ps-field">
+          <label className="ps-label" htmlFor="material-form-production-area">Área de producción<span className="ps-label-req">*</span></label>
           <select
+            id="material-form-production-area"
             className="ps-form-input"
             value={areaCode}
-            onChange={(event) => onAreaChange?.(event.target.value)}
+            onChange={(event) => {
+              if (!insertedAwaitingRefresh) onAreaChange?.(event.target.value);
+            }}
+            disabled={areasLoading || saving || insertedAwaitingRefresh}
           >
-            <option value="">Seleccionar área</option>
+            <option value="">{areasLoading ? "Cargando áreas…" : areas.length ? "Seleccionar área" : "No hay áreas activas"}</option>
             {areas.map((area) => (
               <option key={area.code} value={area.code}>{area.label}</option>
             ))}
           </select>
-        </Field>
+          {areasLoading && <p className="ps-field-hint" role="status">Cargando áreas de producción…</p>}
+        </div>
+        {insertedAwaitingRefresh && (
+          <p className="ps-field-hint" role="status">
+            El material ya se guardó. Reintenta para actualizar el catálogo.
+          </p>
+        )}
         <div className="ps-form-actions ps-file-details-actions">
           <button type="button" className="ps-btn-cancel ps-file-details-btn-cancel" onClick={onClose} disabled={saving}>Cancelar</button>
           <button
@@ -68,7 +86,7 @@ export default function MaterialFormModal({
             disabled={!isReady || saving}
           >
             <Icons.Check />
-            {saving ? "Guardando..." : editingMaterial ? "Guardar cambios" : "Agregar material"}
+            {saving ? "Guardando..." : insertedAwaitingRefresh ? "Reintentar actualización" : editingMaterial ? "Guardar cambios" : "Agregar material"}
           </button>
         </div>
       </div>

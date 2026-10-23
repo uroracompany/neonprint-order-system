@@ -73,12 +73,13 @@ describe("flujo de produccion en caja", () => {
 
   it("no confunde editar el pago con autorizar Producción", () => {
     const quote = readProjectFile("src/pages/page-quote.jsx");
-    const authorizationStart = quote.indexOf("const canAuthorizeProduction =");
+    const authorizationStart = quote.indexOf("const isAuthorizationContextVisible =");
     const authorizationEnd = quote.indexOf("const returnedReason", authorizationStart);
     const authorization = quote.slice(authorizationStart, authorizationEnd);
 
     expect(authorization).not.toContain("canManagePayment");
-    expect(authorization).toContain("isPaymentProductionEligible(order?.payment_status)");
+    expect(authorization).toContain("const isPaymentEligibleForAuthorization = isPaymentProductionEligible(order?.payment_status)");
+    expect(authorization).toContain("const canAuthorizeProductionBase = isAuthorizationContextVisible && isPaymentEligibleForAuthorization");
     expect(authorization).toContain("productionFilesReadyForAuthorization");
     for (const archiveField of [
       "is_archived",

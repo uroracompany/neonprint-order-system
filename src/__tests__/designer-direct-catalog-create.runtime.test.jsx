@@ -1,10 +1,11 @@
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   insertError: null,
   failNextMaterialRead: false,
+  areaLoadPromise: null,
   insertedMaterials: [],
   fromCalls: [],
   showActionNotification: vi.fn(),
@@ -40,6 +41,9 @@ vi.mock("../../supabaseClient", () => ({
           return { error: null };
         }),
         then: (resolve, reject) => {
+          if (table === "production_areas" && state.areaLoadPromise) {
+            return state.areaLoadPromise.then(resolve, reject);
+          }
           if (table === "materials" && state.failNextMaterialRead) {
             state.failNextMaterialRead = false;
             return Promise.resolve({ data: null, error: { code: "08006", message: "temporary read failure" } }).then(resolve, reject);
@@ -126,14 +130,15 @@ import PageDesigner from "../pages/page-designer";
 const renderDesigner = () => render(<PageDesigner />);
 
 const fillMaterialForm = () => {
-  fireEvent.change(screen.getByLabelText("Nombre del material"), { target: { value: "Lona premium" } });
-  fireEvent.change(screen.getByLabelText("Área de producción"), { target: { value: "active-area" } });
+  fireEvent.change(screen.getByLabelText(/^Nombre del material/), { target: { value: "Lona premium" } });
+  fireEvent.change(screen.getByLabelText(/^Área de producción/), { target: { value: "active-area" } });
 };
 
 describe("Designer direct catalog creation runtime", () => {
   beforeEach(() => {
     state.insertError = null;
     state.failNextMaterialRead = false;
+    state.areaLoadPromise = null;
     state.insertedMaterials = [];
     state.fromCalls = [];
     state.showActionNotification.mockClear();
@@ -180,6 +185,22 @@ describe("Designer direct catalog creation runtime", () => {
     expect(await screen.findByTestId("create-order-modal")).toHaveTextContent("Lona premium");
   });
 
+  it("announces area loading and associates labels with the material form controls", async () => {
+    let resolveAreas;
+    state.areaLoadPromise = new Promise((resolve) => { resolveAreas = resolve; });
+    renderDesigner();
+    fireEvent.click(screen.getByRole("button", { name: "Crear materiales" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Agregar material" });
+    expect(within(dialog).getByLabelText(/^Nombre del material/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/^Área de producción/)).toBeDisabled();
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Cargando áreas de producción");
+
+    resolveAreas({ data: [{ code: "active-area", label: "Impresión" }], error: null });
+    expect(await within(dialog).findByRole("option", { name: "Impresión" })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/^Área de producción/)).toBeEnabled();
+  });
+
   it.each([
     ["duplicate", { code: "23505", message: "duplicate key" }, "Ya existe un material"],
     ["permission", { code: "42501", message: "permission denied" }, "No tienes permiso"],
@@ -193,12 +214,12 @@ describe("Designer direct catalog creation runtime", () => {
     fireEvent.click(screen.getByRole("button", { name: "Agregar material" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
-    expect(screen.getByLabelText("Nombre del material")).toHaveValue("Lona premium");
-    expect(screen.getByLabelText("Área de producción")).toHaveValue("active-area");
+    expect(screen.getByLabelText(/^Nombre del material/)).toHaveValue("Lona premium");
+    expect(screen.getByLabelText(/^Área de producción/)).toHaveValue("active-area");
     expect(state.insertedMaterials).toHaveLength(0);
   });
 
-  it("retries a failed catalog refresh without issuing a duplicate material insert", async () => {
+  it("recovers a failed catalog refresh after closing and reopening without changing or duplicating the inserted material", async () => {
     renderDesigner();
     fireEvent.click(screen.getByRole("button", { name: "Crear materiales" }));
     await screen.findByRole("dialog", { name: "Agregar material" });
@@ -209,10 +230,34 @@ describe("Designer direct catalog creation runtime", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("El material ya se guardó");
     expect(state.insertedMaterials).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "Agregar material" }));
+    const nameInput = screen.getByLabelText(/^Nombre del material/);
+    const areaSelect = screen.getByLabelText(/^Área de producción/);
+    expect(nameInput).toBeDisabled();
+    expect(areaSelect).toBeDisabled();
+    // Even if a script dispatches a change event to the disabled controls,
+    // retry must use the exact payload that was already inserted.
+    fireEvent.change(nameInput, { target: { value: "Nombre cambiado" } });
+    fireEvent.change(areaSelect, { target: { value: "another-area" } });
+    expect(nameInput).toHaveValue("Lona premium");
+    expect(areaSelect).toHaveValue("active-area");
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByRole("dialog", { name: "Agregar material" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Crear materiales" }));
+    expect(await screen.findByRole("dialog", { name: "Agregar material" })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "Impresión" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Nombre del material/)).toHaveValue("Lona premium");
+    expect(screen.getByLabelText(/^Nombre del material/)).toBeDisabled();
+    expect(screen.getByLabelText(/^Área de producción/)).toHaveValue("active-area");
+    expect(screen.getByLabelText(/^Área de producción/)).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar actualización" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Agregar material" })).not.toBeInTheDocument());
     expect(state.insertedMaterials).toHaveLength(1);
-    expect(state.showActionNotification).toHaveBeenCalledWith(expect.objectContaining({ title: "Material creado" }));
+    expect(state.showActionNotification).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Material creado",
+      message: 'El material "Lona premium" se agregó correctamente.',
+      metadata: expect.objectContaining({ material_name: "Lona premium" }),
+    }));
   });
 });

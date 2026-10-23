@@ -1,4 +1,6 @@
+/* global process */
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -63,6 +65,7 @@ const normalizeCssColor = (color) => {
   const channels = hex[1].match(/[\da-f]{2}/gi).map((channel) => Number.parseInt(channel, 16));
   return `rgb(${channels.join(", ")})`;
 };
+const quoteCss = readFileSync(resolve(process.cwd(), "src/css-components/page-quote.css"), "utf8");
 
 describe("experiencia del detalle de Caja", () => {
   beforeEach(() => {
@@ -83,7 +86,7 @@ describe("experiencia del detalle de Caja", () => {
     const summary = document.querySelector(".pq-payment-summary");
     const statusGroup = summary.querySelector(".pq-payment-summary-status");
     const badge = statusGroup.querySelector(".pq-badge");
-    const css = readFileSync(new URL("../css-components/page-quote.css", import.meta.url), "utf8");
+    const css = quoteCss;
     const expected = PAYMENT_COLORS[status];
 
     expect(statusGroup).toHaveTextContent("Estado actual");
@@ -128,7 +131,7 @@ describe("experiencia del detalle de Caja", () => {
   });
 
   it("mantiene Descripción sobria y separa el resumen de pago con el espaciado acordado", () => {
-    const css = readFileSync(new URL("../css-components/page-quote.css", import.meta.url), "utf8");
+    const css = quoteCss;
     const descriptionRule = css.match(/\.pq-description-box\s*\{([^}]*)\}/s)?.[1] || "";
     const summaryRule = css.match(/\.pq-payment-summary\s*\{([^}]*)\}/s)?.[1] || "";
     const summaryLabelRule = css.match(/\.pq-payment-summary-label\s*\{([^}]*)\}/s)?.[1] || "";
@@ -153,7 +156,7 @@ describe("experiencia del detalle de Caja", () => {
     expect(statusGroup.compareDocumentPosition(invoiceGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(invoiceGroup.querySelector("strong")).toHaveTextContent("FAC-3393993");
 
-    const css = readFileSync(new URL("../css-components/page-quote.css", import.meta.url), "utf8");
+    const css = quoteCss;
     expect(css).toMatch(/\.pq-payment-summary\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
     expect(css).toMatch(/\.pq-payment-summary-group\s*\+\s*\.pq-payment-summary-group\s*\{[^}]*border-top:\s*1px solid var\(--pq-border\)[^}]*border-left:\s*0/s);
     expect(css).toMatch(/\.pq-payment-summary-group\s*\{[^}]*min-width:\s*0/s);
@@ -203,14 +206,15 @@ describe("experiencia del detalle de Caja", () => {
 
     uploadAssetMocks.createSignedOrderAssetUrlFromStoredUrl.mockRejectedValueOnce(new Error("gateway unavailable"));
     rerender(<QuoteOrderDetailModal open onClose={vi.fn()} order={{ ...baseOrder, payment_status: PAYMENT_STATUS.PAID, invoice_payment: "supabase://payment-invoice/orders/payment-receipt.png" }} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo cargar el comprobante de pago");
+    const receiptError = await screen.findByText("No se pudo cargar el comprobante de pago.");
+    expect(receiptError.closest('[role="alert"]')).toHaveClass("pq-receipt-error");
     uploadAssetMocks.createSignedOrderAssetUrlFromStoredUrl.mockResolvedValueOnce("https://signed.example.com/retried-receipt.png");
     await userEvent.setup().click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByAltText("Comprobante de pago")).toHaveAttribute("src", "https://signed.example.com/retried-receipt.png");
   });
 
   it("presenta la guía del comprobante con una superficie informativa neutral", () => {
-    const css = readFileSync(new URL("../css-components/page-quote.css", import.meta.url), "utf8");
+    const css = quoteCss;
     const hintRule = css.match(/\.pq-upload-hint\s*\{([^}]*)\}/s)?.[1] || "";
 
     expect(hintRule).toMatch(/border:\s*1px solid var\(--pq-border\)/);
@@ -327,7 +331,7 @@ describe("experiencia del detalle de Caja", () => {
     expect(body.nextElementSibling).toBe(footer);
     expect(footer).toHaveTextContent("Cerrar");
 
-    const css = readFileSync(new URL("../css-components/page-quote.css", import.meta.url), "utf8");
+    const css = quoteCss;
 
     expect(css).toMatch(/\.pq-modal\s*,\s*\.pq-dialog\s*\{[^}]*overflow:\s*auto/s);
     expect(css).toMatch(/\.pq-overlay > \.pq-modal\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*overflow:\s*hidden/s);
@@ -363,7 +367,7 @@ describe("experiencia del detalle de Caja", () => {
     expect(productionCard.parentElement).toBe(visualColumn);
     expect(previewCard.compareDocumentPosition(productionCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    const css = readFileSync(new URL("../css-components/page-quote.css", import.meta.url), "utf8");
+    const css = quoteCss;
     expect(css).toMatch(/\.pq-detail-grid\s*\.pq-detail-production-card\s*\{[^}]*background:\s*var\(--pq-surface,\s*#ffffff\)/s);
 
     const digitalRow = screen.getByText("Producción digital").closest(".pq-production-area-row");
@@ -441,7 +445,7 @@ describe("experiencia del detalle de Caja", () => {
   });
 
   it("mantiene dos columnas en escritorio y separa visualmente las tarjetas del detalle", () => {
-    const css = readFileSync(new URL("../css-components/page-quote.css", import.meta.url), "utf8");
+    const css = quoteCss;
 
     expect(css).toMatch(/\.pq-detail-grid\s*,\s*\.pq-payment-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
     expect(css).toMatch(/@media\s*\(max-width:\s*\d+px\)[\s\S]*?\.pq-detail-grid\s*,\s*\.pq-payment-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);

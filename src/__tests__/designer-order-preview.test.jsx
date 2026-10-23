@@ -28,9 +28,16 @@ vi.mock("../../supabaseClient", () => ({
       };
       return query;
     }),
-    rpc: vi.fn(),
+    rpc: vi.fn(() => Promise.resolve({ data: [], error: null })),
+    channel: vi.fn(() => {
+      const channel = { on: vi.fn(() => channel), subscribe: vi.fn(() => channel) };
+      return channel;
+    }),
+    removeChannel: vi.fn(),
   },
 }));
+
+vi.mock("../components/orders/OrderTrackingLink", () => ({ default: () => null }));
 
 const baseOrder = {
   id: "57aacf7a-0e05-4dd0-9f97-77911fd03bd9",

@@ -19,11 +19,13 @@ import {
 } from "../utils/archive";
 import { ORDER_STATUS, FLOW_STEPS, FLOW_STEPS_EXTERNAL, isOrderStatus, isOrderStatusIn, isPaymentProductionEligible, ARCHIVE_MODULES, getFileNameFromUrl } from "../utils/constants";
 import { isOrderOverdue } from "../utils/orderDeadline";
+import { isProductionFileDetailsComplete } from "../utils/production";
 import { StatusBadge } from "../components/ui/Badge";
 import { Pagination } from "../components/ui/Pagination";
 import { ClientFilterSelect } from "../components/ui/ClientCombobox";
 import { FilterSelect } from "../components/ui/FilterSelect";
 import CreateClientModal from "../components/ui/CreateClientModal";
+import MaterialFormModal from "../components/materials/MaterialFormModal";
 import "../components/ui/FilterSelect.css";
 import { useAuth } from "../hooks/useAuth";
 import useNotifications from "../hooks/useNotifications";
@@ -643,8 +645,9 @@ export function OrderDetailModal({
       setPendingFileTerminations(prev => [...prev, ...acceptedFiles.map(() => "")]);
       setPendingDetailsIndices(prev => [
         ...prev,
-        ...acceptedFiles.map((_, offset) => firstNewFileIndex + offset),
+        ...acceptedFiles.slice(1).map((_, offset) => firstNewFileIndex + offset + 1),
       ]);
+      setFileDetailsTarget({ type: "pending", index: firstNewFileIndex, file: acceptedFiles[0] });
     }
 
     if (rejectedFiles.length > 0) {
@@ -1412,18 +1415,27 @@ export function OrderDetailModal({
             {pendingFiles.length > 0 && (
               <div className="pd-files-container">
                 <span className="pd-files-label">Archivos pendientes ({pendingFiles.length})</span>
-                {pendingFiles.map((file, i) => (
-                  <div key={i} className={missingLabelIndices.includes(i) || missingAreaIndices.includes(i) || missingSpecificationIndices.includes(i) ? 'pd-file-missing' : ''}>
+                {pendingFiles.map((file, i) => {
+                  const isComplete = isProductionFileDetailsComplete({
+                    publicLabel: pendingFileLabels[i],
+                    areaCode: pendingFileAreas[i],
+                    materialNames: pendingFileMaterials[i],
+                    terminationName: pendingFileTerminations[i],
+                  });
+                  const actionLabel = isComplete ? "Editar" : "Detalles";
+                  const actionName = `${actionLabel} detalles de ${file.name}`;
+                  return <div key={i} className={missingLabelIndices.includes(i) || missingAreaIndices.includes(i) || missingSpecificationIndices.includes(i) ? 'pd-file-missing' : ''}>
                     <FileCard
                       name={file.name}
                       secondaryText={formatFileSize(file.size)}
                       onRemove={() => removePendingFile(i)}
                       detailText={pendingFileLabels[i] ? `Seguimiento: ${pendingFileLabels[i]}` : "Seguimiento pendiente"}
                       actions={[{
-                        title: `Ver detalles de ${file.name}`,
-                        label: "Detalles",
+                        title: actionName,
+                        label: actionLabel,
                         icon: <Icons.Edit />,
                         attention: pendingDetailsIndices.includes(i),
+                        ariaLabel: actionName,
                         onClick: () => {
                           setPendingDetailsIndices(prev => prev.filter((pendingIndex) => pendingIndex !== i));
                           setFileDetailsTarget({ type: "pending", index: i, file });
@@ -1432,16 +1444,25 @@ export function OrderDetailModal({
                       removeIcon={<Icons.Trash />}
                       removeTitle={`Eliminar ${file.name}`}
                     />
-                  </div>
-                ))}
+                  </div>;
+                })}
               </div>
             )}
 
             {uniqueFiles.length > 0 && (
               <div className="pd-files-container" style={{ marginTop: pendingFiles.length > 0 ? '12px' : '16px' }}>
                 <span className="pd-files-label">Archivos guardados ({uniqueFiles.length})</span>
-                {uniqueFiles.map((file, i) => (
-                  <FileCard
+                {uniqueFiles.map((file, i) => {
+                  const productionFile = file.productionFile;
+                  const isComplete = isProductionFileDetailsComplete({
+                    publicLabel: productionFile?.public_label,
+                    areaCode: productionFile?.production_area_code,
+                    materialNames: productionFile?.material_names,
+                    terminationName: productionFile?.termination_name,
+                  });
+                  const actionLabel = isComplete ? "Editar" : "Detalles";
+                  const actionName = `Ver detalles de ${file.name}`;
+                  return <FileCard
                     key={i}
                     name={file.name}
                     url={file.url}
@@ -1454,9 +1475,10 @@ export function OrderDetailModal({
                     detailText={file.productionFile?.public_label ? `Seguimiento: ${file.productionFile.public_label}` : "Seguimiento pendiente"}
                     actions={canEditDesignerAssets && file.productionFile ? [
                       {
-                        title: `Ver detalles de ${file.name}`,
-                        label: "Detalles",
+                        title: actionName,
+                        label: actionLabel,
                         icon: <Icons.Edit />,
+                        ariaLabel: actionName,
                         onClick: () => setFileDetailsTarget({ type: "saved", file }),
                       },
                       {
@@ -1467,8 +1489,8 @@ export function OrderDetailModal({
                         label: removingFileId === file.productionFile.id ? "Eliminando…" : undefined,
                       },
                     ] : []}
-                  />
-                ))}
+                  />;
+                })}
               </div>
             )}
           </div>
@@ -1813,6 +1835,14 @@ export default function PageDesigner() {
   const [productionCatalog, setProductionCatalog] = useState({ materials: {}, terminations: {} });
   const [showCreate, setShowCreate] = useState(false);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [showMaterialModal, setShowMaterialModal] = useState(false);
+  const [materialName, setMaterialName] = useState("");
+  const [materialAreaCode, setMaterialAreaCode] = useState("");
+  const [materialAreas, setMaterialAreas] = useState([]);
+  const [materialAreasLoading, setMaterialAreasLoading] = useState(false);
+  const [materialError, setMaterialError] = useState("");
+  const [materialSaving, setMaterialSaving] = useState(false);
+  const [materialInsertedAwaitingRefresh, setMaterialInsertedAwaitingRefresh] = useState(null);
   const [clientToSelectInOrderForm, setClientToSelectInOrderForm] = useState(null);
   const [viewMode, setViewMode] = useState("table");
   const [page, setPage] = useState(1);
@@ -1987,6 +2017,94 @@ export default function PageDesigner() {
         client_id: newClient.id,
       },
     });
+  };
+
+  const openMaterialModal = async () => {
+    setShowMaterialModal(true);
+    setMaterialError("");
+    if (materialInsertedAwaitingRefresh) {
+      setMaterialName(materialInsertedAwaitingRefresh.name);
+      setMaterialAreaCode(materialInsertedAwaitingRefresh.areaCode);
+    } else {
+      setMaterialName("");
+      setMaterialAreaCode("");
+    }
+    setMaterialAreasLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("production_areas").select("code,label").eq("is_active", true).order("label");
+      if (error) throw error;
+      setMaterialAreas(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setMaterialAreas([]);
+      setMaterialError(error?.message || "No se pudieron cargar las áreas de producción.");
+    } finally {
+      setMaterialAreasLoading(false);
+    }
+  };
+
+  const closeMaterialModal = () => {
+    if (materialSaving) return;
+    setShowMaterialModal(false);
+    setMaterialError("");
+    if (!materialInsertedAwaitingRefresh) {
+      setMaterialName("");
+      setMaterialAreaCode("");
+    }
+  };
+
+  const handleSaveMaterial = async () => {
+    if (materialSaving) return;
+    const normalizedName = materialInsertedAwaitingRefresh?.name || materialName.trim();
+    const activeArea = materialInsertedAwaitingRefresh
+      ? { code: materialInsertedAwaitingRefresh.areaCode }
+      : materialAreas.find((area) => area.code === materialAreaCode);
+    if (normalizedName.length < 2) {
+      setMaterialError("El nombre del material debe tener al menos 2 caracteres.");
+      return;
+    }
+    if (!activeArea) {
+      setMaterialError("Selecciona un área de producción activa.");
+      return;
+    }
+
+    setMaterialSaving(true);
+    setMaterialError("");
+    try {
+      if (!materialInsertedAwaitingRefresh) {
+        const { error } = await supabase.from("materials").insert({
+          name: normalizedName,
+          production_area_code: activeArea.code,
+        });
+        if (error) {
+          if (error.code === "23505") throw new Error("Ya existe un material con ese nombre en esta área.");
+          if (error.code === "42501") throw new Error("No tienes permiso para crear materiales.");
+          throw new Error("No se pudo guardar el material. Revisa tu conexión e inténtalo de nuevo.");
+        }
+        setMaterialInsertedAwaitingRefresh({ name: normalizedName, areaCode: activeArea.code });
+      }
+
+      const catalogsLoaded = await loadDesignerCatalogs();
+      if (!catalogsLoaded) {
+        setMaterialError("El material ya se guardó, pero no se pudo actualizar el catálogo. Inténtalo de nuevo.");
+        return;
+      }
+
+      setMaterialInsertedAwaitingRefresh(null);
+      setShowMaterialModal(false);
+      setMaterialName("");
+      setMaterialAreaCode("");
+      notif.showActionNotification({
+        type: "info",
+        title: "Material creado",
+        message: `El material "${normalizedName}" se agregó correctamente.`,
+        metadata: { variant: "success", event_kind: "material_created", material_name: normalizedName },
+      });
+    } catch (error) {
+      setMaterialError(error?.message || "No se pudo completar la operación por un problema de conexión.");
+    } finally {
+      setMaterialSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -2396,6 +2514,24 @@ export default function PageDesigner() {
             >
               <div className="ps-topbar-new-inner"><Icons.Plus /> Nueva Orden</div>
               <div className="ps-topbar-new-stripe" />
+            </button>
+            <button
+              className="pd-topbar-catalog-btn"
+              type="button"
+              onClick={() => setShowNewClientModal(true)}
+              aria-label="Nuevo cliente"
+            >
+              <Icons.User />
+              <span>Nuevo cliente</span>
+            </button>
+            <button
+              className="pd-topbar-catalog-btn"
+              type="button"
+              onClick={openMaterialModal}
+              aria-label="Crear materiales"
+            >
+              <Icons.Package />
+              <span>Crear materiales</span>
             </button>
             <button className="ps-icon-btn" onClick={fetchOrders} title="Recargar" aria-label="Recargar">
               <Icons.Refresh />
@@ -2968,6 +3104,20 @@ export default function PageDesigner() {
         onCreated={handleNewClientCreated}
         supabase={supabase}
         userId={user?.id}
+      />
+      <MaterialFormModal
+        open={showMaterialModal}
+        onClose={closeMaterialModal}
+        name={materialName}
+        areaCode={materialAreaCode}
+        areas={materialAreas}
+        areasLoading={materialAreasLoading}
+        insertedAwaitingRefresh={Boolean(materialInsertedAwaitingRefresh)}
+        error={materialError}
+        saving={materialSaving}
+        onNameChange={(value) => { setMaterialName(value); setMaterialError(""); }}
+        onAreaChange={(value) => { setMaterialAreaCode(value); setMaterialError(""); }}
+        onSave={handleSaveMaterial}
       />
       <OrderDetailModal 
         open={!!selectedOrder} 

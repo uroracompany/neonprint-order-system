@@ -9,6 +9,7 @@ vi.mock("../../supabaseClient", () => ({
       select: () => ({
         eq: () => ({
           single: () => Promise.resolve({ data: null, error: null }),
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
         }),
       }),
     }),
